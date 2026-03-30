@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+.git/
+.gitignore
+.idea/
+.venv/
+env/
+venv/
+dist/
+build/
+staticfiles/
+media/
+README.md
+core/settings/config.env

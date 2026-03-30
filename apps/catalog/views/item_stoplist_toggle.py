@@ -1,0 +1,20 @@
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.catalog.models import CatalogItem
+from apps.catalog.serializers import CatalogItemSerializer
+from common.api.permissions import HasPermissionCode
+from common.api.scopes import get_request_branch
+
+
+class ItemStoplistToggleView(APIView):
+    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
+    permission_code = 'catalog.manage'
+
+    def post(self, request, pk):
+        branch = get_request_branch(request)
+        item = generics.get_object_or_404(CatalogItem, pk=pk, branch=branch)
+        item.is_stoplisted = not item.is_stoplisted
+        item.save(update_fields=['is_stoplisted', 'updated_at'])
+        return Response(CatalogItemSerializer(item).data, status=status.HTTP_200_OK)

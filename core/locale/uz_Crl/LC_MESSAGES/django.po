@@ -1,0 +1,280 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-03-27 00:00+0500\n"
+"PO-Revision-Date: 2026-03-27 00:00+0500\n"
+"Last-Translator: Codex\n"
+"Language-Team: Uzbek Cyrillic\n"
+"Language: uz_Crl\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Summary Report"
+msgstr "Ҳисобот хулосаси"
+
+msgid "Sales Report"
+msgstr "Савдо ҳисоботи"
+
+msgid "Open Checks Report"
+msgstr "Очиқ чеклар ҳисоботи"
+
+msgid "Top Items Report"
+msgstr "Топ маҳсулотлар ҳисоботи"
+
+msgid "Top Staff Report"
+msgstr "Топ ходимлар ҳисоботи"
+
+msgid "Payment Breakdown Report"
+msgstr "Тўлов турлари ҳисоботи"
+
+msgid "Sales By Method"
+msgstr "Усуллар бўйича савдо"
+
+msgid "Open Checks"
+msgstr "Очиқ чеклар"
+
+msgid "Payment Breakdown"
+msgstr "Тўлов турлари кесимида"
+
+msgid "Sales Total"
+msgstr "Жами савдо"
+
+msgid "Orders Count"
+msgstr "Буюртмалар сони"
+
+msgid "Average Check"
+msgstr "Ўртача чек"
+
+msgid "Active Tables"
+msgstr "Фаол столлар"
+
+msgid "Method"
+msgstr "Усул"
+
+msgid "Count"
+msgstr "Сони"
+
+msgid "Total"
+msgstr "Жами"
+
+msgid "Order"
+msgstr "Буюртма"
+
+msgid "Status"
+msgstr "Ҳолат"
+
+msgid "Hall"
+msgstr "Зал"
+
+msgid "Table"
+msgstr "Стол"
+
+msgid "Created At"
+msgstr "Яратилган вақти"
+
+msgid "Item"
+msgstr "Маҳсулот"
+
+msgid "Category"
+msgstr "Категория"
+
+msgid "Quantity"
+msgstr "Миқдор"
+
+msgid "Revenue"
+msgstr "Тушум"
+
+msgid "Staff"
+msgstr "Ходим"
+
+msgid "Orders"
+msgstr "Буюртмалар"
+
+msgid "Total Sales"
+msgstr "Жами савдо"
+
+msgid "Period"
+msgstr "Давр"
+
+msgid "Value"
+msgstr "Қиймат"
+
+msgid "Day"
+msgstr "Кун"
+
+msgid "Month"
+msgstr "Ой"
+
+msgid "Year"
+msgstr "Йил"
+
+msgid "Payment method"
+msgstr "Тўлов усули"
+
+msgid "Cash"
+msgstr "Нақд"
+
+msgid "Card"
+msgstr "Карта"
+
+msgid "Mixed"
+msgstr "Аралаш"
+
+msgid "Open"
+msgstr "Очиқ"
+
+msgid "Submitted"
+msgstr "Юборилган"
+
+msgid "Ready"
+msgstr "Тайёр"
+
+msgid "Closed"
+msgstr "Ёпилган"
+
+msgid "Cancelled"
+msgstr "Бекор қилинган"
+
+msgid "No data"
+msgstr "Маълумот йўқ"
+
+msgid "Metric"
+msgstr "Кўрсаткич"
+
+msgid "Filter"
+msgstr "Фильтр"
+
+msgid "Daily Sales"
+msgstr "Кунлик савдо"
+
+msgid "A server error occurred."
+msgstr "Сервер хатоси юз берди."
+
+msgid "Invalid input."
+msgstr "Нотўғри маълумот."
+
+msgid "Authentication credentials were not provided."
+msgstr "Аутентификация маълумотлари тақдим этилмади."
+
+msgid "You do not have permission to perform this action."
+msgstr "Бу амални бажаришга рухсатингиз йўқ."
+
+msgid "Not found."
+msgstr "Топилмади."
+
+msgid "A conflict occurred."
+msgstr "Конфликт юз берди."
+
+msgid "Service temporarily unavailable."
+msgstr "Хизмат вақтинча мавжуд эмас."
+
+msgid "Uploaded file is too large."
+msgstr "Юкланган файл жуда катта."
+
+msgid "Internal server error"
+msgstr "Ички сервер хатоси"
+
+msgid "PIN code must be a string."
+msgstr "PIN-код сатр бўлиши керак."
+
+msgid "PIN code must contain only digits."
+msgstr "PIN-код фақат рақамлардан иборат бўлиши керак."
+
+msgid "PIN code must be exactly 6 digits."
+msgstr "PIN-код аниқ 6 та рақамдан иборат бўлиши керак."
+
+msgid "Invalid PIN code."
+msgstr "Нотўғри PIN-код."
+
+msgid "This PIN code is assigned to multiple POS users. Use unique PIN codes."
+msgstr "Бу PIN-код бир нечта POS фойдаланувчига бириктирилган. Ягона PIN-кодлардан фойдаланинг."
+
+msgid "This PIN code is already assigned to another POS user."
+msgstr "Бу PIN-код аллақачон бошқа POS фойдаланувчига бириктирилган."
+
+msgid "Invalid credentials."
+msgstr "Нотўғри кириш маълумотлари."
+
+msgid "User is not allowed in admin UI."
+msgstr "Фойдаланувчига админ интерфейсга кириш рухсат этилмаган."
+
+msgid "User is not allowed in owner dashboard."
+msgstr "Фойдаланувчига owner dashboardга кириш рухсат этилмаган."
+
+msgid "Only owner accounts can access the owner dashboard."
+msgstr "Фақат owner аккаунтлари owner dashboardга кира олади."
+
+msgid "Only 2, 3, 4, 5, or 6 seat tables are supported."
+msgstr "Фақат 2, 3, 4, 5 ёки 6 ўринли столлар қўллаб-қувватланади."
+
+msgid "Shape variant does not match the selected seat count."
+msgstr "Shape варианти танланган ўринлар сонига мос эмас."
+
+msgid "Selected table does not belong to the selected hall."
+msgstr "Танланган стол танланган залга тегишли эмас."
+
+msgid "System roles cannot be deleted."
+msgstr "Тизим ролларини ўчириб бўлмайди."
+
+msgid "This table already has an active session."
+msgstr "Бу столда аллақачон фаол сессия мавжуд."
+
+msgid "Guest count cannot exceed this table limit (%(limit)s)."
+msgstr "Меҳмонлар сони ушбу стол лимити (%(limit)s)дан ошмаслиги керак."
+
+msgid "One or more tables do not belong to this hall."
+msgstr "Бир ёки бир нечта стол ушбу залга тегишли эмас."
+
+msgid "The same table cannot be updated and deleted at the same time."
+msgstr "Бир столни бир вақтнинг ўзида янгилаб ҳам, ўчириб ҳам бўлмайди."
+
+msgid "Full hall snapshot is required when saving constructor data."
+msgstr "Конструктор маълумотини сақлаш учун залнинг тўлиқ snapshotи керак."
+
+msgid "Table numbers must be unique inside a hall."
+msgstr "Стол рақамлари зал ичида ягона бўлиши керак."
+
+msgid "One or more tables exceed the configured grid width."
+msgstr "Бир ёки бир нечта стол белгиланган grid кенглигидан ошиб кетган."
+
+msgid "Tables cannot overlap inside the hall constructor grid."
+msgstr "Столлар зал конструктори gridида устма-уст жойлаша олмайди."
+
+msgid "Cannot merge a session into itself."
+msgstr "Сессияни ўзига бирлаштириб бўлмайди."
+
+msgid "Target table already has an active session."
+msgstr "Мақсад столида аллақачон фаол сессия мавжуд."
+
+msgid "Kitchen module is disabled for this restaurant."
+msgstr "Ушбу ресторанда ошхона модули ўчирилган."
+
+msgid "Kitchen display actions are disabled in printer mode."
+msgstr "Printer режимида ошхона display амаллари ўчирилган."
+
+msgid "Invalid status."
+msgstr "Нотўғри ҳолат."
+
+msgid "This menu item is inactive."
+msgstr "Бу меню элементи фаол эмас."
+
+msgid "This menu item is in stoplist."
+msgstr "Бу меню элементи stop-listда."
+
+msgid "Only cash and card payments are supported in MVP."
+msgstr "MVPда фақат нақд ва карта тўловлари қўллаб-қувватланади."
+
+msgid "Payment amount must be greater than zero."
+msgstr "Тўлов суммаси нолдан катта бўлиши керак."
+
+msgid "Payment amount must cover the full remaining total."
+msgstr "Тўлов суммаси қолган жами суммани тўлиқ қоплаши керак."
+
+msgid "Order has no items."
+msgstr "Буюртмада маҳсулот йўқ."
+
+msgid "This table session already has an active order."
+msgstr "Бу стол сессиясида аллақачон фаол буюртма мавжуд."

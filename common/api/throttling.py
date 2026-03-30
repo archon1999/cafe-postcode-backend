@@ -1,0 +1,22 @@
+from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import UserRateThrottle
+
+
+class OneToOneRateThrottle(UserRateThrottle):
+    scope = 'onetoone'
+
+
+class LoginRateThrottle(SimpleRateThrottle):
+    scope = 'login'
+
+    def get_cache_key(self, request, view):
+        ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class PinLoginRateThrottle(SimpleRateThrottle):
+    scope = 'pin_login'
+
+    def get_cache_key(self, request, view):
+        ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
