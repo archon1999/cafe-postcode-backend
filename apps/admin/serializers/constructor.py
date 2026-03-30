@@ -1,6 +1,7 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.accounts.models import Role
 from apps.floor.models import DiningTable, Hall, LayoutObject, LayoutTemplate, TableSession, ZoneOrCabin
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
@@ -64,6 +65,7 @@ def resolve_service_state(session: TableSession) -> str:
 class FeatureConfigSerializer(serializers.ModelSerializer):
     restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=False)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
+    enabled_role_details = serializers.SerializerMethodField()
 
     class Meta:
         model = FeatureConfig
@@ -79,7 +81,21 @@ class FeatureConfigSerializer(serializers.ModelSerializer):
             'kitchen_mode',
             'enabled_modules',
             'enabled_roles',
+            'enabled_role_details',
         )
+
+    def get_enabled_role_details(self, obj):
+        role_codes = list(obj.enabled_roles or [])
+
+        if not role_codes:
+            return []
+
+        roles_by_code = {
+            role.code: {'id': str(role.id), 'code': role.code, 'name': role.name}
+            for role in Role.objects.filter(code__in=role_codes)
+        }
+
+        return [roles_by_code.get(role_code, {'id': '', 'code': role_code, 'name': role_code}) for role_code in role_codes]
 
 
 class ActiveSessionSummarySerializer(serializers.ModelSerializer):
