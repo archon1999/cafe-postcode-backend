@@ -39,7 +39,6 @@ HALL_SPECS = [
             'ru': 'Зал для основного потока гостей',
         },
         'sort_order': 1,
-        'level': 1,
     },
     {
         'code': 'family-hall',
@@ -50,7 +49,6 @@ HALL_SPECS = [
             'ru': 'Спокойная зона для семейных гостей',
         },
         'sort_order': 2,
-        'level': 1,
     },
     {
         'code': 'vip-hall',
@@ -61,7 +59,6 @@ HALL_SPECS = [
             'ru': 'Закрытая зона для приватного обслуживания',
         },
         'sort_order': 3,
-        'level': 1,
     },
     {
         'code': 'small-hall',
@@ -72,7 +69,6 @@ HALL_SPECS = [
             'ru': 'Компактный зал для быстрого обслуживания',
         },
         'sort_order': 4,
-        'level': 1,
     },
     {
         'code': 'terrace',
@@ -83,7 +79,6 @@ HALL_SPECS = [
             'ru': 'Открытая терраса со столами',
         },
         'sort_order': 5,
-        'level': 1,
     },
     {
         'code': 'main-hall-l2',
@@ -94,7 +89,6 @@ HALL_SPECS = [
             'ru': 'РћСЃРЅРѕРІРЅРѕР№ Р·Р°Р» РЅР° РІС‚РѕСЂРѕРј СЌС‚Р°Р¶Рµ',
         },
         'sort_order': 1,
-        'level': 2,
     },
     {
         'code': 'vip-hall-l2',
@@ -105,7 +99,6 @@ HALL_SPECS = [
             'ru': 'Р—Р°Р» РїСЂРёРІР°С‚РЅРѕРіРѕ РѕР±СЃР»СѓР¶РёРІР°РЅРёСЏ РЅР° РІС‚РѕСЂРѕРј СЌС‚Р°Р¶Рµ',
         },
         'sort_order': 2,
-        'level': 2,
     },
 ]
 
@@ -783,12 +776,10 @@ class Command(BaseCommand):
                 branch=branch,
                 name=hall_spec['name']['uz'],
                 description=hall_spec['description']['uz'],
-                level=hall_spec.get('level', 1),
                 sort_order=hall_spec['sort_order'],
             )
             apply_translations(hall, 'name', hall_spec['name'])
             apply_translations(hall, 'description', hall_spec['description'])
-            hall.level = hall_spec.get('level', 1)
             hall.sort_order = hall_spec['sort_order']
             hall.grid_columns = HALL_GRID_COLUMNS.get(hall_spec['code'], 8)
             hall.save()

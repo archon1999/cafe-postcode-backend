@@ -88,7 +88,6 @@ class PosTestDataMixin:
         cls.hall = Hall.objects.create(
             restaurant=cls.restaurant,
             branch=cls.branch,
-            level=1,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,

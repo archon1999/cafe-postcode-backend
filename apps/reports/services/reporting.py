@@ -151,7 +151,6 @@ def get_open_checks_report_queryset(branch, period: ReportPeriod, restaurant=Non
         'created_at',
         hall_id=F('table_session__hall_id'),
         hall_name=F('table_session__hall__name'),
-        hall_level=F('table_session__hall__level'),
         table_name=F('table_session__table__name'),
     )
 

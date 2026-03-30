@@ -41,7 +41,6 @@ class PosHallListViewTests(TestCase):
         self.hall = Hall.objects.create(
             restaurant=self.restaurant,
             branch=self.branch,
-            level=1,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,
@@ -165,7 +164,6 @@ class PosHallListViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         halls = response.json()['data']
         self.assertEqual(len(halls), 1)
-        self.assertEqual(halls[0]['level'], 1)
         self.assertNotIn('zones', halls[0])
         self.assertNotIn('layoutObjects', halls[0])
 

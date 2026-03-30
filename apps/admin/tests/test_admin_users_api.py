@@ -25,13 +25,11 @@ class AdminUsersApiTests(APITestCase):
         cls.primary_hall = Hall.objects.create(
             restaurant=cls.restaurant,
             branch=cls.branch,
-            level=1,
             name='Main Hall',
         )
         cls.secondary_hall = Hall.objects.create(
             restaurant=cls.restaurant,
             branch=cls.branch,
-            level=1,
             name='Family Hall',
         )
         permission_codes = ['users.manage', 'constructor.manage', 'hall.view', 'hall.manage']
@@ -135,7 +133,7 @@ class AdminUsersApiTests(APITestCase):
         default_usernames = {row['username'] for row in default_response.data['data']}
         self.assertNotIn(archived_user.username, default_usernames)
 
-        archived_response = self.client.get('/api/v1/admin/users/', {'include_archived': 'true'})
+        archived_response = self.client.get('/api/v1/admin/users/', {'employment_status_in': 'archived'})
         self.assertEqual(archived_response.status_code, status.HTTP_200_OK)
         archived_usernames = {row['username'] for row in archived_response.data['data']}
         self.assertIn(archived_user.username, archived_usernames)
