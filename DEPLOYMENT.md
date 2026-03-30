@@ -20,10 +20,13 @@ The workflow SSHes into the server and runs:
 
 ```bash
 cd /home/postcode/backend
-mkdir -p .runtime/staticfiles .runtime/media .runtime/var
 git checkout production
 git pull --ff-only origin production
-docker compose up -d --build --remove-orphans
+poetry install --no-root
+poetry run python manage.py migrate --noinput
+poetry run python manage.py collectstatic --noinput
+sudo -n systemctl restart postcode-backend
+sudo -n systemctl is-active postcode-backend
 ```
 
 ## Required files on the server
@@ -33,37 +36,30 @@ You can start from `core/settings/config.env.example`.
 
 ## Runtime port
 
-The container is exposed only on localhost:
+Run the service on:
 
-- `127.0.0.1:8000`
+- `127.0.0.1:8888`
 
-Put your public Nginx reverse proxy in front of that port.
+Put your own Nginx reverse proxy in front of that port.
 
-## Example host Nginx config
+## Example systemd service
 
-```nginx
-server {
-    listen 80;
-    server_name cafe-postcode.uz;
+Copy `deploy/postcode-backend.service.example` to `/etc/systemd/system/postcode-backend.service`,
+adjust paths if needed, then run:
 
-    client_max_body_size 20m;
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable postcode-backend
+sudo systemctl restart postcode-backend
+sudo systemctl status postcode-backend
+```
 
-    location /static/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-    }
+## Sudo requirement for CI/CD
 
-    location /media/ {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-    }
+The SSH user used by GitHub Actions must be allowed to restart the service without an interactive password.
 
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+Example sudoers entry:
+
+```bash
+username ALL=(ALL) NOPASSWD: /bin/systemctl restart postcode-backend, /bin/systemctl is-active postcode-backend
 ```

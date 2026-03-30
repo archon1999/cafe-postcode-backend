@@ -23,7 +23,10 @@ jobs:
             set -e
             cd /home/postcode/backend
             test -f core/settings/config.env
-            mkdir -p .runtime/staticfiles .runtime/media .runtime/var
             git checkout production
             git pull --ff-only origin production
-            docker compose up -d --build --remove-orphans
+            poetry install --no-root
+            poetry run python manage.py migrate --noinput
+            poetry run python manage.py collectstatic --noinput
+            sudo -n systemctl restart postcode-backend
+            sudo -n systemctl is-active postcode-backend

@@ -21,7 +21,6 @@ __pycache__/
 /db.sqlite3
 /db.sqlite3-journal
 /var/
-/.runtime/
 *.log
 *.mo
 
