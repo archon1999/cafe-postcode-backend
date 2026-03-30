@@ -4,59 +4,74 @@ from django.db.models import Q, QuerySet
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.accounts.models import Permission, Role, User
+from apps.accounts.models import EmployeeProfile, Permission, Role, User
 from common.api.query_params import (
     apply_ordering,
-    get_bool_query_param,
     get_ordering_query_param,
     get_str_list_query_param,
     get_str_query_param,
 )
 from .scopes import filter_queryset_by_optional_restaurant
 
-USER_UI_MODE_VALUES = {choice for choice, _label in User.UiMode.choices}
 ROLE_TYPE_VALUES = {'system', 'custom'}
 USER_ORDERING_FIELDS = {
     'username': 'username',
     'fullName': 'full_name',
     'phone': 'phone',
-    'uiMode': 'ui_mode',
     'isActive': 'is_active',
     'role': ('role__name', 'username'),
 }
 ROLE_ORDERING_FIELDS = {
     'name': 'name',
-    'code': 'code',
     'isSystem': 'is_system',
 }
 PERMISSION_ORDERING_FIELDS = {
-    'label': 'code',
+    'label': 'name',
     'code': 'code',
-    'category': 'code',
+    'scope': 'code',
     'action': 'code',
     'description': 'description',
 }
+POS_PERMISSION_PREFIXES = (
+    'hall.',
+    'table.',
+    'orders.',
+    'payments.',
+    'cashshift.',
+    'payment.',
+    'receipt.',
+    'kitchen.',
+    'stoplist.',
+    'cashdesk.',
+)
+
+
+def get_permission_scope(code: str) -> str:
+    if code.startswith('dashboard.'):
+        return 'dashboard'
+    if any(code.startswith(prefix) for prefix in POS_PERMISSION_PREFIXES):
+        return 'pos'
+    return 'admin'
 
 
 def admin_user_queryset(request) -> QuerySet[User]:
     queryset = User.objects.select_related(
         'role',
-        'branch',
         'restaurant',
-        'primary_hall',
+        'restaurant_profile__restaurant',
+        'restaurant_profile__primary_hall',
+        'business_partner_user_profile__business_partner',
         'employee_profile',
         'employee_compensation_profile',
-    ).prefetch_related('allowed_halls')
-    return filter_queryset_by_optional_restaurant(queryset, request)
+    ).prefetch_related('restaurant_profile__allowed_halls')
+    return filter_queryset_by_optional_restaurant(queryset, request, lookup='restaurant_profile__restaurant')
 
 
 @dataclass(frozen=True)
 class UserListFilters:
     search: str = ''
-    role_codes: tuple[str, ...] = ()
-    ui_modes: tuple[str, ...] = ()
-    is_active: bool | None = None
-    include_archived: bool = False
+    role_ids: tuple[str, ...] = ()
+    employment_statuses: tuple[str, ...] = ()
     ordering: tuple[str, ...] = ()
 
     @classmethod
@@ -64,15 +79,21 @@ class UserListFilters:
         query_params = request.query_params
         return cls(
             search=get_str_query_param(query_params, 'search'),
-            role_codes=tuple(get_str_list_query_param(query_params, 'role_code_in')),
-            ui_modes=tuple(get_str_list_query_param(query_params, 'ui_mode_in', allowed_values=USER_UI_MODE_VALUES)),
-            is_active=get_bool_query_param(query_params, 'is_active'),
-            include_archived=bool(get_bool_query_param(query_params, 'include_archived') or False),
+            role_ids=tuple(get_str_list_query_param(query_params, 'role_id_in')),
+            employment_statuses=tuple(
+                get_str_list_query_param(
+                    query_params,
+                    'employment_status_in',
+                    allowed_values=set(EmployeeProfile.EmploymentStatus.values),
+                ),
+            ),
             ordering=get_ordering_query_param(query_params, USER_ORDERING_FIELDS),
         )
 
     def apply(self, queryset: QuerySet[User]) -> QuerySet[User]:
-        if not self.include_archived:
+        if self.employment_statuses:
+            queryset = queryset.filter(employee_profile__employment_status__in=self.employment_statuses)
+        else:
             queryset = queryset.exclude(employee_profile__employment_status='archived')
         if self.search:
             queryset = queryset.filter(
@@ -80,12 +101,8 @@ class UserListFilters:
                 | Q(full_name__icontains=self.search)
                 | Q(phone__icontains=self.search)
             )
-        if self.role_codes:
-            queryset = queryset.filter(role__code__in=self.role_codes)
-        if self.ui_modes:
-            queryset = queryset.filter(ui_mode__in=self.ui_modes)
-        if self.is_active is not None:
-            queryset = queryset.filter(is_active=self.is_active)
+        if self.role_ids:
+            queryset = queryset.filter(role_id__in=self.role_ids)
         return apply_ordering(queryset, self.ordering, default_ordering=('username',))
 
 
@@ -109,8 +126,7 @@ class RoleListFilters:
     def apply(self, queryset: QuerySet[Role]) -> QuerySet[Role]:
         if self.search:
             queryset = queryset.filter(
-                Q(code__icontains=self.search)
-                | Q(name__icontains=self.search)
+                Q(name__icontains=self.search)
                 | Q(description__icontains=self.search)
                 | Q(permissions__code__icontains=self.search)
             )
@@ -124,7 +140,7 @@ class RoleListFilters:
 @dataclass(frozen=True)
 class PermissionListFilters:
     search: str = ''
-    categories: tuple[str, ...] = ()
+    scopes: tuple[str, ...] = ()
     actions: tuple[str, ...] = ()
     ordering: tuple[str, ...] = ()
 
@@ -133,7 +149,7 @@ class PermissionListFilters:
         query_params = request.query_params
         return cls(
             search=get_str_query_param(query_params, 'search'),
-            categories=tuple(get_str_list_query_param(query_params, 'category_in')),
+            scopes=tuple(get_str_list_query_param(query_params, 'scope_in')),
             actions=tuple(get_str_list_query_param(query_params, 'action_in')),
             ordering=get_ordering_query_param(query_params, PERMISSION_ORDERING_FIELDS),
         )
@@ -145,11 +161,12 @@ class PermissionListFilters:
                 | Q(name__icontains=self.search)
                 | Q(description__icontains=self.search)
             )
-        if self.categories:
-            category_query = Q()
-            for category in self.categories:
-                category_query |= Q(code__istartswith=f'{category}.')
-            queryset = queryset.filter(category_query)
+        if self.scopes:
+            allowed_codes = [
+                permission.code for permission in queryset.only('code')
+                if get_permission_scope(permission.code) in self.scopes
+            ]
+            queryset = queryset.filter(code__in=allowed_codes)
         if self.actions:
             action_query = Q()
             for action in self.actions:

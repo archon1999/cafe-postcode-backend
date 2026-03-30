@@ -1,7 +1,6 @@
 from .catalog import CategoryListFilters, ItemListFilters, filter_catalog_queryset_by_scope
 from .constructor import (
     AdminSuperuserRequiredMixin,
-    BranchListFilters,
     CashDeskListFilters,
     DeviceListFilters,
     DiningTableListFilters,
@@ -55,7 +54,6 @@ __all__ = [
     'AdminSuperuserRequiredMixin',
     'AdminUserQuerysetMixin',
     'AdminKitchenTicketQuerysetMixin',
-    'BranchListFilters',
     'build_excel_attachment',
     'CashDeskListFilters',
     'CategoryListFilters',

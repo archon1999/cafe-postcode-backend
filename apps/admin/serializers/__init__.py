@@ -1,7 +1,6 @@
 from .auth import AdminLoginSerializer, SessionUserSerializer
 from .catalog import CatalogCategorySerializer, CatalogItemSerializer, MxikLookupResultSerializer
 from .constructor import (
-    BranchSerializer,
     CashDeskSerializer,
     DeviceSerializer,
     DiningTableSerializer,
@@ -38,7 +37,6 @@ __all__ = [
     'AdminPaymentSerializer',
     'AdminReceiptSerializer',
     'BusinessPartnerSerializer',
-    'BranchSerializer',
     'SessionUserSerializer',
     'CatalogCategorySerializer',
     'CatalogItemSerializer',

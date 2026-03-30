@@ -7,7 +7,7 @@ from apps.admin.serializers import CatalogCategorySerializer, CatalogItemSeriali
 from apps.admin.support import CategoryListFilters, ItemListFilters, filter_catalog_queryset_by_scope
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.services.mxik import MxikClient, MxikError
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class CategoryListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
@@ -20,7 +20,7 @@ class CategoryListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAP
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)
 
 
 class CategoryDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -42,7 +42,7 @@ class ItemListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)
 
 
 class ItemDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):

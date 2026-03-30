@@ -28,12 +28,11 @@ class HallConstructorTableReadSerializer(serializers.ModelSerializer):
 class HallConstructorSerializer(serializers.ModelSerializer):
     hall_id = serializers.UUIDField(source='id', read_only=True)
     hall_name = serializers.CharField(source='name', read_only=True)
-    hall_level = serializers.IntegerField(source='level', read_only=True, allow_null=True)
     tables = serializers.SerializerMethodField()
 
     class Meta:
         model = Hall
-        fields = ('hall_id', 'hall_name', 'hall_level', 'grid_columns', 'tables')
+        fields = ('hall_id', 'hall_name', 'grid_columns', 'tables')
 
     def get_tables(self, obj):
         tables = sorted(obj.tables.all(), key=lambda table: (table.table_number, table.name))

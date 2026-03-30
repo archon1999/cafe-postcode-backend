@@ -3,13 +3,23 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from apps.accounts.models import Role, User
+from apps.accounts.models import BusinessPartnerUserProfile, RestaurantUserProfile, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.integrations.services import ensure_mock_configs
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order, OrderItem, Payment, Receipt
-from apps.organizations.models import Branch, CashDesk, DistributionPoint, FeatureConfig, PrepStation, Restaurant
+from apps.organizations.models import (
+    Branch,
+    BusinessPartner,
+    CashDesk,
+    DistributionPoint,
+    FeatureConfig,
+    PrepStation,
+    Restaurant,
+    RestaurantEntitlement,
+    Tariff,
+)
 
 
 def apply_translations(instance, field_name, translations):
@@ -401,6 +411,8 @@ HALL_GRID_COLUMNS = {
     'vip-hall-l2': 3,
 }
 
+DEFAULT_ZONE_NAMES = ['1-qavat', '2-qavat', 'Kabina 1', 'Kabina 2']
+
 
 MAIN_HALL_TABLE_SPECS = [
     *[
@@ -618,10 +630,49 @@ def build_demo_orders(now):
 
 
 class Command(BaseCommand):
-    help = 'Realistik restoran demo ma’lumotlarini yaratadi.'
+    help = "Realistik restoran demo ma'lumotlarini yaratadi."
 
     def handle(self, *args, **options):
+        business_partner, _ = BusinessPartner.objects.get_or_create(
+            inn='309876543',
+            defaults={
+                'company_name': 'Postcode hamkor',
+                'status': BusinessPartner.Status.ACTIVE,
+            },
+        )
+        business_partner.company_name = 'Postcode hamkor'
+        business_partner.legal_name = 'Postcode hamkor MCHJ'
+        business_partner.phone = '+998901234567'
+        business_partner.email = 'partner.demo@postcode.uz'
+        business_partner.address = 'Toshkent shahri, Yunusobod tumani'
+        business_partner.status = BusinessPartner.Status.ACTIVE
+        business_partner.activated_at = timezone.now()
+        business_partner.save()
+
+        tariff, _ = Tariff.objects.get_or_create(
+            name='Demo tarif',
+            defaults={
+                'classification': Tariff.Classification.STANDARD,
+                'monthly_price': 990000,
+                'yearly_price': 9900000,
+                'is_active': True,
+            },
+        )
+        tariff.classification = Tariff.Classification.STANDARD
+        tariff.description = "Demo restoran uchun standart tarif"
+        tariff.monthly_price = 990000
+        tariff.yearly_price = 9900000
+        tariff.is_active = True
+        tariff.operational_settings = {
+            'hall_enabled': True,
+            'kitchen_enabled': True,
+            'cashier_enabled': True,
+            'reports_enabled': True,
+        }
+        tariff.save()
+
         restaurant, _ = Restaurant.objects.get_or_create(name='Postcode kafe')
+        restaurant.business_partner = business_partner
         apply_translations(restaurant, 'name', {'uz': 'Postcode kafe', 'uz_crl': 'Postcode кафе', 'ru': 'Postcode кафе'})
         apply_translations(
             restaurant,
@@ -634,6 +685,16 @@ class Command(BaseCommand):
             {'uz': 'Yunusobod tumani, Toshkent', 'uz_crl': 'Юнусобод тумани, Тошкент', 'ru': 'Юнусабадский район, Ташкент'},
         )
         restaurant.save()
+
+        entitlement, _ = RestaurantEntitlement.objects.get_or_create(restaurant=restaurant)
+        entitlement.tariff = tariff
+        entitlement.is_active = True
+        entitlement.is_custom = False
+        entitlement.starts_on = timezone.localdate()
+        entitlement.monthly_price = tariff.monthly_price
+        entitlement.yearly_price = tariff.yearly_price
+        entitlement.operational_settings = dict(tariff.operational_settings)
+        entitlement.save()
 
         branch, _ = Branch.objects.get_or_create(
             restaurant=restaurant,
@@ -649,7 +710,7 @@ class Command(BaseCommand):
         KitchenTicket.objects.filter(restaurant=restaurant).delete()
         Order.objects.filter(restaurant=restaurant).delete()
         TableSession.objects.filter(restaurant=restaurant).delete()
-        DiningTable.objects.filter(hall__branch=branch).delete()
+        Hall.objects.filter(restaurant=restaurant, branch=branch).delete()
         CatalogItem.objects.filter(restaurant=restaurant).delete()
         CatalogCategory.objects.filter(restaurant=restaurant).delete()
         DistributionPoint.objects.filter(restaurant=restaurant, branch=branch).delete()
@@ -717,15 +778,13 @@ class Command(BaseCommand):
 
         halls = {}
         for hall_spec in HALL_SPECS:
-            hall, _ = Hall.objects.get_or_create(
+            hall = Hall.objects.create(
                 restaurant=restaurant,
                 branch=branch,
                 name=hall_spec['name']['uz'],
-                defaults={
-                    'description': hall_spec['description']['uz'],
-                    'level': hall_spec.get('level', 1),
-                    'sort_order': hall_spec['sort_order'],
-                },
+                description=hall_spec['description']['uz'],
+                level=hall_spec.get('level', 1),
+                sort_order=hall_spec['sort_order'],
             )
             apply_translations(hall, 'name', hall_spec['name'])
             apply_translations(hall, 'description', hall_spec['description'])
@@ -735,13 +794,26 @@ class Command(BaseCommand):
             hall.save()
             halls[hall_spec['code']] = hall
 
-        owner_role = Role.objects.get(code='owner')
+            zone_names = ['2-qavat', 'Kabina 2'] if hall_spec.get('code', '').endswith('-l2') else ['1-qavat', 'Kabina 1']
+            for zone_index, zone_name in enumerate(zone_names, start=1):
+                ZoneOrCabin.objects.create(
+                    hall=hall,
+                    name=zone_name,
+                    is_private='kabina' in zone_name.lower(),
+                    sort_order=zone_index,
+                )
+
+        business_partner_role = Role.objects.get(code='business_partner')
+        restaurant_admin_role = Role.objects.get(code='restaurant_admin')
         manager_role = Role.objects.get(code='manager')
         waiter_role = Role.objects.get(code='waiter')
         cashier_role = Role.objects.get(code='cashier')
         chef_role = Role.objects.get(code='chef')
         barman_role = Role.objects.get(code='barman')
-        universal_operator_role = Role.objects.get(code='universal_operator')
+        tariff.permissions.set(restaurant_admin_role.permissions.all())
+        tariff.allowed_roles.set([restaurant_admin_role, manager_role, waiter_role, cashier_role, chef_role, barman_role])
+        entitlement.permissions.set([])
+        entitlement.allowed_roles.set([restaurant_admin_role, manager_role, waiter_role, cashier_role, chef_role, barman_role])
 
         admin_user, _ = User.objects.get_or_create(
             username='admin',
@@ -764,15 +836,41 @@ class Command(BaseCommand):
         admin_user.save()
         admin_user.allowed_halls.clear()
 
+        partner_user, _ = User.objects.get_or_create(
+            username='partner_demo',
+            defaults={
+                'full_name': 'Biznes hamkor demo',
+                'role': business_partner_role,
+                'business_partner': business_partner,
+                'ui_mode': User.UiMode.ADMIN,
+                'is_staff': True,
+            },
+        )
+        partner_user.full_name = 'Biznes hamkor demo'
+        partner_user.role = business_partner_role
+        partner_user.business_partner = business_partner
+        partner_user.restaurant = None
+        partner_user.branch = None
+        partner_user.ui_mode = User.UiMode.ADMIN
+        partner_user.is_staff = True
+        partner_user.set_password('partner123')
+        partner_user.pin_code = ''
+        partner_user.save()
+        BusinessPartnerUserProfile.objects.update_or_create(
+            user=partner_user,
+            defaults={'business_partner': business_partner},
+        )
+        business_partner.owner_user = partner_user
+        business_partner.save(update_fields=['owner_user'])
+
         users = [
-            ('owner', 'Restoran egasi', owner_role, User.UiMode.ADMIN, 'owner123', None),
+            ('restaurant_admin', 'Restoran admini', restaurant_admin_role, User.UiMode.ADMIN, 'restadmin123', None),
             ('manager', 'Zal menejeri', manager_role, User.UiMode.ADMIN, 'manager123', None),
             ('waiter', 'Ofitsiant Aziz', waiter_role, User.UiMode.POS, None, '1111'),
             ('waiter2', 'Ofitsiant Sardor', waiter_role, User.UiMode.POS, None, '4444'),
             ('cashier', 'Kassir Madina', cashier_role, User.UiMode.POS, None, '2222'),
             ('chef', 'Oshpaz Bekzod', chef_role, User.UiMode.POS, None, '3333'),
             ('barman', 'Barmen Nodir', barman_role, User.UiMode.POS, None, '5555'),
-            ('operator', 'Universal operator Diyor', universal_operator_role, User.UiMode.POS, None, '6666'),
         ]
         created_users = {}
         for username, full_name, role, ui_mode, password, pin in users:
@@ -801,6 +899,17 @@ class Command(BaseCommand):
                 user.pin_code = ''
             user.save()
             user.allowed_halls.set(halls.values())
+            profile, _ = RestaurantUserProfile.objects.update_or_create(
+                user=user,
+                defaults={
+                    'restaurant': restaurant,
+                    'hall_switch_permission': role in {manager_role, waiter_role, cashier_role},
+                    'primary_hall': halls['main-hall'],
+                },
+            )
+            profile.allowed_halls.set(halls.values())
+            if pin:
+                user.set_pin(pin)
             created_users[username] = user
 
         for spec in MAIN_HALL_TABLE_SPECS:
@@ -837,6 +946,8 @@ class Command(BaseCommand):
 
         categories = {}
         for spec in CATEGORY_SPECS:
+            if spec['kind'] in {CatalogCategory.Kind.SERVICE, CatalogCategory.Kind.PENALTY}:
+                continue
             category, _ = CatalogCategory.objects.get_or_create(
                 restaurant=restaurant,
                 branch=branch,
@@ -853,6 +964,8 @@ class Command(BaseCommand):
 
         items_by_code = {}
         for spec in CATALOG_ITEM_SPECS:
+            if spec['kind'] in {CatalogItem.Kind.SERVICE, CatalogItem.Kind.PENALTY}:
+                continue
             item, _ = CatalogItem.objects.get_or_create(
                 restaurant=restaurant,
                 branch=branch,

@@ -4,7 +4,7 @@ from rest_framework import serializers
 from apps.floor.models import DiningTable, Hall, LayoutObject, LayoutTemplate, TableSession, ZoneOrCabin
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
-from apps.organizations.models import Branch, CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
+from apps.organizations.models import CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
 from common.api.scopes import get_request_restaurant
 
 
@@ -61,28 +61,6 @@ def resolve_service_state(session: TableSession) -> str:
     return 'done'
 
 
-class BranchSerializer(serializers.ModelSerializer):
-    restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=False)
-    restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
-
-    class Meta:
-        model = Branch
-        fields = (
-            'id',
-            'restaurant',
-            'restaurant_name',
-            'name',
-            'address',
-            'phone',
-            'legal_name',
-            'tax_number',
-            'vat_enabled',
-            'service_fee_percent',
-            'is_default',
-        )
-        validators = []
-
-
 class FeatureConfigSerializer(serializers.ModelSerializer):
     restaurant = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.all(), required=False)
     restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
@@ -117,11 +95,10 @@ class ActiveSessionSummarySerializer(serializers.ModelSerializer):
 
 class ZoneOrCabinSerializer(serializers.ModelSerializer):
     hall_name = serializers.CharField(source='hall.name', read_only=True)
-    hall_level = serializers.IntegerField(source='hall.level', read_only=True, allow_null=True)
 
     class Meta:
         model = ZoneOrCabin
-        fields = ('id', 'hall', 'hall_name', 'hall_level', 'name', 'is_private', 'sort_order', 'is_active')
+        fields = ('id', 'hall', 'hall_name', 'name', 'is_private', 'sort_order', 'is_active')
 
 
 class DiningTableSerializer(serializers.ModelSerializer):
@@ -203,7 +180,6 @@ class LayoutTemplateSerializer(serializers.ModelSerializer):
 
 class LayoutObjectSerializer(serializers.ModelSerializer):
     hall_name = serializers.CharField(source='hall.name', read_only=True)
-    hall_level = serializers.IntegerField(source='hall.level', read_only=True, allow_null=True)
     zone_name = serializers.CharField(source='zone.name', read_only=True)
     table_name = serializers.CharField(source='table.name', read_only=True)
 
@@ -213,7 +189,6 @@ class LayoutObjectSerializer(serializers.ModelSerializer):
             'id',
             'hall',
             'hall_name',
-            'hall_level',
             'zone',
             'zone_name',
             'table',
@@ -231,16 +206,12 @@ class LayoutObjectSerializer(serializers.ModelSerializer):
 
 
 class HallSerializer(serializers.ModelSerializer):
-    branch_name = serializers.CharField(source='branch.name', read_only=True)
     tables = DiningTableSerializer(many=True, read_only=True)
 
     class Meta:
         model = Hall
         fields = (
             'id',
-            'branch',
-            'branch_name',
-            'level',
             'name',
             'description',
             'grid_columns',
@@ -252,21 +223,12 @@ class HallSerializer(serializers.ModelSerializer):
 
 
 class PrepStationSerializer(serializers.ModelSerializer):
-    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
-    branch_name = serializers.CharField(source='branch.name', read_only=True, allow_null=True)
-
     class Meta:
         model = PrepStation
-        fields = ('id', 'name', 'kind', 'branch', 'branch_name', 'is_active')
+        fields = ('id', 'name', 'kind', 'is_active')
 
 
 class CashDeskSerializer(serializers.ModelSerializer):
-    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
-    branch_name = serializers.CharField(source='branch.name', read_only=True, allow_null=True)
-    branch_legal_name = serializers.CharField(source='branch.legal_name', read_only=True, allow_null=True)
-    branch_tax_number = serializers.CharField(source='branch.tax_number', read_only=True, allow_null=True)
-    branch_vat_enabled = serializers.BooleanField(source='branch.vat_enabled', read_only=True, allow_null=True)
-
     def validate_enabled_payment_methods(self, value):
         allowed_values = {'cash', 'card', 'qr'}
         values = list(dict.fromkeys(value or []))
@@ -282,23 +244,16 @@ class CashDeskSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'location',
-            'branch',
-            'branch_name',
             'enabled_payment_methods',
             'fiscal_provider',
             'receipt_printer_enabled',
             'terminal_id',
             'external_cashbox_id',
             'is_active',
-            'branch_legal_name',
-            'branch_tax_number',
-            'branch_vat_enabled',
         )
 
 
 class DeviceSerializer(serializers.ModelSerializer):
-    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
-    branch_name = serializers.CharField(source='branch.name', read_only=True, allow_null=True)
     primary_hall_id = serializers.PrimaryKeyRelatedField(
         source='primary_hall',
         queryset=Hall.objects.all(),
@@ -306,7 +261,6 @@ class DeviceSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     primary_hall_name = serializers.CharField(source='primary_hall.name', read_only=True)
-    primary_hall_level = serializers.IntegerField(source='primary_hall.level', read_only=True, allow_null=True)
     allowed_hall_ids = serializers.PrimaryKeyRelatedField(
         source='allowed_halls',
         queryset=Hall.objects.all(),
@@ -320,11 +274,8 @@ class DeviceSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'mode',
-            'branch',
-            'branch_name',
             'primary_hall_id',
             'primary_hall_name',
-            'primary_hall_level',
             'allowed_hall_ids',
             'is_active',
         )
@@ -332,7 +283,6 @@ class DeviceSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         restaurant = _resolve_serializer_restaurant(self, attrs)
-        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
         primary_hall = attrs.get('primary_hall', getattr(self.instance, 'primary_hall', None))
 
         if 'allowed_halls' in attrs:
@@ -348,17 +298,8 @@ class DeviceSerializer(serializers.ModelSerializer):
         if restaurant is not None and any(hall.restaurant_id != restaurant.id for hall in allowed_halls):
             raise serializers.ValidationError({'allowedHallIds': _('All allowed halls must belong to the selected restaurant.')})
 
-        if primary_hall is not None and branch is not None and primary_hall.branch_id != branch.id:
-            raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected branch.')})
-
-        if branch is not None and any(hall.branch_id != branch.id for hall in allowed_halls):
-            raise serializers.ValidationError({'allowedHallIds': _('All allowed halls must belong to the selected branch.')})
-
         if primary_hall is not None and not any(hall.id == primary_hall.id for hall in allowed_halls):
             allowed_halls.append(primary_hall)
-
-        if branch is None and primary_hall is not None:
-            attrs['branch'] = primary_hall.branch
 
         attrs['allowed_halls'] = allowed_halls
         return attrs
@@ -379,10 +320,7 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 
 class DistributionPointSerializer(serializers.ModelSerializer):
-    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.all(), required=False, allow_null=True)
-    branch_name = serializers.CharField(source='branch.name', read_only=True, allow_null=True)
     assigned_hall_name = serializers.CharField(source='assigned_hall.name', read_only=True)
-    assigned_hall_level = serializers.IntegerField(source='assigned_hall.level', read_only=True, allow_null=True)
 
     class Meta:
         model = DistributionPoint
@@ -391,36 +329,24 @@ class DistributionPointSerializer(serializers.ModelSerializer):
             'name',
             'kind',
             'integration_channel',
-            'branch',
-            'branch_name',
             'assigned_hall',
             'assigned_hall_name',
-            'assigned_hall_level',
             'is_active',
         )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
         restaurant = _resolve_serializer_restaurant(self, attrs)
-        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
         assigned_hall = attrs.get('assigned_hall', getattr(self.instance, 'assigned_hall', None))
 
         if assigned_hall is not None and restaurant is not None and assigned_hall.restaurant_id != restaurant.id:
             raise serializers.ValidationError({'assignedHall': _('Selected hall does not belong to the selected restaurant.')})
 
-        if branch is not None and assigned_hall is not None and assigned_hall.branch_id != branch.id:
-            raise serializers.ValidationError({'assignedHall': _('Selected hall does not belong to the selected branch.')})
-
-        if branch is None and assigned_hall is not None:
-            attrs['branch'] = assigned_hall.branch
-
         return attrs
 
 
 class TableSessionSerializer(serializers.ModelSerializer):
-    branch_name = serializers.CharField(source='branch.name', read_only=True)
     hall_name = serializers.CharField(source='hall.name', read_only=True)
-    hall_level = serializers.IntegerField(source='hall.level', read_only=True, allow_null=True)
     table_name = serializers.CharField(source='table.name', read_only=True)
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
     assigned_waiter_name = serializers.CharField(source='assigned_waiter.full_name', read_only=True)
@@ -429,11 +355,8 @@ class TableSessionSerializer(serializers.ModelSerializer):
         model = TableSession
         fields = (
             'id',
-            'branch',
-            'branch_name',
             'hall',
             'hall_name',
-            'hall_level',
             'table',
             'table_name',
             'opened_by',
@@ -460,7 +383,6 @@ class TableSessionSerializer(serializers.ModelSerializer):
 
 class RestaurantSerializer(serializers.ModelSerializer):
     feature_config = FeatureConfigSerializer(read_only=True)
-    branches = BranchSerializer(many=True, read_only=True)
 
     class Meta:
         model = Restaurant
@@ -472,9 +394,9 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'phone',
             'address',
             'currency',
+            'auth_code',
             'is_active',
             'feature_config',
-            'branches',
         )
         extra_kwargs = {'currency': {'required': False}}
 

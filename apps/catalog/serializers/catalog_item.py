@@ -11,7 +11,6 @@ class CatalogItemSerializer(serializers.ModelSerializer):
         model = CatalogItem
         fields = (
             'id',
-            'branch',
             'category',
             'category_name',
             'prep_station',
@@ -22,12 +21,10 @@ class CatalogItemSerializer(serializers.ModelSerializer):
             'name_ru',
             'mxik_code',
             'mxik_name',
-            'kind',
             'description',
             'description_uz',
             'description_uz_crl',
             'description_ru',
-            'sku',
             'price',
             'is_active',
             'is_stoplisted',

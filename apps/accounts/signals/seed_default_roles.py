@@ -20,54 +20,54 @@ def t(uz: str, uz_crl: str | None = None, ru: str | None = None) -> dict[str, st
 
 
 DEFAULT_PERMISSIONS = [
-    {'code': 'platform.product_owner.view', 'name': t('Platform access', 'Платформага кириш', 'Доступ к платформе')},
-    {'code': 'partners.view', 'name': t('View business partners', 'Бизнес ҳамкорларни кўриш', 'Просмотр бизнес-партнеров')},
-    {'code': 'partners.manage', 'name': t('Manage business partners', 'Бизнес ҳамкорларни бошқариш', 'Управление бизнес-партнерами')},
-    {'code': 'partners.activate', 'name': t('Activate business partners', 'Бизнес ҳамкорни активлаштириш', 'Активация бизнес-партнеров')},
-    {'code': 'partners.deactivate', 'name': t('Deactivate business partners', 'Бизнес ҳамкорни деактивлаштириш', 'Деактивация бизнес-партнеров')},
-    {'code': 'partners.reset_password', 'name': t('Reset partner password', 'Ҳамкор паролини янгилаш', 'Сброс пароля партнера')},
-    {'code': 'tariffs.view', 'name': t('View tariffs', 'Тарифларни кўриш', 'Просмотр тарифов')},
-    {'code': 'tariffs.manage', 'name': t('Manage tariffs', 'Тарифларни бошқариш', 'Управление тарифами')},
-    {'code': 'restaurants.view', 'name': t('View restaurants', 'Ресторанларни кўриш', 'Просмотр ресторанов')},
-    {'code': 'restaurants.manage', 'name': t('Manage restaurants', 'Ресторанларни бошқариш', 'Управление ресторанами')},
-    {'code': 'restaurants.activate', 'name': t('Activate restaurants', 'Ресторанни активлаштириш', 'Активация ресторанов')},
-    {'code': 'restaurants.deactivate', 'name': t('Deactivate restaurants', 'Ресторанни деактивлаштириш', 'Деактивация ресторанов')},
-    {'code': 'restaurants.reset_password', 'name': t('Reset restaurant admin password', 'Ресторан админи паролини янгилаш', 'Сброс пароля администратора ресторана')},
-    {'code': 'dashboard.view', 'name': t('View dashboard', 'Дашбордни кўриш', 'Просмотр дашборда')},
-    {'code': 'constructor.manage', 'name': t('Manage constructor', 'Конструкторни бошқариш', 'Управление конструктором')},
-    {'code': 'hall.view', 'name': t('View halls', 'Залларни кўриш', 'Просмотр залов')},
-    {'code': 'hall.manage', 'name': t('Manage halls and layout', 'Зал ва жойлашувни бошқариш', 'Управление залом и схемой')},
-    {'code': 'table.manage', 'name': t('Manage tables and sessions', 'Стол ва сессияларни бошқариш', 'Управление столами и сессиями')},
-    {'code': 'users.manage', 'name': t('Manage employees', 'Ходимларни бошқариш', 'Управление сотрудниками')},
-    {'code': 'roles.manage', 'name': t('Manage roles', 'Ролларни бошқариш', 'Управление ролями')},
-    {'code': 'catalog.view', 'name': t('View menu', 'Менюни кўриш', 'Просмотр меню')},
-    {'code': 'catalog.manage', 'name': t('Manage menu', 'Менюни бошқариш', 'Управление меню')},
-    {'code': 'stoplist.manage', 'name': t('Manage stop list', 'Стоп-листни бошқариш', 'Управление стоп-листом')},
-    {'code': 'orders.create', 'name': t('Create orders', 'Буюртма яратиш', 'Создание заказов')},
-    {'code': 'orders.view', 'name': t('View orders', 'Буюртмаларни кўриш', 'Просмотр заказов')},
-    {'code': 'orders.manage', 'name': t('Manage orders', 'Буюртмаларни бошқариш', 'Управление заказами')},
-    {'code': 'payments.create', 'name': t('Create payments', 'Тўлов яратиш', 'Создание платежей')},
-    {'code': 'payments.view', 'name': t('View payments', 'Тўловларни кўриш', 'Просмотр платежей')},
-    {'code': 'payments.manage', 'name': t('Manage payments', 'Тўловларни бошқариш', 'Управление платежами')},
-    {'code': 'cashdesk.manage', 'name': t('Manage cash desks', 'Кассаларни бошқариш', 'Управление кассами')},
-    {'code': 'cashshift.view', 'name': t('View shifts', 'Сменаларни кўриш', 'Просмотр смен')},
-    {'code': 'cashshift.open', 'name': t('Open shift', 'Смена очиш', 'Открытие смены')},
-    {'code': 'cashshift.close', 'name': t('Close shift', 'Смена ёпиш', 'Закрытие смены')},
-    {'code': 'payment.refund', 'name': t('Refund payment', 'Тўловни қайтариш', 'Возврат платежа')},
-    {'code': 'receipt.reprint', 'name': t('Reprint receipt', 'Чекни қайта чоп этиш', 'Повторная печать чека')},
-    {'code': 'kitchen.view', 'name': t('View kitchen queue', 'Ошхона навбатини кўриш', 'Просмотр кухонной очереди')},
-    {'code': 'kitchen.update', 'name': t('Update kitchen status', 'Ошхона статусини янгилаш', 'Обновление статуса кухни')},
-    {'code': 'kitchen.manage', 'name': t('Manage kitchen process', 'Ошхона жараёнини бошқариш', 'Управление кухонным процессом')},
-    {'code': 'reports.view', 'name': t('View reports', 'Ҳисоботларни кўриш', 'Просмотр отчетов')},
-    {'code': 'reports.shift.view', 'name': t('View shift reports', 'Смена ҳисоботларини кўриш', 'Просмотр отчетов по сменам')},
-    {'code': 'reports.shift.export', 'name': t('Export shift reports', 'Смена ҳисоботларини экспорт қилиш', 'Экспорт отчетов по сменам')},
-    {'code': 'integrations.manage', 'name': t('Manage integrations', 'Интеграцияларни бошқариш', 'Управление интеграциями')},
+    {'code': 'platform.product_owner.view', 'name': t('Mahsulot egasi platformasiga kirish', 'Маҳсулот эгаси платформасига кириш', 'Доступ к панели владельца продукта')},
+    {'code': 'partners.view', 'name': t('Biznes hamkorlarni ko‘rish', 'Бизнес ҳамкорларни кўриш', 'Просмотр бизнес-партнеров')},
+    {'code': 'partners.manage', 'name': t('Biznes hamkorlarni boshqarish', 'Бизнес ҳамкорларни бошқариш', 'Управление бизнес-партнерами')},
+    {'code': 'partners.activate', 'name': t('Biznes hamkorlarni aktivlashtirish', 'Бизнес ҳамкорларни активлаштириш', 'Активация бизнес-партнеров')},
+    {'code': 'partners.deactivate', 'name': t('Biznes hamkorlarni deaktivlashtirish', 'Бизнес ҳамкорларни деактивлаштириш', 'Деактивация бизнес-партнеров')},
+    {'code': 'partners.reset_password', 'name': t('Biznes hamkor parolini yangilash', 'Бизнес ҳамкор паролини янгилаш', 'Сброс пароля бизнес-партнера')},
+    {'code': 'tariffs.view', 'name': t('Tariflarni ko‘rish', 'Тарифларни кўриш', 'Просмотр тарифов')},
+    {'code': 'tariffs.manage', 'name': t('Tariflarni boshqarish', 'Тарифларни бошқариш', 'Управление тарифами')},
+    {'code': 'restaurants.view', 'name': t('Restoranlarni ko‘rish', 'Ресторанларни кўриш', 'Просмотр ресторанов')},
+    {'code': 'restaurants.manage', 'name': t('Restoranlarni boshqarish', 'Ресторанларни бошқариш', 'Управление ресторанами')},
+    {'code': 'restaurants.activate', 'name': t('Restoranlarni aktivlashtirish', 'Ресторанларни активлаштириш', 'Активация ресторанов')},
+    {'code': 'restaurants.deactivate', 'name': t('Restoranlarni deaktivlashtirish', 'Ресторанларни деактивлаштириш', 'Деактивация ресторанов')},
+    {'code': 'restaurants.reset_password', 'name': t('Restoran admini parolini yangilash', 'Ресторан админи паролини янгилаш', 'Сброс пароля администратора ресторана')},
+    {'code': 'dashboard.view', 'name': t('Dashboardni ko‘rish', 'Дашбордни кўриш', 'Просмотр дашборда')},
+    {'code': 'constructor.manage', 'name': t('Konstruktorni boshqarish', 'Конструкторни бошқариш', 'Управление конструктором')},
+    {'code': 'hall.view', 'name': t('Zallarni ko‘rish', 'Залларни кўриш', 'Просмотр залов')},
+    {'code': 'hall.manage', 'name': t('Zallar va joylashuvni boshqarish', 'Заллар ва жойлашувни бошқариш', 'Управление залами и схемой')},
+    {'code': 'table.manage', 'name': t('Stollar va sessiyalarni boshqarish', 'Столлар ва сессияларни бошқариш', 'Управление столами и сессиями')},
+    {'code': 'users.manage', 'name': t('Xodimlarni boshqarish', 'Ходимларни бошқариш', 'Управление сотрудниками')},
+    {'code': 'roles.manage', 'name': t('Rollarni boshqarish', 'Ролларни бошқариш', 'Управление ролями')},
+    {'code': 'catalog.view', 'name': t('Menyuni ko‘rish', 'Менюни кўриш', 'Просмотр меню')},
+    {'code': 'catalog.manage', 'name': t('Menyuni boshqarish', 'Менюни бошқариш', 'Управление меню')},
+    {'code': 'stoplist.manage', 'name': t('Stop-listni boshqarish', 'Стоп-листни бошқариш', 'Управление стоп-листом')},
+    {'code': 'orders.create', 'name': t('Buyurtma yaratish', 'Буюртма яратиш', 'Создание заказов')},
+    {'code': 'orders.view', 'name': t('Buyurtmalarni ko‘rish', 'Буюртмаларни кўриш', 'Просмотр заказов')},
+    {'code': 'orders.manage', 'name': t('Buyurtmalarni boshqarish', 'Буюртмаларни бошқариш', 'Управление заказами')},
+    {'code': 'payments.create', 'name': t('To‘lov yaratish', 'Тўлов яратиш', 'Создание платежей')},
+    {'code': 'payments.view', 'name': t('To‘lovlarni ko‘rish', 'Тўловларни кўриш', 'Просмотр платежей')},
+    {'code': 'payments.manage', 'name': t('To‘lovlarni boshqarish', 'Тўловларни бошқариш', 'Управление платежами')},
+    {'code': 'cashdesk.manage', 'name': t('Kassalarni boshqarish', 'Кассаларни бошқариш', 'Управление кассами')},
+    {'code': 'cashshift.view', 'name': t('Smenalarni ko‘rish', 'Сменаларни кўриш', 'Просмотр смен')},
+    {'code': 'cashshift.open', 'name': t('Smenani ochish', 'Сменани очиш', 'Открытие смены')},
+    {'code': 'cashshift.close', 'name': t('Smenani yopish', 'Сменани ёпиш', 'Закрытие смены')},
+    {'code': 'payment.refund', 'name': t('To‘lovni qaytarish', 'Тўловни қайтариш', 'Возврат платежа')},
+    {'code': 'receipt.reprint', 'name': t('Chekni qayta chop etish', 'Чекни қайта чоп этиш', 'Повторная печать чека')},
+    {'code': 'kitchen.view', 'name': t('Oshxona navbatini ko‘rish', 'Ошхона навбатини кўриш', 'Просмотр кухонной очереди')},
+    {'code': 'kitchen.update', 'name': t('Oshxona statusini yangilash', 'Ошхона статусини янгилаш', 'Обновление статуса кухни')},
+    {'code': 'kitchen.manage', 'name': t('Oshxona jarayonini boshqarish', 'Ошхона жараёнини бошқариш', 'Управление кухонным процессом')},
+    {'code': 'reports.view', 'name': t('Hisobotlarni ko‘rish', 'Ҳисоботларни кўриш', 'Просмотр отчетов')},
+    {'code': 'reports.shift.view', 'name': t('Smena hisobotlarini ko‘rish', 'Смена ҳисоботларини кўриш', 'Просмотр отчетов по сменам')},
+    {'code': 'reports.shift.export', 'name': t('Smena hisobotlarini eksport qilish', 'Смена ҳисоботларини экспорт қилиш', 'Экспорт отчетов по сменам')},
+    {'code': 'integrations.manage', 'name': t('Integratsiyalarni boshqarish', 'Интеграцияларни бошқариш', 'Управление интеграциями')},
 ]
 
 
 DEFAULT_ROLE_MAP = {
     'product_owner': {
-        'name': t('Product owner', 'Маҳсулот эгаси', 'Владелец продукта'),
+        'name': t('Mahsulot egasi', 'Маҳсулот эгаси', 'Владелец продукта'),
         'permissions': [
             'platform.product_owner.view',
             'partners.view',
@@ -81,7 +81,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'business_partner': {
-        'name': t('Business partner', 'Бизнес ҳамкор', 'Бизнес-партнер'),
+        'name': t('Biznes hamkor', 'Бизнес ҳамкор', 'Бизнес-партнер'),
         'permissions': [
             'tariffs.view',
             'restaurants.view',
@@ -92,7 +92,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'restaurant_admin': {
-        'name': t('Restaurant admin', 'Ресторан админи', 'Администратор ресторана'),
+        'name': t('Restoran admini', 'Ресторан админи', 'Администратор ресторана'),
         'permissions': [
             'hall.view',
             'hall.manage',
@@ -116,8 +116,12 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'owner': {
-        'name': t('Owner', 'Эга', 'Владелец'),
-        'permissions': [permission['code'] for permission in DEFAULT_PERMISSIONS if not permission['code'].startswith('partners.') and not permission['code'].startswith('tariffs.')],
+        'name': t('Ega', 'Эга', 'Владелец'),
+        'permissions': [
+            permission['code']
+            for permission in DEFAULT_PERMISSIONS
+            if not permission['code'].startswith('partners.') and not permission['code'].startswith('tariffs.')
+        ],
     },
     'admin': {
         'name': t('Administrator', 'Администратор', 'Администратор'),
@@ -140,7 +144,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'manager': {
-        'name': t('Manager', 'Менежер', 'Менеджер'),
+        'name': t('Menejer', 'Менежер', 'Менеджер'),
         'permissions': [
             'dashboard.view',
             'hall.view',
@@ -156,7 +160,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'cashier': {
-        'name': t('Cashier', 'Кассир', 'Кассир'),
+        'name': t('Kassir', 'Кассир', 'Кассир'),
         'permissions': [
             'hall.view',
             'catalog.view',
@@ -174,7 +178,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'waiter': {
-        'name': t('Waiter', 'Официант', 'Официант'),
+        'name': t('Ofitsiant', 'Официант', 'Официант'),
         'permissions': [
             'hall.view',
             'orders.create',
@@ -184,7 +188,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'chef': {
-        'name': t('Chef', 'Ошпаз', 'Повар'),
+        'name': t('Oshpaz', 'Ошпаз', 'Повар'),
         'permissions': [
             'kitchen.view',
             'kitchen.update',
@@ -193,7 +197,7 @@ DEFAULT_ROLE_MAP = {
         ],
     },
     'barman': {
-        'name': t('Barman', 'Бармен', 'Бармен'),
+        'name': t('Barmen', 'Бармен', 'Бармен'),
         'permissions': [
             'kitchen.view',
             'kitchen.update',

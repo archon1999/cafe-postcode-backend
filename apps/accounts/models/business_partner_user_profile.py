@@ -4,7 +4,7 @@ from common.models import BaseModel
 
 
 class BusinessPartnerUserProfile(BaseModel):
-    user = models.OneToOneField('accounts.User', on_delete=models.CASCADE, related_name='business_partner_profile')
+    user = models.OneToOneField('accounts.User', on_delete=models.CASCADE, related_name='business_partner_user_profile')
     business_partner = models.ForeignKey(
         'organizations.BusinessPartner',
         on_delete=models.CASCADE,

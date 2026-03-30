@@ -15,6 +15,6 @@ class UserRetrieveUpdateView(generics.RetrieveUpdateAPIView):
         restaurant = get_request_restaurant(self.request)
         return (
             User.objects.filter(restaurant=restaurant)
-            .select_related('role', 'branch', 'restaurant')
-            .prefetch_related('allowed_halls')
+            .select_related('role', 'restaurant', 'restaurant_profile', 'restaurant_profile__primary_hall')
+            .prefetch_related('restaurant_profile__allowed_halls')
         )

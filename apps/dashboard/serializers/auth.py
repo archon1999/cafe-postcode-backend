@@ -7,18 +7,23 @@ from apps.accounts.models import User
 
 class OwnerDashboardRoleSerializer(serializers.Serializer):
     id = serializers.UUIDField()
-    code = serializers.CharField()
     name = serializers.CharField()
 
 
 class OwnerDashboardUserSerializer(serializers.ModelSerializer):
     role = OwnerDashboardRoleSerializer(read_only=True)
     permission_codes = serializers.ListField(child=serializers.CharField(), read_only=True)
-    restaurant_id = serializers.UUIDField(read_only=True)
-    restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
-    branch_id = serializers.UUIDField(read_only=True, allow_null=True)
-    branch_name = serializers.CharField(source='branch.name', read_only=True, allow_null=True)
+    restaurant_id = serializers.SerializerMethodField()
+    restaurant_name = serializers.SerializerMethodField()
     is_superuser = serializers.BooleanField(read_only=True)
+
+    def get_restaurant_id(self, instance):
+        restaurant = instance.get_restaurant_scope()
+        return getattr(restaurant, 'id', None)
+
+    def get_restaurant_name(self, instance):
+        restaurant = instance.get_restaurant_scope()
+        return getattr(restaurant, 'name', None)
 
     class Meta:
         model = User
@@ -26,12 +31,9 @@ class OwnerDashboardUserSerializer(serializers.ModelSerializer):
             'id',
             'username',
             'full_name',
-            'ui_mode',
             'is_superuser',
             'restaurant_id',
             'restaurant_name',
-            'branch_id',
-            'branch_name',
             'role',
             'permission_codes',
         )
@@ -50,11 +52,8 @@ class OwnerDashboardLoginSerializer(serializers.Serializer):
             attrs['user'] = user
             return attrs
 
-        if user.ui_mode != User.UiMode.ADMIN:
-            raise serializers.ValidationError(_('User is not allowed in owner dashboard.'))
-
-        if not user.role_id or user.role.code != 'owner':
-            raise serializers.ValidationError(_('Only owner accounts can access the owner dashboard.'))
+        if 'dashboard.view' not in set(user.get_effective_permission_codes()):
+            raise serializers.ValidationError(_('Only users with dashboard access can open the owner dashboard.'))
 
         attrs['user'] = user
         return attrs

@@ -9,7 +9,7 @@ from apps.admin.support import (
     RoleListFilters,
     prevent_system_role_delete,
 )
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class PermissionListView(AdminPermissionRequiredMixin, generics.ListAPIView):
@@ -58,8 +58,7 @@ class UserListCreateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, g
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        branch = serializer.validated_data.get('branch') or get_request_branch(self.request, restaurant)
-        serializer.save(restaurant=restaurant, branch=branch)
+        serializer.save(restaurant=restaurant)
 
 
 class UserRetrieveUpdateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView):

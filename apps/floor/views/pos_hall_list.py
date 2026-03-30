@@ -8,7 +8,7 @@ from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
 from apps.organizations.services import FeatureGateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class PosHallListView(generics.ListAPIView):
@@ -18,8 +18,8 @@ class PosHallListView(generics.ListAPIView):
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        self.feature_gate_service_class().ensure_hall_access(restaurant=branch.restaurant)
+        restaurant = get_request_restaurant(self.request)
+        self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
         order_queryset = (
             Order.objects.exclude(status__in=[Order.Status.CLOSED, Order.Status.CANCELLED])
             .prefetch_related(Prefetch('kitchen_tickets', queryset=KitchenTicket.objects.order_by('-created_at')))
@@ -37,8 +37,6 @@ class PosHallListView(generics.ListAPIView):
             .order_by('table_number', 'name')
         )
 
-        return Hall.objects.filter(branch=branch, is_active=True).prefetch_related(Prefetch('tables', queryset=table_queryset)).order_by(
-            'level',
-            'sort_order',
-            'name',
-        )
+        return Hall.objects.filter(restaurant=restaurant, is_active=True).prefetch_related(
+            Prefetch('tables', queryset=table_queryset)
+        ).order_by('sort_order', 'name')

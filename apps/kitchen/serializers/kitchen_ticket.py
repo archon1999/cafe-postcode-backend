@@ -8,7 +8,6 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
     hall_name = serializers.CharField(source='order.table_session.hall.name', read_only=True)
-    hall_level = serializers.IntegerField(source='order.table_session.hall.level', read_only=True, allow_null=True)
     table_name = serializers.CharField(source='order.table_session.table.name', read_only=True)
     waiter_name = serializers.CharField(source='order.opened_by.full_name', read_only=True)
     items = serializers.SerializerMethodField()
@@ -36,7 +35,6 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             'is_printed',
             'printed_payload',
             'hall_name',
-            'hall_level',
             'table_name',
             'waiter_name',
             'items',

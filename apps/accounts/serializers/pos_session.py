@@ -19,7 +19,6 @@ class PosSessionUserSerializer(serializers.Serializer):
             return None
         return {
             'id': str(obj.role_id),
-            'code': obj.role.code,
             'name': obj.role.name,
         }
 

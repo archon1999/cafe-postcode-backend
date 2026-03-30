@@ -1,17 +1,51 @@
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
+from django.utils.text import slugify
 from rest_framework import serializers
 
-from apps.accounts.models import EmployeeCompensationProfile, EmployeeProfile, Permission, Role, User
+from apps.accounts.models import (
+    EmployeeCompensationProfile,
+    EmployeeProfile,
+    Permission,
+    RestaurantUserProfile,
+    Role,
+    User,
+)
 from apps.floor.models import Hall
-from apps.organizations.models import Branch
-from common.api.scopes import get_optional_request_restaurant, get_request_branch
+from common.api.scopes import get_optional_request_restaurant
+
+
+POS_PERMISSION_PREFIXES = (
+    'hall.',
+    'table.',
+    'orders.',
+    'payments.',
+    'cashshift.',
+    'payment.',
+    'receipt.',
+    'kitchen.',
+    'stoplist.',
+    'cashdesk.',
+)
+
+
+def get_permission_scope(code: str) -> str:
+    if code.startswith('dashboard.'):
+        return 'dashboard'
+    if any(code.startswith(prefix) for prefix in POS_PERMISSION_PREFIXES):
+        return 'pos'
+    return 'admin'
 
 
 class PermissionSerializer(serializers.ModelSerializer):
+    scope = serializers.SerializerMethodField()
+
+    def get_scope(self, instance):
+        return get_permission_scope(instance.code)
+
     class Meta:
         model = Permission
-        fields = ('id', 'code', 'name', 'description')
+        fields = ('id', 'code', 'scope', 'name', 'description')
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -26,33 +60,53 @@ class RoleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Role
-        fields = ('id', 'code', 'name', 'description', 'is_system', 'permissions', 'permission_ids')
+        fields = ('id', 'name', 'description', 'is_system', 'permissions', 'permission_ids')
         read_only_fields = ('is_system',)
+
+    def _generate_internal_code(self, name: str, instance: Role | None = None) -> str:
+        base_code = slugify(name).replace('-', '_') or 'role'
+        code = base_code
+        suffix = 2
+
+        queryset = Role.objects.all()
+        if instance is not None:
+            queryset = queryset.exclude(pk=instance.pk)
+
+        while queryset.filter(code=code).exists():
+            code = f'{base_code}_{suffix}'
+            suffix += 1
+
+        return code
+
+    def create(self, validated_data):
+        validated_data['code'] = self._generate_internal_code(validated_data.get('name', 'role'))
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        if 'name' in validated_data and validated_data['name'] != instance.name:
+            validated_data['code'] = self._generate_internal_code(validated_data['name'], instance=instance)
+        return super().update(instance, validated_data)
 
 
 class UserSerializer(serializers.ModelSerializer):
     role = RoleSerializer(read_only=True)
     role_id = serializers.PrimaryKeyRelatedField(source='role', queryset=Role.objects.all(), write_only=True)
     permission_codes = serializers.ListField(child=serializers.CharField(), read_only=True)
-    restaurant_id = serializers.UUIDField(read_only=True)
-    branch_id = serializers.PrimaryKeyRelatedField(
-        source='branch',
-        queryset=Branch.objects.all(),
-        required=False,
-        allow_null=True,
-    )
+    restaurant_id = serializers.SerializerMethodField()
+    business_partner_id = serializers.SerializerMethodField()
     primary_hall_id = serializers.PrimaryKeyRelatedField(
-        source='primary_hall',
+        source='restaurant_profile.primary_hall',
         queryset=Hall.objects.all(),
         required=False,
         allow_null=True,
     )
     allowed_hall_ids = serializers.PrimaryKeyRelatedField(
-        source='allowed_halls',
+        source='restaurant_profile.allowed_halls',
         queryset=Hall.objects.all(),
         many=True,
         required=False,
     )
+    hall_switch_permission = serializers.BooleanField(source='restaurant_profile.hall_switch_permission', required=False)
     passport_series = serializers.CharField(required=False, allow_blank=True, write_only=True)
     pnfl = serializers.CharField(required=False, allow_blank=True, write_only=True)
     birth_date = serializers.DateField(required=False, allow_null=True, write_only=True)
@@ -77,12 +131,11 @@ class UserSerializer(serializers.ModelSerializer):
             'username',
             'full_name',
             'phone',
-            'ui_mode',
             'is_active',
             'role',
             'role_id',
             'restaurant_id',
-            'branch_id',
+            'business_partner_id',
             'hall_switch_permission',
             'primary_hall_id',
             'allowed_hall_ids',
@@ -95,69 +148,55 @@ class UserSerializer(serializers.ModelSerializer):
             'kpi_percent',
             'permission_codes',
         )
-        read_only_fields = ('restaurant_id',)
+        read_only_fields = ('restaurant_id', 'business_partner_id')
 
-    @staticmethod
-    def _coerce_bool(value) -> bool:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in {'1', 'true', 'yes', 'on'}
-        return bool(value)
+    def _get_target_restaurant(self):
+        request = self.context.get('request')
+        request_restaurant = get_optional_request_restaurant(request) if request is not None else None
+        if request_restaurant is not None:
+            return request_restaurant
 
-    def _is_target_superuser(self) -> bool:
-        request_data = getattr(self.context.get('request'), 'data', {}) or {}
+        if self.instance is not None:
+            restaurant = self.instance.get_restaurant_scope()
+            if restaurant is not None:
+                return restaurant
 
-        if 'is_superuser' in request_data:
-            return self._coerce_bool(request_data.get('is_superuser'))
-        if 'isSuperuser' in request_data:
-            return self._coerce_bool(request_data.get('isSuperuser'))
+        if request is not None and getattr(request.user, 'is_authenticated', False):
+            return request.user.get_restaurant_scope()
 
-        return bool(getattr(self.instance, 'is_superuser', False))
+        return None
+
+    def get_restaurant_id(self, instance):
+        restaurant = instance.get_restaurant_scope()
+        return getattr(restaurant, 'id', None)
+
+    def get_business_partner_id(self, instance):
+        business_partner = instance.get_business_partner_scope()
+        return getattr(business_partner, 'id', None)
 
     def validate(self, attrs):
-        request = self.context.get('request')
+        attrs = super().validate(attrs)
         request_data = getattr(self.context.get('request'), 'data', {}) or {}
         pin = request_data.get('pin')
-        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
-        primary_hall = attrs.get('primary_hall', getattr(self.instance, 'primary_hall', None))
-        target_is_superuser = self._is_target_superuser()
+        restaurant = self._get_target_restaurant()
+        restaurant_profile_data = attrs.get('restaurant_profile', {}) or {}
+        primary_hall = restaurant_profile_data.get(
+            'primary_hall',
+            getattr(getattr(self.instance, 'restaurant_profile', None), 'primary_hall', None),
+        )
 
-        request_restaurant = get_optional_request_restaurant(request)
-
-        if request.user.is_superuser:
-            if request_restaurant is not None and branch is not None and branch.restaurant_id != request_restaurant.id:
-                raise serializers.ValidationError(
-                    {'branchId': _('Selected branch does not belong to the selected restaurant.')}
-                )
-            if branch is None and not target_is_superuser:
-                raise serializers.ValidationError({'branchId': _('Branch assignment is required for non-superuser users.')})
+        if 'allowed_halls' in restaurant_profile_data:
+            allowed_halls = list(restaurant_profile_data['allowed_halls'])
+        elif getattr(self.instance, 'restaurant_profile', None):
+            allowed_halls = list(self.instance.restaurant_profile.allowed_halls.all())
         else:
-            request_branch = get_request_branch(request, request_restaurant)
-            if branch is None:
-                branch = request_branch
-                attrs['branch'] = request_branch
-            elif branch.id != request_branch.id:
-                raise serializers.ValidationError(
-                    {'branchId': _('You can only assign users to your current branch.')}
-                )
+            allowed_halls = []
 
-        if primary_hall is not None and branch is None:
-            raise serializers.ValidationError({'primaryHallId': _('Primary hall requires a branch assignment.')})
+        if restaurant is not None and primary_hall is not None and primary_hall.restaurant_id != restaurant.id:
+            raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected restaurant.')})
 
-        if primary_hall is not None and branch is not None and primary_hall.branch_id != branch.id:
-            raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected branch.')})
-
-        if 'allowed_halls' in attrs:
-            allowed_halls = attrs['allowed_halls']
-
-            if branch is None and allowed_halls:
-                raise serializers.ValidationError({'allowedHallIds': _('Allowed halls require a branch assignment.')})
-
-            if branch is not None and any(hall.branch_id != branch.id for hall in allowed_halls):
-                raise serializers.ValidationError(
-                    {'allowedHallIds': _('All allowed halls must belong to the selected branch.')}
-                )
+        if restaurant is not None and any(hall.restaurant_id != restaurant.id for hall in allowed_halls):
+            raise serializers.ValidationError({'allowedHallIds': _('All allowed halls must belong to the selected restaurant.')})
 
         if pin in (None, ''):
             return attrs
@@ -169,12 +208,9 @@ class UserSerializer(serializers.ModelSerializer):
         if len(pin) != 4:
             raise serializers.ValidationError({'pin': _('PIN code must be exactly 4 digits.')})
 
-        duplicate_users = (
-            User.objects.exclude(pin_code='')
-            .filter(Q(ui_mode=User.UiMode.POS) | Q(is_superuser=True))
-            .select_related('role')
-        )
-
+        duplicate_users = User.objects.exclude(restaurant_profile__pin_code='').select_related('role', 'restaurant_profile')
+        if restaurant is not None:
+            duplicate_users = duplicate_users.filter(restaurant_profile__restaurant=restaurant)
         if self.instance:
             duplicate_users = duplicate_users.exclude(pk=self.instance.pk)
 
@@ -187,16 +223,20 @@ class UserSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         profile = getattr(instance, 'employee_profile', None)
         compensation = getattr(instance, 'employee_compensation_profile', None)
+        restaurant_profile = getattr(instance, 'restaurant_profile', None)
 
         data['passport_series'] = profile.passport_series if profile else ''
         data['pnfl'] = profile.pnfl if profile else ''
         data['birth_date'] = profile.birth_date.isoformat() if profile and profile.birth_date else None
-        data['employment_status'] = (
-            profile.employment_status if profile else EmployeeProfile.EmploymentStatus.ACTIVE
-        )
+        data['employment_status'] = profile.employment_status if profile else EmployeeProfile.EmploymentStatus.ACTIVE
         data['salary_type'] = compensation.salary_type if compensation and compensation.salary_type else None
         data['base_amount'] = float(compensation.base_amount) if compensation and compensation.base_amount is not None else None
         data['kpi_percent'] = compensation.kpi_percent if compensation else None
+        data['primary_hall_id'] = getattr(restaurant_profile, 'primary_hall_id', None)
+        data['allowed_hall_ids'] = (
+            list(restaurant_profile.allowed_halls.values_list('id', flat=True)) if restaurant_profile else []
+        )
+        data['hall_switch_permission'] = bool(getattr(restaurant_profile, 'hall_switch_permission', False))
         return data
 
     @staticmethod
@@ -262,32 +302,61 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(profile, attr, value)
         profile.save()
 
+    def _save_restaurant_profile(self, instance, restaurant_profile_data, pin):
+        restaurant = instance.get_restaurant_scope()
+        if restaurant is None:
+            return None
+
+        restaurant_profile, _ = RestaurantUserProfile.objects.get_or_create(
+            user=instance,
+            defaults={'restaurant': restaurant},
+        )
+        if restaurant_profile.restaurant_id != restaurant.id:
+            restaurant_profile.restaurant = restaurant
+
+        if 'hall_switch_permission' in restaurant_profile_data:
+            restaurant_profile.hall_switch_permission = restaurant_profile_data['hall_switch_permission']
+        if 'primary_hall' in restaurant_profile_data:
+            restaurant_profile.primary_hall = restaurant_profile_data['primary_hall']
+
+        restaurant_profile.save()
+
+        allowed_halls = restaurant_profile_data.get('allowed_halls')
+        if allowed_halls is not None:
+            restaurant_profile.allowed_halls.set(allowed_halls)
+
+        if pin:
+            instance.set_pin(pin)
+        return restaurant_profile
+
     def create(self, validated_data):
-        allowed_halls = validated_data.pop('allowed_halls', [])
+        restaurant_profile_data = validated_data.pop('restaurant_profile', {})
         profile_data = self._extract_profile_data(validated_data)
         compensation_data = self._extract_compensation_data(validated_data)
         self._normalize_profile_status(validated_data, profile_data)
         self._validate_compensation_data(compensation_data)
-        password = self.context['request'].data.get('password')
-        pin = self.context['request'].data.get('pin')
-        branch = validated_data.get('branch')
 
-        validated_data['restaurant'] = branch.restaurant if branch is not None else None
+        request = self.context.get('request')
+        password = request.data.get('password') if request else None
+        pin = request.data.get('pin') if request else None
+        restaurant = self._get_target_restaurant()
+        if restaurant is not None:
+            validated_data['restaurant'] = restaurant
+
         user = User.objects.create(**validated_data)
+
         if password:
             user.set_password(password)
-        if pin:
-            user.set_pin(pin)
-        user.save(update_fields=['password', 'pin_code'])
-        if allowed_halls:
-            user.allowed_halls.set(allowed_halls)
+            user.save(update_fields=['password'])
+
+        self._save_restaurant_profile(user, restaurant_profile_data, pin)
         self._save_profile(user, profile_data)
         self._save_compensation(user, compensation_data)
         user.refresh_from_db()
         return user
 
     def update(self, instance, validated_data):
-        allowed_halls = validated_data.pop('allowed_halls', None)
+        restaurant_profile_data = validated_data.pop('restaurant_profile', {})
         profile_data = self._extract_profile_data(validated_data)
         compensation_data = self._extract_compensation_data(validated_data)
         current_status = getattr(
@@ -297,29 +366,18 @@ class UserSerializer(serializers.ModelSerializer):
         )
         self._normalize_profile_status(validated_data, profile_data, current_status=current_status)
         self._validate_compensation_data(compensation_data)
-        branch = validated_data.get('branch', instance.branch)
-        validated_data['restaurant'] = branch.restaurant if branch is not None else None
-        branch_changed = instance.branch_id != getattr(branch, 'id', None)
-
-        if branch is None:
-            validated_data['primary_hall'] = None
-            if allowed_halls is None:
-                allowed_halls = []
-        elif branch_changed and allowed_halls is None:
-            allowed_halls = []
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
-        password = self.context['request'].data.get('password')
-        pin = self.context['request'].data.get('pin')
+        request = self.context.get('request')
+        password = request.data.get('password') if request else None
+        pin = request.data.get('pin') if request else None
         if password:
             instance.set_password(password)
-        if pin:
-            instance.set_pin(pin)
         instance.save()
-        if allowed_halls is not None:
-            instance.allowed_halls.set(allowed_halls)
+
+        self._save_restaurant_profile(instance, restaurant_profile_data, pin)
         self._save_profile(instance, profile_data)
         self._save_compensation(instance, compensation_data)
         instance.refresh_from_db()

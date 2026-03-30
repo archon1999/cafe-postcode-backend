@@ -288,30 +288,15 @@ class AdminApiTests(APITestCase):
         self.assertEqual(response.data['sales_total'], 120000)
         self.assertEqual(response.data['orders_count'], 1)
 
-    def test_branch_and_hall_create_work_without_code(self):
+    def test_hall_create_works_without_branch_fields(self):
         self.authenticate()
-
-        branch_response = self.client.post(
-            '/api/v1/admin/constructor/branches/',
-            {
-                'name': 'New Branch',
-                'address': 'Andijan',
-                'phone': '+998900000011',
-                'is_default': False,
-            },
-            format='json',
-        )
-        self.assertEqual(branch_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(branch_response.data['name'], 'New Branch')
-        self.assertEqual(branch_response.data['service_fee_percent'], 10)
 
         hall_response = self.client.post(
             '/api/v1/admin/floor/halls/',
             {
-                'branch': str(self.branch.id),
-                'level': 1,
                 'name': 'Blue Hall',
                 'description': 'Test hall',
+                'grid_columns': 8,
                 'sort_order': 0,
                 'is_active': True,
             },
@@ -319,18 +304,6 @@ class AdminApiTests(APITestCase):
         )
         self.assertEqual(hall_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(hall_response.data['name'], 'Blue Hall')
-
-    def test_branch_service_fee_percent_can_be_updated(self):
-        self.authenticate()
-
-        response = self.client.patch(
-            f'/api/v1/admin/constructor/branches/{self.branch.id}/',
-            {'service_fee_percent': 12},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['service_fee_percent'], 12)
 
     def test_admin_catalog_category_create_and_update(self):
         self.authenticate()

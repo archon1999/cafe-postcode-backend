@@ -63,18 +63,15 @@ class CatalogCategorySerializer(MxikCodeValidationMixin, serializers.ModelSerial
         model = CatalogCategory
         fields = (
             'id',
-            'branch',
             'name',
             'name_uz',
             'name_uz_crl',
             'name_ru',
             'mxik_code',
             'mxik_name',
-            'kind',
             'sort_order',
             'is_active',
         )
-        read_only_fields = ('branch',)
         extra_kwargs = {
             'mxik_code': {'required': True, 'allow_blank': False},
             'mxik_name': {'required': False, 'allow_blank': True},
@@ -90,7 +87,6 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
         model = CatalogItem
         fields = (
             'id',
-            'branch',
             'category',
             'category_name',
             'prep_station',
@@ -101,17 +97,14 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
             'name_ru',
             'mxik_code',
             'mxik_name',
-            'kind',
             'description',
             'description_uz',
             'description_uz_crl',
             'description_ru',
-            'sku',
             'price',
             'is_active',
             'is_stoplisted',
         )
-        read_only_fields = ('branch',)
         extra_kwargs = {
             'mxik_code': {'required': False, 'allow_blank': True},
             'mxik_name': {'required': False, 'allow_blank': True},

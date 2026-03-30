@@ -64,8 +64,9 @@ def get_request_restaurant(request) -> Restaurant:
             {'restaurantId': _('Restaurant selection is required for superuser admin requests.')}
         )
 
-    if getattr(request.user, 'restaurant_id', None):
-        return request.user.restaurant
+    user_restaurant = getattr(request.user, 'get_restaurant_scope', lambda: None)()
+    if user_restaurant is not None:
+        return user_restaurant
 
     restaurant = Restaurant.objects.order_by('created_at').first()
     if restaurant is None:

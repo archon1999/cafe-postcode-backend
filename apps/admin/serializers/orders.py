@@ -71,7 +71,7 @@ class AdminPaymentSerializer(serializers.ModelSerializer):
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
     cash_desk_name = serializers.CharField(source='cash_desk.name', read_only=True)
     received_by_name = serializers.CharField(source='received_by.full_name', read_only=True)
-    cash_shift_id = serializers.UUIDField(source='cash_shift_id', read_only=True)
+    cash_shift_id = serializers.UUIDField(read_only=True)
     refunds_total = serializers.SerializerMethodField()
     is_refunded = serializers.SerializerMethodField()
 
@@ -137,7 +137,6 @@ class AdminOrderSerializer(serializers.ModelSerializer):
     table_id = serializers.UUIDField(source='table_session.table_id', read_only=True)
     table_name = serializers.CharField(source='table_session.table.name', read_only=True)
     hall_name = serializers.CharField(source='table_session.hall.name', read_only=True)
-    hall_level = serializers.IntegerField(source='table_session.hall.level', read_only=True, allow_null=True)
     distribution_point_name = serializers.CharField(source='distribution_point.name', read_only=True)
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True)
@@ -168,7 +167,6 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             'table_id',
             'table_name',
             'hall_name',
-            'hall_level',
             'distribution_point',
             'distribution_point_name',
             'opened_by',

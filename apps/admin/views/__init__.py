@@ -9,8 +9,6 @@ from .catalog import (
     MxikSearchView,
 )
 from .constructor import (
-    BranchDetailView,
-    BranchListCreateView,
     CashDeskDetailView,
     CashDeskListCreateView,
     DeviceDetailView,
@@ -93,8 +91,6 @@ __all__ = [
     'BusinessPartnerDetailView',
     'BusinessPartnerListCreateView',
     'BusinessPartnerResetPasswordView',
-    'BranchDetailView',
-    'BranchListCreateView',
     'CategoryDetailView',
     'CategoryListCreateView',
     'DashboardSummaryView',

@@ -125,7 +125,7 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         return getattr(self, 'restaurant_profile', None)
 
     def get_business_partner_profile(self):
-        return getattr(self, 'business_partner_profile', None)
+        return getattr(self, 'business_partner_user_profile', None)
 
     def get_restaurant_scope(self):
         profile = self.get_restaurant_profile()
@@ -140,17 +140,20 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         return self.business_partner
 
     def set_pin(self, raw_pin: str):
+        hashed_pin = make_password(raw_pin)
+        self.pin_code = hashed_pin
         profile = self.get_restaurant_profile()
-        if profile is None:
-            raise ValueError('Restaurant user profile is required to manage PIN codes.')
-        profile.pin_code = make_password(raw_pin)
-        profile.save(update_fields=['pin_code'])
+        if profile is not None:
+            profile.pin_code = hashed_pin
+            profile.save(update_fields=['pin_code'])
 
     def check_pin(self, raw_pin: str) -> bool:
         profile = self.get_restaurant_profile()
-        if profile is None or not profile.pin_code:
+        if profile is not None and profile.pin_code and check_password(raw_pin, profile.pin_code):
+            return True
+        if not self.pin_code:
             return False
-        return check_password(raw_pin, profile.pin_code)
+        return check_password(raw_pin, self.pin_code)
 
     @property
     def permission_codes(self):

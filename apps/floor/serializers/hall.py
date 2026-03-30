@@ -12,8 +12,6 @@ class HallSerializer(serializers.ModelSerializer):
         model = Hall
         fields = (
             'id',
-            'branch',
-            'level',
             'name',
             'description',
             'grid_columns',

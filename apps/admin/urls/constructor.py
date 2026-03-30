@@ -1,8 +1,6 @@
 from django.urls import path
 
 from apps.admin.views import (
-    BranchDetailView,
-    BranchListCreateView,
     CashDeskDetailView,
     CashDeskListCreateView,
     DeviceDetailView,
@@ -26,8 +24,6 @@ from apps.admin.views import (
 
 urlpatterns = [
     path('constructor/restaurant/', RestaurantConfigView.as_view()),
-    path('constructor/branches/', BranchListCreateView.as_view()),
-    path('constructor/branches/<uuid:pk>/', BranchDetailView.as_view()),
     path('restaurants/<uuid:restaurant_id>/feature-config/', RestaurantFeatureConfigView.as_view()),
     path('floor/halls/', HallListCreateView.as_view()),
     path('floor/halls/<uuid:pk>/', HallDetailView.as_view()),

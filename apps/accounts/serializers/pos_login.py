@@ -1,7 +1,8 @@
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.accounts.models import EmployeeProfile, RestaurantUserProfile, User
+from apps.accounts.models import EmployeeProfile, User
 from apps.organizations.models import Restaurant
 
 
@@ -16,13 +17,15 @@ class PosLoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         restaurant = attrs['restaurant_id']
-        candidate_profiles = RestaurantUserProfile.objects.filter(restaurant=restaurant).select_related(
-            'user',
-            'user__role',
-            'user__employee_profile',
+        candidate_users = User.objects.filter(
+            Q(restaurant_profile__restaurant=restaurant) | Q(restaurant=restaurant)
+        ).select_related(
+            'role',
+            'employee_profile',
             'restaurant',
+            'restaurant_profile__restaurant',
         )
-        matched_users = [profile.user for profile in candidate_profiles if profile.user.can_access_pos_ui and profile.user.check_pin(attrs['pin'])]
+        matched_users = [user for user in candidate_users.distinct() if user.can_access_pos_ui and user.check_pin(attrs['pin'])]
 
         if not matched_users:
             raise serializers.ValidationError({'pin': _('Invalid PIN code.')})

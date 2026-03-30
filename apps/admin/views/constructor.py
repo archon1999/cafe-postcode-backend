@@ -3,7 +3,6 @@ from rest_framework import generics
 
 from apps.admin.permissions import AdminPermissionRequiredMixin
 from apps.admin.serializers import (
-    BranchSerializer,
     CashDeskSerializer,
     DeviceSerializer,
     DiningTableSerializer,
@@ -16,7 +15,6 @@ from apps.admin.serializers import (
 )
 from apps.admin.support import (
     AdminSuperuserRequiredMixin,
-    BranchListFilters,
     CashDeskListFilters,
     DeviceListFilters,
     DiningTableListFilters,
@@ -33,8 +31,15 @@ from apps.organizations.models import Branch, CashDesk, Device, DistributionPoin
 from common.api.scopes import get_request_restaurant
 
 
+def get_restaurant_default_branch_compat(restaurant: Restaurant) -> Branch:
+    branch = restaurant.branches.filter(is_default=True).first() or restaurant.branches.order_by('created_at').first()
+    if branch is None:
+        raise Branch.DoesNotExist(f"Restaurant {restaurant.pk} has no branch for compatibility fallback.")
+    return branch
+
+
 def get_restaurants_queryset_for_request(request):
-    queryset = Restaurant.objects.prefetch_related('branches', 'feature_config').select_related('business_partner').order_by('name')
+    queryset = Restaurant.objects.prefetch_related('feature_config').select_related('business_partner').order_by('name')
     if request.user.is_superuser or request.user.has_permission_code('partners.view') or request.user.has_permission_code('partners.manage'):
         return queryset
 
@@ -67,26 +72,6 @@ class FeatureConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPI
         return feature_config
 
 
-class BranchListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
-    serializer_class = BranchSerializer
-    permission_code = 'constructor.manage'
-
-    def get_queryset(self):
-        queryset = filter_constructor_queryset_by_restaurant(Branch.objects.select_related('restaurant'), self.request)
-        return BranchListFilters.from_request(self.request).apply(queryset)
-
-    def perform_create(self, serializer):
-        serializer.save(restaurant=get_request_restaurant(self.request))
-
-
-class BranchDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = BranchSerializer
-    permission_code = 'constructor.manage'
-
-    def get_queryset(self):
-        return filter_constructor_queryset_by_restaurant(Branch.objects.select_related('restaurant'), self.request)
-
-
 class FeatureConfigListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = FeatureConfigSerializer
     permission_code = 'constructor.manage'
@@ -116,14 +101,14 @@ class HallListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
     def get_queryset(self):
         queryset = (
             Hall.objects.all()
-            .select_related('branch')
             .prefetch_related('tables__table_sessions')
         )
         queryset = filter_constructor_queryset_by_restaurant(queryset, self.request)
         return HallListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
-        serializer.save(restaurant=get_request_restaurant(self.request))
+        restaurant = get_request_restaurant(self.request)
+        serializer.save(restaurant=restaurant, branch=get_restaurant_default_branch_compat(restaurant))
 
 
 class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -135,7 +120,6 @@ class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
     def get_queryset(self):
         return (
             filter_constructor_queryset_by_restaurant(Hall.objects.all(), self.request)
-            .select_related('branch')
             .prefetch_related('tables__table_sessions')
         )
 
@@ -179,7 +163,8 @@ class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
         return PrepStationListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
-        serializer.save(restaurant=get_request_restaurant(self.request))
+        restaurant = get_request_restaurant(self.request)
+        serializer.save(restaurant=restaurant, branch=get_restaurant_default_branch_compat(restaurant))
 
 
 class PrepStationDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -239,14 +224,13 @@ class TableSessionListCreateView(AdminPermissionRequiredMixin, generics.ListCrea
     def get_queryset(self):
         queryset = (
             TableSession.objects.all()
-            .select_related('branch', 'hall', 'table', 'opened_by', 'assigned_waiter', 'merged_into')
+            .select_related('hall', 'table', 'opened_by', 'assigned_waiter', 'merged_into')
         )
         queryset = filter_constructor_queryset_by_restaurant(queryset, self.request)
         return TableSessionListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
-        hall = serializer.validated_data['hall']
-        serializer.save(restaurant=get_request_restaurant(self.request), branch=hall.branch)
+        serializer.save(restaurant=get_request_restaurant(self.request))
 
 
 class TableSessionDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -258,7 +242,7 @@ class TableSessionDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpda
     def get_queryset(self):
         return (
             filter_constructor_queryset_by_restaurant(TableSession.objects.all(), self.request)
-            .select_related('branch', 'hall', 'table', 'opened_by', 'assigned_waiter', 'merged_into')
+            .select_related('hall', 'table', 'opened_by', 'assigned_waiter', 'merged_into')
         )
 
 
@@ -268,7 +252,7 @@ class DeviceListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIV
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(
-            Device.objects.select_related('branch', 'primary_hall').prefetch_related('allowed_halls'),
+            Device.objects.select_related('primary_hall').prefetch_related('allowed_halls'),
             self.request,
         )
         return DeviceListFilters.from_request(self.request).apply(queryset)
@@ -283,7 +267,7 @@ class DeviceDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDest
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(
-            Device.objects.select_related('branch', 'primary_hall').prefetch_related('allowed_halls'),
+            Device.objects.select_related('primary_hall').prefetch_related('allowed_halls'),
             self.request,
         )
 

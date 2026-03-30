@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import CatalogItemSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class ItemDetailView(generics.RetrieveUpdateAPIView):
@@ -12,5 +12,5 @@ class ItemDetailView(generics.RetrieveUpdateAPIView):
     permission_code = 'catalog.manage'
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        return CatalogItem.objects.filter(branch=branch).select_related('category', 'prep_station')
+        restaurant = get_request_restaurant(self.request)
+        return CatalogItem.objects.filter(restaurant=restaurant).select_related('category', 'prep_station')

@@ -8,14 +8,12 @@ class CatalogCategorySerializer(serializers.ModelSerializer):
         model = CatalogCategory
         fields = (
             'id',
-            'branch',
             'name',
             'name_uz',
             'name_uz_crl',
             'name_ru',
             'mxik_code',
             'mxik_name',
-            'kind',
             'sort_order',
             'is_active',
         )
