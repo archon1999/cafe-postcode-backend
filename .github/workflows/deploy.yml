@@ -3,7 +3,7 @@ name: Deploy Backend
 on:
   push:
     branches:
-      - main
+      - production
   workflow_dispatch:
 
 jobs:
@@ -24,6 +24,6 @@ jobs:
             cd /home/postcode/backend
             test -f core/settings/config.env
             mkdir -p .runtime/staticfiles .runtime/media .runtime/var
-            git checkout main
-            git pull --ff-only origin main
+            git checkout production
+            git pull --ff-only origin production
             docker compose up -d --build --remove-orphans
