@@ -5,6 +5,6 @@ from .base_report import BaseReportView
 
 class DashboardSummaryView(BaseReportView):
     def get(self, request):
-        branch = self.get_branch()
+        restaurant = self.get_restaurant()
         period = self.get_period()
-        return Response(self.get_summary_payload(branch, period))
+        return Response(self.get_summary_payload(restaurant, period))

@@ -43,7 +43,6 @@ class OrderTicketSyncService:
                 prep_station_id=station_id,
                 defaults={
                     'restaurant': order.restaurant,
-                    'branch': order.branch,
                     'status': ticket_status,
                     'routed_via': feature_config.kitchen_mode,
                 },

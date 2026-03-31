@@ -3,7 +3,7 @@ from rest_framework import generics
 from apps.admin.permissions import AdminPermissionRequiredMixin
 from apps.admin.serializers import IntegrationConfigSerializer
 from apps.admin.support import integration_config_queryset
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class IntegrationConfigListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
@@ -15,7 +15,7 @@ class IntegrationConfigListCreateView(AdminPermissionRequiredMixin, generics.Lis
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)
 
 
 class IntegrationConfigDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):

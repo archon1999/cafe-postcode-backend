@@ -20,4 +20,4 @@ class DeviceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Device
-        fields = ('id', 'name', 'code', 'mode', 'branch', 'primary_hall_id', 'allowed_hall_ids', 'is_active')
+        fields = ('id', 'name', 'mode', 'primary_hall_id', 'allowed_hall_ids', 'is_active')

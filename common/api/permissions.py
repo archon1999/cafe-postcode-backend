@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 
 from rest_framework import permissions
 
+from apps.accounts.models import PermissionEndpoint
+
 User = get_user_model()
 
 
@@ -92,21 +94,69 @@ class IsAdminOrReadOnly(permissions.BasePermission):
                request.method in permissions.SAFE_METHODS
 
 
-class HasPermissionCode(permissions.BasePermission):
-    permission_code = ''
+AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
+    ('GET', 'api/v1/pos/auth/me/'),
+    ('POST', 'api/v1/pos/auth/logout/'),
+    ('GET', 'api/v1/admin/auth/me/'),
+    ('POST', 'api/v1/admin/auth/logout/'),
+    ('POST', 'api/v1/dashboard/auth/logout/'),
+}
+
+
+class EndpointRBACPermission(permissions.BasePermission):
+    message = 'You do not have permission to perform this action.'
+
+    @staticmethod
+    def _allows_any(view) -> bool:
+        return any(
+            isinstance(permission_class, type) and issubclass(permission_class, permissions.AllowAny)
+            for permission_class in getattr(view, 'permission_classes', [])
+        )
+
+    @staticmethod
+    def _get_route(request) -> str:
+        resolver_match = getattr(request, 'resolver_match', None)
+        return getattr(resolver_match, 'route', '') or ''
+
+    @staticmethod
+    def _normalize_method(method: str) -> str:
+        normalized_method = method.upper()
+        if normalized_method == 'HEAD':
+            return 'GET'
+        return normalized_method
 
     def has_permission(self, request, view):
+        if request.method.upper() == 'OPTIONS':
+            return True
+
+        if self._allows_any(view):
+            return True
+
         if not request.user or not request.user.is_authenticated:
             return False
+
+        route = self._get_route(request)
+        method = self._normalize_method(request.method)
+
+        if (method, route) in AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS:
+            return True
 
         if request.user.is_superuser:
             return True
 
-        if hasattr(view, 'get_permission_code'):
-            code = view.get_permission_code()
-        else:
-            code = getattr(view, 'permission_code', self.permission_code)
-        if not code:
-            return True
+        if not route:
+            return False
 
-        return request.user.has_permission_code(code)
+        permission_codes = request.user.permission_codes
+        if not permission_codes:
+            return False
+
+        return PermissionEndpoint.objects.filter(
+            url=route,
+            method=method,
+            permission__code__in=permission_codes,
+        ).exists()
+
+
+class HasPermissionCode(EndpointRBACPermission):
+    """Backward-compatible alias while views are migrated to endpoint RBAC."""

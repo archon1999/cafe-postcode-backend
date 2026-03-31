@@ -8,7 +8,7 @@ from apps.orders.serializers import OrderSerializer, PaymentSerializer, ReceiptS
 from apps.orders.services import CashShiftService, OrderPaymentService
 from apps.organizations.services import FeatureGateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class PaymentCreateView(APIView):
@@ -20,10 +20,14 @@ class PaymentCreateView(APIView):
 
     @transaction.atomic
     def post(self, request, pk):
-        branch = get_request_branch(request)
-        self.feature_gate_service_class().ensure_cashier_access(restaurant=branch.restaurant)
-        order = generics.get_object_or_404(Order.objects.select_related('table_session__table'), pk=pk, branch=branch)
-        cash_shift = self.shift_service_class().get_active_shift(branch=branch, user=request.user)
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_related('table_session__table'),
+            pk=pk,
+            restaurant=restaurant,
+        )
+        cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
         result = self.order_payment_service_class().process(
             order=order,
             payload=request.data,

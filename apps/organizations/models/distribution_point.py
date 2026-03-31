@@ -11,13 +11,6 @@ class DistributionPoint(BaseModel):
         DELIVERY = 'delivery', 'Delivery'
 
     restaurant = models.ForeignKey('organizations.Restaurant', on_delete=models.CASCADE, related_name='distribution_points')
-    branch = models.ForeignKey(
-        'organizations.Branch',
-        on_delete=models.SET_NULL,
-        related_name='distribution_points',
-        null=True,
-        blank=True,
-    )
     name = models.CharField(max_length=255)
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.HALL)
     integration_channel = models.CharField(max_length=120, blank=True)

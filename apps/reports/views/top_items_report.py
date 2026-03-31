@@ -7,7 +7,7 @@ from .base_report import BaseReportView
 
 class TopItemsReportView(BaseReportView):
     def get(self, request):
-        branch = self.get_branch()
+        restaurant = self.get_restaurant()
         period = self.get_period()
-        rows = get_top_items_report_queryset(branch, period).order_by('-quantity', '-revenue')[:10]
+        rows = get_top_items_report_queryset(restaurant, period).order_by('-quantity', '-revenue')[:10]
         return Response(list(rows))

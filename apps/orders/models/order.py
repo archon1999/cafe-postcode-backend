@@ -22,7 +22,6 @@ class Order(BaseModel):
         CANCELLED = 'cancelled', 'Cancelled'
 
     restaurant = models.ForeignKey('organizations.Restaurant', on_delete=models.CASCADE, related_name='orders')
-    branch = models.ForeignKey('organizations.Branch', on_delete=models.CASCADE, related_name='orders')
     table_session = models.ForeignKey(
         'floor.TableSession',
         on_delete=models.SET_NULL,
@@ -63,12 +62,12 @@ class Order(BaseModel):
     class Meta:
         ordering = ('-created_at',)
         indexes = [
-            scoped_status_index('branch', name='order_branch_status_idx'),
-            scoped_timestamp_index('branch', 'closed_at', name='order_branch_closed_idx'),
-            scoped_timestamp_index('branch', 'created_at', name='order_branch_created_idx'),
+            scoped_status_index('restaurant', name='order_restaurant_status_idx'),
+            scoped_timestamp_index('restaurant', 'closed_at', name='order_restaurant_closed_idx'),
+            scoped_timestamp_index('restaurant', 'created_at', name='order_restaurant_created_idx'),
         ]
         constraints = [
-            models.UniqueConstraint(fields=('branch', 'order_number'), name='orders_unique_branch_order_number'),
+            models.UniqueConstraint(fields=('restaurant', 'order_number'), name='orders_unique_restaurant_order_number'),
         ]
 
     def __str__(self):
@@ -82,7 +81,7 @@ class Order(BaseModel):
         service_fee = 0
 
         if self.channel == self.Channel.HALL:
-            percent = getattr(self.branch, 'service_fee_percent', self.DEFAULT_HALL_SERVICE_FEE_PERCENT) or 0
+            percent = getattr(self.restaurant, 'service_fee_percent', self.DEFAULT_HALL_SERVICE_FEE_PERCENT) or 0
             service_fee = round(subtotal * percent / 100)
 
         self.subtotal = subtotal

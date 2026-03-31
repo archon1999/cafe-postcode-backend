@@ -4,7 +4,6 @@ from rest_framework import serializers
 
 from apps.accounts.models import EmployeeCompensationProfile, EmployeeProfile, Role, User
 from apps.floor.models import Hall
-from apps.organizations.models import Branch
 
 from .role import RoleSerializer
 
@@ -17,7 +16,6 @@ class UserSerializer(serializers.ModelSerializer):
     restaurant_access_active = serializers.BooleanField(read_only=True)
     restaurant_id = serializers.UUIDField(read_only=True)
     business_partner_id = serializers.UUIDField(read_only=True)
-    branch_id = serializers.PrimaryKeyRelatedField(source='branch', queryset=Branch.objects.all(), required=False, allow_null=True)
     primary_hall_id = serializers.PrimaryKeyRelatedField(source='primary_hall', queryset=Hall.objects.all(), required=False, allow_null=True)
     allowed_hall_ids = serializers.PrimaryKeyRelatedField(source='allowed_halls', queryset=Hall.objects.all(), many=True, required=False)
     passport_series = serializers.CharField(required=False, allow_blank=True, write_only=True)
@@ -49,7 +47,6 @@ class UserSerializer(serializers.ModelSerializer):
             'role',
             'role_id',
             'restaurant_id',
-            'branch_id',
             'hall_switch_permission',
             'primary_hall_id',
             'allowed_hall_ids',

@@ -7,7 +7,7 @@ from .base_report import BaseReportView
 
 class OpenChecksReportView(BaseReportView):
     def get(self, request):
-        branch = self.get_branch()
+        restaurant = self.get_restaurant()
         period = self.get_period()
-        rows = get_open_checks_report_queryset(branch, period).order_by('-created_at')
+        rows = get_open_checks_report_queryset(restaurant, period).order_by('-created_at')
         return Response(list(rows))

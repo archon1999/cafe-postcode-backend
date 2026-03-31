@@ -5,7 +5,7 @@ from apps.orders.models import OrderItem
 from apps.orders.serializers import OrderItemSerializer
 from apps.orders.services import OrderStateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -15,8 +15,8 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     state_service_class = OrderStateService
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        return OrderItem.objects.filter(order__branch=branch).select_related('catalog_item', 'prep_station', 'order')
+        restaurant = get_request_restaurant(self.request)
+        return OrderItem.objects.filter(order__restaurant=restaurant).select_related('catalog_item', 'prep_station', 'order')
 
     @transaction.atomic
     def perform_update(self, serializer):

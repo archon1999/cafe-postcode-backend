@@ -8,43 +8,41 @@ from apps.organizations.models import CashDesk
 
 
 class CashShiftService:
-    def get_active_shift(self, *, branch, user):
+    def get_active_shift(self, *, restaurant, user):
         return (
             CashShift.objects.select_related('cash_desk', 'opened_by')
-            .filter(branch=branch, opened_by=user, status=CashShift.Status.OPEN)
+            .filter(cash_desk__restaurant=restaurant, opened_by=user, status=CashShift.Status.OPEN)
             .order_by('-opened_at')
             .first()
         )
 
-    def get_available_cash_desks(self, *, branch):
-        return list(CashDesk.objects.filter(branch=branch, is_active=True).order_by('name'))
+    def get_available_cash_desks(self, *, restaurant):
+        return list(CashDesk.objects.filter(restaurant=restaurant, is_active=True).order_by('name'))
 
-    def build_context(self, *, branch, user):
-        active_shift = self.get_active_shift(branch=branch, user=user)
+    def build_context(self, *, restaurant, user):
+        active_shift = self.get_active_shift(restaurant=restaurant, user=user)
         return {
-            'branch': branch,
-            'branch_fiscal_profile': {
-                'legal_name': branch.legal_name,
-                'tax_number': branch.tax_number,
-                'vat_enabled': branch.vat_enabled,
+            'restaurant_fiscal_profile': {
+                'legal_name': restaurant.legal_name,
+                'tax_number': restaurant.tax_number,
+                'vat_enabled': False,
             },
-            'available_cash_desks': self.get_available_cash_desks(branch=branch),
+            'available_cash_desks': self.get_available_cash_desks(restaurant=restaurant),
             'current_shift': active_shift,
         }
 
     @transaction.atomic
-    def open_shift(self, *, branch, cash_desk, opened_by, opening_cash_amount=0, notes_open=''):
-        if cash_desk.branch_id != branch.id:
-            raise ValidationError({'cashDeskId': 'Selected cash desk does not belong to the current branch.'})
+    def open_shift(self, *, restaurant, cash_desk, opened_by, opening_cash_amount=0, notes_open=''):
+        if cash_desk.restaurant_id != restaurant.id:
+            raise ValidationError({'cashDeskId': 'Selected cash desk does not belong to the current restaurant.'})
         if not cash_desk.is_active:
             raise ValidationError({'cashDeskId': 'Selected cash desk is inactive.'})
-        if CashShift.objects.filter(branch=branch, opened_by=opened_by, status=CashShift.Status.OPEN).exists():
+        if CashShift.objects.filter(cash_desk__restaurant=restaurant, opened_by=opened_by, status=CashShift.Status.OPEN).exists():
             raise ValidationError({'detail': 'Current user already has an open cashier shift.'})
-        if CashShift.objects.filter(branch=branch, cash_desk=cash_desk, status=CashShift.Status.OPEN).exists():
+        if CashShift.objects.filter(cash_desk=cash_desk, status=CashShift.Status.OPEN).exists():
             raise ValidationError({'cashDeskId': 'Selected cash desk already has an active shift.'})
 
         shift = CashShift.objects.create(
-            branch=branch,
             cash_desk=cash_desk,
             opened_by=opened_by,
             opened_at=timezone.now(),
@@ -118,4 +116,3 @@ class CashShiftService:
             ]
         )
         return shift
-

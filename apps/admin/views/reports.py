@@ -45,14 +45,11 @@ from apps.reports.services import (
     localize_shift_rows,
 )
 from common.api.paginations import StandardResultsSetPagination
-from common.api.scopes import get_optional_request_branch, get_optional_request_restaurant
+from common.api.scopes import get_optional_request_restaurant
 
 
 class AdminBaseReportView(AdminPermissionRequiredMixin, APIView):
     permission_code = 'reports.view'
-
-    def get_branch(self):
-        return get_optional_request_branch(self.request)
 
     def get_restaurant(self):
         return get_optional_request_restaurant(self.request)
@@ -81,15 +78,13 @@ class AdminPaginatedReportView(AdminBaseReportView):
 class DashboardSummaryView(AdminBaseReportView):
     def get(self, request):
         filters = SummaryReportFilters.from_request(request)
-        return Response(build_summary_payload(self.get_branch(), filters.period, restaurant=self.get_restaurant()))
+        return Response(build_summary_payload(self.get_restaurant(), filters.period))
 
 
 class SalesReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = SalesReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_sales_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -97,9 +92,7 @@ class SalesReportView(AdminPaginatedReportView):
 class OpenChecksReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = OpenChecksReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_open_checks_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_open_checks_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -107,9 +100,7 @@ class OpenChecksReportView(AdminPaginatedReportView):
 class TopItemsReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = TopItemsReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_top_items_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -117,9 +108,7 @@ class TopItemsReportView(AdminPaginatedReportView):
 class TopStaffReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = TopStaffReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_top_staff_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -127,9 +116,7 @@ class TopStaffReportView(AdminPaginatedReportView):
 class PaymentBreakdownView(AdminPaginatedReportView):
     def get(self, request):
         filters = PaymentBreakdownReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_payment_breakdown_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -139,9 +126,7 @@ class ShiftReportView(AdminPaginatedReportView):
 
     def get(self, request):
         filters = ShiftReportFilters.from_request(request)
-        queryset = filters.apply(
-            get_shift_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-        )
+        queryset = filters.apply(get_shift_report_queryset(self.get_restaurant(), filters.period))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -151,7 +136,7 @@ class SummaryReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = SummaryReportFilters.from_request(request)
-        summary = build_summary_payload(self.get_branch(), filters.period, restaurant=self.get_restaurant())
+        summary = build_summary_payload(self.get_restaurant(), filters.period)
         payload = self.export_service_class().build_summary_file(
             title=get_report_title(REPORT_TITLE_SUMMARY),
             metrics=get_summary_metrics(summary),
@@ -165,9 +150,7 @@ class SalesReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = SalesReportFilters.from_request(request)
-        rows = localize_sales_rows(
-            list(filters.apply(get_sales_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())))
-        )
+        rows = localize_sales_rows(list(filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period))))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_SALES),
             columns=get_sales_columns(),
@@ -183,11 +166,7 @@ class OpenChecksReportExportView(AdminBaseReportView):
     def get(self, request):
         filters = OpenChecksReportFilters.from_request(request)
         rows = localize_open_checks_rows(
-            list(
-                filters.apply(
-                    get_open_checks_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())
-                )
-            )
+            list(filters.apply(get_open_checks_report_queryset(self.get_restaurant(), filters.period)))
         )
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_OPEN_CHECKS),
@@ -203,9 +182,7 @@ class TopItemsReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = TopItemsReportFilters.from_request(request)
-        rows = list(
-            filters.apply(get_top_items_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant()))
-        )
+        rows = list(filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period)))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_TOP_ITEMS),
             columns=get_top_items_columns(),
@@ -220,9 +197,7 @@ class TopStaffReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = TopStaffReportFilters.from_request(request)
-        rows = list(
-            filters.apply(get_top_staff_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant()))
-        )
+        rows = list(filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period)))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_TOP_STAFF),
             columns=get_top_staff_columns(),
@@ -238,15 +213,7 @@ class PaymentBreakdownExportView(AdminBaseReportView):
     def get(self, request):
         filters = PaymentBreakdownReportFilters.from_request(request)
         rows = localize_payment_breakdown_rows(
-            list(
-                filters.apply(
-                    get_payment_breakdown_report_queryset(
-                        self.get_branch(),
-                        filters.period,
-                        restaurant=self.get_restaurant(),
-                    )
-                )
-            )
+            list(filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period)))
         )
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_PAYMENT_BREAKDOWN),
@@ -263,9 +230,7 @@ class ShiftReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = ShiftReportFilters.from_request(request)
-        rows = localize_shift_rows(
-            list(filters.apply(get_shift_report_queryset(self.get_branch(), filters.period, restaurant=self.get_restaurant())))
-        )
+        rows = localize_shift_rows(list(filters.apply(get_shift_report_queryset(self.get_restaurant(), filters.period))))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_SHIFTS),
             columns=get_shift_columns(),

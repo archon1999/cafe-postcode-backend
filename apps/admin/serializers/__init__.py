@@ -10,6 +10,7 @@ from .constructor import (
     PrepStationSerializer,
     RestaurantSerializer,
     TableSessionSerializer,
+    ZoneOrCabinSerializer,
 )
 from .hall_constructor import HallConstructorSerializer, HallConstructorUpdateSerializer
 from .integrations import IntegrationConfigSerializer
@@ -60,4 +61,5 @@ __all__ = [
     'TableSessionSerializer',
     'TariffSerializer',
     'UserSerializer',
+    'ZoneOrCabinSerializer',
 ]

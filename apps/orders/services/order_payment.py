@@ -26,14 +26,19 @@ class OrderPaymentService:
         if order.status == Order.Status.OPEN:
             self.order_submission_service_class().submit(order)
 
-        if cash_shift is None or cash_shift.status != cash_shift.Status.OPEN:
-            raise ValidationError({'detail': _('An active cashier shift is required before taking payment.')})
-        if cash_shift.branch_id != order.branch_id:
-            raise ValidationError({'detail': _('Active cashier shift belongs to another branch.')})
+        if cash_shift is not None and cash_shift.status != cash_shift.Status.OPEN:
+            raise ValidationError({'detail': _('Only an open cashier shift can be used for payment.')})
+        if cash_shift is not None and cash_shift.cash_desk.restaurant_id != order.restaurant_id:
+            raise ValidationError({'detail': _('Active cashier shift belongs to another restaurant.')})
 
         serializer = PaymentSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
-        if serializer.validated_data['method'] not in set(cash_shift.cash_desk.enabled_payment_methods or []):
+        cash_desk = (
+            cash_shift.cash_desk
+            if cash_shift is not None
+            else order.restaurant.cash_desks.filter(is_active=True).order_by('name').first()
+        )
+        if cash_desk and serializer.validated_data['method'] not in set(cash_desk.enabled_payment_methods or []):
             raise ValidationError({'method': _('Selected payment method is disabled on the active cash desk.')})
 
         remaining_amount = max(
@@ -45,7 +50,7 @@ class OrderPaymentService:
         if remaining_amount and payment_amount < remaining_amount:
             raise ValidationError({'amount': _('Payment amount must cover the full remaining total.')})
 
-        payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_shift.cash_desk)
+        payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
 
         payment_result = charge_payment(order=order, payment=payment)
         payment.status = Payment.Status.SUCCEEDED if payment_result.get('ok') else Payment.Status.FAILED

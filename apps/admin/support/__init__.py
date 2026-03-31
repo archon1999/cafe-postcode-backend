@@ -10,6 +10,7 @@ from .constructor import (
     PrepStationListFilters,
     RestaurantListFilters,
     TableSessionListFilters,
+    ZoneListFilters,
     filter_constructor_queryset_by_restaurant,
 )
 from .hall_constructor import hall_constructor_queryset
@@ -43,6 +44,7 @@ from .users import (
     RoleListFilters,
     UserListFilters,
     prevent_system_role_delete,
+    scoped_role_queryset,
 )
 
 __all__ = [
@@ -82,8 +84,10 @@ __all__ = [
     'TopItemsReportFilters',
     'TopStaffReportFilters',
     'UserListFilters',
+    'ZoneListFilters',
     'filter_catalog_queryset_by_scope',
     'filter_constructor_queryset_by_restaurant',
     'hall_constructor_queryset',
     'prevent_system_role_delete',
+    'scoped_role_queryset',
 ]

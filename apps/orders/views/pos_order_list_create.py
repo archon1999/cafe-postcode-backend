@@ -5,7 +5,7 @@ from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.orders.services import OrderStateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class PosOrderListCreateView(generics.ListCreateAPIView):
@@ -15,8 +15,8 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
     state_service_class = OrderStateService
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        queryset = Order.objects.filter(branch=branch).select_related(
+        restaurant = get_request_restaurant(self.request)
+        queryset = Order.objects.filter(restaurant=restaurant).select_related(
             'table_session',
             'table_session__hall',
             'table_session__table',
@@ -36,14 +36,12 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
     @transaction.atomic
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        branch = get_request_branch(self.request, restaurant)
         state_service = self.state_service_class()
         table_session = serializer.validated_data.get('table_session')
         state_service.ensure_session_accepts_new_order(table_session=table_session)
         serializer.save(
             restaurant=restaurant,
-            branch=branch,
             opened_by=self.request.user,
             guest_count=table_session.guest_count if table_session else serializer.validated_data.get('guest_count', 1),
-            order_number=state_service.next_order_number(branch=branch),
+            order_number=state_service.next_order_number(restaurant=restaurant),
         )

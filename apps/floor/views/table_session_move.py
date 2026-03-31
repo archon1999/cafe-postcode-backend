@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.serializers import TableSessionSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class TableSessionMoveView(APIView):
@@ -14,11 +14,11 @@ class TableSessionMoveView(APIView):
     permission_code = 'table.manage'
 
     def post(self, request, pk):
-        branch = get_request_branch(request)
+        restaurant = get_request_restaurant(request)
         session = generics.get_object_or_404(
             TableSession.objects.select_related('table', 'hall'),
             pk=pk,
-            branch=branch,
+            restaurant=restaurant,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
         target_table = generics.get_object_or_404(DiningTable.objects.select_related('hall'), pk=request.data.get('target_table_id'))

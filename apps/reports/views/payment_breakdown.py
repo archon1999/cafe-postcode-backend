@@ -7,7 +7,7 @@ from .base_report import BaseReportView
 
 class PaymentBreakdownView(BaseReportView):
     def get(self, request):
-        branch = self.get_branch()
+        restaurant = self.get_restaurant()
         period = self.get_period()
-        rows = get_payment_breakdown_report_queryset(branch, period).order_by('-total')
+        rows = get_payment_breakdown_report_queryset(restaurant, period).order_by('-total')
         return Response(list(rows))

@@ -39,13 +39,20 @@ def get_permission_scope(code: str) -> str:
 
 class PermissionSerializer(serializers.ModelSerializer):
     scope = serializers.SerializerMethodField()
+    endpoints = serializers.SerializerMethodField()
 
     def get_scope(self, instance):
         return get_permission_scope(instance.code)
 
+    def get_endpoints(self, instance):
+        return [
+            {'method': endpoint.method, 'url': endpoint.url}
+            for endpoint in instance.endpoints.all()
+        ]
+
     class Meta:
         model = Permission
-        fields = ('id', 'code', 'scope', 'name', 'description')
+        fields = ('id', 'code', 'scope', 'name', 'description', 'endpoints')
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -176,9 +183,11 @@ class UserSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        request_data = getattr(self.context.get('request'), 'data', {}) or {}
+        request = self.context.get('request')
+        request_data = getattr(request, 'data', {}) or {}
         pin = request_data.get('pin')
         restaurant = self._get_target_restaurant()
+        role = attrs.get('role', getattr(self.instance, 'role', None))
         restaurant_profile_data = attrs.get('restaurant_profile', {}) or {}
         primary_hall = restaurant_profile_data.get(
             'primary_hall',
@@ -197,6 +206,16 @@ class UserSerializer(serializers.ModelSerializer):
 
         if restaurant is not None and any(hall.restaurant_id != restaurant.id for hall in allowed_halls):
             raise serializers.ValidationError({'allowedHallIds': _('All allowed halls must belong to the selected restaurant.')})
+
+        if restaurant is not None and role is not None and not getattr(getattr(request, 'user', None), 'is_superuser', False):
+            entitlement = getattr(restaurant, 'entitlement', None)
+            allowed_role_ids = set()
+            if entitlement is not None:
+                allowed_role_ids.update(entitlement.allowed_roles.values_list('id', flat=True))
+                if entitlement.tariff_id:
+                    allowed_role_ids.update(entitlement.tariff.allowed_roles.values_list('id', flat=True))
+            if role.id not in allowed_role_ids:
+                raise serializers.ValidationError({'roleId': _('Selected role is not available for this restaurant.')})
 
         if pin in (None, ''):
             return attrs

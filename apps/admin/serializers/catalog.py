@@ -6,6 +6,16 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.services.mxik import MxikClient, MxikError
 
 MXIK_CODE_PATTERN = re.compile(r'^\d{17}$')
+MXIK_IMAGE_FIELD_CANDIDATES = (
+    'imageUrl',
+    'imageURL',
+    'photoUrl',
+    'photoURL',
+    'iconUrl',
+    'iconURL',
+    'image',
+    'photo',
+)
 
 
 class MxikLookupResultSerializer(serializers.Serializer):
@@ -17,6 +27,35 @@ class MxikLookupResultSerializer(serializers.Serializer):
 
 class MxikCodeValidationMixin(serializers.Serializer):
     mxik_required = False
+    sync_mxik_image = False
+
+    @staticmethod
+    def _extract_mxik_image_url(raw: dict | None) -> str:
+        if not isinstance(raw, dict):
+            return ''
+
+        for key in MXIK_IMAGE_FIELD_CANDIDATES:
+            value = raw.get(key)
+            if isinstance(value, str):
+                normalized_value = value.strip()
+                if normalized_value.startswith(('http://', 'https://')):
+                    return normalized_value
+
+        images = raw.get('images')
+        if isinstance(images, list):
+            for item in images:
+                if isinstance(item, str) and item.strip().startswith(('http://', 'https://')):
+                    return item.strip()
+                if not isinstance(item, dict):
+                    continue
+                for key in ('url', 'src', 'imageUrl', 'photoUrl'):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        normalized_value = value.strip()
+                        if normalized_value.startswith(('http://', 'https://')):
+                            return normalized_value
+
+        return ''
 
     def validate_mxik_code(self, value: str) -> str:
         normalized_value = value.strip()
@@ -32,6 +71,16 @@ class MxikCodeValidationMixin(serializers.Serializer):
         attrs = super().validate(attrs)
         mxik_code = attrs.get('mxik_code')
         mxik_name = (attrs.get('mxik_name') or '').strip()
+        existing_mxik_code = getattr(self.instance, 'mxik_code', '')
+        existing_image_source = getattr(self.instance, 'image_source', '')
+        existing_image_url = getattr(self.instance, 'image_url', None)
+        should_sync_image = self.sync_mxik_image and bool(mxik_code) and (
+            self.instance is None
+            or mxik_code != existing_mxik_code
+            or existing_image_source == CatalogCategory.ImageSource.MXIK_CACHE
+            or not existing_image_url
+        )
+        lookup_result = None
 
         if self.instance is not None and mxik_code is None:
             mxik_code = self.instance.mxik_code
@@ -43,21 +92,35 @@ class MxikCodeValidationMixin(serializers.Serializer):
 
         if not mxik_code:
             attrs['mxik_name'] = ''
+            if self.sync_mxik_image and (self.instance is None or existing_image_source == CatalogCategory.ImageSource.MXIK_CACHE):
+                attrs['image_url'] = None
+                attrs['image_source'] = ''
             return attrs
+
+        if not mxik_name or should_sync_image:
+            try:
+                lookup_result = MxikClient().lookup(mxik_code)
+            except MxikError:
+                lookup_result = None
 
         if mxik_name:
             attrs['mxik_name'] = mxik_name
-            return attrs
-
-        try:
-            attrs['mxik_name'] = MxikClient().lookup(mxik_code).get('name', '')
-        except MxikError:
+        elif lookup_result is not None:
+            attrs['mxik_name'] = lookup_result.get('name', '')
+        else:
             attrs['mxik_name'] = mxik_name
+
+        if should_sync_image:
+            image_url = self._extract_mxik_image_url(lookup_result.get('raw') if lookup_result else None)
+            attrs['image_url'] = image_url or None
+            attrs['image_source'] = CatalogCategory.ImageSource.MXIK_CACHE if image_url else ''
+
         return attrs
 
 
 class CatalogCategorySerializer(MxikCodeValidationMixin, serializers.ModelSerializer):
     mxik_required = True
+    sync_mxik_image = True
 
     class Meta:
         model = CatalogCategory
@@ -69,12 +132,16 @@ class CatalogCategorySerializer(MxikCodeValidationMixin, serializers.ModelSerial
             'name_ru',
             'mxik_code',
             'mxik_name',
+            'image_url',
+            'image_source',
             'sort_order',
             'is_active',
         )
         extra_kwargs = {
             'mxik_code': {'required': True, 'allow_blank': False},
             'mxik_name': {'required': False, 'allow_blank': True},
+            'image_url': {'read_only': True},
+            'image_source': {'read_only': True},
         }
         validators = []
 

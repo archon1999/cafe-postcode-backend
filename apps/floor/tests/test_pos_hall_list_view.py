@@ -3,20 +3,20 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
-from apps.organizations.models import Branch, DistributionPoint, FeatureConfig, PrepStation, Restaurant
+from apps.organizations.models import DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
 
 
 class PosHallListViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.restaurant = Restaurant.objects.create(name='Test restaurant')
-        self.branch = Branch.objects.create(
+        RestaurantEntitlement.objects.create(
             restaurant=self.restaurant,
-            name='Main branch',
-            is_default=True,
+            is_active=True,
+            is_custom=True,
         )
         self.user = User.objects.create(
             username='admin',
@@ -24,7 +24,6 @@ class PosHallListViewTests(TestCase):
             is_superuser=True,
             is_staff=True,
             restaurant=self.restaurant,
-            branch=self.branch,
         )
         FeatureConfig.objects.create(
             restaurant=self.restaurant,
@@ -40,26 +39,26 @@ class PosHallListViewTests(TestCase):
         self.client.force_authenticate(self.user)
         self.hall = Hall.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,
         )
         self.distribution_point = DistributionPoint.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             name='Hall orders',
             kind=DistributionPoint.Kind.HALL,
         )
+        self.zone_first_floor = ZoneOrCabin.objects.create(hall=self.hall, name='1-qavat', sort_order=1)
+        self.zone_second_floor = ZoneOrCabin.objects.create(hall=self.hall, name='2-qavat', sort_order=2)
         self.prep_station = PrepStation.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             name='Kitchen',
             kind=PrepStation.Kind.KITCHEN,
         )
 
         self.reserved_table = DiningTable.objects.create(
             hall=self.hall,
+            zone=self.zone_first_floor,
             name='Asosiy zal 4',
             table_number=4,
             seat_count=4,
@@ -73,6 +72,7 @@ class PosHallListViewTests(TestCase):
         )
         self._create_active_table(
             table_number=3,
+            zone=self.zone_first_floor,
             position_x=2,
             position_y=0,
             width=1,
@@ -83,6 +83,7 @@ class PosHallListViewTests(TestCase):
         )
         self._create_active_table(
             table_number=7,
+            zone=self.zone_first_floor,
             position_x=6,
             position_y=0,
             width=1,
@@ -93,6 +94,7 @@ class PosHallListViewTests(TestCase):
         )
         self._create_active_table(
             table_number=17,
+            zone=self.zone_second_floor,
             position_x=0,
             position_y=2,
             width=1,
@@ -106,6 +108,7 @@ class PosHallListViewTests(TestCase):
         self,
         *,
         table_number: int,
+        zone: ZoneOrCabin,
         position_x: int,
         position_y: int,
         width: int,
@@ -116,6 +119,7 @@ class PosHallListViewTests(TestCase):
     ):
         table = DiningTable.objects.create(
             hall=self.hall,
+            zone=zone,
             name=f'Asosiy zal {table_number}',
             table_number=table_number,
             seat_count=4,
@@ -129,7 +133,6 @@ class PosHallListViewTests(TestCase):
         )
         session = TableSession.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             hall=self.hall,
             table=table,
             opened_by=self.user,
@@ -139,7 +142,6 @@ class PosHallListViewTests(TestCase):
         )
         order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             table_session=session,
             distribution_point=self.distribution_point,
             opened_by=self.user,
@@ -150,7 +152,6 @@ class PosHallListViewTests(TestCase):
         )
         KitchenTicket.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             order=order,
             prep_station=self.prep_station,
             status=ticket_status,
@@ -164,9 +165,9 @@ class PosHallListViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         halls = response.json()['data']
         self.assertEqual(len(halls), 1)
-        self.assertNotIn('zones', halls[0])
         self.assertNotIn('layoutObjects', halls[0])
 
+        self.assertEqual([zone['name'] for zone in halls[0]['zones']], ['1-qavat', '2-qavat'])
         tables_by_number = {table['tableNumber']: table for table in halls[0]['tables']}
 
         self.assertEqual(halls[0]['gridColumns'], 8)
@@ -174,6 +175,8 @@ class PosHallListViewTests(TestCase):
         self.assertEqual(float(tables_by_number[17]['height']), 2.0)
         self.assertEqual(tables_by_number[17]['shapeVariant'], DiningTable.ShapeVariant.SEAT4_VERTICAL)
         self.assertEqual(tables_by_number[4]['status'], DiningTable.Status.RESERVED)
+        self.assertEqual(tables_by_number[4]['zoneName'], '1-qavat')
+        self.assertEqual(tables_by_number[17]['zoneName'], '2-qavat')
         self.assertEqual(tables_by_number[3]['activeSession']['serviceState'], 'new')
         self.assertEqual(tables_by_number[7]['activeSession']['serviceState'], 'pending_payment')
         self.assertEqual(tables_by_number[17]['activeSession']['serviceState'], 'done')

@@ -2,13 +2,11 @@ from rest_framework import serializers
 
 from apps.organizations.models import Restaurant
 
-from .branch import BranchSerializer
 from .feature_config import FeatureConfigSerializer
 
 
 class RestaurantSerializer(serializers.ModelSerializer):
     feature_config = FeatureConfigSerializer(read_only=True)
-    branches = BranchSerializer(many=True, read_only=True)
 
     class Meta:
         model = Restaurant
@@ -30,7 +28,6 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'address_ru',
             'currency',
             'feature_config',
-            'branches',
         )
         extra_kwargs = {
             'currency': {'required': False},

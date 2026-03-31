@@ -12,7 +12,6 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
             'id',
             'name',
             'description',
-            'kind',
             'prep_station',
             'prep_station_name',
             'price',

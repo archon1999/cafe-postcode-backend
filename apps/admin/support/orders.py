@@ -66,13 +66,8 @@ RECEIPT_ORDERING_FIELDS = {
     'updatedAt': 'updated_at',
 }
 
-def filter_order_queryset_by_scope(queryset, request, branch_lookup: str = 'branch', restaurant_lookup: str = 'restaurant'):
-    return filter_queryset_by_optional_scope(
-        queryset,
-        request,
-        branch_lookup=branch_lookup,
-        restaurant_lookup=restaurant_lookup,
-    )
+def filter_order_queryset_by_scope(queryset, request, restaurant_lookup: str = 'restaurant'):
+    return filter_queryset_by_optional_scope(queryset, request, restaurant_lookup=restaurant_lookup)
 
 
 def admin_order_queryset(request) -> QuerySet[Order]:
@@ -103,7 +98,7 @@ def admin_order_queryset(request) -> QuerySet[Order]:
 
 def admin_order_item_queryset(request) -> QuerySet[OrderItem]:
     return (
-        filter_order_queryset_by_scope(OrderItem.objects.all(), request, 'order__branch', 'order__restaurant')
+        filter_order_queryset_by_scope(OrderItem.objects.all(), request, 'order__restaurant')
         .select_related(
             'order',
             'order__table_session__hall',
@@ -122,7 +117,6 @@ def admin_order_item_note_queryset(request) -> QuerySet[OrderItemNote]:
         filter_order_queryset_by_scope(
             OrderItemNote.objects.all(),
             request,
-            'order_item__order__branch',
             'order_item__order__restaurant',
         )
         .select_related(
@@ -137,7 +131,7 @@ def admin_order_item_note_queryset(request) -> QuerySet[OrderItemNote]:
 
 def admin_payment_queryset(request) -> QuerySet[Payment]:
     return (
-        filter_order_queryset_by_scope(Payment.objects.all(), request, 'order__branch', 'order__restaurant')
+        filter_order_queryset_by_scope(Payment.objects.all(), request, 'order__restaurant')
         .select_related('order', 'cash_desk', 'cash_shift', 'received_by')
         .prefetch_related('refunds')
         .order_by('-created_at')
@@ -146,7 +140,7 @@ def admin_payment_queryset(request) -> QuerySet[Payment]:
 
 def admin_receipt_queryset(request) -> QuerySet[Receipt]:
     return (
-        filter_order_queryset_by_scope(Receipt.objects.all(), request, 'order__branch', 'order__restaurant')
+        filter_order_queryset_by_scope(Receipt.objects.all(), request, 'order__restaurant')
         .select_related('order', 'payment')
         .order_by('-created_at')
     )

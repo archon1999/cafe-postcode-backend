@@ -12,13 +12,6 @@ class Device(BaseModel):
         OWNER = 'owner_dashboard', 'Owner Dashboard'
 
     restaurant = models.ForeignKey('organizations.Restaurant', on_delete=models.CASCADE, related_name='devices')
-    branch = models.ForeignKey(
-        'organizations.Branch',
-        on_delete=models.SET_NULL,
-        related_name='devices',
-        null=True,
-        blank=True,
-    )
     name = models.CharField(max_length=255)
     mode = models.CharField(max_length=30, choices=Mode.choices)
     primary_hall = models.ForeignKey(

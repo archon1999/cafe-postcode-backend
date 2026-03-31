@@ -10,7 +10,6 @@ class CashShift(BaseModel):
         OPEN = 'open', 'Open'
         CLOSED = 'closed', 'Closed'
 
-    branch = models.ForeignKey('organizations.Branch', on_delete=models.CASCADE, related_name='cash_shifts')
     cash_desk = models.ForeignKey('organizations.CashDesk', on_delete=models.CASCADE, related_name='cash_shifts')
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -43,7 +42,6 @@ class CashShift(BaseModel):
     class Meta:
         ordering = ('-opened_at',)
         indexes = [
-            scoped_status_index('branch', name='cashshift_branch_status_idx'),
-            scoped_timestamp_index('branch', 'opened_at', name='cashshift_branch_opened_idx'),
+            scoped_status_index('cash_desk', name='cashshift_cashdesk_status_idx'),
+            scoped_timestamp_index('cash_desk', 'opened_at', name='cashshift_cashdesk_opened_idx'),
         ]
-

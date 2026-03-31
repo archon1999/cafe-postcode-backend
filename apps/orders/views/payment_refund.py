@@ -8,7 +8,7 @@ from apps.orders.serializers.cashier_context import PaymentRefundCreateSerialize
 from apps.orders.services import CashShiftService, PaymentRefundService
 from apps.organizations.services import FeatureGateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class PaymentRefundView(APIView):
@@ -19,12 +19,12 @@ class PaymentRefundView(APIView):
     feature_gate_service_class = FeatureGateService
 
     def post(self, request, pk):
-        branch = get_request_branch(request)
-        self.feature_gate_service_class().ensure_cashier_access(restaurant=branch.restaurant)
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         serializer = PaymentRefundCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        payment = generics.get_object_or_404(Payment.objects.select_related('order'), pk=pk, order__branch=branch)
-        shift = self.shift_service_class().get_active_shift(branch=branch, user=request.user)
+        payment = generics.get_object_or_404(Payment.objects.select_related('order'), pk=pk, order__restaurant=restaurant)
+        shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
         result = self.refund_service_class().refund(
             payment=payment,
             refunded_by=request.user,
@@ -48,11 +48,10 @@ class ReceiptReprintView(APIView):
     feature_gate_service_class = FeatureGateService
 
     def post(self, request, pk):
-        branch = get_request_branch(request)
-        self.feature_gate_service_class().ensure_cashier_access(restaurant=branch.restaurant)
-        receipt = generics.get_object_or_404(Receipt.objects.select_related('order'), pk=pk, order__branch=branch)
-        shift = self.shift_service_class().get_active_shift(branch=branch, user=request.user)
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        receipt = generics.get_object_or_404(Receipt.objects.select_related('order'), pk=pk, order__restaurant=restaurant)
+        shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
         result = self.refund_service_class().reprint(receipt=receipt, cash_shift=shift)
         receipt.refresh_from_db()
         return Response({'receipt': ReceiptSerializer(receipt).data, 'result': result})
-

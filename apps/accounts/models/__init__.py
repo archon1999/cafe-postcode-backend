@@ -3,6 +3,7 @@ from .business_partner_user_profile import BusinessPartnerUserProfile
 from .employee_compensation_profile import EmployeeCompensationProfile
 from .employee_profile import EmployeeProfile
 from .permission import Permission
+from .permission_endpoint import PermissionEndpoint
 from .restaurant_user_profile import RestaurantUserProfile
 from .role import Role
 from .user import User
@@ -14,6 +15,7 @@ __all__ = [
     'EmployeeCompensationProfile',
     'EmployeeProfile',
     'Permission',
+    'PermissionEndpoint',
     'RestaurantUserProfile',
     'Role',
     'User',

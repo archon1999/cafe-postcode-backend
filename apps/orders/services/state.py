@@ -7,7 +7,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.floor.models import DiningTable, TableSession
 from apps.orders.models import Order
-from apps.organizations.models import Branch
+from apps.organizations.models import Restaurant
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +16,11 @@ class OrderStateService:
     MUTABLE_ORDER_STATUSES = frozenset({Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY})
 
     @transaction.atomic
-    def next_order_number(self, *, branch: Branch) -> int:
-        locked_branch = Branch.objects.select_for_update().get(pk=branch.pk)
-        locked_branch.last_order_number += 1
-        locked_branch.save(update_fields=['last_order_number', 'updated_at'])
-        return locked_branch.last_order_number
+    def next_order_number(self, *, restaurant: Restaurant) -> int:
+        locked_restaurant = Restaurant.objects.select_for_update().get(pk=restaurant.pk)
+        locked_restaurant.last_order_number += 1
+        locked_restaurant.save(update_fields=['last_order_number', 'updated_at'])
+        return locked_restaurant.last_order_number
 
     def ensure_session_accepts_new_order(self, *, table_session):
         if table_session is None:

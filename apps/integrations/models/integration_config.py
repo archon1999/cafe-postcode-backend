@@ -18,13 +18,6 @@ class IntegrationConfig(BaseModel):
         on_delete=models.CASCADE,
         related_name='integration_configs',
     )
-    branch = models.ForeignKey(
-        'organizations.Branch',
-        on_delete=models.CASCADE,
-        related_name='integration_configs',
-        null=True,
-        blank=True,
-    )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     provider = models.CharField(max_length=120)
     mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.MOCK)
@@ -33,7 +26,7 @@ class IntegrationConfig(BaseModel):
 
     class Meta:
         ordering = ('kind', 'provider')
-        unique_together = ('restaurant', 'branch', 'kind', 'provider')
+        unique_together = ('restaurant', 'kind', 'provider')
 
     def __str__(self):
         return f'{self.kind}:{self.provider}'

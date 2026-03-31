@@ -4,7 +4,7 @@ from apps.kitchen.models import KitchenTicket
 from apps.kitchen.serializers import KitchenTicketSerializer
 from apps.organizations.services import FeatureGateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class KitchenQueueView(generics.ListAPIView):
@@ -14,12 +14,12 @@ class KitchenQueueView(generics.ListAPIView):
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        feature_config = self.feature_gate_service_class().ensure_kitchen_access(restaurant=branch.restaurant)
+        restaurant = get_request_restaurant(self.request)
+        feature_config = self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
         if feature_config.kitchen_mode == feature_config.KitchenMode.PRINTER:
             return KitchenTicket.objects.none()
 
-        queryset = KitchenTicket.objects.filter(branch=branch).select_related(
+        queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related(
             'prep_station',
             'order__opened_by',
             'order__table_session__hall',

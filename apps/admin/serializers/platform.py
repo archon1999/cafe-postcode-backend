@@ -6,7 +6,7 @@ from apps.organizations.models import BusinessPartner, RestaurantEntitlement, Ta
 
 
 class BusinessPartnerSerializer(serializers.ModelSerializer):
-    owner_user_id = serializers.UUIDField(source='owner_user_id', read_only=True)
+    owner_user_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         model = BusinessPartner

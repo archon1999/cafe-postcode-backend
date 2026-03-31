@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.serializers import TableSessionSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class TableSessionMergeView(APIView):
@@ -19,17 +19,17 @@ class TableSessionMergeView(APIView):
     def post(self, request, pk):
         from apps.orders.models import Order
 
-        branch = get_request_branch(request)
+        restaurant = get_request_restaurant(request)
         target_session = generics.get_object_or_404(
             TableSession,
             pk=pk,
-            branch=branch,
+            restaurant=restaurant,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
         source_session = generics.get_object_or_404(
             TableSession,
             pk=request.data.get('source_session_id'),
-            branch=branch,
+            restaurant=restaurant,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
         if source_session.pk == target_session.pk:

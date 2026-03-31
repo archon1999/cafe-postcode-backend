@@ -3,10 +3,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.services import AuthSessionService
+from common.api.permissions import EndpointRBACPermission
 
 
 class LogoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     auth_session_service_class = AuthSessionService
 
     def post(self, request):

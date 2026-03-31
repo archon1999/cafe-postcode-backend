@@ -21,14 +21,14 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class BranchFiscalProfileSerializer(serializers.Serializer):
+class RestaurantFiscalProfileSerializer(serializers.Serializer):
     legal_name = serializers.CharField()
     tax_number = serializers.CharField()
     vat_enabled = serializers.BooleanField()
 
 
 class CashierContextSerializer(serializers.Serializer):
-    branch_fiscal_profile = BranchFiscalProfileSerializer()
+    restaurant_fiscal_profile = RestaurantFiscalProfileSerializer()
     available_cash_desks = CashDeskContextSerializer(many=True)
     current_shift = CashShiftSerializer(allow_null=True)
 
@@ -46,4 +46,3 @@ class CashShiftCloseSerializer(serializers.Serializer):
 
 class PaymentRefundCreateSerializer(serializers.Serializer):
     reason = serializers.CharField(required=False, allow_blank=True)
-

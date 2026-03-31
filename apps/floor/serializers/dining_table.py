@@ -5,8 +5,11 @@ from apps.floor.models import DiningTable, TableSession
 
 from .active_session_summary import ActiveSessionSummarySerializer
 
+
 class DiningTableSerializer(serializers.ModelSerializer):
     active_session = serializers.SerializerMethodField()
+    zone_name = serializers.SerializerMethodField()
+    zone_is_private = serializers.SerializerMethodField()
 
     class Meta:
         model = DiningTable
@@ -14,6 +17,8 @@ class DiningTableSerializer(serializers.ModelSerializer):
             'id',
             'hall',
             'zone',
+            'zone_name',
+            'zone_is_private',
             'name',
             'table_number',
             'seat_count',
@@ -48,6 +53,15 @@ class DiningTableSerializer(serializers.ModelSerializer):
         if session is None:
             return None
         return ActiveSessionSummarySerializer(session).data
+
+    def get_zone_name(self, obj):
+        return getattr(getattr(obj, 'zone', None), 'name', None)
+
+    def get_zone_is_private(self, obj):
+        zone = getattr(obj, 'zone', None)
+        if zone is None:
+            return None
+        return zone.is_private
 
     def validate_seat_count(self, value):
         if value not in DiningTable.get_supported_seat_counts():

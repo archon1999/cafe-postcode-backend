@@ -14,12 +14,12 @@ class SalesReportExportView(BaseReportView):
     export_service_class = SalesReportExcelExportService
 
     def get(self, request):
-        branch = self.get_branch()
+        restaurant = self.get_restaurant()
         period = self.get_period()
-        summary = self.get_summary_payload(branch, period)
-        sales_rows = list(get_sales_report_queryset(branch, period).order_by('method'))
-        payment_rows = list(get_payment_breakdown_report_queryset(branch, period).order_by('-total'))
-        open_check_rows = list(get_open_checks_report_queryset(branch, period).order_by('-created_at'))
+        summary = self.get_summary_payload(restaurant, period)
+        sales_rows = list(get_sales_report_queryset(restaurant, period).order_by('method'))
+        payment_rows = list(get_payment_breakdown_report_queryset(restaurant, period).order_by('-total'))
+        open_check_rows = list(get_open_checks_report_queryset(restaurant, period).order_by('-created_at'))
         exporter = self.export_service_class()
         payload = exporter.build_file(summary, sales_rows, payment_rows, open_check_rows)
         response = HttpResponse(

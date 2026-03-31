@@ -17,8 +17,8 @@ class PaymentRefundService:
             raise ValidationError({'detail': 'This payment has already been refunded.'})
         if cash_shift is None or cash_shift.status != cash_shift.Status.OPEN:
             raise ValidationError({'detail': 'An active cashier shift is required for refunds.'})
-        if payment.order.branch_id != cash_shift.branch_id:
-            raise ValidationError({'detail': 'Payment branch does not match the active cashier shift.'})
+        if payment.order.restaurant_id != cash_shift.cash_desk.restaurant_id:
+            raise ValidationError({'detail': 'Payment restaurant does not match the active cashier shift.'})
 
         refund_result = refund_payment(payment=payment, reason=reason)
         refund = PaymentRefund.objects.create(
@@ -46,8 +46,8 @@ class PaymentRefundService:
     def reprint(self, *, receipt, cash_shift):
         if cash_shift is None or cash_shift.status != cash_shift.Status.OPEN:
             raise ValidationError({'detail': 'An active cashier shift is required for reprint.'})
-        if receipt.order.branch_id != cash_shift.branch_id:
-            raise ValidationError({'detail': 'Receipt branch does not match the active cashier shift.'})
+        if receipt.order.restaurant_id != cash_shift.cash_desk.restaurant_id:
+            raise ValidationError({'detail': 'Receipt restaurant does not match the active cashier shift.'})
 
         result = reprint_fiscal_receipt(receipt=receipt)
         if result.get('ok'):
@@ -56,4 +56,3 @@ class PaymentRefundService:
             receipt.payload = {**receipt.payload, 'last_reprint': result}
             receipt.save(update_fields=['reprint_count', 'last_reprinted_at', 'payload', 'updated_at'])
         return result
-

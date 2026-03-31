@@ -12,13 +12,6 @@ class CashDesk(BaseModel):
         MOCK = 'mock', 'Mock'
 
     restaurant = models.ForeignKey('organizations.Restaurant', on_delete=models.CASCADE, related_name='cash_desks')
-    branch = models.ForeignKey(
-        'organizations.Branch',
-        on_delete=models.SET_NULL,
-        related_name='cash_desks',
-        null=True,
-        blank=True,
-    )
     name = models.CharField(max_length=255)
     location = models.CharField(max_length=255, blank=True)
     enabled_payment_methods = models.JSONField(default=default_enabled_payment_methods, blank=True)

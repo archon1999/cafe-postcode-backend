@@ -19,7 +19,6 @@ class KitchenTicket(BaseModel):
         on_delete=models.CASCADE,
         related_name='kitchen_tickets',
     )
-    branch = models.ForeignKey('organizations.Branch', on_delete=models.CASCADE, related_name='kitchen_tickets')
     order = models.ForeignKey('orders.Order', on_delete=models.CASCADE, related_name='kitchen_tickets')
     prep_station = models.ForeignKey(
         'organizations.PrepStation',

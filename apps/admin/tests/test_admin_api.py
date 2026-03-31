@@ -13,7 +13,7 @@ from apps.accounts.models import AuthSession, Permission, Role, User
 from apps.floor.models import DiningTable, Hall, TableSession
 from apps.integrations.models import IntegrationConfig
 from apps.orders.models import Order, Payment
-from apps.organizations.models import Branch, Restaurant, RestaurantEntitlement
+from apps.organizations.models import Restaurant, RestaurantEntitlement
 from common.api.exception_handler import custom_exception_handler
 from common.utils.date import TASHKENT_TIMEZONE
 
@@ -25,14 +25,6 @@ class AdminApiTests(APITestCase):
             name='Test Restaurant',
             phone='+998900000000',
             address='Tashkent',
-        )
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main Branch',
-            address='Tashkent',
-            phone='+998900000001',
-            service_fee_percent=10,
-            is_default=True,
         )
 
         permission_codes = [
@@ -80,7 +72,6 @@ class AdminApiTests(APITestCase):
             password='secret123',
             full_name='Admin User',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.admin_role,
             actor_type=User.ActorType.RESTAURANT_ADMIN,
             ui_mode=User.UiMode.ADMIN,
@@ -109,7 +100,6 @@ class AdminApiTests(APITestCase):
             password='secret123',
             full_name='Limited User',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.limited_role,
             actor_type=User.ActorType.RESTAURANT_ADMIN,
             ui_mode=User.UiMode.ADMIN,
@@ -196,6 +186,19 @@ class AdminApiTests(APITestCase):
         self.assertFalse(response.data['owner_dashboard_enabled'])
         self.assertEqual(str(response.data['restaurant']), str(self.restaurant.id))
 
+    def test_admin_feature_config_returns_enabled_role_details(self):
+        self.authenticate(self.superuser)
+        self.feature_config.enabled_roles = [self.admin_role.code]
+        self.feature_config.save(update_fields=['enabled_roles'])
+
+        response = self.client.get(f'/api/v1/admin/restaurants/{self.restaurant.id}/feature-config/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data['enabled_role_details'],
+            [{'id': str(self.admin_role.id), 'code': self.admin_role.code, 'name': self.admin_role.name}],
+        )
+
     def test_restaurant_feature_config_is_superuser_only(self):
         self.authenticate(self.admin_user)
 
@@ -230,7 +233,6 @@ class AdminApiTests(APITestCase):
         report_dt = datetime(2026, 3, 26, 19, 30, tzinfo=UTC)
         hall = Hall.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             name='Summary Hall',
         )
         table = DiningTable.objects.create(
@@ -249,7 +251,6 @@ class AdminApiTests(APITestCase):
         )
         session = TableSession.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             hall=hall,
             table=table,
             opened_by=self.admin_user,
@@ -258,7 +259,6 @@ class AdminApiTests(APITestCase):
         )
         order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             table_session=session,
             opened_by=self.admin_user,
             order_number=102,
@@ -288,6 +288,68 @@ class AdminApiTests(APITestCase):
         self.assertEqual(response.data['sales_total'], 120000)
         self.assertEqual(response.data['orders_count'], 1)
 
+    def test_superuser_report_summary_without_restaurant_scope_aggregates_all_restaurants(self):
+        self.authenticate(self.superuser)
+
+        second_restaurant = Restaurant.objects.create(
+            name='Second Restaurant',
+            phone='+998900000111',
+            address='Samarkand',
+        )
+
+        def create_sale(restaurant, order_number, amount):
+            hall = Hall.objects.create(restaurant=restaurant, name=f'Hall {order_number}')
+            table = DiningTable.objects.create(
+                hall=hall,
+                zone=None,
+                name=f'Table {order_number}',
+                table_number=order_number,
+                seat_count=4,
+                shape=DiningTable.Shape.SQUARE,
+                shape_variant=DiningTable.ShapeVariant.SEAT4_SQUARE,
+                status=DiningTable.Status.OCCUPIED,
+                position_x=0,
+                position_y=0,
+                width=1,
+                height=1,
+            )
+            session = TableSession.objects.create(
+                restaurant=restaurant,
+                hall=hall,
+                table=table,
+                opened_by=self.admin_user,
+                guest_count=2,
+                status=TableSession.Status.OPEN,
+            )
+            report_dt = timezone.now()
+            order = Order.objects.create(
+                restaurant=restaurant,
+                table_session=session,
+                opened_by=self.admin_user,
+                order_number=order_number,
+                status=Order.Status.CLOSED,
+                subtotal=amount,
+                total=amount,
+                closed_at=report_dt,
+            )
+            Payment.objects.create(
+                order=order,
+                received_by=self.admin_user,
+                method=Payment.Method.CASH,
+                amount=amount,
+                status=Payment.Status.SUCCEEDED,
+                paid_at=report_dt,
+            )
+
+        create_sale(self.restaurant, 301, 120000)
+        create_sale(second_restaurant, 302, 80000)
+
+        response = self.client.get('/api/v1/admin/reports/summary/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['sales_total'], 200000)
+        self.assertEqual(response.data['orders_count'], 2)
+
     def test_hall_create_works_without_branch_fields(self):
         self.authenticate()
 
@@ -311,7 +373,6 @@ class AdminApiTests(APITestCase):
         create_response = self.client.post(
             '/api/v1/admin/catalog/categories/',
             {
-                'branch': str(self.branch.id),
                 'name': 'Hot Drinks',
                 'mxik_code': '10000000000000001',
                 'mxik_name': 'Hot Drinks',
@@ -378,13 +439,62 @@ class AdminApiTests(APITestCase):
         self.assertEqual(item_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(item_response.data['name'], 'Iced Tea')
 
+    def test_admin_catalog_category_returns_image_fields_and_items_support_active_filter(self):
+        self.authenticate()
+
+        category_response = self.client.post(
+            '/api/v1/admin/catalog/categories/',
+            {
+                'name': 'Bakery',
+                'mxik_code': '10000000000000003',
+                'mxik_name': 'Bakery',
+                'sort_order': 3,
+                'is_active': True,
+            },
+            format='json',
+        )
+        self.assertEqual(category_response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('image_url', category_response.data)
+        self.assertIn('image_source', category_response.data)
+
+        active_item = self.client.post(
+            '/api/v1/admin/catalog/items/',
+            {
+                'category': str(category_response.data['id']),
+                'name': 'Croissant',
+                'description': '',
+                'is_active': True,
+                'is_stoplisted': False,
+            },
+            format='json',
+        )
+        self.assertEqual(active_item.status_code, status.HTTP_201_CREATED)
+
+        inactive_item = self.client.post(
+            '/api/v1/admin/catalog/items/',
+            {
+                'category': str(category_response.data['id']),
+                'name': 'Old Pie',
+                'description': '',
+                'is_active': False,
+                'is_stoplisted': False,
+            },
+            format='json',
+        )
+        self.assertEqual(inactive_item.status_code, status.HTTP_201_CREATED)
+
+        items_response = self.client.get('/api/v1/admin/catalog/items/', {'is_active': 'true'})
+        self.assertEqual(items_response.status_code, status.HTTP_200_OK)
+        item_names = {row['name'] for row in items_response.data['data']}
+        self.assertIn('Croissant', item_names)
+        self.assertNotIn('Old Pie', item_names)
+
     def test_admin_integration_config_create_and_update(self):
         self.authenticate()
 
         create_response = self.client.post(
             '/api/v1/admin/integrations/configs/',
             {
-                'branch': str(self.branch.id),
                 'kind': IntegrationConfig.Kind.FISCAL,
                 'provider': 'soliq-service',
                 'mode': IntegrationConfig.Mode.MOCK,
@@ -483,7 +593,6 @@ class AdminApiTests(APITestCase):
         report_dt = datetime(2026, 3, 27, 10, 0, tzinfo=TASHKENT_TIMEZONE)
         hall = Hall.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             name='Main Hall',
         )
         table = DiningTable.objects.create(
@@ -502,7 +611,6 @@ class AdminApiTests(APITestCase):
         )
         session = TableSession.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             hall=hall,
             table=table,
             opened_by=self.admin_user,
@@ -511,7 +619,6 @@ class AdminApiTests(APITestCase):
         )
         order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             table_session=session,
             opened_by=self.admin_user,
             order_number=101,

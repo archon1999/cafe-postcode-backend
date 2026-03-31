@@ -11,7 +11,6 @@ class CashShiftSerializer(serializers.ModelSerializer):
         model = CashShift
         fields = (
             'id',
-            'branch',
             'cash_desk',
             'cash_desk_name',
             'opened_by',
@@ -36,4 +35,3 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'updated_at',
         )
         read_only_fields = fields
-

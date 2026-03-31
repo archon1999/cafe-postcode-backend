@@ -10,7 +10,6 @@ from apps.integrations.services import ensure_mock_configs
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order, OrderItem, Payment, Receipt
 from apps.organizations.models import (
-    Branch,
     BusinessPartner,
     CashDesk,
     DistributionPoint,
@@ -27,6 +26,75 @@ def apply_translations(instance, field_name, translations):
     setattr(instance, f'{field_name}_uz', translations['uz'])
     setattr(instance, f'{field_name}_uz_crl', translations['uz_crl'])
     setattr(instance, f'{field_name}_ru', translations['ru'])
+
+
+TARIFF_PRESET_SPECS = [
+    {
+        'key': 'fast_food',
+        'name': 'Fast food',
+        'description': "Zalsiz, faqat menyu va kassada ishlaydigan nuqtalar uchun.",
+        'classification': Tariff.Classification.BASIC,
+        'monthly_price': 490000,
+        'yearly_price': 4900000,
+        'operational_settings': {
+            'hall_enabled': False,
+            'kitchen_enabled': False,
+            'cashier_enabled': True,
+            'owner_dashboard_enabled': True,
+            'order_entry_mode': 'cashier_builder',
+            'kitchen_mode': 'display',
+            'enabled_modules': ['cashier', 'owner_dashboard'],
+            'enabled_roles': ['owner', 'admin', 'manager', 'cashier', 'universal_operator'],
+        },
+    },
+    {
+        'key': 'printer_kitchen',
+        'name': 'Printer kitchen',
+        'description': 'Zal va kassa bor, buyurtma oshxonaga printer orqali ketadigan restoranlar uchun.',
+        'classification': Tariff.Classification.STANDARD,
+        'monthly_price': 790000,
+        'yearly_price': 7900000,
+        'operational_settings': {
+            'hall_enabled': True,
+            'kitchen_enabled': True,
+            'cashier_enabled': True,
+            'owner_dashboard_enabled': True,
+            'order_entry_mode': 'hall',
+            'kitchen_mode': 'printer',
+            'enabled_modules': ['hall', 'kitchen', 'cashier', 'owner_dashboard'],
+            'enabled_roles': ['owner', 'admin', 'manager', 'waiter', 'cashier', 'universal_operator'],
+        },
+    },
+    {
+        'key': 'full_service',
+        'name': 'Full service',
+        'description': 'Zal, oshxona va kassa bilan ishlaydigan oddiy restoranlar uchun.',
+        'classification': Tariff.Classification.PREMIUM,
+        'monthly_price': 990000,
+        'yearly_price': 9900000,
+        'operational_settings': {
+            'hall_enabled': True,
+            'kitchen_enabled': True,
+            'cashier_enabled': True,
+            'owner_dashboard_enabled': True,
+            'order_entry_mode': 'hall',
+            'kitchen_mode': 'display',
+            'enabled_modules': ['hall', 'kitchen', 'cashier', 'owner_dashboard'],
+            'enabled_roles': ['owner', 'admin', 'manager', 'waiter', 'cashier', 'chef', 'barman', 'universal_operator'],
+        },
+    },
+]
+
+FULL_SERVICE_DEMO_ENTITLEMENT_SETTINGS = {
+    'hall_enabled': True,
+    'kitchen_enabled': True,
+    'cashier_enabled': True,
+    'owner_dashboard_enabled': True,
+    'reports_enabled': True,
+}
+
+
+ZONE_NAMES = ['1-qavat', '2-qavat']
 
 
 HALL_SPECS = [
@@ -103,23 +171,20 @@ HALL_SPECS = [
 ]
 
 CATEGORY_SPECS = [
-    {'code': 'salatlar', 'mxik_code': '10000000000000001', 'kind': CatalogCategory.Kind.DISH, 'sort_order': 1, 'name': {'uz': 'Salatlar', 'uz_crl': 'Салатлар', 'ru': 'Салаты'}},
-    {'code': 'shorvalar', 'mxik_code': '10000000000000002', 'kind': CatalogCategory.Kind.DISH, 'sort_order': 2, 'name': {'uz': 'Sho‘rvalar', 'uz_crl': 'Шўрвалар', 'ru': 'Супы'}},
-    {'code': 'asosiy-taomlar', 'mxik_code': '10000000000000003', 'kind': CatalogCategory.Kind.DISH, 'sort_order': 3, 'name': {'uz': 'Asosiy taomlar', 'uz_crl': 'Асосий таомлар', 'ru': 'Основные блюда'}},
-    {'code': 'kaboblar', 'mxik_code': '10000000000000004', 'kind': CatalogCategory.Kind.DISH, 'sort_order': 4, 'name': {'uz': 'Kaboblar', 'uz_crl': 'Кабоблар', 'ru': 'Шашлыки'}},
-    {'code': 'shirinliklar', 'mxik_code': '10000000000000005', 'kind': CatalogCategory.Kind.DISH, 'sort_order': 5, 'name': {'uz': 'Shirinliklar', 'uz_crl': 'Ширинликлар', 'ru': 'Десерты'}},
-    {'code': 'issiq-ichimliklar', 'mxik_code': '10000000000000006', 'kind': CatalogCategory.Kind.DRINK, 'sort_order': 6, 'name': {'uz': 'Issiq ichimliklar', 'uz_crl': 'Иссиқ ичимликлар', 'ru': 'Горячие напитки'}},
-    {'code': 'sovuq-ichimliklar', 'mxik_code': '10000000000000007', 'kind': CatalogCategory.Kind.DRINK, 'sort_order': 7, 'name': {'uz': 'Sovuq ichimliklar', 'uz_crl': 'Совуқ ичимликлар', 'ru': 'Холодные напитки'}},
-    {'code': 'xizmatlar', 'mxik_code': '10000000000000008', 'kind': CatalogCategory.Kind.SERVICE, 'sort_order': 8, 'name': {'uz': 'Xizmatlar', 'uz_crl': 'Хизматлар', 'ru': 'Услуги'}},
-    {'code': 'jarimalar', 'mxik_code': '10000000000000009', 'kind': CatalogCategory.Kind.PENALTY, 'sort_order': 9, 'name': {'uz': 'Jarimalar', 'uz_crl': 'Жарималар', 'ru': 'Штрафы'}},
+    {'code': 'salatlar', 'mxik_code': '10000000000000001', 'sort_order': 1, 'name': {'uz': 'Salatlar', 'uz_crl': 'Салатлар', 'ru': 'Салаты'}},
+    {'code': 'shorvalar', 'mxik_code': '10000000000000002', 'sort_order': 2, 'name': {'uz': 'Sho‘rvalar', 'uz_crl': 'Шўрвалар', 'ru': 'Супы'}},
+    {'code': 'asosiy-taomlar', 'mxik_code': '10000000000000003', 'sort_order': 3, 'name': {'uz': 'Asosiy taomlar', 'uz_crl': 'Асосий таомлар', 'ru': 'Основные блюда'}},
+    {'code': 'kaboblar', 'mxik_code': '10000000000000004', 'sort_order': 4, 'name': {'uz': 'Kaboblar', 'uz_crl': 'Кабоблар', 'ru': 'Шашлыки'}},
+    {'code': 'shirinliklar', 'mxik_code': '10000000000000005', 'sort_order': 5, 'name': {'uz': 'Shirinliklar', 'uz_crl': 'Ширинликлар', 'ru': 'Десерты'}},
+    {'code': 'issiq-ichimliklar', 'mxik_code': '10000000000000006', 'sort_order': 6, 'name': {'uz': 'Issiq ichimliklar', 'uz_crl': 'Иссиқ ичимликлар', 'ru': 'Горячие напитки'}},
+    {'code': 'sovuq-ichimliklar', 'mxik_code': '10000000000000007', 'sort_order': 7, 'name': {'uz': 'Sovuq ichimliklar', 'uz_crl': 'Совуқ ичимликлар', 'ru': 'Холодные напитки'}},
 ]
 
 CATALOG_ITEM_SPECS = [
     {
         'code': 'achchiq-chuchuk',
         'category_code': 'salatlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 18000,
         'name': {'uz': 'Achchiq-chuchuk', 'uz_crl': 'Аччиқ-чучук', 'ru': 'Аччик-чучук'},
         'description': {'uz': 'Pomidor va piyozli yangi salat', 'uz_crl': 'Помидор ва пиёзли янги салат', 'ru': 'Свежий салат с помидорами и луком'},
@@ -127,8 +192,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'olivye',
         'category_code': 'salatlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 24000,
         'name': {'uz': 'Olivye', 'uz_crl': 'Оливье', 'ru': 'Оливье'},
         'description': {'uz': 'Mayin va to‘yimli salat', 'uz_crl': 'Майин ва тўйимли салат', 'ru': 'Нежный и сытный салат'},
@@ -136,8 +200,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'sezar-salat',
         'category_code': 'salatlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 34000,
         'name': {'uz': 'Sezar salat', 'uz_crl': 'Сезар салат', 'ru': 'Салат Цезарь'},
         'description': {'uz': 'Tovuq va parmesan bilan', 'uz_crl': 'Товуқ ва пармезан билан', 'ru': 'С курицей и пармезаном'},
@@ -145,8 +208,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'mastava',
         'category_code': 'shorvalar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 24000,
         'name': {'uz': 'Mastava', 'uz_crl': 'Мастава', 'ru': 'Мастава'},
         'description': {'uz': 'Guruchli an’anaviy sho‘rva', 'uz_crl': 'Гуручли анъанавий шўрва', 'ru': 'Традиционный рисовый суп'},
@@ -154,8 +216,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'moshxorda',
         'category_code': 'shorvalar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 23000,
         'name': {'uz': 'Moshxo‘rda', 'uz_crl': 'Мошхўрда', 'ru': 'Мошхурда'},
         'description': {'uz': 'Mosh va guruchli sho‘rva', 'uz_crl': 'Мош ва гуручли шўрва', 'ru': 'Суп с машем и рисом'},
@@ -163,8 +224,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'chuchvara-shorva',
         'category_code': 'shorvalar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 26000,
         'name': {'uz': 'Chuchvara sho‘rva', 'uz_crl': 'Чучвара шўрва', 'ru': 'Суп с чучварой'},
         'description': {'uz': 'Mayda chuchvarali sho‘rva', 'uz_crl': 'Майда чучваралик шўрва', 'ru': 'Суп с маленькими пельменями'},
@@ -172,8 +232,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'osh',
         'category_code': 'asosiy-taomlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 32000,
         'name': {'uz': 'Osh', 'uz_crl': 'Ош', 'ru': 'Плов'},
         'description': {'uz': 'An’anaviy to‘y oshi', 'uz_crl': 'Анъанавий тўй оши', 'ru': 'Традиционный праздничный плов'},
@@ -181,8 +240,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'manti',
         'category_code': 'asosiy-taomlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 28000,
         'name': {'uz': 'Manti', 'uz_crl': 'Манти', 'ru': 'Манты'},
         'description': {'uz': 'Qo‘l usulida tayyorlangan manti', 'uz_crl': 'Қўл усулида тайёрланган манти', 'ru': 'Манты ручной лепки'},
@@ -190,8 +248,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'lagmon',
         'category_code': 'asosiy-taomlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 36000,
         'name': {'uz': 'Lag‘mon', 'uz_crl': 'Лагмон', 'ru': 'Лагман'},
         'description': {'uz': 'Cho‘zma xamirli issiq taom', 'uz_crl': 'Чўзма хамирли иссиқ таом', 'ru': 'Горячее блюдо с тянутой лапшой'},
@@ -199,8 +256,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'qozon-kabob',
         'category_code': 'asosiy-taomlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'grill',
+                'prep_station_code': 'grill',
         'price': 46000,
         'name': {'uz': 'Qozon kabob', 'uz_crl': 'Қозон кабоб', 'ru': 'Казан-кебаб'},
         'description': {'uz': 'Kartoshka va go‘sht bilan', 'uz_crl': 'Картошка ва гўшт билан', 'ru': 'С картофелем и мясом'},
@@ -208,8 +264,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'dimlama',
         'category_code': 'asosiy-taomlar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 39000,
         'name': {'uz': 'Dimlama', 'uz_crl': 'Димлама', 'ru': 'Димлама'},
         'description': {'uz': 'Sabzavotli dimlama', 'uz_crl': 'Сабзавотли димлама', 'ru': 'Томленое блюдо с овощами'},
@@ -217,8 +272,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'tovuq-shashlik',
         'category_code': 'kaboblar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'grill',
+                'prep_station_code': 'grill',
         'price': 26000,
         'name': {'uz': 'Tovuq shashlik', 'uz_crl': 'Товуқ шашлик', 'ru': 'Куриный шашлык'},
         'description': {'uz': 'Yumshoq marinadlangan tovuq', 'uz_crl': 'Юмшоқ маринадланган товуқ', 'ru': 'Мягкая маринованная курица'},
@@ -226,8 +280,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'mol-shashlik',
         'category_code': 'kaboblar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'grill',
+                'prep_station_code': 'grill',
         'price': 34000,
         'name': {'uz': 'Mol shashlik', 'uz_crl': 'Мол шашлик', 'ru': 'Говяжий шашлык'},
         'description': {'uz': 'Mol go‘shtidan kabob', 'uz_crl': 'Мол гўштидан кабоб', 'ru': 'Шашлык из говядины'},
@@ -235,8 +288,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'qiymali-kabob',
         'category_code': 'kaboblar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'grill',
+                'prep_station_code': 'grill',
         'price': 31000,
         'name': {'uz': 'Qiymali kabob', 'uz_crl': 'Қиймали кабоб', 'ru': 'Люля-кебаб'},
         'description': {'uz': 'Sharqona ziravorlar bilan', 'uz_crl': 'Шарқона зираворлар билан', 'ru': 'С восточными специями'},
@@ -244,8 +296,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'qanotcha',
         'category_code': 'kaboblar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'grill',
+                'prep_station_code': 'grill',
         'price': 29000,
         'name': {'uz': 'Qanotcha', 'uz_crl': 'Қанотча', 'ru': 'Крылышки на гриле'},
         'description': {'uz': 'Achchiq sousli qanotcha', 'uz_crl': 'Аччиқ соусли қанотча', 'ru': 'Крылышки в пикантном соусе'},
@@ -253,8 +304,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'chak-chak',
         'category_code': 'shirinliklar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 16000,
         'name': {'uz': 'Chak-chak', 'uz_crl': 'Чак-чак', 'ru': 'Чак-чак'},
         'description': {'uz': 'Asalli sharqona shirinlik', 'uz_crl': 'Асалли шарқона ширинлик', 'ru': 'Восточная сладость с медом'},
@@ -262,8 +312,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'medovik',
         'category_code': 'shirinliklar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 21000,
         'name': {'uz': 'Medovik', 'uz_crl': 'Медовик', 'ru': 'Медовик'},
         'description': {'uz': 'Qatlamli asal torti', 'uz_crl': 'Қатламли асал торти', 'ru': 'Слоеный медовый торт'},
@@ -271,8 +320,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'napoleon',
         'category_code': 'shirinliklar',
-        'kind': CatalogItem.Kind.DISH,
-        'prep_station_code': 'kitchen',
+                'prep_station_code': 'kitchen',
         'price': 19000,
         'name': {'uz': 'Napoleon', 'uz_crl': 'Наполеон', 'ru': 'Наполеон'},
         'description': {'uz': 'Yengil qaymoqli tort', 'uz_crl': 'Енгил қаймоқли торт', 'ru': 'Легкий торт с кремом'},
@@ -280,8 +328,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'kuk-choy',
         'category_code': 'issiq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 12000,
         'name': {'uz': 'Ko‘k choy', 'uz_crl': 'Кўк чой', 'ru': 'Зеленый чай'},
         'description': {'uz': 'Choynakda tortiladi', 'uz_crl': 'Чойнакда тортилади', 'ru': 'Подается в чайнике'},
@@ -289,8 +336,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'qora-choy',
         'category_code': 'issiq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 12000,
         'name': {'uz': 'Qora choy', 'uz_crl': 'Қора чой', 'ru': 'Черный чай'},
         'description': {'uz': 'Limon bilan ham beriladi', 'uz_crl': 'Лимон билан ҳам берилади', 'ru': 'Можно подать с лимоном'},
@@ -298,8 +344,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'espresso',
         'category_code': 'issiq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 14000,
         'name': {'uz': 'Espresso', 'uz_crl': 'Эспрессо', 'ru': 'Эспрессо'},
         'description': {'uz': 'Kuchli qahva porsiyasi', 'uz_crl': 'Кучли қаҳва порцияси', 'ru': 'Крепкая порция кофе'},
@@ -307,8 +352,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'kapuchino',
         'category_code': 'issiq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 19000,
         'name': {'uz': 'Kapuchino', 'uz_crl': 'Капучино', 'ru': 'Капучино'},
         'description': {'uz': 'Sut ko‘pigili qahva', 'uz_crl': 'Сут кўпигили қаҳва', 'ru': 'Кофе с молочной пеной'},
@@ -316,8 +360,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'limonad',
         'category_code': 'sovuq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 16000,
         'name': {'uz': 'Limonad', 'uz_crl': 'Лимонад', 'ru': 'Лимонад'},
         'description': {'uz': 'Uy usulida tayyorlangan', 'uz_crl': 'Уй усулида тайёрланган', 'ru': 'Домашний лимонад'},
@@ -325,8 +368,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'mors',
         'category_code': 'sovuq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 15000,
         'name': {'uz': 'Mors', 'uz_crl': 'Морс', 'ru': 'Морс'},
         'description': {'uz': 'Mevali sovuq ichimlik', 'uz_crl': 'Мевали совуқ ичимлик', 'ru': 'Холодный ягодный напиток'},
@@ -334,8 +376,7 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'ayran',
         'category_code': 'sovuq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 11000,
         'name': {'uz': 'Ayran', 'uz_crl': 'Айран', 'ru': 'Айран'},
         'description': {'uz': 'Sovuq sutli ichimlik', 'uz_crl': 'Совуқ сутли ичимлик', 'ru': 'Холодный кисломолочный напиток'},
@@ -343,29 +384,10 @@ CATALOG_ITEM_SPECS = [
     {
         'code': 'anor-sharbati',
         'category_code': 'sovuq-ichimliklar',
-        'kind': CatalogItem.Kind.DRINK,
-        'prep_station_code': 'bar',
+                'prep_station_code': 'bar',
         'price': 24000,
         'name': {'uz': 'Anor sharbati', 'uz_crl': 'Анор шарбати', 'ru': 'Гранатовый сок'},
         'description': {'uz': 'Yangi siqilgan sharbat', 'uz_crl': 'Янги сиқилган шарбат', 'ru': 'Свежевыжатый сок'},
-    },
-    {
-        'code': 'xizmat-haqi',
-        'category_code': 'xizmatlar',
-        'kind': CatalogItem.Kind.SERVICE,
-        'prep_station_code': None,
-        'price': 15000,
-        'name': {'uz': 'Xizmat haqi', 'uz_crl': 'Хизмат ҳақи', 'ru': 'Сервисный сбор'},
-        'description': {'uz': 'Hisobga qo‘shiladigan xizmat haqi', 'uz_crl': 'Ҳисобга қўшиладиган хизмат ҳақи', 'ru': 'Сервисный сбор к счету'},
-    },
-    {
-        'code': 'idish-jarimasi',
-        'category_code': 'jarimalar',
-        'kind': CatalogItem.Kind.PENALTY,
-        'prep_station_code': None,
-        'price': 50000,
-        'name': {'uz': 'Idish jarimasi', 'uz_crl': 'Идиш жаримаси', 'ru': 'Штраф за посуду'},
-        'description': {'uz': 'Shikastlangan idish uchun', 'uz_crl': 'Шикастланган идиш учун', 'ru': 'За поврежденную посуду'},
     },
 ]
 
@@ -642,27 +664,27 @@ class Command(BaseCommand):
         business_partner.activated_at = timezone.now()
         business_partner.save()
 
-        tariff, _ = Tariff.objects.get_or_create(
-            name='Demo tarif',
-            defaults={
-                'classification': Tariff.Classification.STANDARD,
-                'monthly_price': 990000,
-                'yearly_price': 9900000,
-                'is_active': True,
-            },
-        )
-        tariff.classification = Tariff.Classification.STANDARD
-        tariff.description = "Demo restoran uchun standart tarif"
-        tariff.monthly_price = 990000
-        tariff.yearly_price = 9900000
-        tariff.is_active = True
-        tariff.operational_settings = {
-            'hall_enabled': True,
-            'kitchen_enabled': True,
-            'cashier_enabled': True,
-            'reports_enabled': True,
-        }
-        tariff.save()
+        tariffs_by_key = {}
+        for tariff_spec in TARIFF_PRESET_SPECS:
+            tariff, _ = Tariff.objects.get_or_create(
+                name=tariff_spec['name'],
+                defaults={
+                    'classification': tariff_spec['classification'],
+                    'monthly_price': tariff_spec['monthly_price'],
+                    'yearly_price': tariff_spec['yearly_price'],
+                    'is_active': True,
+                },
+            )
+            tariff.classification = tariff_spec['classification']
+            tariff.description = tariff_spec['description']
+            tariff.monthly_price = tariff_spec['monthly_price']
+            tariff.yearly_price = tariff_spec['yearly_price']
+            tariff.is_active = True
+            tariff.operational_settings = dict(tariff_spec['operational_settings'])
+            tariff.save()
+            tariffs_by_key[tariff_spec['key']] = tariff
+
+        full_service_tariff = tariffs_by_key['full_service']
 
         restaurant, _ = Restaurant.objects.get_or_create(name='Postcode kafe')
         restaurant.business_partner = business_partner
@@ -680,34 +702,25 @@ class Command(BaseCommand):
         restaurant.save()
 
         entitlement, _ = RestaurantEntitlement.objects.get_or_create(restaurant=restaurant)
-        entitlement.tariff = tariff
+        entitlement.tariff = full_service_tariff
         entitlement.is_active = True
         entitlement.is_custom = False
         entitlement.starts_on = timezone.localdate()
-        entitlement.monthly_price = tariff.monthly_price
-        entitlement.yearly_price = tariff.yearly_price
-        entitlement.operational_settings = dict(tariff.operational_settings)
+        entitlement.monthly_price = full_service_tariff.monthly_price
+        entitlement.yearly_price = full_service_tariff.yearly_price
+        entitlement.operational_settings = dict(FULL_SERVICE_DEMO_ENTITLEMENT_SETTINGS)
         entitlement.save()
 
-        branch, _ = Branch.objects.get_or_create(
-            restaurant=restaurant,
-            name='Asosiy filial',
-            defaults={'is_default': True, 'address': 'Yunusobod tumani, Toshkent'},
-        )
-        branch.name = 'Asosiy filial'
-        branch.address = 'Yunusobod tumani, Toshkent'
-        branch.service_fee_percent = 10
-        branch.is_default = True
-        branch.save()
+        Tariff.objects.filter(name='Demo tarif', restaurant_entitlements__isnull=True).delete()
 
         KitchenTicket.objects.filter(restaurant=restaurant).delete()
         Order.objects.filter(restaurant=restaurant).delete()
         TableSession.objects.filter(restaurant=restaurant).delete()
-        Hall.objects.filter(restaurant=restaurant, branch=branch).delete()
+        Hall.objects.filter(restaurant=restaurant).delete()
         CatalogItem.objects.filter(restaurant=restaurant).delete()
         CatalogCategory.objects.filter(restaurant=restaurant).delete()
-        DistributionPoint.objects.filter(restaurant=restaurant, branch=branch).delete()
-        CashDesk.objects.filter(restaurant=restaurant, branch=branch).delete()
+        DistributionPoint.objects.filter(restaurant=restaurant).delete()
+        CashDesk.objects.filter(restaurant=restaurant).delete()
 
         feature_config, _ = FeatureConfig.objects.get_or_create(restaurant=restaurant)
         feature_config.kitchen_mode = FeatureConfig.KitchenMode.BOTH
@@ -727,7 +740,6 @@ class Command(BaseCommand):
         for spec in prep_station_specs:
             station, _ = PrepStation.objects.get_or_create(
                 restaurant=restaurant,
-                branch=branch,
                 name=spec['name']['uz'],
                 defaults={'kind': spec['kind']},
             )
@@ -738,14 +750,12 @@ class Command(BaseCommand):
 
         main_cash_desk = CashDesk.objects.create(
             restaurant=restaurant,
-            branch=branch,
             name='Asosiy kassa',
             location='Kirish qismi',
         )
 
         hall_distribution = DistributionPoint.objects.create(
             restaurant=restaurant,
-            branch=branch,
             kind=DistributionPoint.Kind.HALL,
             name='Zal buyurtmalari',
         )
@@ -758,7 +768,6 @@ class Command(BaseCommand):
 
         takeaway_distribution = DistributionPoint.objects.create(
             restaurant=restaurant,
-            branch=branch,
             kind=DistributionPoint.Kind.TAKEAWAY,
             name='Olib ketish stendi',
         )
@@ -770,10 +779,10 @@ class Command(BaseCommand):
         takeaway_distribution.save()
 
         halls = {}
+        hall_zones = {}
         for hall_spec in HALL_SPECS:
             hall = Hall.objects.create(
                 restaurant=restaurant,
-                branch=branch,
                 name=hall_spec['name']['uz'],
                 description=hall_spec['description']['uz'],
                 sort_order=hall_spec['sort_order'],
@@ -785,26 +794,55 @@ class Command(BaseCommand):
             hall.save()
             halls[hall_spec['code']] = hall
 
-            zone_names = ['2-qavat', 'Kabina 2'] if hall_spec.get('code', '').endswith('-l2') else ['1-qavat', 'Kabina 1']
-            for zone_index, zone_name in enumerate(zone_names, start=1):
-                ZoneOrCabin.objects.create(
+            hall_zones[hall_spec['code']] = {}
+            for zone_index, zone_name in enumerate(ZONE_NAMES, start=1):
+                zone = ZoneOrCabin.objects.create(
                     hall=hall,
                     name=zone_name,
-                    is_private='kabina' in zone_name.lower(),
+                    is_private=False,
                     sort_order=zone_index,
                 )
+                hall_zones[hall_spec['code']][zone_name] = zone
 
         business_partner_role = Role.objects.get(code='business_partner')
         restaurant_admin_role = Role.objects.get(code='restaurant_admin')
+        owner_role = Role.objects.get(code='owner')
+        admin_role = Role.objects.get(code='admin')
         manager_role = Role.objects.get(code='manager')
         waiter_role = Role.objects.get(code='waiter')
         cashier_role = Role.objects.get(code='cashier')
         chef_role = Role.objects.get(code='chef')
         barman_role = Role.objects.get(code='barman')
-        tariff.permissions.set(restaurant_admin_role.permissions.all())
-        tariff.allowed_roles.set([restaurant_admin_role, manager_role, waiter_role, cashier_role, chef_role, barman_role])
-        entitlement.permissions.set([])
-        entitlement.allowed_roles.set([restaurant_admin_role, manager_role, waiter_role, cashier_role, chef_role, barman_role])
+        universal_operator_role = Role.objects.get(code='universal_operator')
+        roles_by_code = {
+            'restaurant_admin': restaurant_admin_role,
+            'owner': owner_role,
+            'admin': admin_role,
+            'manager': manager_role,
+            'waiter': waiter_role,
+            'cashier': cashier_role,
+            'chef': chef_role,
+            'barman': barman_role,
+            'universal_operator': universal_operator_role,
+        }
+        for tariff_spec in TARIFF_PRESET_SPECS:
+            tariff = tariffs_by_key[tariff_spec['key']]
+            allowed_roles = [roles_by_code[code] for code in tariff_spec['operational_settings']['enabled_roles']]
+            permission_ids = sorted(
+                {
+                    permission.id
+                    for role in allowed_roles
+                    for permission in role.permissions.all()
+                }
+            )
+            tariff.permissions.set(permission_ids)
+            tariff.allowed_roles.set(allowed_roles)
+
+        entitlement.permissions.set(restaurant_admin_role.permissions.all())
+        entitlement_role_codes = dict.fromkeys(
+            ['restaurant_admin', *full_service_tariff.operational_settings.get('enabled_roles', [])]
+        )
+        entitlement.allowed_roles.set([roles_by_code[code] for code in entitlement_role_codes])
 
         admin_user, _ = User.objects.get_or_create(
             username='admin',
@@ -816,36 +854,27 @@ class Command(BaseCommand):
             },
         )
         admin_user.full_name = 'System Administrator'
-        admin_user.restaurant = None
-        admin_user.branch = None
         admin_user.role = None
         admin_user.ui_mode = User.UiMode.ADMIN
         admin_user.is_staff = True
         admin_user.is_superuser = True
         admin_user.set_password('admin123')
-        admin_user.pin_code = ''
         admin_user.save()
-        admin_user.allowed_halls.clear()
 
         partner_user, _ = User.objects.get_or_create(
             username='partner_demo',
             defaults={
                 'full_name': 'Biznes hamkor demo',
                 'role': business_partner_role,
-                'business_partner': business_partner,
                 'ui_mode': User.UiMode.ADMIN,
                 'is_staff': True,
             },
         )
         partner_user.full_name = 'Biznes hamkor demo'
         partner_user.role = business_partner_role
-        partner_user.business_partner = business_partner
-        partner_user.restaurant = None
-        partner_user.branch = None
         partner_user.ui_mode = User.UiMode.ADMIN
         partner_user.is_staff = True
         partner_user.set_password('partner123')
-        partner_user.pin_code = ''
         partner_user.save()
         BusinessPartnerUserProfile.objects.update_or_create(
             user=partner_user,
@@ -870,16 +899,12 @@ class Command(BaseCommand):
                 defaults={
                     'full_name': full_name,
                     'role': role,
-                    'restaurant': restaurant,
-                    'branch': branch,
                     'ui_mode': ui_mode,
                     'is_staff': ui_mode == User.UiMode.ADMIN,
                 },
             )
             user.full_name = full_name
             user.role = role
-            user.restaurant = restaurant
-            user.branch = branch
             user.ui_mode = ui_mode
             user.is_staff = ui_mode == User.UiMode.ADMIN
             if password:
@@ -906,6 +931,7 @@ class Command(BaseCommand):
         for spec in MAIN_HALL_TABLE_SPECS:
             DiningTable.objects.create(
                 hall=halls['main-hall'],
+                zone=hall_zones['main-hall']['1-qavat'],
                 name=f"{halls['main-hall'].name} {spec['table_number']}",
                 table_number=spec['table_number'],
                 seat_count=spec['seat_count'],
@@ -920,9 +946,11 @@ class Command(BaseCommand):
 
         for hall_code, table_specs in SECONDARY_HALL_TABLE_SPECS.items():
             hall = halls[hall_code]
+            zone_name = '2-qavat' if hall_code.endswith('-l2') else '1-qavat'
             for spec in table_specs:
                 DiningTable.objects.create(
                     hall=hall,
+                    zone=hall_zones[hall_code][zone_name],
                     name=f"{hall.name} {spec['table_number']}",
                     table_number=spec['table_number'],
                     seat_count=spec['seat_count'],
@@ -937,15 +965,11 @@ class Command(BaseCommand):
 
         categories = {}
         for spec in CATEGORY_SPECS:
-            if spec['kind'] in {CatalogCategory.Kind.SERVICE, CatalogCategory.Kind.PENALTY}:
-                continue
             category, _ = CatalogCategory.objects.get_or_create(
                 restaurant=restaurant,
-                branch=branch,
                 mxik_code=spec['mxik_code'],
-                defaults={'name': spec['name']['uz'], 'kind': spec['kind'], 'sort_order': spec['sort_order']},
+                defaults={'name': spec['name']['uz'], 'sort_order': spec['sort_order']},
             )
-            category.kind = spec['kind']
             category.sort_order = spec['sort_order']
             category.mxik_code = spec['mxik_code']
             category.mxik_name = spec['name']['uz']
@@ -955,21 +979,16 @@ class Command(BaseCommand):
 
         items_by_code = {}
         for spec in CATALOG_ITEM_SPECS:
-            if spec['kind'] in {CatalogItem.Kind.SERVICE, CatalogItem.Kind.PENALTY}:
-                continue
             item, _ = CatalogItem.objects.get_or_create(
                 restaurant=restaurant,
-                branch=branch,
                 name=spec['name']['uz'],
                 defaults={
                     'category': categories[spec['category_code']],
-                    'kind': spec['kind'],
                     'prep_station': prep_stations.get(spec['prep_station_code']),
                     'price': spec['price'],
                 },
             )
             item.category = categories[spec['category_code']]
-            item.kind = spec['kind']
             item.prep_station = prep_stations.get(spec['prep_station_code'])
             item.price = spec['price']
             item.is_active = True
@@ -979,7 +998,7 @@ class Command(BaseCommand):
             item.save()
             items_by_code[spec['code']] = item
 
-        ensure_mock_configs(restaurant, branch)
+        ensure_mock_configs(restaurant)
 
         now = timezone.now()
         demo_orders = build_demo_orders(now)
@@ -1014,7 +1033,6 @@ class Command(BaseCommand):
             if channel == Order.Channel.HALL:
                 session = TableSession.objects.create(
                     restaurant=restaurant,
-                    branch=branch,
                     hall=table.hall,
                     table=table,
                     opened_by=waiter,
@@ -1033,7 +1051,6 @@ class Command(BaseCommand):
 
             order = Order.objects.create(
                 restaurant=restaurant,
-                branch=branch,
                 table_session=session,
                 distribution_point=distribution_point,
                 opened_by=waiter,
@@ -1113,8 +1130,7 @@ class Command(BaseCommand):
                 for station in prep_station_totals.values():
                     ticket = KitchenTicket.objects.create(
                         restaurant=restaurant,
-                        branch=branch,
-                        order=order,
+                                order=order,
                         prep_station=station,
                         status=ticket_status,
                         routed_via=KitchenTicket.RouteMode.BOTH,

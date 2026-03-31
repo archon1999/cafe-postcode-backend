@@ -7,8 +7,8 @@ from rest_framework.views import APIView
 
 from apps.accounts.serializers import AuthSessionSerializer
 from apps.accounts.services import AuthSessionService
-from apps.dashboard.permissions import IsOwnerDashboardUser
 from apps.dashboard.serializers import OwnerDashboardLoginSerializer, OwnerDashboardUserSerializer
+from common.api.permissions import EndpointRBACPermission
 from common.api.throttling import LoginRateThrottle
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ class DashboardAuthLoginView(APIView):
 
 
 class DashboardAuthLogoutView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     auth_session_service_class = AuthSessionService
 
     def post(self, request):
@@ -46,7 +46,7 @@ class DashboardAuthLogoutView(APIView):
 
 
 class DashboardAuthMeView(APIView):
-    permission_classes = [permissions.IsAuthenticated, IsOwnerDashboardUser]
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get(self, request):
         return Response(OwnerDashboardUserSerializer(request.user).data)

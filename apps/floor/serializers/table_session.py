@@ -21,7 +21,6 @@ class TableSessionSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'restaurant',
-            'branch',
             'hall',
             'hall_name',
             'table',
@@ -36,7 +35,7 @@ class TableSessionSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
-        read_only_fields = ('restaurant', 'branch', 'hall', 'opened_by', 'closed_at', 'merged_into')
+        read_only_fields = ('restaurant', 'hall', 'opened_by', 'closed_at', 'merged_into')
 
     def validate(self, attrs):
         table = attrs.get('table') or getattr(self.instance, 'table', None)

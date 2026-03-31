@@ -17,7 +17,6 @@ class TableSession(BaseModel):
         on_delete=models.CASCADE,
         related_name='table_sessions',
     )
-    branch = models.ForeignKey('organizations.Branch', on_delete=models.CASCADE, related_name='table_sessions')
     hall = models.ForeignKey('floor.Hall', on_delete=models.CASCADE, related_name='table_sessions')
     table = models.ForeignKey('floor.DiningTable', on_delete=models.CASCADE, related_name='table_sessions')
     opened_by = models.ForeignKey(
@@ -49,7 +48,7 @@ class TableSession(BaseModel):
     class Meta:
         ordering = ('-created_at',)
         indexes = [
-            scoped_status_index('branch', name='tablesess_branch_status_idx'),
+            scoped_status_index('restaurant', name='tblsess_rest_status_idx'),
         ]
 
     def __str__(self):

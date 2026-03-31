@@ -73,24 +73,20 @@ def get_report_period(query_params) -> ReportPeriod:
     )
 
 
-def build_summary_payload(branch, period: ReportPeriod, restaurant=None) -> dict:
+def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
     succeeded_payments = Payment.objects.filter(
         status=Payment.Status.SUCCEEDED,
         paid_at__gte=period.start,
         paid_at__lt=period.end,
     )
-    if branch is not None:
-        succeeded_payments = succeeded_payments.filter(order__branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         succeeded_payments = succeeded_payments.filter(order__restaurant=restaurant)
     sales_total = succeeded_payments.aggregate(total=Sum('amount')).get('total') or 0
     closed_orders = Order.objects.filter(
         closed_at__gte=period.start,
         closed_at__lt=period.end,
     ).exclude(status=Order.Status.CANCELLED)
-    if branch is not None:
-        closed_orders = closed_orders.filter(branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         closed_orders = closed_orders.filter(restaurant=restaurant)
     orders_count = closed_orders.count()
     average_check = sales_total // orders_count if orders_count else 0
@@ -98,9 +94,7 @@ def build_summary_payload(branch, period: ReportPeriod, restaurant=None) -> dict
         Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end)
         .exclude(status__in=[Order.Status.CLOSED, Order.Status.CANCELLED])
     )
-    if branch is not None:
-        open_checks = open_checks.filter(branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         open_checks = open_checks.filter(restaurant=restaurant)
     open_checks = open_checks.count()
     active_tables = TableSession.objects.filter(
@@ -108,9 +102,7 @@ def build_summary_payload(branch, period: ReportPeriod, restaurant=None) -> dict
         created_at__lt=period.end,
         status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
     )
-    if branch is not None:
-        active_tables = active_tables.filter(branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         active_tables = active_tables.filter(restaurant=restaurant)
     active_tables = active_tables.count()
     return {
@@ -122,26 +114,22 @@ def build_summary_payload(branch, period: ReportPeriod, restaurant=None) -> dict
     }
 
 
-def get_sales_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
+def get_sales_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = Payment.objects.filter(
         status=Payment.Status.SUCCEEDED,
         paid_at__gte=period.start,
         paid_at__lt=period.end,
     )
-    if branch is not None:
-        queryset = queryset.filter(order__branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         queryset = queryset.filter(order__restaurant=restaurant)
     return queryset.values('method').annotate(count=Count('id'), total=Sum('amount'))
 
 
-def get_open_checks_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
+def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end).exclude(
         status__in=[Order.Status.CLOSED, Order.Status.CANCELLED]
     )
-    if branch is not None:
-        queryset = queryset.filter(branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         queryset = queryset.filter(restaurant=restaurant)
     return queryset.values(
         'id',
@@ -155,14 +143,12 @@ def get_open_checks_report_queryset(branch, period: ReportPeriod, restaurant=Non
     )
 
 
-def get_top_items_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
+def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = OrderItem.objects.filter(
         order__created_at__gte=period.start,
         order__created_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
-    if branch is not None:
-        queryset = queryset.filter(order__branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         queryset = queryset.filter(order__restaurant=restaurant)
     return queryset.values(
         'catalog_item_id',
@@ -172,11 +158,9 @@ def get_top_items_report_queryset(branch, period: ReportPeriod, restaurant=None)
     ).annotate(quantity=Sum('quantity'), revenue=Sum('line_total'))
 
 
-def get_top_staff_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
+def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end)
-    if branch is not None:
-        queryset = queryset.filter(branch=branch)
-    elif restaurant is not None:
+    if restaurant is not None:
         queryset = queryset.filter(restaurant=restaurant)
     return queryset.values(
         staff_id=F('opened_by__id'),
@@ -184,16 +168,14 @@ def get_top_staff_report_queryset(branch, period: ReportPeriod, restaurant=None)
     ).annotate(order_count=Count('id'), total_sales=Sum('total'))
 
 
-def get_payment_breakdown_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
-    return get_sales_report_queryset(branch, period, restaurant=restaurant)
+def get_payment_breakdown_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
+    return get_sales_report_queryset(restaurant, period)
 
 
-def get_shift_report_queryset(branch, period: ReportPeriod, restaurant=None) -> QuerySet:
+def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = CashShift.objects.filter(opened_at__gte=period.start, opened_at__lt=period.end)
-    if branch is not None:
-        queryset = queryset.filter(branch=branch)
-    elif restaurant is not None:
-        queryset = queryset.filter(branch__restaurant=restaurant)
+    if restaurant is not None:
+        queryset = queryset.filter(cash_desk__restaurant=restaurant)
     return queryset.values(
         'id',
         'status',

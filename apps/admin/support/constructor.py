@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from django.db.models import Q, QuerySet
 
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.organizations.models import CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
 from common.api.permissions import IsAdmin
 from common.api.query_params import (
@@ -33,6 +33,13 @@ DINING_TABLE_ORDERING_FIELDS = {
     'seatCount': 'seat_count',
     'shape': 'shape',
     'status': 'status',
+}
+ZONE_ORDERING_FIELDS = {
+    'name': 'name',
+    'hallName': ('hall__name', 'name'),
+    'isPrivate': 'is_private',
+    'sortOrder': 'sort_order',
+    'isActive': 'is_active',
 }
 PREP_STATION_ORDERING_FIELDS = {
     'name': 'name',
@@ -175,6 +182,37 @@ class DiningTableListFilters:
         if self.statuses:
             queryset = queryset.filter(status__in=self.statuses)
         return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('table_number', 'name'))
+
+
+@dataclass(frozen=True)
+class ZoneListFilters:
+    search: str = ''
+    hall_ids: tuple[str, ...] = ()
+    is_private: bool | None = None
+    is_active: bool | None = None
+    ordering: tuple[str, ...] = ()
+
+    @classmethod
+    def from_request(cls, request) -> 'ZoneListFilters':
+        query_params = request.query_params
+        return cls(
+            search=get_str_query_param(query_params, 'search'),
+            hall_ids=tuple(get_str_list_query_param(query_params, 'hall_id_in')),
+            is_private=get_bool_query_param(query_params, 'is_private'),
+            is_active=get_bool_query_param(query_params, 'is_active'),
+            ordering=get_ordering_query_param(query_params, ZONE_ORDERING_FIELDS),
+        )
+
+    def apply(self, queryset: QuerySet[ZoneOrCabin]) -> QuerySet[ZoneOrCabin]:
+        if self.search:
+            queryset = queryset.filter(Q(name__icontains=self.search) | Q(hall__name__icontains=self.search))
+        if self.hall_ids:
+            queryset = queryset.filter(hall_id__in=self.hall_ids)
+        if self.is_private is not None:
+            queryset = queryset.filter(is_private=self.is_private)
+        if self.is_active is not None:
+            queryset = queryset.filter(is_active=self.is_active)
+        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('hall__name', 'sort_order', 'name'))
 
 
 @dataclass(frozen=True)

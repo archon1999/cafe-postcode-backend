@@ -1,8 +1,8 @@
 from rest_framework import permissions
 
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 
-ADMIN_PERMISSION_CLASSES = [permissions.IsAuthenticated, HasPermissionCode]
+ADMIN_PERMISSION_CLASSES = [permissions.IsAuthenticated, EndpointRBACPermission]
 
 
 class AdminAllowAnyMixin:
@@ -10,7 +10,7 @@ class AdminAllowAnyMixin:
 
 
 class AdminAuthenticatedMixin:
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = ADMIN_PERMISSION_CLASSES
 
 
 class AdminPermissionRequiredMixin:

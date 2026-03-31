@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.integrations.models import IntegrationConfig
 from apps.integrations.serializers import IntegrationConfigSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class IntegrationConfigListCreateView(generics.ListCreateAPIView):
@@ -17,4 +17,4 @@ class IntegrationConfigListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)

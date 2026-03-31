@@ -4,7 +4,7 @@ from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.organizations.services import FeatureGateService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 from common.utils.date import tashkent_day_bounds
 
 
@@ -16,11 +16,11 @@ class OpenCheckListView(generics.ListAPIView):
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        self.feature_gate_service_class().ensure_cashier_access(restaurant=branch.restaurant)
+        restaurant = get_request_restaurant(self.request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         status_filter = self.request.query_params.get('status', 'open')
         queryset = (
-            Order.objects.filter(branch=branch)
+            Order.objects.filter(restaurant=restaurant)
             .select_related(
                 'table_session',
                 'table_session__hall',

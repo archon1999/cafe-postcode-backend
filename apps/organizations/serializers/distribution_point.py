@@ -14,7 +14,6 @@ class DistributionPointSerializer(serializers.ModelSerializer):
             'name_ru',
             'kind',
             'integration_channel',
-            'branch',
             'assigned_hall',
             'is_active',
         )

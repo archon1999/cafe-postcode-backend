@@ -9,11 +9,11 @@ class OwnerDashboardOverviewService:
     def get_today_range(self):
         return tashkent_day_bounds()
 
-    def build(self, *, branch):
+    def build(self, *, restaurant):
         start, end = self.get_today_range()
 
         succeeded_payments = Payment.objects.filter(
-            order__branch=branch,
+            order__restaurant=restaurant,
             status=Payment.Status.SUCCEEDED,
             paid_at__gte=start,
             paid_at__lt=end,
@@ -23,7 +23,7 @@ class OwnerDashboardOverviewService:
         )['total']
 
         closed_orders = Order.objects.filter(
-            branch=branch,
+            restaurant=restaurant,
             status=Order.Status.CLOSED,
             closed_at__gte=start,
             closed_at__lt=end,
@@ -33,7 +33,7 @@ class OwnerDashboardOverviewService:
 
         top_items = list(
             OrderItem.objects.filter(
-                order__branch=branch,
+                order__restaurant=restaurant,
                 order__status=Order.Status.CLOSED,
                 order__closed_at__gte=start,
                 order__closed_at__lt=end,
@@ -68,13 +68,9 @@ class OwnerDashboardOverviewService:
         return {
             'generated_at': tashkent_now(),
             'restaurant': {
-                'id': branch.restaurant_id,
-                'name': branch.restaurant.name,
-                'currency': branch.restaurant.currency,
-            },
-            'branch': {
-                'id': branch.id,
-                'name': branch.name,
+                'id': restaurant.id,
+                'name': restaurant.name,
+                'currency': restaurant.currency,
             },
             'sales_total': sales_total,
             'orders_count': orders_count,

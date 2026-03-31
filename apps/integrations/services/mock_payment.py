@@ -12,7 +12,6 @@ class MockPaymentIntegrationService:
         config = self.resolver_service_class().get_config(
             kind=IntegrationConfig.Kind.PAYMENT,
             restaurant=order.restaurant,
-            branch=order.branch,
         )
         qr_payload = {
             'label': f'QR-{order.order_number}',

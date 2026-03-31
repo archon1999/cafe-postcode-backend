@@ -12,7 +12,6 @@ class MockFiscalIntegrationService:
         config = self.resolver_service_class().get_config(
             kind=IntegrationConfig.Kind.FISCAL,
             restaurant=order.restaurant,
-            branch=order.branch,
         )
         return {
             'ok': True,

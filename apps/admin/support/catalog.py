@@ -31,7 +31,7 @@ ITEM_ORDERING_FIELDS = {
 }
 
 def filter_catalog_queryset_by_scope(queryset, request, restaurant_lookup: str = 'restaurant'):
-    return filter_queryset_by_optional_scope(queryset, request, branch_lookup=restaurant_lookup, restaurant_lookup=restaurant_lookup)
+    return filter_queryset_by_optional_scope(queryset, request, restaurant_lookup=restaurant_lookup)
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,7 @@ class CategoryListFilters:
 class ItemListFilters:
     search: str = ''
     category_ids: tuple[str, ...] = ()
+    is_active: bool | None = None
     is_stoplisted: bool | None = None
     ordering: tuple[str, ...] = ()
 
@@ -74,6 +75,7 @@ class ItemListFilters:
         return cls(
             search=get_str_query_param(query_params, 'search'),
             category_ids=tuple(get_str_list_query_param(query_params, 'category_id_in')),
+            is_active=get_bool_query_param(query_params, 'is_active'),
             is_stoplisted=get_bool_query_param(query_params, 'is_stoplisted'),
             ordering=get_ordering_query_param(query_params, ITEM_ORDERING_FIELDS),
         )
@@ -89,6 +91,8 @@ class ItemListFilters:
             )
         if self.category_ids:
             queryset = queryset.filter(category_id__in=self.category_ids)
+        if self.is_active is not None:
+            queryset = queryset.filter(is_active=self.is_active)
         if self.is_stoplisted is not None:
             queryset = queryset.filter(is_stoplisted=self.is_stoplisted)
         return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('name',))

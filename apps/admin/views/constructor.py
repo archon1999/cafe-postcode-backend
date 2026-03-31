@@ -12,6 +12,7 @@ from apps.admin.serializers import (
     PrepStationSerializer,
     RestaurantSerializer,
     TableSessionSerializer,
+    ZoneOrCabinSerializer,
 )
 from apps.admin.support import (
     AdminSuperuserRequiredMixin,
@@ -24,18 +25,12 @@ from apps.admin.support import (
     PrepStationListFilters,
     RestaurantListFilters,
     TableSessionListFilters,
+    ZoneListFilters,
     filter_constructor_queryset_by_restaurant,
 )
-from apps.floor.models import DiningTable, Hall, TableSession
-from apps.organizations.models import Branch, CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
+from apps.organizations.models import CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
 from common.api.scopes import get_request_restaurant
-
-
-def get_restaurant_default_branch_compat(restaurant: Restaurant) -> Branch:
-    branch = restaurant.branches.filter(is_default=True).first() or restaurant.branches.order_by('created_at').first()
-    if branch is None:
-        raise Branch.DoesNotExist(f"Restaurant {restaurant.pk} has no branch for compatibility fallback.")
-    return branch
 
 
 def get_restaurants_queryset_for_request(request):
@@ -108,7 +103,7 @@ class HallListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_restaurant_default_branch_compat(restaurant))
+        serializer.save(restaurant=restaurant)
 
 
 class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -154,6 +149,35 @@ class DiningTableDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdat
         )
 
 
+class ZoneListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
+    serializer_class = ZoneOrCabinSerializer
+
+    def get_permission_code(self):
+        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
+
+    def get_queryset(self):
+        queryset = filter_constructor_queryset_by_restaurant(
+            ZoneOrCabin.objects.select_related('hall'),
+            self.request,
+            'hall__restaurant',
+        )
+        return ZoneListFilters.from_request(self.request).apply(queryset)
+
+
+class ZoneDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = ZoneOrCabinSerializer
+
+    def get_permission_code(self):
+        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
+
+    def get_queryset(self):
+        return filter_constructor_queryset_by_restaurant(
+            ZoneOrCabin.objects.select_related('hall'),
+            self.request,
+            'hall__restaurant',
+        )
+
+
 class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = PrepStationSerializer
     permission_code = 'integrations.manage'
@@ -164,7 +188,7 @@ class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_restaurant_default_branch_compat(restaurant))
+        serializer.save(restaurant=restaurant)
 
 
 class PrepStationDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):

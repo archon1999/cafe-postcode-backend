@@ -27,7 +27,7 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_service_fee_percent(self, obj):
         if obj.channel != Order.Channel.HALL:
             return 0
-        return getattr(obj.branch, 'service_fee_percent', 10) or 0
+        return getattr(obj.restaurant, 'service_fee_percent', 10) or 0
 
     def get_items(self, obj):
         item_queryset = obj.items.select_related('catalog_item', 'prep_station')

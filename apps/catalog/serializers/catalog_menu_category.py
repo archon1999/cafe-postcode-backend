@@ -10,7 +10,7 @@ class CatalogMenuCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CatalogCategory
-        fields = ('id', 'name', 'kind', 'sort_order', 'items')
+        fields = ('id', 'name', 'sort_order', 'items')
 
     def get_items(self, obj):
         item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related('prep_station')

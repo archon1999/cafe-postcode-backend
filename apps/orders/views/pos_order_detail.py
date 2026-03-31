@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class PosOrderDetailView(generics.RetrieveUpdateAPIView):
@@ -12,8 +12,8 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
     permission_code = 'orders.view'
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        return Order.objects.filter(branch=branch).select_related(
+        restaurant = get_request_restaurant(self.request)
+        return Order.objects.filter(restaurant=restaurant).select_related(
             'table_session',
             'table_session__hall',
             'table_session__table',

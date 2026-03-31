@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.floor.models import Hall
 from apps.floor.serializers import HallSerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class HallListCreateView(generics.ListCreateAPIView):
@@ -13,8 +13,8 @@ class HallListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return Hall.objects.filter(restaurant=restaurant).prefetch_related('tables__table_sessions')
+        return Hall.objects.filter(restaurant=restaurant).prefetch_related('zones', 'tables__table_sessions')
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)

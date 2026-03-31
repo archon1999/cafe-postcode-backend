@@ -12,7 +12,6 @@ class MockPrinterIntegrationService:
         config = self.resolver_service_class().get_config(
             kind=IntegrationConfig.Kind.PRINTER,
             restaurant=ticket.restaurant,
-            branch=ticket.branch,
         )
         return {
             'ok': True,
@@ -21,4 +20,3 @@ class MockPrinterIntegrationService:
             'mode': config.mode if config else IntegrationConfig.Mode.MOCK,
             'printed_at': timezone.now().isoformat(),
         }
-

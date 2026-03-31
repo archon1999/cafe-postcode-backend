@@ -1,12 +1,19 @@
 from django.contrib import admin
 
-from .models import BusinessPartnerUserProfile, Permission, RestaurantUserProfile, Role, User
+from .models import BusinessPartnerUserProfile, Permission, PermissionEndpoint, RestaurantUserProfile, Role, User
 
 
 @admin.register(Permission)
 class PermissionAdmin(admin.ModelAdmin):
     list_display = ('code', 'name')
     search_fields = ('code', 'name')
+
+
+@admin.register(PermissionEndpoint)
+class PermissionEndpointAdmin(admin.ModelAdmin):
+    list_display = ('method', 'url', 'permission')
+    list_filter = ('method',)
+    search_fields = ('url', 'permission__code', 'permission__name')
 
 
 @admin.register(Role)

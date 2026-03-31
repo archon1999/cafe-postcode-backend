@@ -20,6 +20,8 @@ from apps.admin.views import (
     RestaurantConfigView,
     TableSessionDetailView,
     TableSessionListCreateView,
+    ZoneDetailView,
+    ZoneListCreateView,
 )
 
 urlpatterns = [
@@ -28,6 +30,8 @@ urlpatterns = [
     path('floor/halls/', HallListCreateView.as_view()),
     path('floor/halls/<uuid:pk>/', HallDetailView.as_view()),
     path('floor/halls/<uuid:pk>/constructor/', HallConstructorView.as_view()),
+    path('floor/zones/', ZoneListCreateView.as_view()),
+    path('floor/zones/<uuid:pk>/', ZoneDetailView.as_view()),
     path('floor/tables/', DiningTableListCreateView.as_view()),
     path('floor/tables/<uuid:pk>/', DiningTableDetailView.as_view()),
     path('floor/table-sessions/', TableSessionListCreateView.as_view()),

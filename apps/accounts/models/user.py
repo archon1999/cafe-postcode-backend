@@ -77,13 +77,6 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         null=True,
         blank=True,
     )
-    branch = models.ForeignKey(
-        'organizations.Branch',
-        on_delete=models.SET_NULL,
-        related_name='users',
-        null=True,
-        blank=True,
-    )
     business_partner = models.ForeignKey(
         'organizations.BusinessPartner',
         on_delete=models.SET_NULL,

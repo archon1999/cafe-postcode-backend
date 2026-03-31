@@ -2,81 +2,84 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Permission, Role, User
-from apps.organizations.models import Branch, FeatureConfig, Restaurant
+from apps.organizations.models import FeatureConfig, Restaurant, RestaurantEntitlement
 
 
 class DashboardAuthApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(restaurant=cls.restaurant, name='Main', is_default=True)
-        cls.owner_role = Role.objects.get_or_create(
-            code='owner',
-            defaults={'name': 'Owner', 'description': 'Owner role', 'is_system': False},
-        )[0]
-        dashboard_permission = Permission.objects.get_or_create(
-            code='dashboard.view',
-            defaults={'name': 'Dashboard view', 'description': 'Dashboard view permission'},
-        )[0]
-        cls.owner_role.permissions.set([dashboard_permission])
-        cls.owner_user = User.objects.create_user(
-            username='owner-user',
-            password='secret123',
-            full_name='Owner User',
-            restaurant=cls.restaurant,
-            branch=cls.branch,
-            role=cls.owner_role,
-            ui_mode=User.UiMode.ADMIN,
-            is_staff=True,
-        )
-        cls.manager_role = Role.objects.get_or_create(
-            code='dashboard-manager',
-            defaults={'name': 'Manager', 'description': 'Manager role', 'is_system': False},
-        )[0]
-        cls.manager_role.permissions.set([dashboard_permission])
-        cls.manager_user = User.objects.create_user(
-            username='manager-user',
-            password='secret123',
-            full_name='Manager User',
-            restaurant=cls.restaurant,
-            branch=cls.branch,
-            role=cls.manager_role,
-            ui_mode=User.UiMode.ADMIN,
-            is_staff=True,
-        )
-        cls.feature_config = FeatureConfig.objects.create(
+        FeatureConfig.objects.create(
             restaurant=cls.restaurant,
             owner_dashboard_enabled=True,
             hall_enabled=True,
             kitchen_enabled=True,
             cashier_enabled=True,
         )
+        cls.entitlement = RestaurantEntitlement.objects.create(restaurant=cls.restaurant, is_active=True)
+        cls.entitlement.permissions.set(Permission.objects.all())
 
-    def test_owner_dashboard_login_returns_session_metadata(self):
-        response = self.client.post(
-            '/api/v1/dashboard/auth/login/',
-            {'username': self.owner_user.username, 'password': 'secret123'},
-            format='json',
+        cls.dashboard_permission = Permission.objects.get(code='dashboard.view')
+        cls.hall_permission = Permission.objects.get(code='hall.view')
+
+        cls.owner_role = Role.objects.create(
+            code='dashboard_owner_test',
+            name='Dashboard owner',
+            description='Dashboard owner role',
+            is_system=False,
+        )
+        cls.owner_role.permissions.set([cls.dashboard_permission])
+
+        cls.staff_role = Role.objects.create(
+            code='dashboard_staff_test',
+            name='Dashboard staff',
+            description='Dashboard staff role',
+            is_system=False,
+        )
+        cls.staff_role.permissions.set([cls.hall_permission])
+
+        cls.entitlement.allowed_roles.set([cls.owner_role, cls.staff_role])
+
+        cls.owner_user = User.objects.create_user(
+            username='owner-user',
+            password='secret123',
+            full_name='Owner User',
+            restaurant=cls.restaurant,
+            role=cls.owner_role,
+            ui_mode=User.UiMode.ADMIN,
+            is_staff=True,
+            is_active=True,
+        )
+        cls.staff_user = User.objects.create_user(
+            username='staff-user',
+            password='secret123',
+            full_name='Staff User',
+            restaurant=cls.restaurant,
+            role=cls.staff_role,
+            ui_mode=User.UiMode.ADMIN,
+            is_staff=True,
+            is_active=True,
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('token', response.data)
-        self.assertIn('session', response.data)
-        self.assertEqual(response.data['session']['ui_channel'], 'dashboard')
+    def test_dashboard_auth_me_requires_dashboard_permission(self):
+        self.client.force_authenticate(self.owner_user)
+        owner_response = self.client.get('/api/v1/dashboard/auth/me/')
+        self.assertEqual(owner_response.status_code, status.HTTP_200_OK)
 
-    def test_non_owner_dashboard_login_is_rejected(self):
-        response = self.client.post(
-            '/api/v1/dashboard/auth/login/',
-            {'username': self.manager_user.username, 'password': 'secret123'},
-            format='json',
-        )
+        self.client.force_authenticate(self.staff_user)
+        staff_response = self.client.get('/api/v1/dashboard/auth/me/')
+        self.assertEqual(staff_response.status_code, status.HTTP_403_FORBIDDEN)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+    def test_dashboard_overview_requires_dashboard_permission(self):
+        self.client.force_authenticate(self.staff_user)
+        response = self.client.get('/api/v1/dashboard/overview/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_dashboard_overview_requires_owner_dashboard_feature(self):
         self.client.force_authenticate(self.owner_user)
-        self.feature_config.owner_dashboard_enabled = False
-        self.feature_config.save(update_fields=['owner_dashboard_enabled', 'updated_at'])
+        feature_config = self.restaurant.feature_config
+        feature_config.owner_dashboard_enabled = False
+        feature_config.save(update_fields=['owner_dashboard_enabled', 'updated_at'])
 
         response = self.client.get('/api/v1/dashboard/overview/')
 

@@ -2,7 +2,7 @@ from django.db.models import Prefetch
 
 from rest_framework import generics, permissions
 
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.floor.serializers import HallSerializer
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
@@ -33,10 +33,12 @@ class PosHallListView(generics.ListAPIView):
         )
         table_queryset = (
             DiningTable.objects.filter(is_active=True)
+            .select_related('zone')
             .prefetch_related(Prefetch('table_sessions', queryset=table_session_queryset))
             .order_by('table_number', 'name')
         )
 
         return Hall.objects.filter(restaurant=restaurant, is_active=True).prefetch_related(
-            Prefetch('tables', queryset=table_queryset)
+            Prefetch('zones', queryset=ZoneOrCabin.objects.filter(is_active=True).order_by('sort_order', 'name')),
+            Prefetch('tables', queryset=table_queryset),
         ).order_by('sort_order', 'name')

@@ -26,11 +26,9 @@ class DashboardStaffBreakdownSerializer(serializers.Serializer):
 class DashboardOverviewSerializer(serializers.Serializer):
     generated_at = serializers.DateTimeField()
     restaurant = DashboardRestaurantSerializer()
-    branch = DashboardContextSerializer()
     sales_total = serializers.IntegerField()
     orders_count = serializers.IntegerField()
     average_check = serializers.IntegerField()
     top_items = DashboardTopItemSerializer(many=True)
     waiter_breakdown = DashboardStaffBreakdownSerializer(many=True)
     cashier_breakdown = DashboardStaffBreakdownSerializer(many=True)
-

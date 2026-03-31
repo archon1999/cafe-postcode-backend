@@ -8,7 +8,7 @@ from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.orders.services import OrderSubmissionService
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch
+from common.api.scopes import get_request_restaurant
 
 
 class OrderSubmitView(APIView):
@@ -18,8 +18,8 @@ class OrderSubmitView(APIView):
 
     @transaction.atomic
     def post(self, request, pk):
-        branch = get_request_branch(request)
-        order = generics.get_object_or_404(Order, pk=pk, branch=branch)
+        restaurant = get_request_restaurant(request)
+        order = generics.get_object_or_404(Order, pk=pk, restaurant=restaurant)
         if not order.items.exists():
             return Response({'detail': _('Order has no items.')}, status=status.HTTP_400_BAD_REQUEST)
         self.order_submission_service_class().submit(order)

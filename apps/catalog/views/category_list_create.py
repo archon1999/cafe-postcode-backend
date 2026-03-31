@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.catalog.models import CatalogCategory
 from apps.catalog.serializers import CatalogCategorySerializer
 from common.api.permissions import HasPermissionCode
-from common.api.scopes import get_request_branch, get_request_restaurant
+from common.api.scopes import get_request_restaurant
 
 
 class CategoryListCreateView(generics.ListCreateAPIView):
@@ -12,9 +12,9 @@ class CategoryListCreateView(generics.ListCreateAPIView):
     permission_code = 'catalog.manage'
 
     def get_queryset(self):
-        branch = get_request_branch(self.request)
-        return CatalogCategory.objects.filter(branch=branch).order_by('sort_order', 'name')
+        restaurant = get_request_restaurant(self.request)
+        return CatalogCategory.objects.filter(restaurant=restaurant).order_by('sort_order', 'name')
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant, branch=get_request_branch(self.request, restaurant))
+        serializer.save(restaurant=restaurant)

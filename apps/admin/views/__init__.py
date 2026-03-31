@@ -30,6 +30,8 @@ from .constructor import (
     RestaurantConfigView,
     TableSessionDetailView,
     TableSessionListCreateView,
+    ZoneDetailView,
+    ZoneListCreateView,
 )
 from .hall_constructor import HallConstructorView
 from .integrations import IntegrationConfigDetailView, IntegrationConfigListCreateView
@@ -62,15 +64,17 @@ from .reports import (
     TopStaffReportExportView,
     TopStaffReportView,
 )
-from .platform import (
+from .business_partner import (
+    RestaurantActivateView,
+    RestaurantDeactivateView,
+    RestaurantResetPasswordView,
+)
+from .product_owner import (
     BusinessPartnerActivateView,
     BusinessPartnerDeactivateView,
     BusinessPartnerDetailView,
     BusinessPartnerListCreateView,
     BusinessPartnerResetPasswordView,
-    RestaurantActivateView,
-    RestaurantDeactivateView,
-    RestaurantResetPasswordView,
     TariffDetailView,
     TariffListCreateView,
 )
@@ -158,4 +162,6 @@ __all__ = [
     'TopStaffReportView',
     'UserListCreateView',
     'UserRetrieveUpdateView',
+    'ZoneDetailView',
+    'ZoneListCreateView',
 ]

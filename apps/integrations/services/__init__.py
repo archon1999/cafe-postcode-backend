@@ -4,9 +4,9 @@ from .mock_payment import MockPaymentIntegrationService
 from .mock_printer import MockPrinterIntegrationService
 
 
-def ensure_mock_configs(restaurant, branch):
+def ensure_mock_configs(restaurant):
     resolver_service = IntegrationConfigResolverService()
-    resolver_service.ensure_mock_configs(restaurant=restaurant, branch=branch)
+    resolver_service.ensure_mock_configs(restaurant=restaurant)
 
 
 def charge_payment(order, payment):
