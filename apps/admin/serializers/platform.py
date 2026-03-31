@@ -62,6 +62,46 @@ class TariffSerializer(serializers.ModelSerializer):
             'allowed_roles',
         )
 
+    @staticmethod
+    def _merge_permissions_with_allowed_roles(*, permissions, allowed_roles):
+        permission_map = {}
+        for permission in permissions or []:
+            permission_map[permission.id] = permission
+        for role in allowed_roles or []:
+            for permission in role.permissions.all():
+                permission_map[permission.id] = permission
+        return list(permission_map.values())
+
+    def create(self, validated_data):
+        permissions = list(validated_data.pop('permissions', []))
+        allowed_roles = list(validated_data.pop('allowed_roles', []))
+        tariff = Tariff.objects.create(**validated_data)
+        tariff.allowed_roles.set(allowed_roles)
+        tariff.permissions.set(
+            self._merge_permissions_with_allowed_roles(
+                permissions=permissions,
+                allowed_roles=allowed_roles,
+            )
+        )
+        return tariff
+
+    def update(self, instance, validated_data):
+        permissions = list(validated_data.pop('permissions', instance.permissions.all()))
+        allowed_roles = list(validated_data.pop('allowed_roles', instance.allowed_roles.all()))
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        instance.allowed_roles.set(allowed_roles)
+        instance.permissions.set(
+            self._merge_permissions_with_allowed_roles(
+                permissions=permissions,
+                allowed_roles=allowed_roles,
+            )
+        )
+        return instance
+
     def get_permissions(self, obj):
         return list(obj.permissions.values('id', 'code', 'name'))
 
