@@ -7,13 +7,12 @@ from rest_framework.views import APIView
 from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.orders.services import OrderSubmissionService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class OrderSubmitView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'orders.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     order_submission_service_class = OrderSubmissionService
 
     @transaction.atomic

@@ -35,7 +35,7 @@ from common.api.scopes import get_request_restaurant
 
 def get_restaurants_queryset_for_request(request):
     queryset = Restaurant.objects.prefetch_related('feature_config').select_related('business_partner').order_by('name')
-    if request.user.is_superuser or request.user.has_permission_code('partners.view') or request.user.has_permission_code('partners.manage'):
+    if request.user.is_superuser or request.user.actor_type == request.user.ActorType.PRODUCT_OWNER:
         return queryset
 
     business_partner = request.user.get_business_partner_scope()
@@ -51,7 +51,6 @@ def get_restaurants_queryset_for_request(request):
 
 class RestaurantConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = RestaurantSerializer
-    permission_code = 'constructor.manage'
 
     def get_object(self):
         return get_request_restaurant(self.request)
@@ -59,7 +58,6 @@ class RestaurantConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdate
 
 class FeatureConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = FeatureConfigSerializer
-    permission_code = 'constructor.manage'
 
     def get_object(self):
         restaurant = get_request_restaurant(self.request)
@@ -69,7 +67,6 @@ class FeatureConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPI
 
 class FeatureConfigListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = FeatureConfigSerializer
-    permission_code = 'constructor.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(FeatureConfig.objects.select_related('restaurant'), self.request)
@@ -81,7 +78,6 @@ class FeatureConfigListCreateView(AdminPermissionRequiredMixin, generics.ListCre
 
 class FeatureConfigDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FeatureConfigSerializer
-    permission_code = 'constructor.manage'
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(FeatureConfig.objects.select_related('restaurant'), self.request)
@@ -89,9 +85,6 @@ class FeatureConfigDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpd
 
 class HallListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = HallSerializer
-
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
 
     def get_queryset(self):
         queryset = (
@@ -109,9 +102,6 @@ class HallListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = HallSerializer
 
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
-
     def get_queryset(self):
         return (
             filter_constructor_queryset_by_restaurant(Hall.objects.all(), self.request)
@@ -121,9 +111,6 @@ class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
 
 class DiningTableListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = DiningTableSerializer
-
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'table.manage'
 
     def get_queryset(self):
         queryset = (
@@ -138,9 +125,6 @@ class DiningTableListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
 class DiningTableDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DiningTableSerializer
 
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'table.manage'
-
     def get_queryset(self):
         return (
             filter_constructor_queryset_by_restaurant(DiningTable.objects.all(), self.request, 'hall__restaurant')
@@ -151,9 +135,6 @@ class DiningTableDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdat
 
 class ZoneListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = ZoneOrCabinSerializer
-
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(
@@ -167,9 +148,6 @@ class ZoneListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 class ZoneDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = ZoneOrCabinSerializer
 
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
-
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(
             ZoneOrCabin.objects.select_related('hall'),
@@ -180,7 +158,6 @@ class ZoneDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
 
 class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = PrepStationSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(PrepStation.objects.all(), self.request)
@@ -193,7 +170,6 @@ class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
 
 class PrepStationDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = PrepStationSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(PrepStation.objects.all(), self.request)
@@ -201,7 +177,6 @@ class PrepStationDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdat
 
 class CashDeskListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = CashDeskSerializer
-    permission_code = 'cashdesk.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(CashDesk.objects.all(), self.request)
@@ -213,7 +188,6 @@ class CashDeskListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAP
 
 class CashDeskDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CashDeskSerializer
-    permission_code = 'cashdesk.manage'
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(CashDesk.objects.all(), self.request)
@@ -221,7 +195,6 @@ class CashDeskDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDe
 
 class DistributionPointListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = DistributionPointSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(DistributionPoint.objects.all(), self.request)
@@ -233,7 +206,6 @@ class DistributionPointListCreateView(AdminPermissionRequiredMixin, generics.Lis
 
 class DistributionPointDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DistributionPointSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(DistributionPoint.objects.all(), self.request)
@@ -241,9 +213,6 @@ class DistributionPointDetailView(AdminPermissionRequiredMixin, generics.Retriev
 
 class TableSessionListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = TableSessionSerializer
-
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'table.manage'
 
     def get_queryset(self):
         queryset = (
@@ -260,9 +229,6 @@ class TableSessionListCreateView(AdminPermissionRequiredMixin, generics.ListCrea
 class TableSessionDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = TableSessionSerializer
 
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'table.manage'
-
     def get_queryset(self):
         return (
             filter_constructor_queryset_by_restaurant(TableSession.objects.all(), self.request)
@@ -272,7 +238,6 @@ class TableSessionDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpda
 
 class DeviceListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = DeviceSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(
@@ -287,7 +252,6 @@ class DeviceListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIV
 
 class DeviceDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = DeviceSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(
@@ -298,9 +262,6 @@ class DeviceDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDest
 
 class RestaurantListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = RestaurantSerializer
-
-    def get_permission_code(self):
-        return 'restaurants.view' if self.request.method == 'GET' else 'restaurants.manage'
 
     def get_queryset(self):
         queryset = get_restaurants_queryset_for_request(self.request)
@@ -314,16 +275,12 @@ class RestaurantListCreateView(AdminPermissionRequiredMixin, generics.ListCreate
 class RestaurantDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RestaurantSerializer
 
-    def get_permission_code(self):
-        return 'restaurants.view' if self.request.method == 'GET' else 'restaurants.manage'
-
     def get_queryset(self):
         return get_restaurants_queryset_for_request(self.request)
 
 
 class RestaurantFeatureConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = FeatureConfigSerializer
-    permission_code = 'restaurants.manage'
 
     def get_restaurant(self):
         return get_object_or_404(get_restaurants_queryset_for_request(self.request), pk=self.kwargs['restaurant_id'])

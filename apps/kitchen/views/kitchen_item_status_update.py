@@ -4,13 +4,12 @@ from rest_framework.views import APIView
 
 from apps.kitchen.services.kitchen_status import KitchenStatusService
 from apps.orders.models import OrderItem
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class KitchenItemStatusUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'kitchen.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     kitchen_status_service_class = KitchenStatusService
 
     def post(self, request, pk):

@@ -4,14 +4,13 @@ from rest_framework import generics, permissions
 from apps.orders.models import Order, OrderItem
 from apps.orders.serializers import OrderItemSerializer
 from apps.orders.services import OrderStateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class OrderItemListCreateView(generics.ListCreateAPIView):
     serializer_class = OrderItemSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'orders.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     state_service_class = OrderStateService
 
     def get_queryset(self):

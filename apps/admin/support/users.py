@@ -29,31 +29,10 @@ ROLE_ORDERING_FIELDS = {
 PERMISSION_ORDERING_FIELDS = {
     'label': 'name',
     'code': 'code',
-    'scope': 'code',
-    'action': 'code',
+    'scope': 'surface',
+    'action': 'action',
     'description': 'description',
 }
-POS_PERMISSION_PREFIXES = (
-    'hall.',
-    'table.',
-    'orders.',
-    'payments.',
-    'cashshift.',
-    'payment.',
-    'receipt.',
-    'kitchen.',
-    'stoplist.',
-    'cashdesk.',
-)
-
-
-def get_permission_scope(code: str) -> str:
-    if code.startswith('dashboard.'):
-        return 'dashboard'
-    if any(code.startswith(prefix) for prefix in POS_PERMISSION_PREFIXES):
-        return 'pos'
-    return 'admin'
-
 
 def admin_user_queryset(request) -> QuerySet[User]:
     queryset = User.objects.select_related(
@@ -190,16 +169,9 @@ class PermissionListFilters:
                 | Q(description__icontains=self.search)
             )
         if self.scopes:
-            allowed_codes = [
-                permission.code for permission in queryset.only('code')
-                if get_permission_scope(permission.code) in self.scopes
-            ]
-            queryset = queryset.filter(code__in=allowed_codes)
+            queryset = queryset.filter(surface__in=self.scopes)
         if self.actions:
-            action_query = Q()
-            for action in self.actions:
-                action_query |= Q(code__iendswith=f'.{action}')
-            queryset = queryset.filter(action_query)
+            queryset = queryset.filter(action__in=self.actions)
         return apply_ordering(queryset, self.ordering, default_ordering=('code',))
 
 

@@ -4,13 +4,12 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import CatalogItemSerializer
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class ItemStoplistToggleView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'catalog.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)

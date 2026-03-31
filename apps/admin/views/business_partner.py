@@ -18,7 +18,6 @@ from ._business_helpers import (
 
 
 class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'restaurants.activate'
 
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
@@ -100,7 +99,6 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
 
 
 class RestaurantDeactivateView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'restaurants.deactivate'
 
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
@@ -115,7 +113,6 @@ class RestaurantDeactivateView(AdminPermissionRequiredMixin, APIView):
 
 
 class RestaurantResetPasswordView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'restaurants.reset_password'
 
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)

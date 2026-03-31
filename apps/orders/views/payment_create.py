@@ -7,13 +7,12 @@ from apps.orders.models import Order, Payment
 from apps.orders.serializers import OrderSerializer, PaymentSerializer, ReceiptSerializer
 from apps.orders.services import CashShiftService, OrderPaymentService
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class PaymentCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'payments.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     order_payment_service_class = OrderPaymentService
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService

@@ -7,13 +7,12 @@ from apps.orders.serializers import PaymentRefundSerializer, ReceiptSerializer
 from apps.orders.serializers.cashier_context import PaymentRefundCreateSerializer
 from apps.orders.services import CashShiftService, PaymentRefundService
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class PaymentRefundView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'payment.refund'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
     refund_service_class = PaymentRefundService
     feature_gate_service_class = FeatureGateService
@@ -41,8 +40,7 @@ class PaymentRefundView(APIView):
 
 
 class ReceiptReprintView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'receipt.reprint'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
     refund_service_class = PaymentRefundService
     feature_gate_service_class = FeatureGateService

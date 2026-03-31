@@ -20,9 +20,6 @@ from ._business_helpers import (
 class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = BusinessPartnerSerializer
 
-    def get_permission_code(self):
-        return 'partners.view' if self.request.method == 'GET' else 'partners.manage'
-
     def get_queryset(self):
         return filter_partners(BusinessPartner.objects.select_related('owner_user'), self.request)
 
@@ -30,15 +27,11 @@ class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListC
 class BusinessPartnerDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = BusinessPartnerSerializer
 
-    def get_permission_code(self):
-        return 'partners.view' if self.request.method == 'GET' else 'partners.manage'
-
     def get_queryset(self):
         return BusinessPartner.objects.select_related('owner_user').order_by('company_name')
 
 
 class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'partners.activate'
 
     def post(self, request, pk):
         partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
@@ -79,7 +72,6 @@ class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
 
 
 class BusinessPartnerDeactivateView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'partners.deactivate'
 
     def post(self, request, pk):
         partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
@@ -93,7 +85,6 @@ class BusinessPartnerDeactivateView(AdminPermissionRequiredMixin, APIView):
 
 
 class BusinessPartnerResetPasswordView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'partners.reset_password'
 
     def post(self, request, pk):
         partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
@@ -109,18 +100,12 @@ class BusinessPartnerResetPasswordView(AdminPermissionRequiredMixin, APIView):
 class TariffListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = TariffSerializer
 
-    def get_permission_code(self):
-        return 'tariffs.view' if self.request.method == 'GET' else 'tariffs.manage'
-
     def get_queryset(self):
         return filter_tariffs(Tariff.objects.prefetch_related('permissions', 'allowed_roles'), self.request)
 
 
 class TariffDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = TariffSerializer
-
-    def get_permission_code(self):
-        return 'tariffs.view' if self.request.method == 'GET' else 'tariffs.manage'
 
     def get_queryset(self):
         return Tariff.objects.prefetch_related('permissions', 'allowed_roles').order_by('name')

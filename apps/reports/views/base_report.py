@@ -2,13 +2,12 @@ from rest_framework import permissions
 from rest_framework.views import APIView
 
 from apps.reports.services import build_summary_payload, get_report_period
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class BaseReportView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'reports.view'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_restaurant(self):
         return get_request_restaurant(self.request)

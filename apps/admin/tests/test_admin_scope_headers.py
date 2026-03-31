@@ -17,8 +17,8 @@ class AdminScopeHeaderTests(APITestCase):
             is_default=True,
         )
         cls.permission = Permission.objects.get_or_create(
-            code='catalog.manage',
-            defaults={'name': 'Catalog manage', 'description': 'Catalog manage permission'},
+            code='catalog_categories.create',
+            defaults={'name': 'Catalog category create', 'description': 'Catalog category create permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='catalog-admin',

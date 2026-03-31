@@ -4,62 +4,13 @@ from django.db import models
 
 from common.models import BaseModel
 
+from apps.accounts.permission_registry import ADMIN_UI_PERMISSION_CODES, POS_UI_PERMISSION_CODES
+
 from .permission import Permission
 from .user_manager import UserManager
 
 
 class User(AbstractBaseUser, PermissionsMixin, BaseModel):
-    ADMIN_PERMISSION_CODES = {
-        'partners.view',
-        'partners.manage',
-        'tariffs.view',
-        'tariffs.manage',
-        'restaurants.view',
-        'restaurants.manage',
-        'restaurants.activate',
-        'restaurants.deactivate',
-        'restaurants.reset_password',
-        'reports.view',
-        'orders.view',
-        'orders.manage',
-        'payments.view',
-        'payments.manage',
-        'payments.create',
-        'kitchen.view',
-        'kitchen.update',
-        'kitchen.manage',
-        'catalog.view',
-        'catalog.manage',
-        'hall.view',
-        'hall.manage',
-        'table.manage',
-        'users.manage',
-        'permissions.view',
-        'roles.view',
-        'integrations.manage',
-        'cashdesk.manage',
-    }
-    POS_PERMISSION_CODES = {
-        'hall.view',
-        'hall.manage',
-        'table.manage',
-        'orders.create',
-        'orders.view',
-        'orders.manage',
-        'payments.create',
-        'payments.view',
-        'payments.manage',
-        'cashshift.view',
-        'cashshift.open',
-        'cashshift.close',
-        'receipt.reprint',
-        'payment.refund',
-        'kitchen.view',
-        'kitchen.update',
-        'kitchen.manage',
-        'stoplist.manage',
-    }
-
     class ActorType(models.TextChoices):
         PRODUCT_OWNER = 'product_owner', 'Product owner'
         BUSINESS_PARTNER = 'business_partner', 'Business partner'
@@ -152,6 +103,7 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def permission_codes(self):
         if self.is_superuser:
             return list(Permission.objects.values_list('code', flat=True))
+
         role_permission_codes = set(self.role.permissions.values_list('code', flat=True)) if self.role_id else set()
         if not role_permission_codes:
             return []
@@ -191,10 +143,10 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def can_access_admin_ui(self) -> bool:
         if self.is_superuser:
             return True
-        return bool(set(self.permission_codes) & self.ADMIN_PERMISSION_CODES)
+        return bool(self.ui_mode == self.UiMode.ADMIN and set(self.permission_codes) & ADMIN_UI_PERMISSION_CODES)
 
     @property
     def can_access_pos_ui(self) -> bool:
         if self.is_superuser:
             return True
-        return bool(self.get_restaurant_scope() and set(self.permission_codes) & self.POS_PERMISSION_CODES)
+        return bool(self.ui_mode == self.UiMode.POS and self.get_restaurant_scope() and set(self.permission_codes) & POS_UI_PERMISSION_CODES)

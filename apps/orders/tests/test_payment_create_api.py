@@ -30,8 +30,8 @@ class PaymentCreateApiTests(APITestCase):
             enabled_roles=['cashier'],
         )
         cls.permission = Permission.objects.get_or_create(
-            code='payments.manage',
-            defaults={'name': 'Payments manage', 'description': 'Payments manage permission'},
+            code='payments.create',
+            defaults={'name': 'Payments create', 'description': 'Payments create permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='payments-cashier',

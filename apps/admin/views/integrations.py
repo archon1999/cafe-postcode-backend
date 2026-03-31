@@ -8,7 +8,6 @@ from common.api.scopes import get_request_restaurant
 
 class IntegrationConfigListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = IntegrationConfigSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         return integration_config_queryset(self.request, include_ordering=True)
@@ -20,7 +19,6 @@ class IntegrationConfigListCreateView(AdminPermissionRequiredMixin, generics.Lis
 
 class IntegrationConfigDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = IntegrationConfigSerializer
-    permission_code = 'integrations.manage'
 
     def get_queryset(self):
         return integration_config_queryset(self.request)

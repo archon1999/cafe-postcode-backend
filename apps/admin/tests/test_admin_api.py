@@ -28,19 +28,12 @@ class AdminApiTests(APITestCase):
         )
 
         permission_codes = [
-            'restaurants.manage',
-            'roles.manage',
-            'users.manage',
-            'catalog.manage',
-            'constructor.manage',
-            'hall.view',
-            'hall.manage',
-            'table.manage',
-            'integrations.manage',
-            'reports.view',
-            'reports.shift.view',
-            'reports.shift.export',
-            'cashdesk.manage',
+            'permissions.list',
+            'roles.list',
+            'users.list',
+            'reports.summary.view',
+            'reports.shifts.view',
+            'reports.shifts.export',
         ]
         cls.permissions = {
             code: Permission.objects.get_or_create(
@@ -92,7 +85,7 @@ class AdminApiTests(APITestCase):
                 'is_system': False,
             },
         )
-        cls.limited_role.permissions.set([cls.permissions['users.manage']])
+        cls.limited_role.permissions.set([cls.permissions['users.list']])
         cls.entitlement.allowed_roles.add(cls.limited_role)
 
         cls.limited_user = User.objects.create_user(

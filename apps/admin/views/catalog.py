@@ -12,7 +12,6 @@ from common.api.scopes import get_request_restaurant
 
 class CategoryListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = CatalogCategorySerializer
-    permission_code = 'catalog.manage'
 
     def get_queryset(self):
         queryset = filter_catalog_queryset_by_scope(CatalogCategory.objects.all(), self.request)
@@ -25,7 +24,6 @@ class CategoryListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAP
 
 class CategoryDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CatalogCategorySerializer
-    permission_code = 'catalog.manage'
 
     def get_queryset(self):
         return filter_catalog_queryset_by_scope(CatalogCategory.objects.all(), self.request)
@@ -33,7 +31,6 @@ class CategoryDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDe
 
 class ItemListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = CatalogItemSerializer
-    permission_code = 'catalog.manage'
 
     def get_queryset(self):
         queryset = CatalogItem.objects.all().select_related('category', 'prep_station')
@@ -47,7 +44,6 @@ class ItemListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 
 class ItemDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CatalogItemSerializer
-    permission_code = 'catalog.manage'
 
     def get_queryset(self):
         return filter_catalog_queryset_by_scope(CatalogItem.objects.all(), self.request).select_related(
@@ -57,7 +53,6 @@ class ItemDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
 
 
 class ItemStoplistToggleView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'catalog.manage'
 
     def post(self, request, pk):
         queryset = filter_catalog_queryset_by_scope(CatalogItem.objects.all(), request)
@@ -68,7 +63,6 @@ class ItemStoplistToggleView(AdminPermissionRequiredMixin, APIView):
 
 
 class MxikSearchView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'catalog.manage'
 
     def get(self, request):
         query = request.query_params.get('query', '').strip()
@@ -93,7 +87,6 @@ class MxikSearchView(AdminPermissionRequiredMixin, APIView):
 
 
 class MxikLookupView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'catalog.manage'
 
     def get(self, request, code: str):
         lang = request.query_params.get('lang', 'uz')

@@ -49,7 +49,6 @@ from common.api.scopes import get_optional_request_restaurant
 
 
 class AdminBaseReportView(AdminPermissionRequiredMixin, APIView):
-    permission_code = 'reports.view'
 
     def get_restaurant(self):
         return get_optional_request_restaurant(self.request)
@@ -122,7 +121,6 @@ class PaymentBreakdownView(AdminPaginatedReportView):
 
 
 class ShiftReportView(AdminPaginatedReportView):
-    permission_code = 'reports.shift.view'
 
     def get(self, request):
         filters = ShiftReportFilters.from_request(request)
@@ -226,7 +224,6 @@ class PaymentBreakdownExportView(AdminBaseReportView):
 
 class ShiftReportExportView(AdminBaseReportView):
     export_service_class = ReportExcelExportService
-    permission_code = 'reports.shift.export'
 
     def get(self, request):
         filters = ShiftReportFilters.from_request(request)

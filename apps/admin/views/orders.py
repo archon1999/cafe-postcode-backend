@@ -24,7 +24,6 @@ from apps.admin.support import (
 
 class OrderListView(AdminPermissionRequiredMixin, AdminOrdersQuerysetMixin, generics.ListAPIView):
     serializer_class = AdminOrderSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return OrderListFilters.from_request(self.request).apply(self.get_order_queryset())
@@ -32,7 +31,6 @@ class OrderListView(AdminPermissionRequiredMixin, AdminOrdersQuerysetMixin, gene
 
 class OrderDetailView(AdminPermissionRequiredMixin, AdminOrdersQuerysetMixin, generics.RetrieveAPIView):
     serializer_class = AdminOrderSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return self.get_order_queryset()
@@ -40,7 +38,6 @@ class OrderDetailView(AdminPermissionRequiredMixin, AdminOrdersQuerysetMixin, ge
 
 class OrderItemListView(AdminPermissionRequiredMixin, AdminOrderItemsQuerysetMixin, generics.ListAPIView):
     serializer_class = AdminOrderItemSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return OrderItemListFilters.from_request(self.request).apply(self.get_order_item_queryset())
@@ -48,7 +45,6 @@ class OrderItemListView(AdminPermissionRequiredMixin, AdminOrderItemsQuerysetMix
 
 class OrderItemDetailView(AdminPermissionRequiredMixin, AdminOrderItemsQuerysetMixin, generics.RetrieveAPIView):
     serializer_class = AdminOrderItemSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return self.get_order_item_queryset()
@@ -56,7 +52,6 @@ class OrderItemDetailView(AdminPermissionRequiredMixin, AdminOrderItemsQuerysetM
 
 class OrderItemNoteListView(AdminPermissionRequiredMixin, AdminOrderItemNotesQuerysetMixin, generics.ListAPIView):
     serializer_class = AdminOrderItemNoteSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return OrderItemNoteListFilters.from_request(self.request).apply(self.get_order_item_note_queryset())
@@ -64,7 +59,6 @@ class OrderItemNoteListView(AdminPermissionRequiredMixin, AdminOrderItemNotesQue
 
 class OrderItemNoteDetailView(AdminPermissionRequiredMixin, AdminOrderItemNotesQuerysetMixin, generics.RetrieveAPIView):
     serializer_class = AdminOrderItemNoteSerializer
-    permission_code = 'orders.view'
 
     def get_queryset(self):
         return self.get_order_item_note_queryset()
@@ -72,7 +66,6 @@ class OrderItemNoteDetailView(AdminPermissionRequiredMixin, AdminOrderItemNotesQ
 
 class PaymentListView(AdminPermissionRequiredMixin, AdminPaymentsQuerysetMixin, generics.ListAPIView):
     serializer_class = AdminPaymentSerializer
-    permission_code = 'payments.view'
 
     def get_queryset(self):
         return PaymentListFilters.from_request(self.request).apply(self.get_payment_queryset())
@@ -80,7 +73,6 @@ class PaymentListView(AdminPermissionRequiredMixin, AdminPaymentsQuerysetMixin, 
 
 class PaymentDetailView(AdminPermissionRequiredMixin, AdminPaymentsQuerysetMixin, generics.RetrieveAPIView):
     serializer_class = AdminPaymentSerializer
-    permission_code = 'payments.view'
 
     def get_queryset(self):
         return self.get_payment_queryset()
@@ -88,7 +80,6 @@ class PaymentDetailView(AdminPermissionRequiredMixin, AdminPaymentsQuerysetMixin
 
 class ReceiptListView(AdminPermissionRequiredMixin, AdminReceiptsQuerysetMixin, generics.ListAPIView):
     serializer_class = AdminReceiptSerializer
-    permission_code = 'payments.view'
 
     def get_queryset(self):
         return ReceiptListFilters.from_request(self.request).apply(self.get_receipt_queryset())
@@ -96,7 +87,6 @@ class ReceiptListView(AdminPermissionRequiredMixin, AdminReceiptsQuerysetMixin, 
 
 class ReceiptDetailView(AdminPermissionRequiredMixin, AdminReceiptsQuerysetMixin, generics.RetrieveAPIView):
     serializer_class = AdminReceiptSerializer
-    permission_code = 'payments.view'
 
     def get_queryset(self):
         return self.get_receipt_queryset()

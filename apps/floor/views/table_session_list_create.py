@@ -3,14 +3,13 @@ from rest_framework import generics, permissions
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.serializers import TableSessionSerializer
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class TableSessionListCreateView(generics.ListCreateAPIView):
     serializer_class = TableSessionSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'table.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):

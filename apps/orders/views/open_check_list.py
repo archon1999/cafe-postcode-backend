@@ -3,15 +3,14 @@ from rest_framework import generics, permissions
 from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 from common.utils.date import tashkent_day_bounds
 
 
 class OpenCheckListView(generics.ListAPIView):
     serializer_class = OrderSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'payments.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     pagination_class = None
     feature_gate_service_class = FeatureGateService
 

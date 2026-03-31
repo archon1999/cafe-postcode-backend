@@ -5,13 +5,12 @@ from rest_framework.views import APIView
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.serializers import TableSessionSerializer
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class TableSessionMoveView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'table.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)

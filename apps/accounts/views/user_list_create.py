@@ -2,14 +2,13 @@ from rest_framework import generics, permissions
 
 from apps.accounts.models import User
 from apps.accounts.serializers import UserSerializer
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class UserListCreateView(generics.ListCreateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'users.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)

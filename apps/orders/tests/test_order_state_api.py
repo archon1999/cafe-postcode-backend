@@ -25,14 +25,17 @@ class OrderStateApiTests(APITestCase):
             owner_dashboard_enabled=True,
         )
         cls.permission = Permission.objects.get_or_create(
-            code='orders.manage',
-            defaults={'name': 'Orders manage', 'description': 'Orders manage permission'},
+            code='orders.create',
+            defaults={'name': 'Orders create', 'description': 'Orders create permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='orders-manager',
-            defaults={'name': 'Orders manager', 'description': 'Orders manager role', 'is_system': False},
+            defaults={'name': 'Orders creater', 'description': 'Orders creater role', 'is_system': False},
         )[0]
-        cls.role.permissions.set([cls.permission])
+        cls.role.permissions.set([
+            cls.permission,
+            Permission.objects.get(code='order_items.update'),
+        ])
         cls.user = User.objects.create_user(
             username='orders-manager',
             password='secret123',

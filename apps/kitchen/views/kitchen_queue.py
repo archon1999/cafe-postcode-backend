@@ -3,14 +3,13 @@ from rest_framework import generics, permissions
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.serializers import KitchenTicketSerializer
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class KitchenQueueView(generics.ListAPIView):
     serializer_class = KitchenTicketSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'kitchen.view'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):

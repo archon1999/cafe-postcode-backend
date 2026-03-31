@@ -15,34 +15,13 @@ from apps.floor.models import Hall
 from common.api.scopes import get_optional_request_restaurant
 
 
-POS_PERMISSION_PREFIXES = (
-    'hall.',
-    'table.',
-    'orders.',
-    'payments.',
-    'cashshift.',
-    'payment.',
-    'receipt.',
-    'kitchen.',
-    'stoplist.',
-    'cashdesk.',
-)
-
-
-def get_permission_scope(code: str) -> str:
-    if code.startswith('dashboard.'):
-        return 'dashboard'
-    if any(code.startswith(prefix) for prefix in POS_PERMISSION_PREFIXES):
-        return 'pos'
-    return 'admin'
-
 
 class PermissionSerializer(serializers.ModelSerializer):
     scope = serializers.SerializerMethodField()
     endpoints = serializers.SerializerMethodField()
 
     def get_scope(self, instance):
-        return get_permission_scope(instance.code)
+        return instance.surface
 
     def get_endpoints(self, instance):
         return [

@@ -10,13 +10,12 @@ from apps.orders.serializers.cashier_context import (
 from apps.orders.services import CashShiftService
 from apps.organizations.models import CashDesk
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class CashierContextView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'cashshift.view'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 
@@ -28,8 +27,7 @@ class CashierContextView(APIView):
 
 
 class CashShiftOpenView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'cashshift.open'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 
@@ -62,8 +60,7 @@ class CashShiftOpenView(APIView):
 
 
 class CashShiftCloseView(APIView):
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'cashshift.close'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 

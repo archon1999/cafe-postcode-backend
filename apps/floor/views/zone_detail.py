@@ -2,14 +2,13 @@ from rest_framework import generics, permissions
 
 from apps.floor.models import ZoneOrCabin
 from apps.floor.serializers import ZoneOrCabinSerializer
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class ZoneDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = ZoneOrCabinSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'constructor.manage'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)

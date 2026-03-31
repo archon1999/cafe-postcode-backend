@@ -11,9 +11,6 @@ from apps.floor.services import HallConstructorService
 class HallConstructorView(AdminPermissionRequiredMixin, views.APIView):
     constructor_service_class = HallConstructorService
 
-    def get_permission_code(self):
-        return 'hall.view' if self.request.method == 'GET' else 'hall.manage'
-
     def get_queryset(self):
         return hall_constructor_queryset(self.request)
 

@@ -156,7 +156,3 @@ class EndpointRBACPermission(permissions.BasePermission):
             method=method,
             permission__code__in=permission_codes,
         ).exists()
-
-
-class HasPermissionCode(EndpointRBACPermission):
-    """Backward-compatible alias while views are migrated to endpoint RBAC."""

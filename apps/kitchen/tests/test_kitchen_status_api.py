@@ -29,8 +29,8 @@ class KitchenStatusApiTests(APITestCase):
             enabled_roles=['chef'],
         )
         cls.permission = Permission.objects.get_or_create(
-            code='kitchen.manage',
-            defaults={'name': 'Kitchen manage', 'description': 'Kitchen manage permission'},
+            code='kitchen_tickets.status_update',
+            defaults={'name': 'Kitchen ticket status update', 'description': 'Kitchen ticket status update permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='kitchen-chef',

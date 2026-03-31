@@ -7,14 +7,13 @@ from apps.floor.serializers import HallSerializer
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
 from apps.organizations.services import FeatureGateService
-from common.api.permissions import HasPermissionCode
+from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
 class PosHallListView(generics.ListAPIView):
     serializer_class = HallSerializer
-    permission_classes = [permissions.IsAuthenticated, HasPermissionCode]
-    permission_code = 'hall.view'
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
     def get_queryset(self):

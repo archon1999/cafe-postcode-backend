@@ -16,8 +16,8 @@ class AdminHallConstructorApiTests(APITestCase):
             is_default=True,
         )
         cls.permission = Permission.objects.get_or_create(
-            code='constructor.manage',
-            defaults={'name': 'Constructor manage', 'description': 'Constructor manage permission'},
+            code='halls.update_layout',
+            defaults={'name': 'Hall layout update', 'description': 'Hall layout update permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='constructor-admin',
