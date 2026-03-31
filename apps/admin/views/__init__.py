@@ -79,6 +79,9 @@ from .product_owner import (
     TariffListCreateView,
 )
 from .users import (
+    EmployeeRoleListView,
+    EmployeeListCreateView,
+    EmployeeRetrieveUpdateView,
     PermissionListView,
     RoleListCreateView,
     RoleRetrieveUpdateDestroyView,
@@ -104,6 +107,9 @@ __all__ = [
     'DistributionPointListCreateView',
     'DeviceDetailView',
     'DeviceListCreateView',
+    'EmployeeListCreateView',
+    'EmployeeRoleListView',
+    'EmployeeRetrieveUpdateView',
     'FeatureConfigDetailView',
     'FeatureConfigListCreateView',
     'FeatureConfigView',

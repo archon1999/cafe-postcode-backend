@@ -12,7 +12,6 @@ from common.api.query_params import (
     get_str_list_query_param,
     get_str_query_param,
 )
-from .scopes import filter_queryset_by_optional_restaurant
 
 ROLE_TYPE_VALUES = {'system', 'custom'}
 USER_ORDERING_FIELDS = {
@@ -22,6 +21,48 @@ USER_ORDERING_FIELDS = {
     'isActive': 'is_active',
     'role': ('role__name', 'username'),
 }
+
+
+def employee_user_queryset(request) -> QuerySet[User]:
+    restaurant = get_optional_request_restaurant(request)
+    if restaurant is None and getattr(request.user, 'is_authenticated', False):
+        restaurant = request.user.get_restaurant_scope()
+    if restaurant is None:
+        return User.objects.none()
+
+    return (
+        User.objects.select_related(
+            'role',
+            'restaurant',
+            'restaurant_profile__restaurant',
+            'restaurant_profile__primary_hall',
+            'business_partner_user_profile__business_partner',
+            'employee_profile',
+            'employee_compensation_profile',
+        )
+        .prefetch_related('restaurant_profile__allowed_halls')
+        .filter(restaurant_profile__restaurant=restaurant)
+        .filter(Q(password__startswith='!') | Q(restaurant_profile__pin_code__gt=''))
+        .exclude(is_superuser=True)
+        .distinct()
+    )
+
+
+def system_user_queryset(_request) -> QuerySet[User]:
+    return (
+        User.objects.select_related(
+            'role',
+            'restaurant',
+            'restaurant_profile__restaurant',
+            'restaurant_profile__primary_hall',
+            'business_partner_user_profile__business_partner',
+            'employee_profile',
+            'employee_compensation_profile',
+        )
+        .prefetch_related('restaurant_profile__allowed_halls')
+        .exclude(Q(password__startswith='!') | Q(restaurant_profile__pin_code__gt=''))
+        .distinct()
+    )
 ROLE_ORDERING_FIELDS = {
     'name': 'name',
     'isSystem': 'is_system',
@@ -80,6 +121,8 @@ class UserListFilters:
     role_ids: tuple[str, ...] = ()
     employment_statuses: tuple[str, ...] = ()
     ordering: tuple[str, ...] = ()
+    include_username_in_search: bool = True
+    default_ordering: tuple[str, ...] = ('username',)
 
     @classmethod
     def from_request(cls, request) -> 'UserListFilters':
@@ -103,14 +146,13 @@ class UserListFilters:
         else:
             queryset = queryset.exclude(employee_profile__employment_status='archived')
         if self.search:
-            queryset = queryset.filter(
-                Q(username__icontains=self.search)
-                | Q(full_name__icontains=self.search)
-                | Q(phone__icontains=self.search)
-            )
+            search_query = Q(full_name__icontains=self.search) | Q(phone__icontains=self.search)
+            if self.include_username_in_search:
+                search_query |= Q(username__icontains=self.search)
+            queryset = queryset.filter(search_query)
         if self.role_ids:
             queryset = queryset.filter(role_id__in=self.role_ids)
-        return apply_ordering(queryset, self.ordering, default_ordering=('username',))
+        return apply_ordering(queryset, self.ordering, default_ordering=self.default_ordering)
 
 
 @dataclass(frozen=True)
@@ -176,11 +218,27 @@ class PermissionListFilters:
 
 
 class AdminUserQuerysetMixin:
+    user_surface = 'system'
+
     def get_user_queryset(self) -> QuerySet[User]:
-        return admin_user_queryset(self.request)
+        if self.user_surface == 'employee':
+            return employee_user_queryset(self.request)
+        if self.user_surface == 'restaurant':
+            return admin_user_queryset(self.request)
+        return system_user_queryset(self.request)
 
     def get_filtered_user_queryset(self) -> QuerySet[User]:
-        return UserListFilters.from_request(self.request).apply(self.get_user_queryset())
+        filters = UserListFilters.from_request(self.request)
+        if self.user_surface == 'employee':
+            filters = UserListFilters(
+                search=filters.search,
+                role_ids=filters.role_ids,
+                employment_statuses=filters.employment_statuses,
+                ordering=filters.ordering,
+                include_username_in_search=False,
+                default_ordering=('full_name',),
+            )
+        return filters.apply(self.get_user_queryset())
 
 
 def prevent_system_role_delete(instance: Role):

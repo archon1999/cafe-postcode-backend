@@ -75,6 +75,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    user_surface = 'system'
     role = RoleSerializer(read_only=True)
     role_id = serializers.PrimaryKeyRelatedField(source='role', queryset=Role.objects.all(), write_only=True)
     permission_codes = serializers.ListField(child=serializers.CharField(), read_only=True)
@@ -136,6 +137,12 @@ class UserSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('restaurant_id', 'business_partner_id')
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.user_surface == 'employee':
+            self.fields['username'].required = False
+            self.fields['username'].allow_blank = True
+
     def _get_target_restaurant(self):
         request = self.context.get('request')
         request_restaurant = get_optional_request_restaurant(request) if request is not None else None
@@ -151,6 +158,24 @@ class UserSerializer(serializers.ModelSerializer):
             return request.user.get_restaurant_scope()
 
         return None
+
+    def _generate_internal_username(self, full_name: str, restaurant=None, instance: User | None = None) -> str:
+        person_slug = slugify(full_name) or 'employee'
+        restaurant_slug = slugify(getattr(restaurant, 'name', '')) or 'restaurant'
+        base_username = f'{restaurant_slug}-{person_slug}'
+        username = base_username[:150]
+        suffix = 2
+
+        queryset = User.objects.all()
+        if instance is not None:
+            queryset = queryset.exclude(pk=instance.pk)
+
+        while queryset.filter(username=username).exists():
+            suffix_text = f'-{suffix}'
+            username = f'{base_username[: max(1, 150 - len(suffix_text))]}{suffix_text}'
+            suffix += 1
+
+        return username
 
     def get_restaurant_id(self, instance):
         restaurant = instance.get_restaurant_scope()
@@ -179,6 +204,9 @@ class UserSerializer(serializers.ModelSerializer):
             allowed_halls = list(self.instance.restaurant_profile.allowed_halls.all())
         else:
             allowed_halls = []
+
+        if self.user_surface == 'employee' and restaurant is None:
+            raise serializers.ValidationError({'detail': _('Employees must belong to a restaurant scope.')})
 
         if restaurant is not None and primary_hall is not None and primary_hall.restaurant_id != restaurant.id:
             raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected restaurant.')})
@@ -337,13 +365,21 @@ class UserSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         password = request.data.get('password') if request else None
         pin = request.data.get('pin') if request else None
-        restaurant = self._get_target_restaurant()
+        restaurant = self._get_target_restaurant() if self.user_surface == 'employee' else None
         if restaurant is not None:
             validated_data['restaurant'] = restaurant
+        if self.user_surface == 'employee':
+            validated_data['username'] = self._generate_internal_username(
+                validated_data.get('full_name', ''),
+                restaurant=restaurant,
+            )
 
         user = User.objects.create(**validated_data)
 
-        if password:
+        if self.user_surface == 'employee':
+            user.set_unusable_password()
+            user.save(update_fields=['password'])
+        elif password:
             user.set_password(password)
             user.save(update_fields=['password'])
 
@@ -371,8 +407,12 @@ class UserSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         password = request.data.get('password') if request else None
         pin = request.data.get('pin') if request else None
+        if self.user_surface == 'employee':
+            validated_data.pop('username', None)
         if password:
             instance.set_password(password)
+        elif self.user_surface == 'employee':
+            instance.set_unusable_password()
         instance.save()
 
         self._save_restaurant_profile(instance, restaurant_profile_data, pin)
@@ -380,3 +420,7 @@ class UserSerializer(serializers.ModelSerializer):
         self._save_compensation(instance, compensation_data)
         instance.refresh_from_db()
         return instance
+
+
+class EmployeeSerializer(UserSerializer):
+    user_surface = 'employee'

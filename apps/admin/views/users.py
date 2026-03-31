@@ -2,7 +2,7 @@ from rest_framework import generics
 
 from apps.accounts.models import Permission, Role
 from apps.admin.permissions import AdminPermissionRequiredMixin
-from apps.admin.serializers import PermissionSerializer, RoleSerializer, UserSerializer
+from apps.admin.serializers import EmployeeSerializer, PermissionSerializer, RoleSerializer, UserSerializer
 from apps.admin.support import (
     AdminUserQuerysetMixin,
     PermissionListFilters,
@@ -32,6 +32,14 @@ class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
         serializer.save(is_system=False)
 
 
+class EmployeeRoleListView(AdminPermissionRequiredMixin, generics.ListAPIView):
+    serializer_class = RoleSerializer
+
+    def get_queryset(self):
+        queryset = scoped_role_queryset(self.request)
+        return RoleListFilters.from_request(self.request).apply(queryset)
+
+
 class RoleRetrieveUpdateDestroyView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RoleSerializer
 
@@ -45,17 +53,57 @@ class RoleRetrieveUpdateDestroyView(AdminPermissionRequiredMixin, generics.Retri
 
 class UserListCreateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.ListCreateAPIView):
     serializer_class = UserSerializer
+    user_surface = 'system'
 
     def get_queryset(self):
         return self.get_filtered_user_queryset()
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['user_surface'] = self.user_surface
+        return context
+
     def perform_create(self, serializer):
-        restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant)
+        serializer.save()
 
 
 class UserRetrieveUpdateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
+    user_surface = 'system'
 
     def get_queryset(self):
         return self.get_user_queryset()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['user_surface'] = self.user_surface
+        return context
+
+
+class EmployeeListCreateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.ListCreateAPIView):
+    serializer_class = EmployeeSerializer
+    user_surface = 'employee'
+
+    def get_queryset(self):
+        return self.get_filtered_user_queryset()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['user_surface'] = self.user_surface
+        return context
+
+    def perform_create(self, serializer):
+        serializer.save(restaurant=get_request_restaurant(self.request))
+
+
+class EmployeeRetrieveUpdateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView):
+    serializer_class = EmployeeSerializer
+    user_surface = 'employee'
+
+    def get_queryset(self):
+        return self.get_user_queryset()
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['user_surface'] = self.user_surface
+        return context

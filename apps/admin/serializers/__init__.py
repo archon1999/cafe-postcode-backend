@@ -28,7 +28,7 @@ from .platform import (
     RestaurantActivationSerializer,
     TariffSerializer,
 )
-from .users import PermissionSerializer, RoleSerializer, UserSerializer
+from .users import EmployeeSerializer, PermissionSerializer, RoleSerializer, UserSerializer
 
 __all__ = [
     'AdminLoginSerializer',
@@ -46,6 +46,7 @@ __all__ = [
     'DeviceSerializer',
     'DiningTableSerializer',
     'DistributionPointSerializer',
+    'EmployeeSerializer',
     'FeatureConfigSerializer',
     'HallSerializer',
     'HallConstructorSerializer',

@@ -210,7 +210,7 @@ PERMISSION_DEFINITIONS = [
         group_key='permissions',
         name='Permission katalogini ko‘rish',
         endpoints=endpoint_specs(('GET', 'api/v1/admin/users/permissions/')),
-        default_roles=RESTAURANT_OWNER_ROLES,
+        default_roles=PRODUCT_OWNER_ROLES,
     ),
     permission_definition(
         'restaurant_settings.view',
@@ -330,8 +330,9 @@ PERMISSION_DEFINITIONS = [
 PERMISSION_DEFINITIONS.extend(crud_permissions('business_partners', surface='admin', group_key='business_partners', singular_label='Biznes hamkor', plural_label='Biznes hamkorlar', list_url='api/v1/admin/platform/business-partners/', detail_url='api/v1/admin/platform/business-partners/<uuid:pk>/', default_roles=PARTNER_ROLES))
 PERMISSION_DEFINITIONS.extend(crud_permissions('tariffs', surface='admin', group_key='tariffs', singular_label='Tarif', plural_label='Tariflar', list_url='api/v1/admin/platform/tariffs/', detail_url='api/v1/admin/platform/tariffs/<uuid:pk>/', default_roles=PARTNER_ROLES, include_delete=False))
 PERMISSION_DEFINITIONS.extend(crud_permissions('restaurants', surface='admin', group_key='restaurants', singular_label='Restoran', plural_label='Restoranlar', list_url='api/v1/admin/constructor/restaurants/', detail_url='api/v1/admin/constructor/restaurants/<uuid:pk>/', default_roles=('product_owner', 'business_partner')))
-PERMISSION_DEFINITIONS.extend(crud_permissions('roles', surface='admin', group_key='roles', singular_label='Rol', plural_label='Rollar', list_url='api/v1/admin/users/roles/', detail_url='api/v1/admin/users/roles/<uuid:pk>/', default_roles=RESTAURANT_OWNER_ROLES))
-PERMISSION_DEFINITIONS.extend(crud_permissions('users', surface='admin', group_key='users', singular_label='Xodim', plural_label='Xodimlar', list_url='api/v1/admin/users/', detail_url='api/v1/admin/users/<uuid:pk>/', default_roles=RESTAURANT_MANAGEMENT_ROLES, include_delete=False))
+PERMISSION_DEFINITIONS.extend(crud_permissions('roles', surface='admin', group_key='roles', singular_label='Rol', plural_label='Rollar', list_url='api/v1/admin/users/roles/', detail_url='api/v1/admin/users/roles/<uuid:pk>/', default_roles=PRODUCT_OWNER_ROLES))
+PERMISSION_DEFINITIONS.extend(crud_permissions('users', surface='admin', group_key='users', singular_label='Foydalanuvchi', plural_label='Foydalanuvchilar', list_url='api/v1/admin/users/', detail_url='api/v1/admin/users/<uuid:pk>/', default_roles=PRODUCT_OWNER_ROLES, include_delete=False))
+PERMISSION_DEFINITIONS.extend(crud_permissions('employees', surface='admin', group_key='employees', singular_label='Xodim', plural_label='Xodimlar', list_url='api/v1/admin/employees/', detail_url='api/v1/admin/employees/<uuid:pk>/', default_roles=RESTAURANT_MANAGEMENT_ROLES, list_endpoints=endpoint_specs(('GET', 'api/v1/admin/employees/'), ('GET', 'api/v1/admin/employees/roles/')), include_delete=False))
 PERMISSION_DEFINITIONS.extend(crud_permissions('catalog_categories', surface='admin', group_key='catalog', singular_label='Kategoriya', plural_label='Kategoriyalar', list_url='api/v1/admin/catalog/categories/', detail_url='api/v1/admin/catalog/categories/<uuid:pk>/', default_roles=RESTAURANT_ADMIN_UI_ROLES))
 PERMISSION_DEFINITIONS.extend(crud_permissions('catalog_items', surface='admin', group_key='catalog', singular_label='Menu item', plural_label='Menu item lar', list_url='api/v1/admin/catalog/items/', detail_url='api/v1/admin/catalog/items/<uuid:pk>/', default_roles=RESTAURANT_ADMIN_UI_ROLES))
 PERMISSION_DEFINITIONS.extend(crud_permissions('halls', surface='admin', group_key='floor', singular_label='Zal', plural_label='Zallar', list_url='api/v1/admin/floor/halls/', detail_url='api/v1/admin/floor/halls/<uuid:pk>/', default_roles=FLOOR_OPERATIONS_ROLES, list_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/halls/'), ('GET', 'api/v1/pos/halls/')), view_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/halls/<uuid:pk>/'), ('GET', 'api/v1/admin/floor/halls/<uuid:pk>/constructor/'))))
