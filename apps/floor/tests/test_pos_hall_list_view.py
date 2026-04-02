@@ -37,8 +37,13 @@ class PosHallListViewTests(TestCase):
             enabled_roles=['waiter', 'cashier', 'chef'],
         )
         self.client.force_authenticate(self.user)
-        self.hall = Hall.objects.create(
+        self.zone = ZoneOrCabin.objects.create(
             restaurant=self.restaurant,
+            name='1-qavat',
+            sort_order=1,
+        )
+        self.hall = Hall.objects.create(
+            zone_or_cabin=self.zone,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,
@@ -48,8 +53,6 @@ class PosHallListViewTests(TestCase):
             name='Hall orders',
             kind=DistributionPoint.Kind.HALL,
         )
-        self.zone_first_floor = ZoneOrCabin.objects.create(hall=self.hall, name='1-qavat', sort_order=1)
-        self.zone_second_floor = ZoneOrCabin.objects.create(hall=self.hall, name='2-qavat', sort_order=2)
         self.prep_station = PrepStation.objects.create(
             restaurant=self.restaurant,
             name='Kitchen',
@@ -58,7 +61,7 @@ class PosHallListViewTests(TestCase):
 
         self.reserved_table = DiningTable.objects.create(
             hall=self.hall,
-            zone=self.zone_first_floor,
+            zone=self.zone,
             name='Asosiy zal 4',
             table_number=4,
             seat_count=4,
@@ -72,7 +75,6 @@ class PosHallListViewTests(TestCase):
         )
         self._create_active_table(
             table_number=3,
-            zone=self.zone_first_floor,
             position_x=2,
             position_y=0,
             width=1,
@@ -83,7 +85,6 @@ class PosHallListViewTests(TestCase):
         )
         self._create_active_table(
             table_number=7,
-            zone=self.zone_first_floor,
             position_x=6,
             position_y=0,
             width=1,
@@ -92,23 +93,11 @@ class PosHallListViewTests(TestCase):
             order_status=Order.Status.READY,
             ticket_status=KitchenTicket.Status.DONE,
         )
-        self._create_active_table(
-            table_number=17,
-            zone=self.zone_second_floor,
-            position_x=0,
-            position_y=2,
-            width=1,
-            height=2,
-            session_status=TableSession.Status.OPEN,
-            order_status=Order.Status.READY,
-            ticket_status=KitchenTicket.Status.DONE,
-        )
 
     def _create_active_table(
         self,
         *,
         table_number: int,
-        zone: ZoneOrCabin,
         position_x: int,
         position_y: int,
         width: int,
@@ -119,7 +108,7 @@ class PosHallListViewTests(TestCase):
     ):
         table = DiningTable.objects.create(
             hall=self.hall,
-            zone=zone,
+            zone=self.zone,
             name=f'Asosiy zal {table_number}',
             table_number=table_number,
             seat_count=4,
@@ -166,17 +155,13 @@ class PosHallListViewTests(TestCase):
         halls = response.json()['data']
         self.assertEqual(len(halls), 1)
         self.assertNotIn('layoutObjects', halls[0])
+        self.assertEqual(halls[0]['zoneOrCabin']['name'], '1-qavat')
 
-        self.assertEqual([zone['name'] for zone in halls[0]['zones']], ['1-qavat', '2-qavat'])
         tables_by_number = {table['tableNumber']: table for table in halls[0]['tables']}
 
         self.assertEqual(halls[0]['gridColumns'], 8)
         self.assertEqual(float(tables_by_number[4]['positionX']), 3.0)
-        self.assertEqual(float(tables_by_number[17]['height']), 2.0)
-        self.assertEqual(tables_by_number[17]['shapeVariant'], DiningTable.ShapeVariant.SEAT4_VERTICAL)
         self.assertEqual(tables_by_number[4]['status'], DiningTable.Status.RESERVED)
         self.assertEqual(tables_by_number[4]['zoneName'], '1-qavat')
-        self.assertEqual(tables_by_number[17]['zoneName'], '2-qavat')
         self.assertEqual(tables_by_number[3]['activeSession']['serviceState'], 'new')
         self.assertEqual(tables_by_number[7]['activeSession']['serviceState'], 'pending_payment')
-        self.assertEqual(tables_by_number[17]['activeSession']['serviceState'], 'done')

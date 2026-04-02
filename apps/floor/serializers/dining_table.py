@@ -9,7 +9,6 @@ from .active_session_summary import ActiveSessionSummarySerializer
 class DiningTableSerializer(serializers.ModelSerializer):
     active_session = serializers.SerializerMethodField()
     zone_name = serializers.SerializerMethodField()
-    zone_is_private = serializers.SerializerMethodField()
 
     class Meta:
         model = DiningTable
@@ -18,7 +17,6 @@ class DiningTableSerializer(serializers.ModelSerializer):
             'hall',
             'zone',
             'zone_name',
-            'zone_is_private',
             'name',
             'table_number',
             'seat_count',
@@ -57,18 +55,17 @@ class DiningTableSerializer(serializers.ModelSerializer):
     def get_zone_name(self, obj):
         return getattr(getattr(obj, 'zone', None), 'name', None)
 
-    def get_zone_is_private(self, obj):
-        zone = getattr(obj, 'zone', None)
-        if zone is None:
-            return None
-        return zone.is_private
-
     def validate_seat_count(self, value):
         if value not in DiningTable.get_supported_seat_counts():
             raise serializers.ValidationError(_('Only 2, 3, 4, 5, or 6 seat tables are supported.'))
         return value
 
     def validate(self, attrs):
+        hall = attrs.get('hall', getattr(self.instance, 'hall', None))
+
+        if hall is not None:
+            attrs['zone'] = hall.zone_or_cabin
+
         seat_count = attrs.get('seat_count', getattr(self.instance, 'seat_count', 4))
         shape_variant = attrs.get(
             'shape_variant',

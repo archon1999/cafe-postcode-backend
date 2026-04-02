@@ -8,7 +8,8 @@ from .zone_or_cabin import ZoneOrCabinSerializer
 
 class HallSerializer(serializers.ModelSerializer):
     tables = DiningTableSerializer(many=True, read_only=True)
-    zones = ZoneOrCabinSerializer(many=True, read_only=True)
+    zone_or_cabin = ZoneOrCabinSerializer(read_only=True)
+    zone_or_cabin_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         model = Hall
@@ -19,7 +20,8 @@ class HallSerializer(serializers.ModelSerializer):
             'grid_columns',
             'sort_order',
             'is_active',
-            'zones',
+            'zone_or_cabin_id',
+            'zone_or_cabin',
             'tables',
         )
         validators = []

@@ -22,6 +22,7 @@ FEATURE_CONFIG_ORDERING_FIELDS = {
 HALL_ORDERING_FIELDS = {
     'name': 'name',
     'description': 'description',
+    'zoneOrCabinName': ('zone_or_cabin__sort_order', 'zone_or_cabin__name', 'name'),
     'sortOrder': 'sort_order',
     'isActive': 'is_active',
 }
@@ -36,8 +37,6 @@ DINING_TABLE_ORDERING_FIELDS = {
 }
 ZONE_ORDERING_FIELDS = {
     'name': 'name',
-    'hallName': ('hall__name', 'name'),
-    'isPrivate': 'is_private',
     'sortOrder': 'sort_order',
     'isActive': 'is_active',
 }
@@ -139,10 +138,11 @@ class HallListFilters:
             queryset = queryset.filter(
                 Q(name__icontains=self.search)
                 | Q(description__icontains=self.search)
+                | Q(zone_or_cabin__name__icontains=self.search)
             )
         if self.is_active is not None:
             queryset = queryset.filter(is_active=self.is_active)
-        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('name',))
+        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('sort_order', 'name'))
 
 
 @dataclass(frozen=True)
@@ -187,8 +187,6 @@ class DiningTableListFilters:
 @dataclass(frozen=True)
 class ZoneListFilters:
     search: str = ''
-    hall_ids: tuple[str, ...] = ()
-    is_private: bool | None = None
     is_active: bool | None = None
     ordering: tuple[str, ...] = ()
 
@@ -197,22 +195,16 @@ class ZoneListFilters:
         query_params = request.query_params
         return cls(
             search=get_str_query_param(query_params, 'search'),
-            hall_ids=tuple(get_str_list_query_param(query_params, 'hall_id_in')),
-            is_private=get_bool_query_param(query_params, 'is_private'),
             is_active=get_bool_query_param(query_params, 'is_active'),
             ordering=get_ordering_query_param(query_params, ZONE_ORDERING_FIELDS),
         )
 
     def apply(self, queryset: QuerySet[ZoneOrCabin]) -> QuerySet[ZoneOrCabin]:
         if self.search:
-            queryset = queryset.filter(Q(name__icontains=self.search) | Q(hall__name__icontains=self.search))
-        if self.hall_ids:
-            queryset = queryset.filter(hall_id__in=self.hall_ids)
-        if self.is_private is not None:
-            queryset = queryset.filter(is_private=self.is_private)
+            queryset = queryset.filter(Q(name__icontains=self.search))
         if self.is_active is not None:
             queryset = queryset.filter(is_active=self.is_active)
-        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('hall__name', 'sort_order', 'name'))
+        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('sort_order', 'name'))
 
 
 @dataclass(frozen=True)

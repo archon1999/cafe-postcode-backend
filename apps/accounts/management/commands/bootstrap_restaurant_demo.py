@@ -716,7 +716,8 @@ class Command(BaseCommand):
         KitchenTicket.objects.filter(restaurant=restaurant).delete()
         Order.objects.filter(restaurant=restaurant).delete()
         TableSession.objects.filter(restaurant=restaurant).delete()
-        Hall.objects.filter(restaurant=restaurant).delete()
+        Hall.objects.filter(zone_or_cabin__restaurant=restaurant).delete()
+        ZoneOrCabin.objects.filter(restaurant=restaurant).delete()
         CatalogItem.objects.filter(restaurant=restaurant).delete()
         CatalogCategory.objects.filter(restaurant=restaurant).delete()
         DistributionPoint.objects.filter(restaurant=restaurant).delete()
@@ -778,11 +779,21 @@ class Command(BaseCommand):
         )
         takeaway_distribution.save()
 
+        zones = {
+            zone_name: ZoneOrCabin.objects.create(
+                restaurant=restaurant,
+                name=zone_name,
+                sort_order=index,
+            )
+            for index, zone_name in enumerate(ZONE_NAMES, start=1)
+        }
+
         halls = {}
         hall_zones = {}
         for hall_spec in HALL_SPECS:
+            zone_name = '2-qavat' if hall_spec['code'].endswith('-l2') else '1-qavat'
             hall = Hall.objects.create(
-                restaurant=restaurant,
+                zone_or_cabin=zones[zone_name],
                 name=hall_spec['name']['uz'],
                 description=hall_spec['description']['uz'],
                 sort_order=hall_spec['sort_order'],
@@ -793,16 +804,7 @@ class Command(BaseCommand):
             hall.grid_columns = HALL_GRID_COLUMNS.get(hall_spec['code'], 8)
             hall.save()
             halls[hall_spec['code']] = hall
-
-            hall_zones[hall_spec['code']] = {}
-            for zone_index, zone_name in enumerate(ZONE_NAMES, start=1):
-                zone = ZoneOrCabin.objects.create(
-                    hall=hall,
-                    name=zone_name,
-                    is_private=False,
-                    sort_order=zone_index,
-                )
-                hall_zones[hall_spec['code']][zone_name] = zone
+            hall_zones[hall_spec['code']] = {zone_name: zones[zone_name]}
 
         business_partner_role = Role.objects.get(code='business_partner')
         restaurant_admin_role = Role.objects.get(code='restaurant_admin')

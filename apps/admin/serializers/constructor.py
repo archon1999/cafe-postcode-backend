@@ -2,7 +2,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.accounts.models import Role
-from apps.floor.models import DiningTable, Hall, LayoutObject, LayoutTemplate, TableSession, ZoneOrCabin
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order
 from apps.organizations.models import CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
@@ -110,11 +110,9 @@ class ActiveSessionSummarySerializer(serializers.ModelSerializer):
 
 
 class ZoneOrCabinSerializer(serializers.ModelSerializer):
-    hall_name = serializers.CharField(source='hall.name', read_only=True)
-
     class Meta:
         model = ZoneOrCabin
-        fields = ('id', 'hall', 'hall_name', 'name', 'is_private', 'sort_order', 'is_active')
+        fields = ('id', 'name', 'sort_order', 'is_active')
 
 
 class DiningTableSerializer(serializers.ModelSerializer):
@@ -172,6 +170,11 @@ class DiningTableSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        hall = attrs.get('hall', getattr(self.instance, 'hall', None))
+
+        if hall is not None:
+            attrs['zone'] = hall.zone_or_cabin
+
         seat_count = attrs.get('seat_count', getattr(self.instance, 'seat_count', 4))
         shape_variant = attrs.get(
             'shape_variant',
@@ -186,42 +189,10 @@ class DiningTableSerializer(serializers.ModelSerializer):
             attrs['shape'] = DiningTable.infer_shape_from_variant(shape_variant)
         return attrs
 
-class LayoutTemplateSerializer(serializers.ModelSerializer):
-    restaurant_name = serializers.CharField(source='restaurant.name', read_only=True)
-
-    class Meta:
-        model = LayoutTemplate
-        fields = ('id', 'restaurant_name', 'name', 'description', 'payload', 'is_default')
-
-
-class LayoutObjectSerializer(serializers.ModelSerializer):
-    hall_name = serializers.CharField(source='hall.name', read_only=True)
-    zone_name = serializers.CharField(source='zone.name', read_only=True)
-    table_name = serializers.CharField(source='table.name', read_only=True)
-
-    class Meta:
-        model = LayoutObject
-        fields = (
-            'id',
-            'hall',
-            'hall_name',
-            'zone',
-            'zone_name',
-            'table',
-            'table_name',
-            'kind',
-            'label',
-            'position_x',
-            'position_y',
-            'width',
-            'height',
-            'rotation',
-            'payload',
-            'sort_order',
-        )
-
 
 class HallSerializer(serializers.ModelSerializer):
+    zone_or_cabin_id = serializers.PrimaryKeyRelatedField(source='zone_or_cabin', queryset=ZoneOrCabin.objects.all())
+    zone_or_cabin = ZoneOrCabinSerializer(read_only=True)
     tables = DiningTableSerializer(many=True, read_only=True)
 
     class Meta:
@@ -233,9 +204,30 @@ class HallSerializer(serializers.ModelSerializer):
             'grid_columns',
             'sort_order',
             'is_active',
+            'zone_or_cabin_id',
+            'zone_or_cabin',
             'tables',
         )
         validators = []
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get('request')
+        restaurant = get_request_restaurant(request) if request is not None else getattr(self.instance, 'restaurant', None)
+        zone_or_cabin = attrs.get('zone_or_cabin', getattr(self.instance, 'zone_or_cabin', None))
+
+        if zone_or_cabin is not None and restaurant is not None and zone_or_cabin.restaurant_id != restaurant.id:
+            raise serializers.ValidationError({'zoneOrCabinId': _('Selected zone does not belong to the current restaurant.')})
+
+        if self.instance is not None and zone_or_cabin is not None and self.instance.tables.exclude(zone=zone_or_cabin).exists():
+            raise serializers.ValidationError({'zoneOrCabinId': _('Reassign or remove tables before changing the zone or cabin.')})
+
+        return attrs
+
+    def update(self, instance, validated_data):
+        hall = super().update(instance, validated_data)
+        hall.tables.exclude(zone=hall.zone_or_cabin).update(zone=hall.zone_or_cabin)
+        return hall
 
 
 class PrepStationSerializer(serializers.ModelSerializer):

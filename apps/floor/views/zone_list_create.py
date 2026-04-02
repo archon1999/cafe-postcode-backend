@@ -12,4 +12,7 @@ class ZoneListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return ZoneOrCabin.objects.filter(hall__restaurant=restaurant).select_related('hall')
+        return ZoneOrCabin.objects.filter(restaurant=restaurant)
+
+    def perform_create(self, serializer):
+        serializer.save(restaurant=get_request_restaurant(self.request))

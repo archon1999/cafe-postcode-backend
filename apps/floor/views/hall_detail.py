@@ -12,4 +12,8 @@ class HallDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return Hall.objects.filter(restaurant=restaurant).prefetch_related('zones', 'tables__table_sessions')
+        return (
+            Hall.objects.filter(zone_or_cabin__restaurant=restaurant)
+            .select_related('zone_or_cabin')
+            .prefetch_related('tables__table_sessions')
+        )

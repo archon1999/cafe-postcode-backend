@@ -89,14 +89,11 @@ class HallListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
     def get_queryset(self):
         queryset = (
             Hall.objects.all()
+            .select_related('zone_or_cabin')
             .prefetch_related('tables__table_sessions')
         )
-        queryset = filter_constructor_queryset_by_restaurant(queryset, self.request)
+        queryset = filter_constructor_queryset_by_restaurant(queryset, self.request, 'zone_or_cabin__restaurant')
         return HallListFilters.from_request(self.request).apply(queryset)
-
-    def perform_create(self, serializer):
-        restaurant = get_request_restaurant(self.request)
-        serializer.save(restaurant=restaurant)
 
 
 class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -104,7 +101,8 @@ class HallDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
 
     def get_queryset(self):
         return (
-            filter_constructor_queryset_by_restaurant(Hall.objects.all(), self.request)
+            filter_constructor_queryset_by_restaurant(Hall.objects.all(), self.request, 'zone_or_cabin__restaurant')
+            .select_related('zone_or_cabin')
             .prefetch_related('tables__table_sessions')
         )
 
@@ -118,7 +116,7 @@ class DiningTableListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
             .select_related('hall', 'zone')
             .prefetch_related('table_sessions')
         )
-        queryset = filter_constructor_queryset_by_restaurant(queryset, self.request, 'hall__restaurant')
+        queryset = filter_constructor_queryset_by_restaurant(queryset, self.request, 'hall__zone_or_cabin__restaurant')
         return DiningTableListFilters.from_request(self.request).apply(queryset)
 
 
@@ -127,7 +125,7 @@ class DiningTableDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdat
 
     def get_queryset(self):
         return (
-            filter_constructor_queryset_by_restaurant(DiningTable.objects.all(), self.request, 'hall__restaurant')
+            filter_constructor_queryset_by_restaurant(DiningTable.objects.all(), self.request, 'hall__zone_or_cabin__restaurant')
             .select_related('hall', 'zone')
             .prefetch_related('table_sessions')
         )
@@ -138,11 +136,14 @@ class ZoneListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
 
     def get_queryset(self):
         queryset = filter_constructor_queryset_by_restaurant(
-            ZoneOrCabin.objects.select_related('hall'),
+            ZoneOrCabin.objects.all(),
             self.request,
-            'hall__restaurant',
+            'restaurant',
         )
         return ZoneListFilters.from_request(self.request).apply(queryset)
+
+    def perform_create(self, serializer):
+        serializer.save(restaurant=get_request_restaurant(self.request))
 
 
 class ZoneDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
@@ -150,9 +151,9 @@ class ZoneDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestro
 
     def get_queryset(self):
         return filter_constructor_queryset_by_restaurant(
-            ZoneOrCabin.objects.select_related('hall'),
+            ZoneOrCabin.objects.all(),
             self.request,
-            'hall__restaurant',
+            'restaurant',
         )
 
 

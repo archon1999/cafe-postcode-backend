@@ -12,4 +12,8 @@ class DiningTableListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return DiningTable.objects.filter(hall__restaurant=restaurant).select_related('hall', 'zone').prefetch_related('table_sessions')
+        return (
+            DiningTable.objects.filter(hall__zone_or_cabin__restaurant=restaurant)
+            .select_related('hall', 'zone')
+            .prefetch_related('table_sessions')
+        )

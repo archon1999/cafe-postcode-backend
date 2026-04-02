@@ -11,7 +11,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import AuthSession, Permission, Role, User
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.orders.models import Order, Payment
 from apps.organizations.models import BusinessPartner, Restaurant, RestaurantEntitlement
@@ -58,6 +58,12 @@ class AdminApiTests(APITestCase):
             restaurant=cls.restaurant,
             is_active=True,
             is_custom=True,
+        )
+        cls.default_zone = ZoneOrCabin.objects.create(
+            restaurant=cls.restaurant,
+            name='Default zone',
+            sort_order=1,
+            is_active=True,
         )
         cls.entitlement.permissions.set(cls.permissions.values())
         cls.entitlement.allowed_roles.set([cls.admin_role, cls.limited_role] if hasattr(cls, 'limited_role') else [cls.admin_role])
@@ -232,7 +238,7 @@ class AdminApiTests(APITestCase):
 
         report_dt = datetime(2026, 3, 26, 19, 30, tzinfo=UTC)
         hall = Hall.objects.create(
-            restaurant=self.restaurant,
+            zone_or_cabin=self.default_zone,
             name='Summary Hall',
         )
         table = DiningTable.objects.create(
@@ -298,7 +304,13 @@ class AdminApiTests(APITestCase):
         )
 
         def create_sale(restaurant, order_number, amount):
-            hall = Hall.objects.create(restaurant=restaurant, name=f'Hall {order_number}')
+            zone = ZoneOrCabin.objects.create(
+                restaurant=restaurant,
+                name=f'Zone {order_number}',
+                sort_order=order_number,
+                is_active=True,
+            )
+            hall = Hall.objects.create(zone_or_cabin=zone, name=f'Hall {order_number}')
             table = DiningTable.objects.create(
                 hall=hall,
                 zone=None,
@@ -361,6 +373,7 @@ class AdminApiTests(APITestCase):
                 'grid_columns': 8,
                 'sort_order': 0,
                 'is_active': True,
+                'zoneOrCabinId': str(self.default_zone.id),
             },
             format='json',
         )
@@ -592,7 +605,7 @@ class AdminApiTests(APITestCase):
 
         report_dt = datetime(2026, 3, 27, 10, 0, tzinfo=TASHKENT_TIMEZONE)
         hall = Hall.objects.create(
-            restaurant=self.restaurant,
+            zone_or_cabin=self.default_zone,
             name='Main Hall',
         )
         table = DiningTable.objects.create(
