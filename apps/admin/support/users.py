@@ -159,7 +159,6 @@ class UserListFilters:
 class RoleListFilters:
     search: str = ''
     types: tuple[str, ...] = ()
-    permission_codes: tuple[str, ...] = ()
     ordering: tuple[str, ...] = ()
 
     @classmethod
@@ -168,7 +167,6 @@ class RoleListFilters:
         return cls(
             search=get_str_query_param(query_params, 'search'),
             types=tuple(get_str_list_query_param(query_params, 'type_in', allowed_values=ROLE_TYPE_VALUES)),
-            permission_codes=tuple(get_str_list_query_param(query_params, 'permission_code_in')),
             ordering=get_ordering_query_param(query_params, ROLE_ORDERING_FIELDS),
         )
 
@@ -181,8 +179,6 @@ class RoleListFilters:
             )
         if self.types and len(self.types) == 1:
             queryset = queryset.filter(is_system=self.types[0] == 'system')
-        if self.permission_codes:
-            queryset = queryset.filter(permissions__code__in=self.permission_codes)
         return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('name',))
 
 

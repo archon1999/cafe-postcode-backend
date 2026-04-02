@@ -181,12 +181,45 @@ class EndpointRBACPermissionTests(TestCase):
             ).exists()
         )
 
-    def test_legacy_manage_codes_are_removed_from_seed(self):
+    def test_removed_permission_codes_are_absent_from_seed(self):
         seed_default_roles_signal(sender=django_apps.get_app_config("accounts"))
 
         self.assertFalse(Permission.objects.filter(code__contains=".manage").exists())
-        self.assertFalse(Permission.objects.filter(code="hall.view").exists())
+        self.assertFalse(Permission.objects.filter(code="order_items.list").exists())
+        self.assertFalse(Permission.objects.filter(code="order_item_notes.view").exists())
+        self.assertFalse(Permission.objects.filter(code="cash_shifts.view").exists())
+        self.assertFalse(Permission.objects.filter(surface="system").exists())
         self.assertTrue(Permission.objects.filter(code="halls.list").exists())
+        self.assertTrue(Permission.objects.filter(code="reports.view").exists())
+
+    def test_orders_permissions_absorb_order_item_endpoints(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("accounts"))
+
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="orders.list",
+                method="GET",
+                url="api/v1/admin/order-items/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="orders.view",
+                method="GET",
+                url="api/v1/pos/orders/<uuid:order_id>/items/",
+            ).exists()
+        )
+
+    def test_reports_view_absorbs_export_endpoints(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("accounts"))
+
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="reports.view",
+                method="GET",
+                url="api/v1/admin/reports/shifts/export/",
+            ).exists()
+        )
 
     def test_every_protected_route_is_registered_in_permission_endpoints(self):
         missing = []
