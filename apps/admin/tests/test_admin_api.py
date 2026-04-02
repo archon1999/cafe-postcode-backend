@@ -157,6 +157,11 @@ class AdminApiTests(APITestCase):
         self.assertEqual(permissions_response.status_code, status.HTTP_200_OK)
         self.assertGreaterEqual(permissions_response.data['total'], len(self.permissions))
 
+        permission_options_response = self.client.get('/api/v1/admin/users/permissions/options/')
+        self.assertEqual(permission_options_response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(permission_options_response.data, list)
+        self.assertGreaterEqual(len(permission_options_response.data), len(self.permissions))
+
         roles_response = self.client.get('/api/v1/admin/users/roles/')
         self.assertEqual(roles_response.status_code, status.HTTP_200_OK)
         self.assertEqual(roles_response.data['data'][0]['code'], self.admin_role.code)

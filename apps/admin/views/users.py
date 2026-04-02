@@ -2,7 +2,13 @@ from rest_framework import generics
 
 from apps.accounts.models import Permission, Role
 from apps.admin.permissions import AdminPermissionRequiredMixin
-from apps.admin.serializers import EmployeeSerializer, PermissionSerializer, RoleSerializer, UserSerializer
+from apps.admin.serializers import (
+    EmployeeSerializer,
+    PermissionOptionSerializer,
+    PermissionSerializer,
+    RoleSerializer,
+    UserSerializer,
+)
 from apps.admin.support import (
     AdminUserQuerysetMixin,
     PermissionListFilters,
@@ -19,6 +25,14 @@ class PermissionListView(AdminPermissionRequiredMixin, generics.ListAPIView):
     def get_queryset(self):
         queryset = Permission.objects.prefetch_related('endpoints').all()
         return PermissionListFilters.from_request(self.request).apply(queryset)
+
+
+class PermissionOptionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
+    serializer_class = PermissionOptionSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        return Permission.objects.order_by('code').all()
 
 
 class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):

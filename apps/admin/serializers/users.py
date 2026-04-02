@@ -34,6 +34,17 @@ class PermissionSerializer(serializers.ModelSerializer):
         fields = ('id', 'code', 'scope', 'name', 'description', 'endpoints')
 
 
+class PermissionOptionSerializer(serializers.ModelSerializer):
+    scope = serializers.SerializerMethodField()
+
+    def get_scope(self, instance):
+        return instance.surface
+
+    class Meta:
+        model = Permission
+        fields = ('id', 'code', 'scope', 'name', 'description')
+
+
 class RoleSerializer(serializers.ModelSerializer):
     permission_ids = serializers.PrimaryKeyRelatedField(
         source='permissions',

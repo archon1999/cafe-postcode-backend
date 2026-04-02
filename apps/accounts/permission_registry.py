@@ -225,7 +225,10 @@ PERMISSION_DEFINITIONS = [
         ui_visible=True,
         group_key='permissions',
         name='Ruxsatlar katalogini ko‘rish',
-        endpoints=endpoint_specs(('GET', 'api/v1/admin/users/permissions/')),
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/users/permissions/'),
+            ('GET', 'api/v1/admin/users/permissions/options/'),
+        ),
         default_roles=ROLE_MANAGEMENT_ROLES,
     ),
     permission_definition(
