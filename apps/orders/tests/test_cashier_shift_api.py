@@ -5,12 +5,12 @@ from common.tests.pos_api import PosAPITestCase
 
 
 class CashierShiftApiTests(PosAPITestCase):
-    def test_cashier_context_returns_branch_fiscal_profile_and_cash_desks(self):
+    def test_cashier_context_returns_restaurant_fiscal_profile_and_cash_desks(self):
         response = self.client.get('/api/v1/pos/cashier/context/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['branch_fiscal_profile']['legal_name'], self.branch.legal_name)
-        self.assertEqual(response.data['branch_fiscal_profile']['tax_number'], self.branch.tax_number)
+        self.assertEqual(response.data['restaurant_fiscal_profile']['legal_name'], self.branch.legal_name)
+        self.assertEqual(response.data['restaurant_fiscal_profile']['tax_number'], self.branch.tax_number)
         self.assertEqual(len(response.data['available_cash_desks']), 1)
         self.assertIsNone(response.data['current_shift'])
 
@@ -25,7 +25,7 @@ class CashierShiftApiTests(PosAPITestCase):
         close_response = self.close_shift_via_api(actual_closing_cash_amount=145000, notes_close='Cash mismatch')
 
         self.assertIsNone(close_response['current_shift'])
-        shift = CashShift.objects.get(branch=self.branch, opened_by=self.user)
+        shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
         self.assertEqual(shift.cash_difference_amount, -5000)
 

@@ -1,5 +1,6 @@
 from .dining_table_detail import DiningTableDetailView
 from .dining_table_list_create import DiningTableListCreateView
+from .dining_table_reserve import DiningTableReserveView
 from .hall_detail import HallDetailView
 from .hall_list_create import HallListCreateView
 from .pos_hall_list import PosHallListView
@@ -13,6 +14,7 @@ from .zone_list_create import ZoneListCreateView
 __all__ = [
     'DiningTableDetailView',
     'DiningTableListCreateView',
+    'DiningTableReserveView',
     'HallDetailView',
     'HallListCreateView',
     'PosHallListView',

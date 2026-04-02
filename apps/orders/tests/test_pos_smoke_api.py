@@ -11,7 +11,6 @@ class PosSmokeApiTests(PosAPITestCase):
     def test_hall_order_lifecycle_smoke(self):
         session = TableSession.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             hall=self.hall,
             table=self.table,
             opened_by=self.user,

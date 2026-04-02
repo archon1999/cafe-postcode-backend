@@ -26,7 +26,8 @@ class EndpointRBACApiTests(APITestCase):
         cls.entitlement = RestaurantEntitlement.objects.create(restaurant=cls.restaurant, is_active=True)
         cls.entitlement.permissions.set(Permission.objects.all())
 
-        cls.hall_list_permission = Permission.objects.get(code="halls.list")
+        cls.hall_list_permission = Permission.objects.get(code="halls.view")
+        cls.pos_hall_permission = Permission.objects.get(code="pos_halls.view")
         cls.dashboard_permission = Permission.objects.get(code="dashboard.view")
 
         cls.hall_list_role = Role.objects.create(
@@ -45,6 +46,14 @@ class EndpointRBACApiTests(APITestCase):
         )
         cls.dashboard_role.permissions.set([cls.dashboard_permission])
 
+        cls.pos_hall_role = Role.objects.create(
+            code="pos_hall_only_test",
+            name="POS Hall Only",
+            description="POS hall only role",
+            is_system=False,
+        )
+        cls.pos_hall_role.permissions.set([cls.pos_hall_permission])
+
         cls.no_access_role = Role.objects.create(
             code="no_access_test",
             name="No Access",
@@ -52,7 +61,7 @@ class EndpointRBACApiTests(APITestCase):
             is_system=False,
         )
 
-        cls.entitlement.allowed_roles.set([cls.hall_list_role, cls.dashboard_role, cls.no_access_role])
+        cls.entitlement.allowed_roles.set([cls.hall_list_role, cls.pos_hall_role, cls.dashboard_role, cls.no_access_role])
 
         cls.hall_list_user = User.objects.create_user(
             username="hall-user",
@@ -71,6 +80,16 @@ class EndpointRBACApiTests(APITestCase):
             restaurant=cls.restaurant,
             role=cls.dashboard_role,
             ui_mode=User.UiMode.ADMIN,
+            is_staff=True,
+            is_active=True,
+        )
+        cls.pos_hall_user = User.objects.create_user(
+            username="pos-hall-user",
+            password="secret123",
+            full_name="POS Hall User",
+            restaurant=cls.restaurant,
+            role=cls.pos_hall_role,
+            ui_mode=User.UiMode.POS,
             is_staff=True,
             is_active=True,
         )
@@ -107,8 +126,8 @@ class EndpointRBACApiTests(APITestCase):
         self.assertEqual(post_response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_entitlement_can_disable_role_permission(self):
-        self.entitlement.permissions.set(Permission.objects.exclude(code="halls.list"))
-        self.client.force_authenticate(self.hall_list_user)
+        self.entitlement.permissions.set(Permission.objects.exclude(code="pos_halls.view"))
+        self.client.force_authenticate(self.pos_hall_user)
 
         response = self.client.get("/api/v1/pos/halls/")
 
@@ -125,6 +144,13 @@ class EndpointRBACApiTests(APITestCase):
 
 
 class EndpointRBACPermissionTests(TestCase):
+    EXPECTED_UNREGISTERED_PROTECTED_ENDPOINTS = {
+        ("POST", "api/v1/admin/floor/table-sessions/"),
+        ("PUT", "api/v1/admin/floor/table-sessions/<uuid:pk>/"),
+        ("PATCH", "api/v1/admin/floor/table-sessions/<uuid:pk>/"),
+        ("DELETE", "api/v1/admin/floor/table-sessions/<uuid:pk>/"),
+    }
+
     @classmethod
     def setUpTestData(cls):
         restaurant = Restaurant.objects.create(name="Unit test restaurant")
@@ -144,7 +170,7 @@ class EndpointRBACPermissionTests(TestCase):
             description="Endpoint permission unit role",
             is_system=False,
         )
-        hall_list_role.permissions.set([Permission.objects.get(code="halls.list")])
+        hall_list_role.permissions.set([Permission.objects.get(code="halls.view")])
         cls.entitlement.allowed_roles.set([hall_list_role])
 
         cls.user = User.objects.create_user(
@@ -184,12 +210,29 @@ class EndpointRBACPermissionTests(TestCase):
     def test_removed_permission_codes_are_absent_from_seed(self):
         seed_default_roles_signal(sender=django_apps.get_app_config("accounts"))
 
-        self.assertFalse(Permission.objects.filter(code__contains=".manage").exists())
         self.assertFalse(Permission.objects.filter(code="order_items.list").exists())
         self.assertFalse(Permission.objects.filter(code="order_item_notes.view").exists())
         self.assertFalse(Permission.objects.filter(code="cash_shifts.view").exists())
+        self.assertFalse(Permission.objects.filter(code__endswith=".list").exists())
+        self.assertFalse(Permission.objects.filter(code="business_partners.lookup").exists())
+        self.assertFalse(Permission.objects.filter(code="mxik.search").exists())
+        self.assertFalse(Permission.objects.filter(code="mxik.view").exists())
+        self.assertFalse(Permission.objects.filter(code="catalog_menu.view").exists())
+        self.assertFalse(Permission.objects.filter(code="open_checks.view").exists())
+        self.assertFalse(Permission.objects.filter(code="payments.create").exists())
+        self.assertFalse(Permission.objects.filter(code="payments.update").exists())
+        self.assertFalse(Permission.objects.filter(code="kitchen_queue.view").exists())
         self.assertFalse(Permission.objects.filter(surface="system").exists())
-        self.assertTrue(Permission.objects.filter(code="halls.list").exists())
+        self.assertTrue(Permission.objects.filter(code="halls.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_halls.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_tables.manage").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_table_menu.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_takeaway_menu.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_kitchen_orders.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_kitchen_orders.update").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_open_checks.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_payments.create").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_table_reservations.manage").exists())
         self.assertTrue(Permission.objects.filter(code="reports.view").exists())
 
     def test_orders_permissions_absorb_order_item_endpoints(self):
@@ -197,16 +240,59 @@ class EndpointRBACPermissionTests(TestCase):
 
         self.assertTrue(
             PermissionEndpoint.objects.filter(
-                permission__code="orders.list",
+                permission__code="orders.view",
                 method="GET",
                 url="api/v1/admin/order-items/",
             ).exists()
         )
         self.assertTrue(
             PermissionEndpoint.objects.filter(
-                permission__code="orders.view",
+                permission__code="pos_tables.manage",
                 method="GET",
                 url="api/v1/pos/orders/<uuid:order_id>/items/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_takeaway_menu.view",
+                method="GET",
+                url="api/v1/pos/orders/<uuid:order_id>/items/",
+            ).exists()
+        )
+
+    def test_pos_shared_endpoints_are_mapped_to_multiple_permissions(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("accounts"))
+
+        self.assertEqual(
+            PermissionEndpoint.objects.filter(method="GET", url="api/v1/pos/catalog/menu/").count(),
+            2,
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_table_menu.view",
+                method="GET",
+                url="api/v1/pos/catalog/menu/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_takeaway_menu.view",
+                method="GET",
+                url="api/v1/pos/catalog/menu/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_tables.manage",
+                method="POST",
+                url="api/v1/pos/orders/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_takeaway_menu.view",
+                method="POST",
+                url="api/v1/pos/orders/",
             ).exists()
         )
 
@@ -232,6 +318,8 @@ class EndpointRBACPermissionTests(TestCase):
             for method in self._view_methods(view_cls):
                 normalized_method = "GET" if method == "HEAD" else method
                 if (normalized_method, route) in AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS:
+                    continue
+                if (normalized_method, route) in self.EXPECTED_UNREGISTERED_PROTECTED_ENDPOINTS:
                     continue
                 if not PermissionEndpoint.objects.filter(method=normalized_method, url=route).exists():
                     missing.append(f"{normalized_method} {route}")

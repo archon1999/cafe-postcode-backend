@@ -14,7 +14,7 @@ from apps.admin.serializers import (
 from apps.organizations.models import BusinessPartner, Tariff
 from apps.organizations.services.faktura import FakturaClient, FakturaError
 
-from ._business_helpers import (
+from apps.admin.support.business_partner import (
     filter_partners,
     filter_tariffs,
     generate_password,

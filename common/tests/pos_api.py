@@ -4,59 +4,35 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
-from apps.floor.models import DiningTable, Hall, TableSession
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.orders.models import CashShift
-from apps.organizations.models import Branch, DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
+from apps.organizations.models import DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
 
 
 class PosTestDataMixin:
     permission_codes = (
-        'halls.list',
-        'table_sessions.list',
-        'table_sessions.view',
-        'table_sessions.create',
-        'table_sessions.update',
-        'table_sessions.move',
-        'table_sessions.merge',
-        'catalog_menu.view',
-        'orders.create',
-        'orders.list',
-        'orders.view',
-        'orders.update',
-        'orders.submit',
-        'order_items.list',
-        'order_items.view',
-        'order_items.create',
-        'order_items.update',
-        'order_items.delete',
-        'payments.create',
-        'open_checks.list',
-        'cash_shifts.view',
-        'cash_shifts.open',
-        'cash_shifts.close',
-        'receipts.reprint',
-        'payments.refund',
-        'kitchen_queue.view',
-        'kitchen_tickets.view',
-        'kitchen_tickets.status_update',
-        'kitchen_items.status_update',
-        'reports.summary.view',
-        'reports.shifts.view',
-        'reports.shifts.export',
+        'pos_halls.view',
+        'pos_tables.manage',
+        'pos_table_menu.view',
+        'pos_takeaway_menu.view',
+        'pos_kitchen_orders.view',
+        'pos_kitchen_orders.update',
+        'pos_open_checks.view',
+        'pos_payments.create',
+        'pos_table_reservations.manage',
+        'reports.view',
     )
 
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
-        cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main branch',
+        cls.restaurant = Restaurant.objects.create(
+            name='Test restaurant',
             service_fee_percent=10,
             legal_name='Test Restaurant LLC',
             tax_number='123456789',
-            is_default=True,
         )
+        cls.branch = cls.restaurant
         cls.feature_config = FeatureConfig.objects.create(
             restaurant=cls.restaurant,
             hall_enabled=True,
@@ -92,14 +68,17 @@ class PosTestDataMixin:
             password='secret123',
             full_name='POS Test User',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
             ui_mode=User.UiMode.POS,
             is_staff=True,
-                    )
-        cls.hall = Hall.objects.create(
+        )
+        cls.zone = ZoneOrCabin.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
+            name='Asosiy zona',
+            sort_order=1,
+        )
+        cls.hall = Hall.objects.create(
+            zone_or_cabin=cls.zone,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,
@@ -119,43 +98,35 @@ class PosTestDataMixin:
         )
         cls.prep_station = PrepStation.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Kitchen',
             kind=PrepStation.Kind.KITCHEN,
         )
         cls.cash_desk = cls.restaurant.cash_desks.create(
-            branch=cls.branch,
             name='Main cashier',
             location='Front desk',
             enabled_payment_methods=['cash', 'card', 'qr'],
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Taomlar',
             mxik_code='10000000000000001',
             mxik_name='Taomlar',
-            kind=CatalogCategory.Kind.DISH,
         )
         cls.catalog_item = CatalogItem.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             category=cls.category,
             name='Osh',
-            kind=CatalogItem.Kind.DISH,
             prep_station=cls.prep_station,
             price=30000,
         )
         cls.hall_distribution = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Hall orders',
             kind=DistributionPoint.Kind.HALL,
             assigned_hall=cls.hall,
         )
         cls.takeaway_distribution = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Takeaway',
             kind=DistributionPoint.Kind.TAKEAWAY,
         )
@@ -166,7 +137,6 @@ class PosTestDataMixin:
         opened_by = opened_by or cls.user
         return TableSession.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             hall=table.hall,
             table=table,
             opened_by=opened_by,
@@ -178,7 +148,6 @@ class PosTestDataMixin:
     @classmethod
     def create_cash_shift(cls, *, cash_desk=None, opened_by=None, opening_cash_amount=0):
         return CashShift.objects.create(
-            branch=cls.branch,
             cash_desk=cash_desk or cls.cash_desk,
             opened_by=opened_by or cls.user,
             opened_at=timezone.now(),
@@ -219,7 +188,7 @@ class PosAPITestCase(PosTestDataMixin, APITestCase):
         return response.data
 
     def pay_order_via_api(self, order_id, *, method='cash', amount=0):
-        if not CashShift.objects.filter(branch=self.branch, opened_by=self.user, status=CashShift.Status.OPEN).exists():
+        if not CashShift.objects.filter(cash_desk__restaurant=self.restaurant, opened_by=self.user, status=CashShift.Status.OPEN).exists():
             self.create_cash_shift(opening_cash_amount=0)
         response = self.client.post(
             f'/api/v1/pos/payments/orders/{order_id}/pay/',

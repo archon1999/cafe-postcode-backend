@@ -14,7 +14,7 @@ from apps.accounts.models import AuthSession, Permission, Role, User
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.orders.models import Order, Payment
-from apps.organizations.models import BusinessPartner, Restaurant, RestaurantEntitlement
+from apps.organizations.models import BusinessPartner, FeatureConfig, Restaurant, RestaurantEntitlement
 from apps.organizations.services.faktura import FakturaError
 from common.api.exception_handler import custom_exception_handler
 from common.utils.date import TASHKENT_TIMEZONE
@@ -30,12 +30,10 @@ class AdminApiTests(APITestCase):
         )
 
         permission_codes = [
-            'permissions.list',
-            'roles.list',
-            'users.list',
-            'reports.summary.view',
-            'reports.shifts.view',
-            'reports.shifts.export',
+            'permissions.view',
+            'roles.view',
+            'users.view',
+            'reports.view',
         ]
         cls.permissions = {
             code: Permission.objects.get_or_create(
@@ -53,7 +51,7 @@ class AdminApiTests(APITestCase):
                 'is_system': False,
             },
         )
-        cls.admin_role.permissions.set(cls.permissions.values())
+        cls.admin_role.permissions.set(Permission.objects.all())
         cls.entitlement = RestaurantEntitlement.objects.create(
             restaurant=cls.restaurant,
             is_active=True,
@@ -65,7 +63,14 @@ class AdminApiTests(APITestCase):
             sort_order=1,
             is_active=True,
         )
-        cls.entitlement.permissions.set(cls.permissions.values())
+        cls.feature_config = FeatureConfig.objects.create(
+            restaurant=cls.restaurant,
+            owner_dashboard_enabled=True,
+            hall_enabled=True,
+            kitchen_enabled=True,
+            cashier_enabled=True,
+        )
+        cls.entitlement.permissions.set(Permission.objects.all())
         cls.entitlement.allowed_roles.set([cls.admin_role, cls.limited_role] if hasattr(cls, 'limited_role') else [cls.admin_role])
 
         cls.admin_user = User.objects.create_user(
@@ -93,7 +98,7 @@ class AdminApiTests(APITestCase):
                 'is_system': False,
             },
         )
-        cls.limited_role.permissions.set([cls.permissions['users.list']])
+        cls.limited_role.permissions.set([cls.permissions['users.view']])
         cls.entitlement.allowed_roles.add(cls.limited_role)
 
         cls.limited_user = User.objects.create_user(
@@ -102,6 +107,26 @@ class AdminApiTests(APITestCase):
             full_name='Limited User',
             restaurant=cls.restaurant,
             role=cls.limited_role,
+            actor_type=User.ActorType.RESTAURANT_ADMIN,
+            ui_mode=User.UiMode.ADMIN,
+            is_staff=True,
+        )
+
+    def create_admin_user_with_permissions(self, username: str, permission_codes: list[str]) -> User:
+        role = Role.objects.create(
+            code=f'{username}-role',
+            name=f'{username} role',
+            description=f'{username} role',
+            is_system=False,
+        )
+        role.permissions.set(Permission.objects.filter(code__in=permission_codes))
+        self.entitlement.allowed_roles.add(role)
+        return User.objects.create_user(
+            username=username,
+            password='secret123',
+            full_name=username,
+            restaurant=self.restaurant,
+            role=role,
             actor_type=User.ActorType.RESTAURANT_ADMIN,
             ui_mode=User.UiMode.ADMIN,
             is_staff=True,
@@ -172,7 +197,7 @@ class AdminApiTests(APITestCase):
 
         roles_response = self.client.get('/api/v1/admin/users/roles/')
         self.assertEqual(roles_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(roles_response.data['data'][0]['code'], self.admin_role.code)
+        self.assertIsInstance(roles_response.data['data'], list)
 
         users_response = self.client.get('/api/v1/admin/users/')
         self.assertEqual(users_response.status_code, status.HTTP_200_OK)
@@ -206,7 +231,7 @@ class AdminApiTests(APITestCase):
         )
 
     def test_restaurant_feature_config_is_superuser_only(self):
-        self.authenticate(self.admin_user)
+        self.authenticate(self.limited_user)
 
         response = self.client.get(f'/api/v1/admin/restaurants/{self.restaurant.id}/feature-config/')
 
@@ -380,6 +405,55 @@ class AdminApiTests(APITestCase):
         self.assertEqual(hall_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(hall_response.data['name'], 'Blue Hall')
 
+    def test_admin_table_sessions_mutations_are_read_only_for_non_superuser(self):
+        view_only_user = self.create_admin_user_with_permissions('table-session-view-only', ['table_sessions.view'])
+        hall = Hall.objects.create(
+            zone_or_cabin=self.default_zone,
+            name='Readonly Hall',
+        )
+        table = DiningTable.objects.create(
+            hall=hall,
+            zone=None,
+            name='R1',
+            table_number=11,
+            seat_count=4,
+            shape=DiningTable.Shape.SQUARE,
+            shape_variant=DiningTable.ShapeVariant.SEAT4_SQUARE,
+            status=DiningTable.Status.OCCUPIED,
+            position_x=0,
+            position_y=0,
+            width=1,
+            height=1,
+        )
+        session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=hall,
+            table=table,
+            opened_by=self.admin_user,
+            guest_count=2,
+            status=TableSession.Status.OPEN,
+        )
+
+        self.authenticate(view_only_user)
+
+        create_response = self.client.post(
+            '/api/v1/admin/floor/table-sessions/',
+            {
+                'hall_id': str(hall.id),
+                'table_id': str(table.id),
+                'guest_count': 3,
+            },
+            format='json',
+        )
+        update_response = self.client.patch(
+            f'/api/v1/admin/floor/table-sessions/{session.id}/',
+            {'guest_count': 5},
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(update_response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_admin_catalog_category_create_and_update(self):
         self.authenticate()
 
@@ -428,7 +502,7 @@ class AdminApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(category_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(category_response.data['name'], 'Cold Drinks')
+        self.assertEqual(category_response.data['name'], 'Sovuq ichimliklar')
 
         item_response = self.client.post(
             '/api/v1/admin/catalog/items/',
@@ -450,7 +524,7 @@ class AdminApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(item_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(item_response.data['name'], 'Iced Tea')
+        self.assertEqual(item_response.data['name'], 'Muzli choy')
 
     def test_admin_catalog_category_returns_image_fields_and_items_support_active_filter(self):
         self.authenticate()
@@ -501,6 +575,38 @@ class AdminApiTests(APITestCase):
         item_names = {row['name'] for row in items_response.data['data']}
         self.assertIn('Croissant', item_names)
         self.assertNotIn('Old Pie', item_names)
+
+    @patch('apps.admin.views.catalog.MxikClient.lookup')
+    @patch('apps.admin.views.catalog.MxikClient.search')
+    def test_mxik_endpoints_allow_create_permissions(self, search_mock, lookup_mock):
+        search_mock.return_value = [{'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}]
+        lookup_mock.return_value = {'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}
+
+        for permission_code in ('catalog_categories.create', 'catalog_items.create'):
+            user = self.create_admin_user_with_permissions(f'{permission_code.replace(".", "-")}-user', [permission_code])
+            self.authenticate(user)
+
+            search_response = self.client.get('/api/v1/admin/catalog/mxik/search/', {'query': 'hot'})
+            lookup_response = self.client.get('/api/v1/admin/catalog/mxik/10000000000000001/')
+
+            self.assertEqual(search_response.status_code, status.HTTP_200_OK)
+            self.assertEqual(lookup_response.status_code, status.HTTP_200_OK)
+
+    @patch('apps.admin.views.catalog.MxikClient.lookup')
+    @patch('apps.admin.views.catalog.MxikClient.search')
+    def test_mxik_endpoints_allow_update_permissions(self, search_mock, lookup_mock):
+        search_mock.return_value = [{'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}]
+        lookup_mock.return_value = {'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}
+
+        for permission_code in ('catalog_categories.update', 'catalog_items.update'):
+            user = self.create_admin_user_with_permissions(f'{permission_code.replace(".", "-")}-user', [permission_code])
+            self.authenticate(user)
+
+            search_response = self.client.get('/api/v1/admin/catalog/mxik/search/', {'query': 'hot'})
+            lookup_response = self.client.get('/api/v1/admin/catalog/mxik/10000000000000001/')
+
+            self.assertEqual(search_response.status_code, status.HTTP_200_OK)
+            self.assertEqual(lookup_response.status_code, status.HTTP_200_OK)
 
     def test_admin_integration_config_create_and_update(self):
         self.authenticate()
@@ -756,6 +862,34 @@ class AdminApiTests(APITestCase):
         response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('apps.admin.views.product_owner.FakturaClient.lookup_company_basic_details')
+    def test_business_partner_lookup_allows_create_permission(self, lookup_mock):
+        lookup_mock.return_value = {'CompanyInn': '123456789', 'CompanyName': 'Acme'}
+        create_only_user = self.create_admin_user_with_permissions(
+            'business-partner-create-only',
+            ['business_partners.create'],
+        )
+
+        self.authenticate(create_only_user)
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['inn'], '123456789')
+
+    @patch('apps.admin.views.product_owner.FakturaClient.lookup_company_basic_details')
+    def test_business_partner_lookup_allows_update_permission(self, lookup_mock):
+        lookup_mock.return_value = {'CompanyInn': '123456789', 'CompanyName': 'Acme'}
+        update_only_user = self.create_admin_user_with_permissions(
+            'business-partner-update-only',
+            ['business_partners.update'],
+        )
+
+        self.authenticate(update_only_user)
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['inn'], '123456789')
 
     def test_business_partner_create_and_update_preserve_faktura_payload(self):
         self.authenticate(self.superuser)

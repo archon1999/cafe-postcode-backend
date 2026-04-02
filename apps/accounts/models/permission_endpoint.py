@@ -11,7 +11,10 @@ class PermissionEndpoint(BaseModel):
     class Meta:
         ordering = ('url', 'method')
         constraints = [
-            models.UniqueConstraint(fields=('url', 'method'), name='accounts_permission_endpoint_route_method_uniq'),
+            models.UniqueConstraint(
+                fields=('permission', 'url', 'method'),
+                name='accounts_permission_endpoint_permission_route_method_uniq',
+            ),
         ]
 
     def save(self, *args, **kwargs):

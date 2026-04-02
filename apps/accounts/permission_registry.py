@@ -13,6 +13,36 @@ def endpoint_specs(*pairs: tuple[str, str]) -> list[dict[str, str]]:
     return [{'method': method.upper(), 'url': url} for method, url in pairs]
 
 
+def merge_endpoint_specs(*groups: list[dict[str, str]] | None) -> list[dict[str, str]]:
+    merged: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for group in groups:
+        if not group:
+            continue
+        for endpoint in group:
+            key = (endpoint['method'].upper(), endpoint['url'])
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append({'method': key[0], 'url': key[1]})
+
+    return merged
+
+
+def merge_role_sets(*groups: tuple[str, ...] | None) -> tuple[str, ...]:
+    merged: list[str] = []
+
+    for group in groups:
+        if not group:
+            continue
+        for role_code in group:
+            if role_code not in merged:
+                merged.append(role_code)
+
+    return tuple(merged)
+
+
 ROLE_DEFINITIONS = {
     'product_owner': {'name': t('Mahsulot egasi')},
     'business_partner': {'name': t('Biznes hamkor')},
@@ -44,6 +74,15 @@ KITCHEN_OPERATION_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'unive
 REPORTING_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager')
 WAITER_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
 CASHIER_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
+POS_HALL_VIEW_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
+POS_TABLE_MANAGE_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
+POS_TABLE_MENU_VIEW_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
+POS_TAKEAWAY_MENU_VIEW_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
+POS_KITCHEN_VIEW_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'universal_operator')
+POS_KITCHEN_UPDATE_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'universal_operator')
+POS_OPEN_CHECKS_VIEW_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
+POS_PAYMENT_OPERATION_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
+POS_TABLE_RESERVATION_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
 
 
 def permission_definition(
@@ -171,6 +210,96 @@ def crud_permissions(
     return items
 
 
+def crud_permissions(
+    code_prefix: str,
+    *,
+    surface: str,
+    group_key: str,
+    singular_label: str,
+    plural_label: str,
+    list_url: str,
+    detail_url: str,
+    default_roles: tuple[str, ...],
+    list_endpoints: list[dict[str, str]] | None = None,
+    view_endpoints: list[dict[str, str]] | None = None,
+    create_endpoints: list[dict[str, str]] | None = None,
+    update_endpoints: list[dict[str, str]] | None = None,
+    delete_endpoints: list[dict[str, str]] | None = None,
+    include_create: bool = True,
+    include_update: bool = True,
+    include_delete: bool = True,
+    list_surface: str | None = None,
+    view_surface: str | None = None,
+    create_surface: str | None = None,
+    update_surface: str | None = None,
+    delete_surface: str | None = None,
+    list_default_roles: tuple[str, ...] | None = None,
+    view_default_roles: tuple[str, ...] | None = None,
+    create_default_roles: tuple[str, ...] | None = None,
+    update_default_roles: tuple[str, ...] | None = None,
+    delete_default_roles: tuple[str, ...] | None = None,
+) -> list[dict]:
+    items = [
+        permission_definition(
+            f'{code_prefix}.view',
+            surface=view_surface or list_surface or surface,
+            resource=code_prefix,
+            action='view',
+            ui_visible=True,
+            group_key=group_key,
+            name=f"{plural_label}ni ko'rish",
+            endpoints=merge_endpoint_specs(
+                list_endpoints or endpoint_specs(('GET', list_url)),
+                view_endpoints or endpoint_specs(('GET', detail_url)),
+            ),
+            default_roles=merge_role_sets(list_default_roles, view_default_roles, default_roles),
+        ),
+    ]
+    if include_create:
+        items.append(
+            permission_definition(
+                f'{code_prefix}.create',
+                surface=create_surface or surface,
+                resource=code_prefix,
+                action='create',
+                ui_visible=True,
+                group_key=group_key,
+                name=f'{singular_label} yaratish',
+                endpoints=create_endpoints or endpoint_specs(('POST', list_url)),
+                default_roles=create_default_roles or default_roles,
+            )
+        )
+    if include_update:
+        items.append(
+            permission_definition(
+                f'{code_prefix}.update',
+                surface=update_surface or surface,
+                resource=code_prefix,
+                action='update',
+                ui_visible=True,
+                group_key=group_key,
+                name=f'{singular_label}ni tahrirlash',
+                endpoints=update_endpoints or endpoint_specs(('PUT', detail_url), ('PATCH', detail_url)),
+                default_roles=update_default_roles or default_roles,
+            )
+        )
+    if include_delete:
+        items.append(
+            permission_definition(
+                f'{code_prefix}.delete',
+                surface=delete_surface or surface,
+                resource=code_prefix,
+                action='delete',
+                ui_visible=True,
+                group_key=group_key,
+                name=f"{singular_label}ni o'chirish",
+                endpoints=delete_endpoints or endpoint_specs(('DELETE', detail_url)),
+                default_roles=delete_default_roles or default_roles,
+            )
+        )
+    return items
+
+
 def action_permission(
     code: str,
     *,
@@ -218,10 +347,10 @@ PERMISSION_DEFINITIONS = [
         default_roles=('owner', 'restaurant_admin', 'admin', 'manager'),
     ),
     permission_definition(
-        'permissions.list',
+        'permissions.view',
         surface='admin',
         resource='permissions',
-        action='list',
+        action='view',
         ui_visible=True,
         group_key='permissions',
         name='Ruxsatlar katalogini ko‘rish',
@@ -290,10 +419,10 @@ PERMISSION_DEFINITIONS = [
         default_roles=('owner', 'restaurant_admin', 'cashier', 'waiter', 'universal_operator'),
     ),
     permission_definition(
-        'open_checks.list',
+        'open_checks.view',
         surface='pos',
         resource='open_checks',
-        action='list',
+        action='view',
         ui_visible=True,
         group_key='payments',
         name='Ochiq cheklar ro‘yxatini ko‘rish',
@@ -342,6 +471,158 @@ PERMISSION_DEFINITIONS = [
         default_roles=KITCHEN_OPERATION_ROLES,
     ),
     permission_definition(
+        'pos_halls.view',
+        surface='pos',
+        resource='pos_halls',
+        action='view',
+        ui_visible=True,
+        group_key='floor',
+        name="POS zallarni ko'rish",
+        endpoints=endpoint_specs(('GET', 'api/v1/pos/halls/')),
+        default_roles=POS_HALL_VIEW_ROLES,
+    ),
+    permission_definition(
+        'pos_tables.manage',
+        surface='pos',
+        resource='pos_tables',
+        action='manage',
+        ui_visible=True,
+        group_key='floor',
+        name="POS stollarni boshqarish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/halls/table-sessions/'),
+            ('GET', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/halls/table-sessions/'),
+            ('PUT', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
+            ('PATCH', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/halls/table-sessions/<uuid:pk>/move/'),
+            ('POST', 'api/v1/pos/halls/table-sessions/<uuid:pk>/merge/'),
+            ('GET', 'api/v1/pos/orders/'),
+            ('GET', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('PUT', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('PATCH', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('GET', 'api/v1/pos/orders/<uuid:order_id>/items/'),
+            ('GET', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/orders/'),
+            ('POST', 'api/v1/pos/orders/<uuid:order_id>/items/'),
+            ('PUT', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('PATCH', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('DELETE', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/orders/<uuid:pk>/submit/'),
+        ),
+        default_roles=POS_TABLE_MANAGE_ROLES,
+    ),
+    permission_definition(
+        'pos_table_menu.view',
+        surface='pos',
+        resource='pos_table_menu',
+        action='view',
+        ui_visible=True,
+        group_key='catalog',
+        name="POS stol menyusini ko'rish",
+        endpoints=endpoint_specs(('GET', 'api/v1/pos/catalog/menu/')),
+        default_roles=POS_TABLE_MENU_VIEW_ROLES,
+    ),
+    permission_definition(
+        'pos_takeaway_menu.view',
+        surface='pos',
+        resource='pos_takeaway_menu',
+        action='view',
+        ui_visible=True,
+        group_key='catalog',
+        name="POS olib ketish menyusini ko'rish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/catalog/menu/'),
+            ('GET', 'api/v1/pos/orders/'),
+            ('GET', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('PUT', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('PATCH', 'api/v1/pos/orders/<uuid:pk>/'),
+            ('GET', 'api/v1/pos/orders/<uuid:order_id>/items/'),
+            ('GET', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/orders/'),
+            ('POST', 'api/v1/pos/orders/<uuid:order_id>/items/'),
+            ('PUT', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('PATCH', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('DELETE', 'api/v1/pos/orders/items/<uuid:pk>/'),
+            ('POST', 'api/v1/pos/orders/<uuid:pk>/submit/'),
+        ),
+        default_roles=POS_TAKEAWAY_MENU_VIEW_ROLES,
+    ),
+    permission_definition(
+        'pos_kitchen_orders.view',
+        surface='pos',
+        resource='pos_kitchen_orders',
+        action='view',
+        ui_visible=True,
+        group_key='kitchen',
+        name="POS oshxona buyurtmalarini ko'rish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/kitchen/queue/'),
+            ('GET', 'api/v1/pos/kitchen/tickets/<uuid:pk>/'),
+        ),
+        default_roles=POS_KITCHEN_VIEW_ROLES,
+    ),
+    permission_definition(
+        'pos_kitchen_orders.update',
+        surface='pos',
+        resource='pos_kitchen_orders',
+        action='update',
+        ui_visible=True,
+        group_key='kitchen',
+        name="POS oshxona buyurtmalarini tahrirlash",
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/kitchen/tickets/<uuid:pk>/status/'),
+            ('POST', 'api/v1/pos/kitchen/items/<uuid:pk>/status/'),
+        ),
+        default_roles=POS_KITCHEN_UPDATE_ROLES,
+    ),
+    permission_definition(
+        'pos_open_checks.view',
+        surface='pos',
+        resource='pos_open_checks',
+        action='view',
+        ui_visible=True,
+        group_key='payments',
+        name="POS ochiq hisoblarni ko'rish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/payments/open-checks/'),
+            ('GET', 'api/v1/pos/orders/<uuid:pk>/'),
+        ),
+        default_roles=POS_OPEN_CHECKS_VIEW_ROLES,
+    ),
+    permission_definition(
+        'pos_payments.create',
+        surface='pos',
+        resource='pos_payments',
+        action='create',
+        ui_visible=True,
+        group_key='payments',
+        name="POS to'lov amallarini bajarish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/cashier/context/'),
+            ('POST', 'api/v1/pos/cashier/shifts/open/'),
+            ('POST', 'api/v1/pos/cashier/shifts/current/close/'),
+            ('POST', 'api/v1/pos/payments/orders/<uuid:pk>/pay/'),
+            ('POST', 'api/v1/pos/payments/<uuid:pk>/refund/'),
+            ('POST', 'api/v1/pos/receipts/<uuid:pk>/reprint/'),
+        ),
+        default_roles=POS_PAYMENT_OPERATION_ROLES,
+    ),
+    permission_definition(
+        'pos_table_reservations.manage',
+        surface='pos',
+        resource='pos_table_reservations',
+        action='manage',
+        ui_visible=True,
+        group_key='floor',
+        name="POS stolni bronlash va bron stolni ochish",
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/halls/tables/<uuid:pk>/reserve/'),
+            ('POST', 'api/v1/pos/halls/table-sessions/'),
+        ),
+        default_roles=POS_TABLE_RESERVATION_ROLES,
+    ),
+    permission_definition(
         'reports.view',
         surface='admin',
         resource='reports',
@@ -386,6 +667,17 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/platform/business-partners/',
         detail_url='api/v1/admin/platform/business-partners/<uuid:pk>/',
         default_roles=PRODUCT_OWNER_ROLES,
+        create_endpoints=merge_endpoint_specs(
+            endpoint_specs(('POST', 'api/v1/admin/platform/business-partners/')),
+            endpoint_specs(('GET', 'api/v1/admin/platform/business-partners/lookup/')),
+        ),
+        update_endpoints=merge_endpoint_specs(
+            endpoint_specs(
+                ('PUT', 'api/v1/admin/platform/business-partners/<uuid:pk>/'),
+                ('PATCH', 'api/v1/admin/platform/business-partners/<uuid:pk>/'),
+            ),
+            endpoint_specs(('GET', 'api/v1/admin/platform/business-partners/lookup/')),
+        ),
         include_delete=False,
     )
 )
@@ -472,6 +764,23 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/categories/',
         detail_url='api/v1/admin/catalog/categories/<uuid:pk>/',
         default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        create_endpoints=merge_endpoint_specs(
+            endpoint_specs(('POST', 'api/v1/admin/catalog/categories/')),
+            endpoint_specs(
+                ('GET', 'api/v1/admin/catalog/mxik/search/'),
+                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
+            ),
+        ),
+        update_endpoints=merge_endpoint_specs(
+            endpoint_specs(
+                ('PUT', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
+                ('PATCH', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
+            ),
+            endpoint_specs(
+                ('GET', 'api/v1/admin/catalog/mxik/search/'),
+                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
+            ),
+        ),
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -484,10 +793,23 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/items/',
         detail_url='api/v1/admin/catalog/items/<uuid:pk>/',
         default_roles=RESTAURANT_ADMIN_UI_ROLES,
-        update_endpoints=endpoint_specs(
-            ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
-            ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
-            ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
+        create_endpoints=merge_endpoint_specs(
+            endpoint_specs(('POST', 'api/v1/admin/catalog/items/')),
+            endpoint_specs(
+                ('GET', 'api/v1/admin/catalog/mxik/search/'),
+                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
+            ),
+        ),
+        update_endpoints=merge_endpoint_specs(
+            endpoint_specs(
+                ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+                ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+                ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
+            ),
+            endpoint_specs(
+                ('GET', 'api/v1/admin/catalog/mxik/search/'),
+                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
+            ),
         ),
     )
 )
@@ -501,11 +823,7 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/floor/halls/',
         detail_url='api/v1/admin/floor/halls/<uuid:pk>/',
         default_roles=RESTAURANT_ADMIN_UI_ROLES,
-        list_default_roles=FLOOR_OPERATIONS_ROLES,
-        list_endpoints=endpoint_specs(
-            ('GET', 'api/v1/admin/floor/halls/'),
-            ('GET', 'api/v1/pos/halls/'),
-        ),
+        list_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/halls/')),
         view_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/floor/halls/<uuid:pk>/'),
             ('GET', 'api/v1/admin/floor/halls/<uuid:pk>/constructor/'),
@@ -550,28 +868,11 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Stol sessiyalari',
         list_url='api/v1/admin/floor/table-sessions/',
         detail_url='api/v1/admin/floor/table-sessions/<uuid:pk>/',
-        default_roles=FLOOR_OPERATIONS_ROLES,
-        list_endpoints=endpoint_specs(
-            ('GET', 'api/v1/admin/floor/table-sessions/'),
-            ('GET', 'api/v1/pos/halls/table-sessions/'),
-        ),
-        view_endpoints=endpoint_specs(
-            ('GET', 'api/v1/admin/floor/table-sessions/<uuid:pk>/'),
-            ('GET', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
-        ),
-        create_endpoints=endpoint_specs(
-            ('POST', 'api/v1/admin/floor/table-sessions/'),
-            ('POST', 'api/v1/pos/halls/table-sessions/'),
-        ),
-        update_endpoints=endpoint_specs(
-            ('PUT', 'api/v1/admin/floor/table-sessions/<uuid:pk>/'),
-            ('PATCH', 'api/v1/admin/floor/table-sessions/<uuid:pk>/'),
-            ('DELETE', 'api/v1/admin/floor/table-sessions/<uuid:pk>/'),
-            ('PUT', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
-            ('PATCH', 'api/v1/pos/halls/table-sessions/<uuid:pk>/'),
-            ('POST', 'api/v1/pos/halls/table-sessions/<uuid:pk>/move/'),
-            ('POST', 'api/v1/pos/halls/table-sessions/<uuid:pk>/merge/'),
-        ),
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        list_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/table-sessions/')),
+        view_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/table-sessions/<uuid:pk>/')),
+        include_create=False,
+        include_update=False,
         include_delete=False,
     )
 )
@@ -645,36 +946,20 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Buyurtmalar',
         list_url='api/v1/pos/orders/',
         detail_url='api/v1/pos/orders/<uuid:pk>/',
-        default_roles=ORDER_VIEW_ROLES,
+        default_roles=PAYMENT_ADMIN_ROLES,
         list_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/orders/'),
             ('GET', 'api/v1/admin/order-items/'),
             ('GET', 'api/v1/admin/order-item-notes/'),
-            ('GET', 'api/v1/pos/orders/'),
         ),
         view_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/orders/<uuid:pk>/'),
             ('GET', 'api/v1/admin/order-items/<uuid:pk>/'),
             ('GET', 'api/v1/admin/order-item-notes/<uuid:pk>/'),
-            ('GET', 'api/v1/pos/orders/<uuid:pk>/'),
-            ('GET', 'api/v1/pos/orders/<uuid:order_id>/items/'),
-            ('GET', 'api/v1/pos/orders/items/<uuid:pk>/'),
         ),
-        create_endpoints=endpoint_specs(
-            ('POST', 'api/v1/pos/orders/'),
-            ('POST', 'api/v1/pos/orders/<uuid:order_id>/items/'),
-        ),
-        update_endpoints=endpoint_specs(
-            ('PUT', 'api/v1/pos/orders/<uuid:pk>/'),
-            ('PATCH', 'api/v1/pos/orders/<uuid:pk>/'),
-            ('PUT', 'api/v1/pos/orders/items/<uuid:pk>/'),
-            ('PATCH', 'api/v1/pos/orders/items/<uuid:pk>/'),
-            ('DELETE', 'api/v1/pos/orders/items/<uuid:pk>/'),
-            ('POST', 'api/v1/pos/orders/<uuid:pk>/submit/'),
-        ),
+        include_create=False,
+        include_update=False,
         include_delete=False,
-        create_default_roles=ORDER_WRITE_ROLES,
-        update_default_roles=ORDER_WRITE_ROLES,
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -716,20 +1001,12 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Oshxona buyurtmalari',
         list_url='api/v1/admin/kitchen/tickets/',
         detail_url='api/v1/pos/kitchen/tickets/<uuid:pk>/',
-        default_roles=KITCHEN_VIEW_ROLES,
+        default_roles=REPORTING_ROLES,
         list_endpoints=endpoint_specs(('GET', 'api/v1/admin/kitchen/tickets/')),
-        view_endpoints=endpoint_specs(
-            ('GET', 'api/v1/admin/kitchen/tickets/<uuid:pk>/'),
-            ('GET', 'api/v1/pos/kitchen/tickets/<uuid:pk>/'),
-        ),
+        view_endpoints=endpoint_specs(('GET', 'api/v1/admin/kitchen/tickets/<uuid:pk>/')),
         include_create=False,
+        include_update=False,
         include_delete=False,
-        update_surface='pos',
-        update_default_roles=KITCHEN_OPERATION_ROLES,
-        update_endpoints=endpoint_specs(
-            ('POST', 'api/v1/pos/kitchen/tickets/<uuid:pk>/status/'),
-            ('POST', 'api/v1/pos/kitchen/items/<uuid:pk>/status/'),
-        ),
     )
 )
 
@@ -813,27 +1090,36 @@ PERMISSION_DEFINITIONS.extend(
     ]
 )
 
+PERMISSION_DEFINITIONS = [
+    item
+    for item in PERMISSION_DEFINITIONS
+    if item['code']
+    not in {
+        'business_partners.lookup',
+        'mxik.search',
+        'mxik.view',
+        'catalog_menu.view',
+        'open_checks.view',
+        'payments.create',
+        'payments.update',
+        'kitchen_queue.view',
+    }
+]
+
 PERMISSIONS_BY_CODE = {item['code']: item for item in PERMISSION_DEFINITIONS}
 CANONICAL_PERMISSION_CODES = frozenset(PERMISSIONS_BY_CODE)
 ADMIN_UI_PERMISSION_CODES = frozenset(code for code, item in PERMISSIONS_BY_CODE.items() if item['surface'] in {'admin', 'dashboard'})
 POS_UI_PERMISSION_CODES = frozenset(
     {
-        'halls.list',
-        'table_sessions.list',
-        'table_sessions.view',
-        'table_sessions.create',
-        'table_sessions.update',
-        'catalog_menu.view',
-        'orders.list',
-        'orders.view',
-        'orders.create',
-        'orders.update',
-        'open_checks.list',
-        'payments.create',
-        'payments.update',
-        'kitchen_queue.view',
-        'kitchen_tickets.view',
-        'kitchen_tickets.update',
+        'pos_halls.view',
+        'pos_tables.manage',
+        'pos_table_menu.view',
+        'pos_takeaway_menu.view',
+        'pos_kitchen_orders.view',
+        'pos_kitchen_orders.update',
+        'pos_open_checks.view',
+        'pos_payments.create',
+        'pos_table_reservations.manage',
     }
 )
 

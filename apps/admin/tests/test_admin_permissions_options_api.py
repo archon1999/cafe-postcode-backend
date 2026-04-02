@@ -17,7 +17,7 @@ class AdminPermissionOptionsApiTests(APITestCase):
                 code=code,
                 defaults={'name': code, 'description': f'{code} permission'},
             )[0]
-            for code in ('users.list', 'users.create', 'roles.list')
+            for code in ('users.view', 'users.create', 'roles.view')
         ]
 
     def setUp(self):
@@ -31,7 +31,7 @@ class AdminPermissionOptionsApiTests(APITestCase):
         self.assertIsInstance(response.data, list)
 
         response_codes = {item['code'] for item in response.data}
-        self.assertTrue({'users.list', 'users.create', 'roles.list'}.issubset(response_codes))
+        self.assertTrue({'users.view', 'users.create', 'roles.view'}.issubset(response_codes))
         self.assertSetEqual(
             set(response.data[0].keys()),
             {'id', 'code', 'scope', 'name', 'description'},

@@ -7,20 +7,18 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.orders.models import Order, OrderItem
-from apps.organizations.models import Branch, DistributionPoint, FeatureConfig, Restaurant
+from apps.organizations.models import DistributionPoint, FeatureConfig, Restaurant, RestaurantEntitlement
 from common.utils.date import tashkent_day_bounds
 
 
 class OpenCheckListApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main branch',
+        cls.restaurant = Restaurant.objects.create(
+            name='Test restaurant',
             service_fee_percent=10,
-            is_default=True,
         )
+        cls.branch = cls.restaurant
         FeatureConfig.objects.create(
             restaurant=cls.restaurant,
             hall_enabled=True,
@@ -33,41 +31,42 @@ class OpenCheckListApiTests(APITestCase):
             enabled_roles=['cashier'],
         )
         cls.permission = Permission.objects.get_or_create(
-            code='open_checks.list',
-            defaults={'name': 'Open checks list', 'description': 'Open checks list permission'},
+            code='pos_open_checks.view',
+            defaults={'name': 'POS open checks view', 'description': 'POS open checks view permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='open-checks-cashier',
             defaults={'name': 'Open checks cashier', 'description': 'Open checks cashier role', 'is_system': False},
         )[0]
         cls.role.permissions.set([cls.permission])
+        cls.entitlement = RestaurantEntitlement.objects.create(
+            restaurant=cls.restaurant,
+            is_active=True,
+            is_custom=True,
+        )
+        cls.entitlement.permissions.set([cls.permission])
+        cls.entitlement.allowed_roles.set([cls.role])
         cls.user = User.objects.create_user(
             username='open-checks-cashier',
             password='secret123',
             full_name='Open Checks Cashier',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
             ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Asosiy',
             mxik_code='10000000000000001',
             mxik_name='Asosiy',
-            kind=CatalogCategory.Kind.DISH,
         )
         cls.item = CatalogItem.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             category=cls.category,
             name='Osh',
-            kind=CatalogItem.Kind.DISH,
         )
         cls.distribution_point = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Hall orders',
             kind=DistributionPoint.Kind.HALL,
         )
@@ -84,7 +83,6 @@ class OpenCheckListApiTests(APITestCase):
     def create_order(self, *, status: str, closed_at=None):
         order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             distribution_point=self.distribution_point,
             opened_by=self.user,
             cashier=self.user if status == Order.Status.CLOSED else None,
@@ -168,7 +166,7 @@ class OpenCheckListApiTests(APITestCase):
         statuses = {item['status'] for item in payload['items']}
         self.assertIn(OrderItem.Status.CANCELLED, statuses)
 
-    def test_hall_order_applies_branch_service_fee_percent(self):
+    def test_hall_order_applies_restaurant_service_fee_percent(self):
         order = self.create_order(status=Order.Status.SUBMITTED)
 
         response = self.client.get('/api/v1/pos/payments/open-checks/?status=open')

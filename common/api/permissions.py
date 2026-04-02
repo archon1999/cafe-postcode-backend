@@ -1,10 +1,21 @@
 from django.contrib.auth import get_user_model
 
 from rest_framework import permissions
+from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import PermissionEndpoint
 
 User = get_user_model()
+
+POS_HALLS_VIEW_PERMISSION = 'pos_halls.view'
+POS_TABLES_MANAGE_PERMISSION = 'pos_tables.manage'
+POS_TABLE_MENU_VIEW_PERMISSION = 'pos_table_menu.view'
+POS_TAKEAWAY_MENU_VIEW_PERMISSION = 'pos_takeaway_menu.view'
+POS_KITCHEN_ORDERS_VIEW_PERMISSION = 'pos_kitchen_orders.view'
+POS_KITCHEN_ORDERS_UPDATE_PERMISSION = 'pos_kitchen_orders.update'
+POS_OPEN_CHECKS_VIEW_PERMISSION = 'pos_open_checks.view'
+POS_PAYMENTS_CREATE_PERMISSION = 'pos_payments.create'
+POS_TABLE_RESERVATIONS_MANAGE_PERMISSION = 'pos_table_reservations.manage'
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
@@ -101,6 +112,27 @@ AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
     ('POST', 'api/v1/admin/auth/logout/'),
     ('POST', 'api/v1/dashboard/auth/logout/'),
 }
+
+
+def has_permission_code(user, code: str) -> bool:
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+
+    if getattr(user, 'is_superuser', False):
+        return True
+
+    return code in getattr(user, 'permission_codes', [])
+
+
+def has_any_permission_code(user, *codes: str) -> bool:
+    return any(has_permission_code(user, code) for code in codes)
+
+
+def require_any_permission_code(user, *codes: str, message: str | None = None) -> None:
+    if has_any_permission_code(user, *codes):
+        return
+
+    raise PermissionDenied(message or EndpointRBACPermission.message)
 
 
 class EndpointRBACPermission(permissions.BasePermission):

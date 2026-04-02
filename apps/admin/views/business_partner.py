@@ -8,7 +8,7 @@ from apps.admin.permissions import AdminPermissionRequiredMixin
 from apps.admin.serializers import RestaurantActivationResultSerializer, RestaurantActivationSerializer
 from apps.organizations.models import RestaurantEntitlement
 
-from ._business_helpers import (
+from apps.admin.support.business_partner import (
     generate_password,
     generate_unique_username,
     get_restaurant_admin_role,

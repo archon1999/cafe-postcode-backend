@@ -4,7 +4,12 @@ from rest_framework import generics, permissions
 from apps.orders.models import Order
 from apps.orders.serializers import OrderSerializer
 from apps.orders.services import OrderStateService
-from common.api.permissions import EndpointRBACPermission
+from common.api.permissions import (
+    EndpointRBACPermission,
+    POS_TABLES_MANAGE_PERMISSION,
+    POS_TAKEAWAY_MENU_VIEW_PERMISSION,
+    require_any_permission_code,
+)
 from common.api.scopes import get_request_restaurant
 
 
@@ -37,6 +42,9 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         restaurant = get_request_restaurant(self.request)
         state_service = self.state_service_class()
         table_session = serializer.validated_data.get('table_session')
+        channel = serializer.validated_data.get('channel', Order.Channel.HALL)
+        required_permission = POS_TABLES_MANAGE_PERMISSION if table_session or channel == Order.Channel.HALL else POS_TAKEAWAY_MENU_VIEW_PERMISSION
+        require_any_permission_code(self.request.user, required_permission)
         state_service.ensure_session_accepts_new_order(table_session=table_session)
         serializer.save(
             restaurant=restaurant,

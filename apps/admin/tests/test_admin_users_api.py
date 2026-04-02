@@ -32,7 +32,7 @@ class AdminUsersApiTests(APITestCase):
             branch=cls.branch,
             name='Family Hall',
         )
-        permission_codes = ['users.list', 'users.create', 'users.view', 'users.update']
+        permission_codes = ['users.view', 'users.create', 'users.update']
         cls.permissions = {
             code: Permission.objects.get_or_create(
                 code=code,

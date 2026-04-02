@@ -5,19 +5,17 @@ from django.utils import timezone
 from apps.accounts.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.orders.models import CashShift, Order, OrderItem, Payment
-from apps.organizations.models import Branch, CashDesk, DistributionPoint, FeatureConfig, Restaurant
+from apps.organizations.models import CashDesk, DistributionPoint, FeatureConfig, Restaurant, RestaurantEntitlement
 
 
 class PaymentCreateApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main branch',
+        cls.restaurant = Restaurant.objects.create(
+            name='Test restaurant',
             service_fee_percent=10,
-            is_default=True,
         )
+        cls.branch = cls.restaurant
         FeatureConfig.objects.create(
             restaurant=cls.restaurant,
             hall_enabled=False,
@@ -30,47 +28,47 @@ class PaymentCreateApiTests(APITestCase):
             enabled_roles=['cashier'],
         )
         cls.permission = Permission.objects.get_or_create(
-            code='payments.create',
-            defaults={'name': 'Payments create', 'description': 'Payments create permission'},
+            code='pos_payments.create',
+            defaults={'name': 'POS payments create', 'description': 'POS payments create permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='payments-cashier',
             defaults={'name': 'Payments cashier', 'description': 'Payments cashier role', 'is_system': False},
         )[0]
         cls.role.permissions.set([cls.permission])
+        cls.entitlement = RestaurantEntitlement.objects.create(
+            restaurant=cls.restaurant,
+            is_active=True,
+            is_custom=True,
+        )
+        cls.entitlement.permissions.set([cls.permission])
+        cls.entitlement.allowed_roles.set([cls.role])
         cls.user = User.objects.create_user(
             username='payments-cashier',
             password='secret123',
             full_name='Payments Cashier',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
             ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Asosiy',
             mxik_code='10000000000000001',
             mxik_name='Asosiy',
-            kind=CatalogCategory.Kind.DISH,
         )
         cls.item = CatalogItem.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             category=cls.category,
             name='Osh',
-            kind=CatalogItem.Kind.DISH,
         )
         cls.distribution_point = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Takeaway',
             kind=DistributionPoint.Kind.TAKEAWAY,
         )
         cls.cash_desk = CashDesk.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Main cashier',
             location='Front desk',
             enabled_payment_methods=['cash', 'card', 'qr'],
@@ -79,7 +77,6 @@ class PaymentCreateApiTests(APITestCase):
     def setUp(self):
         self.client.force_authenticate(self.user)
         self.cash_shift = CashShift.objects.create(
-            branch=self.branch,
             cash_desk=self.cash_desk,
             opened_by=self.user,
             opened_at=timezone.now(),
@@ -87,7 +84,6 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             distribution_point=self.distribution_point,
             opened_by=self.user,
             order_number=1001,

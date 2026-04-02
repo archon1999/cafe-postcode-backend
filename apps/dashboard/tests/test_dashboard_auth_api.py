@@ -20,7 +20,7 @@ class DashboardAuthApiTests(APITestCase):
         cls.entitlement.permissions.set(Permission.objects.all())
 
         cls.dashboard_permission = Permission.objects.get(code="dashboard.view")
-        cls.hall_permission = Permission.objects.get(code="halls.list")
+        cls.hall_permission = Permission.objects.get(code="halls.view")
 
         cls.owner_role = Role.objects.create(
             code="dashboard_owner_test",

@@ -34,10 +34,10 @@ def seed_default_roles_signal(sender, **kwargs):
 
         desired_endpoints = {(endpoint['method'], endpoint['url']) for endpoint in item['endpoints']}
         for method, url in desired_endpoints:
-            PermissionEndpoint.objects.update_or_create(
+            PermissionEndpoint.objects.get_or_create(
+                permission=permission,
                 url=url,
                 method=method,
-                defaults={'permission': permission},
             )
         for endpoint in permission.endpoints.all():
             if (endpoint.method, endpoint.url) not in desired_endpoints:

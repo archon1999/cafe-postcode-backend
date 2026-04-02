@@ -5,18 +5,14 @@ from apps.accounts.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.kitchen.models import KitchenTicket
 from apps.orders.models import Order, OrderItem
-from apps.organizations.models import Branch, DistributionPoint, FeatureConfig, PrepStation, Restaurant
+from apps.organizations.models import DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
 
 
 class KitchenStatusApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main branch',
-            is_default=True,
-        )
+        cls.branch = cls.restaurant
         cls.feature_config = FeatureConfig.objects.create(
             restaurant=cls.restaurant,
             hall_enabled=True,
@@ -29,47 +25,47 @@ class KitchenStatusApiTests(APITestCase):
             enabled_roles=['chef'],
         )
         cls.permission = Permission.objects.get_or_create(
-            code='kitchen_tickets.status_update',
-            defaults={'name': 'Kitchen ticket status update', 'description': 'Kitchen ticket status update permission'},
+            code='pos_kitchen_orders.update',
+            defaults={'name': 'POS kitchen orders update', 'description': 'POS kitchen orders update permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='kitchen-chef',
             defaults={'name': 'Kitchen chef', 'description': 'Kitchen chef role', 'is_system': False},
         )[0]
         cls.role.permissions.set([cls.permission])
+        cls.entitlement = RestaurantEntitlement.objects.create(
+            restaurant=cls.restaurant,
+            is_active=True,
+            is_custom=True,
+        )
+        cls.entitlement.permissions.set([cls.permission])
+        cls.entitlement.allowed_roles.set([cls.role])
         cls.user = User.objects.create_user(
             username='kitchen-chef',
             password='secret123',
             full_name='Kitchen Chef',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
             ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Asosiy',
             mxik_code='10000000000000001',
             mxik_name='Asosiy',
-            kind=CatalogCategory.Kind.DISH,
         )
         cls.catalog_item = CatalogItem.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             category=cls.category,
             name='Manti',
-            kind=CatalogItem.Kind.DISH,
         )
         cls.prep_station = PrepStation.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Kitchen',
             kind=PrepStation.Kind.KITCHEN,
         )
         cls.distribution_point = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
-            branch=cls.branch,
             name='Hall orders',
             kind=DistributionPoint.Kind.HALL,
         )
@@ -78,7 +74,6 @@ class KitchenStatusApiTests(APITestCase):
         self.client.force_authenticate(self.user)
         self.order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             distribution_point=self.distribution_point,
             opened_by=self.user,
             order_number=1002,
@@ -98,7 +93,6 @@ class KitchenStatusApiTests(APITestCase):
         self.order.recalculate_totals()
         self.ticket = KitchenTicket.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             order=self.order,
             prep_station=self.prep_station,
             status=KitchenTicket.Status.NEW,
