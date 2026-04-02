@@ -5,6 +5,7 @@ from apps.admin.views import (
     BusinessPartnerDeactivateView,
     BusinessPartnerDetailView,
     BusinessPartnerListCreateView,
+    BusinessPartnerLookupView,
     BusinessPartnerResetPasswordView,
     TariffDetailView,
     TariffListCreateView,
@@ -12,6 +13,7 @@ from apps.admin.views import (
 
 urlpatterns = [
     path('platform/business-partners/', BusinessPartnerListCreateView.as_view()),
+    path('platform/business-partners/lookup/', BusinessPartnerLookupView.as_view()),
     path('platform/business-partners/<uuid:pk>/', BusinessPartnerDetailView.as_view()),
     path('platform/business-partners/<uuid:pk>/activate/', BusinessPartnerActivateView.as_view()),
     path('platform/business-partners/<uuid:pk>/deactivate/', BusinessPartnerDeactivateView.as_view()),

@@ -5,8 +5,14 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.admin.permissions import AdminPermissionRequiredMixin
-from apps.admin.serializers import BusinessPartnerSerializer, PartnerActivationResultSerializer, TariffSerializer
+from apps.admin.serializers import (
+    BusinessPartnerLookupSerializer,
+    BusinessPartnerSerializer,
+    PartnerActivationResultSerializer,
+    TariffSerializer,
+)
 from apps.organizations.models import BusinessPartner, Tariff
+from apps.organizations.services.faktura import FakturaClient, FakturaError
 
 from ._business_helpers import (
     filter_partners,
@@ -29,6 +35,32 @@ class BusinessPartnerDetailView(AdminPermissionRequiredMixin, generics.RetrieveU
 
     def get_queryset(self):
         return BusinessPartner.objects.select_related('owner_user').order_by('company_name')
+
+
+class BusinessPartnerLookupView(AdminPermissionRequiredMixin, APIView):
+
+    def get(self, request):
+        inn = request.query_params.get('inn', '').strip()
+        if not inn:
+            raise serializers.ValidationError({'inn': 'INN is required.'})
+
+        try:
+            faktura_payload = FakturaClient().lookup_company_basic_details(inn)
+        except FakturaError as error:
+            return Response({'detail': str(error)}, status=status.HTTP_502_BAD_GATEWAY)
+
+        company_name = str(faktura_payload.get('CompanyName') or '').strip()
+        payload = {
+            'inn': str(faktura_payload.get('CompanyInn') or inn).strip(),
+            'companyName': company_name,
+            'legalName': company_name,
+            'directorName': str(faktura_payload.get('DirectorName') or '').strip(),
+            'phone': str(faktura_payload.get('PhoneNumber') or '').strip(),
+            'email': str(faktura_payload.get('Email') or '').strip(),
+            'address': str(faktura_payload.get('CompanyAddress') or '').strip(),
+            'faktura_payload': faktura_payload,
+        }
+        return Response(BusinessPartnerLookupSerializer(payload).data, status=status.HTTP_200_OK)
 
 
 class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):

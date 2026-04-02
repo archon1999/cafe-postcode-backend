@@ -760,6 +760,15 @@ PERMISSION_DEFINITIONS.extend(
             default_roles=PRODUCT_OWNER_ROLES,
         ),
         action_permission(
+            'business_partners.lookup',
+            surface='admin',
+            group_key='business_partners',
+            name='Biznes hamkorni INN bo‘yicha qidirish',
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/platform/business-partners/lookup/')),
+            default_roles=PRODUCT_OWNER_ROLES,
+            ui_visible=False,
+        ),
+        action_permission(
             'restaurants.activate',
             surface='admin',
             group_key='restaurants',

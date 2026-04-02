@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from unittest.mock import patch
 
 from django.core.exceptions import RequestDataTooBig
 from django.urls import resolve
@@ -13,7 +14,8 @@ from apps.accounts.models import AuthSession, Permission, Role, User
 from apps.floor.models import DiningTable, Hall, TableSession
 from apps.integrations.models import IntegrationConfig
 from apps.orders.models import Order, Payment
-from apps.organizations.models import Restaurant, RestaurantEntitlement
+from apps.organizations.models import BusinessPartner, Restaurant, RestaurantEntitlement
+from apps.organizations.services.faktura import FakturaError
 from common.api.exception_handler import custom_exception_handler
 from common.utils.date import TASHKENT_TIMEZONE
 
@@ -693,3 +695,86 @@ class AdminApiTests(APITestCase):
             response = custom_exception_handler(RequestDataTooBig('too large'), {})
         self.assertEqual(response.status_code, status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
         self.assertEqual(response.data['message'], 'Юкланган файл жуда катта.')
+    @patch('apps.admin.views.product_owner.FakturaClient.lookup_company_basic_details')
+    def test_business_partner_lookup_returns_normalized_payload(self, lookup_mock):
+        self.authenticate(self.superuser)
+        lookup_mock.return_value = {
+            'CompanyInn': '123456789',
+            'CompanyName': 'Acme',
+            'DirectorName': 'John Doe',
+            'PhoneNumber': '+998901234567',
+            'Email': 'info@acme.uz',
+            'CompanyAddress': 'Tashkent',
+        }
+
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['inn'], '123456789')
+        self.assertEqual(response.data['company_name'], 'Acme')
+        self.assertEqual(response.data['legal_name'], 'Acme')
+        self.assertEqual(response.data['director_name'], 'John Doe')
+        self.assertEqual(response.data['phone'], '+998901234567')
+        self.assertEqual(response.data['email'], 'info@acme.uz')
+        self.assertEqual(response.data['address'], 'Tashkent')
+        self.assertEqual(response.data['faktura_payload']['CompanyName'], 'Acme')
+
+    def test_business_partner_lookup_requires_inn(self):
+        self.authenticate(self.superuser)
+
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('inn', response.data)
+
+    @patch('apps.admin.views.product_owner.FakturaClient.lookup_company_basic_details')
+    def test_business_partner_lookup_returns_502_on_upstream_failure(self, lookup_mock):
+        self.authenticate(self.superuser)
+        lookup_mock.side_effect = FakturaError('boom')
+
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(response.data['detail'], 'boom')
+
+    def test_business_partner_lookup_is_permission_protected(self):
+        self.authenticate(self.limited_user)
+
+        response = self.client.get('/api/v1/admin/platform/business-partners/lookup/', {'inn': '123456789'})
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_business_partner_create_and_update_preserve_faktura_payload(self):
+        self.authenticate(self.superuser)
+
+        create_response = self.client.post(
+            '/api/v1/admin/platform/business-partners/',
+            {
+                'inn': '123456789',
+                'companyName': 'Acme',
+                'legalName': 'Acme LLC',
+                'directorName': 'John Doe',
+                'phone': '+998901234567',
+                'email': 'info@acme.uz',
+                'address': 'Tashkent',
+                'fakturaPayload': {'CompanyName': 'Acme', 'CompanyInn': '123456789'},
+            },
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        partner = BusinessPartner.objects.get(pk=create_response.data['id'])
+        self.assertEqual(partner.faktura_payload['CompanyName'], 'Acme')
+
+        update_response = self.client.patch(
+            f'/api/v1/admin/platform/business-partners/{partner.id}/',
+            {
+                'companyName': 'Acme Updated',
+            },
+            format='json',
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        partner.refresh_from_db()
+        self.assertEqual(partner.company_name, 'Acme Updated')
+        self.assertEqual(partner.faktura_payload['CompanyName'], 'Acme')
