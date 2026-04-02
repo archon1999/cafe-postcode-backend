@@ -18,6 +18,10 @@ class MxikClient:
         return 'ru' if lang == 'ru' else 'uz'
 
     @staticmethod
+    def _normalize_picture_lang(lang: str | None) -> str:
+        return 'ru' if lang == 'ru' else 'uz_cyrl'
+
+    @staticmethod
     def _normalize_item(payload: dict[str, Any]) -> dict[str, Any]:
         code = str(payload.get('mxikCode') or payload.get('code') or '').strip()
         name = str(payload.get('mxikName') or payload.get('name') or payload.get('shortName') or '').strip()
@@ -54,6 +58,12 @@ class MxikClient:
         if isinstance(data, list):
             return [item for item in data if isinstance(item, dict)]
         return [payload]
+
+    def _build_reference_file_url(self, filename: str) -> str:
+        normalized_filename = filename.strip()
+        if not normalized_filename:
+            return ''
+        return f'{self.base_url.rstrip("/")}/integration-mxik/references/get/file/{normalized_filename}'
 
     def _request(self, path: str, params: dict[str, Any]) -> dict[str, Any] | list[Any]:
         try:
@@ -108,3 +118,31 @@ class MxikClient:
         if not items:
             raise MxikError('MXIK code not found.')
         return self._normalize_item(items[0])
+
+    def get_picture_names(self, code: str, *, lang: str = 'uz_cyrl') -> list[str]:
+        if not code.strip():
+            raise MxikError('MXIK code cannot be empty.')
+
+        payload = self._request(
+            'integration-mxik/references/get/mxik/picture-names',
+            {
+                'mxik_code': code.strip(),
+                'lang': self._normalize_picture_lang(lang),
+            },
+        )
+
+        if isinstance(payload, dict):
+            items = payload.get('value')
+            if isinstance(items, list):
+                return [str(item).strip() for item in items if str(item).strip()]
+
+        if isinstance(payload, list):
+            return [str(item).strip() for item in payload if str(item).strip()]
+
+        return []
+
+    def get_primary_picture_url(self, code: str, *, lang: str = 'uz_cyrl') -> str:
+        filenames = self.get_picture_names(code, lang=lang)
+        if not filenames:
+            return ''
+        return self._build_reference_file_url(filenames[0])
