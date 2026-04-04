@@ -183,14 +183,13 @@ msgstr "PIN-код сатр бўлиши керак."
 msgid "PIN code must contain only digits."
 msgstr "PIN-код фақат рақамлардан иборат бўлиши керак."
 
-msgid "PIN code must be exactly 6 digits."
-msgstr "PIN-код аниқ 6 та рақамдан иборат бўлиши керак."
-
 msgid "Invalid PIN code."
 msgstr "Нотўғри PIN-код."
 
 msgid "This PIN code is assigned to multiple POS users. Use unique PIN codes."
-msgstr "Бу PIN-код бир нечта POS фойдаланувчига бириктирилган. Ягона PIN-кодлардан фойдаланинг."
+msgstr ""
+"Бу PIN-код бир нечта POS фойдаланувчига бириктирилган. Ягона PIN-кодлардан "
+"фойдаланинг."
 
 msgid "This PIN code is already assigned to another POS user."
 msgstr "Бу PIN-код аллақачон бошқа POS фойдаланувчига бириктирилган."
@@ -200,12 +199,6 @@ msgstr "Нотўғри кириш маълумотлари."
 
 msgid "User is not allowed in admin UI."
 msgstr "Фойдаланувчига админ интерфейсга кириш рухсат этилмаган."
-
-msgid "User is not allowed in owner dashboard."
-msgstr "Фойдаланувчига owner dashboardга кириш рухсат этилмаган."
-
-msgid "Only owner accounts can access the owner dashboard."
-msgstr "Фақат owner аккаунтлари owner dashboardга кира олади."
 
 msgid "Only 2, 3, 4, 5, or 6 seat tables are supported."
 msgstr "Фақат 2, 3, 4, 5 ёки 6 ўринли столлар қўллаб-қувватланади."
@@ -263,9 +256,6 @@ msgstr "Бу меню элементи фаол эмас."
 
 msgid "This menu item is in stoplist."
 msgstr "Бу меню элементи stop-listда."
-
-msgid "Only cash and card payments are supported in MVP."
-msgstr "MVPда фақат нақд ва карта тўловлари қўллаб-қувватланади."
 
 msgid "Payment amount must be greater than zero."
 msgstr "Тўлов суммаси нолдан катта бўлиши керак."
