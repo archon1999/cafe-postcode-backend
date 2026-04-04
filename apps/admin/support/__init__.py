@@ -40,6 +40,7 @@ from .reports import (
 )
 from .users import (
     AdminUserQuerysetMixin,
+    employee_role_queryset,
     PermissionListFilters,
     RoleListFilters,
     UserListFilters,
@@ -62,6 +63,7 @@ __all__ = [
     'DeviceListFilters',
     'DiningTableListFilters',
     'DistributionPointListFilters',
+    'employee_role_queryset',
     'FeatureConfigListFilters',
     'HallListFilters',
     'ItemListFilters',

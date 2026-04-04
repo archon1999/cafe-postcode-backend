@@ -4,6 +4,7 @@ from django.db.models import Q, QuerySet
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.accounts.permission_registry import POS_UI_PERMISSION_CODES
 from apps.accounts.models import EmployeeProfile, Permission, Role, User
 from common.api.scopes import get_optional_request_restaurant
 from common.api.query_params import (
@@ -113,6 +114,16 @@ def scoped_role_queryset(request) -> QuerySet[Role]:
         return queryset.none()
 
     return queryset.filter(id__in=allowed_role_ids, is_system=True)
+
+
+def employee_role_queryset(request) -> QuerySet[Role]:
+    return scoped_role_queryset(request).filter(permissions__code__in=POS_UI_PERMISSION_CODES).distinct()
+
+
+def role_has_pos_permissions(role: Role | None) -> bool:
+    if role is None:
+        return False
+    return role.permissions.filter(code__in=POS_UI_PERMISSION_CODES).exists()
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from apps.admin.views import (
     HallConstructorView,
     HallDetailView,
     HallListCreateView,
+    MyRestaurantDetailView,
     PrepStationDetailView,
     PrepStationListCreateView,
     RestaurantDetailView,
@@ -26,6 +27,7 @@ from apps.admin.views import (
 
 urlpatterns = [
     path('constructor/restaurant/', RestaurantConfigView.as_view()),
+    path('constructor/my-restaurant/', MyRestaurantDetailView.as_view()),
     path('restaurants/<uuid:restaurant_id>/feature-config/', RestaurantFeatureConfigView.as_view()),
     path('floor/halls/', HallListCreateView.as_view()),
     path('floor/halls/<uuid:pk>/', HallDetailView.as_view()),

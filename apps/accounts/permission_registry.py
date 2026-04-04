@@ -44,45 +44,44 @@ def merge_role_sets(*groups: tuple[str, ...] | None) -> tuple[str, ...]:
 
 
 ROLE_DEFINITIONS = {
-    'product_owner': {'name': t('Mahsulot egasi')},
+    'product_owner': {'name': t('Platforma mahsulot egasi')},
     'business_partner': {'name': t('Biznes hamkor')},
     'restaurant_admin': {'name': t('Restoran admini')},
-    'owner': {'name': t('Ega')},
-    'admin': {'name': t('Administrator')},
+    'fast_food_admin': {'name': t('Fast food admini')},
+    'owner': {'name': t('Mahsulot egasi')},
     'manager': {'name': t('Menejer')},
     'cashier': {'name': t('Kassir')},
     'waiter': {'name': t('Ofitsiant')},
     'chef': {'name': t('Oshpaz')},
     'barman': {'name': t('Barmen')},
-    'universal_operator': {'name': t('Universal operator')},
+    'fast_food_manager': {'name': t('Fast food menejeri')},
+    'fast_food_cashier': {'name': t('Fast food kassiri')},
 }
 
 PRODUCT_OWNER_ROLES = ('product_owner',)
-PARTNER_ROLES = ('product_owner', 'business_partner')
-ROLE_MANAGEMENT_ROLES = ('product_owner', 'owner', 'restaurant_admin')
-RESTAURANT_OWNER_ROLES = ('owner', 'restaurant_admin')
-EMPLOYEE_MANAGEMENT_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager')
-RESTAURANT_ADMIN_UI_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager')
-RESTAURANT_SETUP_ROLES = ('owner', 'restaurant_admin', 'admin')
-FLOOR_OPERATIONS_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager', 'cashier', 'waiter', 'universal_operator')
-ORDER_VIEW_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager', 'cashier', 'waiter', 'universal_operator')
-ORDER_WRITE_ROLES = ('owner', 'restaurant_admin', 'cashier', 'waiter', 'universal_operator')
-PAYMENT_ADMIN_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager')
-PAYMENT_OPERATION_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
-KITCHEN_VIEW_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager', 'chef', 'barman', 'universal_operator')
-KITCHEN_OPERATION_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'universal_operator')
-REPORTING_ROLES = ('owner', 'restaurant_admin', 'admin', 'manager')
-WAITER_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
-CASHIER_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
-POS_HALL_VIEW_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
-POS_TABLE_MANAGE_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
-POS_TABLE_MENU_VIEW_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
-POS_TAKEAWAY_MENU_VIEW_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
-POS_KITCHEN_VIEW_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'universal_operator')
-POS_KITCHEN_UPDATE_ROLES = ('owner', 'restaurant_admin', 'chef', 'barman', 'universal_operator')
-POS_OPEN_CHECKS_VIEW_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
-POS_PAYMENT_OPERATION_ROLES = ('owner', 'restaurant_admin', 'cashier', 'universal_operator')
-POS_TABLE_RESERVATION_ROLES = ('owner', 'restaurant_admin', 'waiter', 'universal_operator')
+BUSINESS_PARTNER_ROLES = ('business_partner',)
+ROLE_MANAGEMENT_ROLES = ()
+RESTAURANT_OWNER_ROLES = ('restaurant_admin', 'fast_food_admin')
+EMPLOYEE_MANAGEMENT_ROLES = ('restaurant_admin', 'fast_food_admin')
+RESTAURANT_ADMIN_UI_ROLES = ('restaurant_admin', 'fast_food_admin')
+RESTAURANT_SETUP_ROLES = ('restaurant_admin', 'fast_food_admin')
+CATALOG_ADMIN_ROLES = ('restaurant_admin', 'fast_food_admin')
+FLOOR_ADMIN_ROLES = ('restaurant_admin',)
+ORDER_VIEW_ROLES = ('restaurant_admin', 'fast_food_admin')
+PAYMENT_ADMIN_ROLES = ('restaurant_admin', 'fast_food_admin')
+REPORTING_ROLES = ('restaurant_admin', 'fast_food_admin')
+POS_HALL_VIEW_ROLES = ('waiter', 'manager')
+POS_TABLE_MANAGE_ROLES = ('waiter', 'manager')
+POS_TABLE_MENU_VIEW_ROLES = ('waiter', 'manager')
+POS_TAKEAWAY_MENU_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_KITCHEN_VIEW_ROLES = ('chef', 'barman')
+POS_KITCHEN_UPDATE_ROLES = ('chef', 'barman')
+POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_TABLE_RESERVATION_ROLES = ('waiter', 'manager')
+CASHIER_ROLES = POS_OPEN_CHECKS_VIEW_ROLES
+PAYMENT_OPERATION_ROLES = POS_PAYMENT_OPERATION_ROLES
+KITCHEN_OPERATION_ROLES = POS_KITCHEN_VIEW_ROLES
 
 
 def permission_definition(
@@ -344,7 +343,7 @@ PERMISSION_DEFINITIONS = [
         group_key='dashboard',
         name='Dashboardni ko‘rish',
         endpoints=endpoint_specs(('GET', 'api/v1/dashboard/auth/me/'), ('GET', 'api/v1/dashboard/overview/')),
-        default_roles=('owner', 'restaurant_admin', 'admin', 'manager'),
+        default_roles=('owner',),
     ),
     permission_definition(
         'permissions.view',
@@ -369,7 +368,7 @@ PERMISSION_DEFINITIONS = [
         group_key='restaurant_settings',
         name='Restoran sozlamalarini ko‘rish',
         endpoints=endpoint_specs(('GET', 'api/v1/admin/constructor/restaurant/')),
-        default_roles=('owner', 'restaurant_admin', 'admin'),
+        default_roles=RESTAURANT_SETUP_ROLES,
     ),
     permission_definition(
         'restaurant_settings.update',
@@ -380,7 +379,7 @@ PERMISSION_DEFINITIONS = [
         group_key='restaurant_settings',
         name='Restoran sozlamalarini tahrirlash',
         endpoints=endpoint_specs(('PUT', 'api/v1/admin/constructor/restaurant/'), ('PATCH', 'api/v1/admin/constructor/restaurant/')),
-        default_roles=('owner', 'restaurant_admin', 'admin'),
+        default_roles=RESTAURANT_SETUP_ROLES,
     ),
     permission_definition(
         'restaurant_feature_configs.view',
@@ -703,7 +702,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Restoranlar',
         list_url='api/v1/admin/constructor/restaurants/',
         detail_url='api/v1/admin/constructor/restaurants/<uuid:pk>/',
-        default_roles=PARTNER_ROLES,
+        default_roles=BUSINESS_PARTNER_ROLES,
         update_endpoints=endpoint_specs(
             ('PUT', 'api/v1/admin/constructor/restaurants/<uuid:pk>/'),
             ('PATCH', 'api/v1/admin/constructor/restaurants/<uuid:pk>/'),
@@ -733,7 +732,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Foydalanuvchilar',
         list_url='api/v1/admin/users/',
         detail_url='api/v1/admin/users/<uuid:pk>/',
-        default_roles=PRODUCT_OWNER_ROLES,
+        default_roles=(),
         include_delete=False,
     )
 )
@@ -763,7 +762,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Menyu bo‘limlari',
         list_url='api/v1/admin/catalog/categories/',
         detail_url='api/v1/admin/catalog/categories/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=CATALOG_ADMIN_ROLES,
         create_endpoints=merge_endpoint_specs(
             endpoint_specs(('POST', 'api/v1/admin/catalog/categories/')),
             endpoint_specs(
@@ -792,7 +791,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Menyu pozitsiyalari',
         list_url='api/v1/admin/catalog/items/',
         detail_url='api/v1/admin/catalog/items/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=CATALOG_ADMIN_ROLES,
         create_endpoints=merge_endpoint_specs(
             endpoint_specs(('POST', 'api/v1/admin/catalog/items/')),
             endpoint_specs(
@@ -822,7 +821,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Zallar',
         list_url='api/v1/admin/floor/halls/',
         detail_url='api/v1/admin/floor/halls/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=FLOOR_ADMIN_ROLES,
         list_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/halls/')),
         view_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/floor/halls/<uuid:pk>/'),
@@ -844,7 +843,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Zonalar',
         list_url='api/v1/admin/floor/zones/',
         detail_url='api/v1/admin/floor/zones/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=FLOOR_ADMIN_ROLES,
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -856,7 +855,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Stollar',
         list_url='api/v1/admin/floor/tables/',
         detail_url='api/v1/admin/floor/tables/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=FLOOR_ADMIN_ROLES,
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -868,7 +867,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Stol sessiyalari',
         list_url='api/v1/admin/floor/table-sessions/',
         detail_url='api/v1/admin/floor/table-sessions/<uuid:pk>/',
-        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        default_roles=FLOOR_ADMIN_ROLES,
         list_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/table-sessions/')),
         view_endpoints=endpoint_specs(('GET', 'api/v1/admin/floor/table-sessions/<uuid:pk>/')),
         include_create=False,
@@ -1046,12 +1045,39 @@ PERMISSION_DEFINITIONS.extend(
             ui_visible=False,
         ),
         action_permission(
+            'tariff_options.view',
+            surface='admin',
+            group_key='tariffs',
+            name='Faol tarif variantlarini ko‘rish',
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/platform/tariff-options/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
+            ui_visible=False,
+        ),
+        action_permission(
+            'tariff_roles.view',
+            surface='admin',
+            group_key='tariffs',
+            name="Tarif uchun rollar ro'yxatini ko'rish",
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/users/roles/')),
+            default_roles=PRODUCT_OWNER_ROLES,
+            ui_visible=False,
+        ),
+        action_permission(
+            'tariff_permissions.view',
+            surface='admin',
+            group_key='tariffs',
+            name="Tarif uchun ruxsatlar ro'yxatini ko'rish",
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/users/permissions/options/')),
+            default_roles=PRODUCT_OWNER_ROLES,
+            ui_visible=False,
+        ),
+        action_permission(
             'restaurants.activate',
             surface='admin',
             group_key='restaurants',
             name='Restoranni faollashtirish',
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/activate/')),
-            default_roles=PARTNER_ROLES,
+            default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
             'restaurants.deactivate',
@@ -1059,7 +1085,7 @@ PERMISSION_DEFINITIONS.extend(
             group_key='restaurants',
             name='Restoranni faolsizlantirish',
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/deactivate/')),
-            default_roles=PARTNER_ROLES,
+            default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
             'restaurants.reset_password',
@@ -1067,7 +1093,15 @@ PERMISSION_DEFINITIONS.extend(
             group_key='restaurants',
             name='Restoran admini parolini tiklash',
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/reset-password/')),
-            default_roles=PARTNER_ROLES,
+            default_roles=BUSINESS_PARTNER_ROLES,
+        ),
+        action_permission(
+            'restaurants.rotate_auth_code',
+            surface='admin',
+            group_key='restaurants',
+            name='Restoran aktivatsiya kodini yangilash',
+            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/rotate-auth-code/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
             'mxik.search',
@@ -1108,7 +1142,7 @@ PERMISSION_DEFINITIONS = [
 
 PERMISSIONS_BY_CODE = {item['code']: item for item in PERMISSION_DEFINITIONS}
 CANONICAL_PERMISSION_CODES = frozenset(PERMISSIONS_BY_CODE)
-ADMIN_UI_PERMISSION_CODES = frozenset(code for code, item in PERMISSIONS_BY_CODE.items() if item['surface'] in {'admin', 'dashboard'})
+ADMIN_UI_PERMISSION_CODES = frozenset(code for code, item in PERMISSIONS_BY_CODE.items() if item['surface'] == 'admin')
 POS_UI_PERMISSION_CODES = frozenset(
     {
         'pos_halls.view',

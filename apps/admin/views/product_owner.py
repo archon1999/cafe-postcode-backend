@@ -9,6 +9,7 @@ from apps.admin.serializers import (
     BusinessPartnerLookupSerializer,
     BusinessPartnerSerializer,
     PartnerActivationResultSerializer,
+    TariffOptionSerializer,
     TariffSerializer,
 )
 from apps.organizations.models import BusinessPartner, Tariff
@@ -141,3 +142,12 @@ class TariffDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIV
 
     def get_queryset(self):
         return Tariff.objects.prefetch_related('permissions', 'allowed_roles').order_by('name')
+
+
+class TariffOptionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
+    serializer_class = TariffOptionSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = Tariff.objects.filter(is_active=True).prefetch_related('permissions', 'allowed_roles')
+        return filter_tariffs(queryset, self.request)

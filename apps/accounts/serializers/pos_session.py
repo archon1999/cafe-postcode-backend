@@ -51,7 +51,7 @@ class PosSessionSerializer(serializers.Serializer):
         if entitlement is None:
             return data
 
-        settings = {**(data or {}), **(entitlement.operational_settings or {})}
+        settings = dict(data or {})
         settings['restaurant_access_active'] = bool(entitlement.is_active)
         settings['allowed_role_codes'] = sorted(entitlement.get_effective_role_codes())
         settings['allowed_permission_codes'] = sorted(entitlement.get_effective_permission_codes())

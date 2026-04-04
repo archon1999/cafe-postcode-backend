@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, permissions
 
 from apps.admin.permissions import AdminPermissionRequiredMixin
 from apps.admin.serializers import (
@@ -31,6 +31,7 @@ from apps.admin.support import (
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.organizations.models import CashDesk, Device, DistributionPoint, FeatureConfig, PrepStation, Restaurant
 from common.api.scopes import get_request_restaurant
+from common.exceptions import NotFoundError
 
 
 def get_restaurants_queryset_for_request(request):
@@ -54,6 +55,17 @@ class RestaurantConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdate
 
     def get_object(self):
         return get_request_restaurant(self.request)
+
+
+class MyRestaurantDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = RestaurantSerializer
+
+    def get_object(self):
+        restaurant = self.request.user.get_restaurant_scope()
+        if restaurant is None:
+            raise NotFoundError('Restaurant is not available for the current user.')
+        return restaurant
 
 
 class FeatureConfigView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):

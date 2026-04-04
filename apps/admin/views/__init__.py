@@ -22,6 +22,7 @@ from .constructor import (
     FeatureConfigView,
     HallDetailView,
     HallListCreateView,
+    MyRestaurantDetailView,
     PrepStationDetailView,
     PrepStationListCreateView,
     RestaurantDetailView,
@@ -67,6 +68,7 @@ from .reports import (
 from .business_partner import (
     RestaurantActivateView,
     RestaurantDeactivateView,
+    RestaurantRotateAuthCodeView,
     RestaurantResetPasswordView,
 )
 from .product_owner import (
@@ -78,6 +80,7 @@ from .product_owner import (
     BusinessPartnerResetPasswordView,
     TariffDetailView,
     TariffListCreateView,
+    TariffOptionsView,
 )
 from .users import (
     EmployeeRoleListView,
@@ -126,6 +129,7 @@ __all__ = [
     'ItemStoplistToggleView',
     'MxikLookupView',
     'MxikSearchView',
+    'MyRestaurantDetailView',
     'KitchenTicketDetailView',
     'KitchenTicketListView',
     'OrderDetailView',
@@ -153,6 +157,7 @@ __all__ = [
     'RestaurantDetailView',
     'RestaurantFeatureConfigView',
     'RestaurantListCreateView',
+    'RestaurantRotateAuthCodeView',
     'RestaurantResetPasswordView',
     'RestaurantConfigView',
     'RoleListCreateView',
@@ -164,6 +169,7 @@ __all__ = [
     'SummaryReportExportView',
     'TariffDetailView',
     'TariffListCreateView',
+    'TariffOptionsView',
     'TableSessionDetailView',
     'TableSessionListCreateView',
     'TopItemsReportExportView',

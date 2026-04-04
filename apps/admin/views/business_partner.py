@@ -3,18 +3,44 @@ from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import Permission, Role, User
+from apps.accounts.models import User
 from apps.admin.permissions import AdminPermissionRequiredMixin
-from apps.admin.serializers import RestaurantActivationResultSerializer, RestaurantActivationSerializer
-from apps.organizations.models import RestaurantEntitlement
+from apps.admin.serializers import RestaurantActivationResultSerializer, RestaurantActivationSerializer, RestaurantSerializer
+from apps.organizations.models import Restaurant, RestaurantEntitlement
+from apps.organizations.models.restaurant import generate_restaurant_auth_code
 
 from apps.admin.support.business_partner import (
     generate_password,
     generate_unique_username,
-    get_restaurant_admin_role,
-    get_restaurants_queryset_for_request,
+    get_restaurant_admin_role_for_tariff,
     normalize_username_base,
 )
+
+
+def get_restaurants_queryset_for_request(request):
+    queryset = Restaurant.objects.prefetch_related('feature_config').select_related('business_partner').order_by('name')
+    if request.user.is_superuser or request.user.actor_type == request.user.ActorType.PRODUCT_OWNER:
+        return queryset
+
+    business_partner = request.user.get_business_partner_scope()
+    if business_partner is not None:
+        return queryset.filter(business_partner=business_partner)
+
+    restaurant = request.user.get_restaurant_scope()
+    if restaurant is not None:
+        return queryset.filter(pk=restaurant.id)
+
+    return queryset.none()
+
+
+def regenerate_restaurant_auth_code(restaurant: Restaurant) -> Restaurant:
+    code = generate_restaurant_auth_code()
+    while Restaurant.objects.filter(auth_code=code).exclude(pk=restaurant.pk).exists():
+        code = generate_restaurant_auth_code()
+
+    restaurant.auth_code = code
+    restaurant.save(update_fields=['auth_code', 'updated_at'])
+    return restaurant
 
 
 class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
@@ -26,40 +52,16 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
         validated = serializer.validated_data
 
         entitlement, _ = RestaurantEntitlement.objects.get_or_create(restaurant=restaurant)
-        entitlement.tariff = validated.get('tariff')
-        entitlement.is_custom = validated.get('custom_tariff', False)
+        tariff = validated['tariff']
+        entitlement.tariff = tariff
+        entitlement.is_custom = False
         entitlement.is_active = True
         entitlement.starts_on = validated['starts_on']
-        entitlement.monthly_price = validated.get('monthly_price') or getattr(validated.get('tariff'), 'monthly_price', None)
-        entitlement.yearly_price = validated.get('yearly_price') or getattr(validated.get('tariff'), 'yearly_price', None)
-        entitlement.operational_settings = validated.get('operational_settings', {})
+        entitlement.monthly_price = tariff.monthly_price
+        entitlement.yearly_price = tariff.yearly_price
         entitlement.save()
-
-        custom_enabled_role_codes = [
-            code
-            for code in entitlement.operational_settings.get('enabled_roles', [])
-            if isinstance(code, str) and code
-        ]
-        derived_roles = list(
-            Role.objects.filter(is_system=True, code__in=custom_enabled_role_codes).prefetch_related('permissions')
-        )
-        derived_permission_ids = sorted(
-            {
-                permission.id
-                for role in derived_roles
-                for permission in role.permissions.all()
-            }
-        )
-        entitlement_permissions = validated.get('permissions')
-        entitlement_allowed_roles = validated.get('allowed_roles')
-        if validated.get('custom_tariff', False):
-            if entitlement_permissions is None:
-                entitlement_permissions = list(Permission.objects.filter(id__in=derived_permission_ids))
-            if entitlement_allowed_roles is None:
-                entitlement_allowed_roles = derived_roles
-
-        entitlement.permissions.set(entitlement_permissions or [])
-        entitlement.allowed_roles.set(entitlement_allowed_roles or [])
+        entitlement.permissions.clear()
+        entitlement.allowed_roles.clear()
 
         password = generate_password()
         admin_user = restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).order_by('created_at').first()
@@ -67,6 +69,7 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
             f"admin-{normalize_username_base(restaurant.name, 'restaurant')}",
             exclude_user=admin_user,
         )
+        admin_role = get_restaurant_admin_role_for_tariff(tariff)
         if admin_user is None:
             admin_user = User.objects.create(
                 username=admin_username,
@@ -75,12 +78,12 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
                 ui_mode=User.UiMode.ADMIN,
                 actor_type=User.ActorType.RESTAURANT_ADMIN,
                 restaurant=restaurant,
-                role=get_restaurant_admin_role(),
+                role=admin_role,
                 is_active=True,
             )
         else:
             admin_user.username = admin_username
-            admin_user.role = get_restaurant_admin_role()
+            admin_user.role = admin_role
             admin_user.actor_type = User.ActorType.RESTAURANT_ADMIN
             admin_user.restaurant = restaurant
             admin_user.ui_mode = User.UiMode.ADMIN
@@ -124,3 +127,11 @@ class RestaurantResetPasswordView(AdminPermissionRequiredMixin, APIView):
         admin_user.save(update_fields=['password'])
         payload = {'restaurant': restaurant, 'username': admin_user.username, 'password': password}
         return Response(RestaurantActivationResultSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class RestaurantRotateAuthCodeView(AdminPermissionRequiredMixin, APIView):
+
+    def post(self, request, pk):
+        restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
+        regenerate_restaurant_auth_code(restaurant)
+        return Response(RestaurantSerializer(restaurant).data, status=status.HTTP_200_OK)

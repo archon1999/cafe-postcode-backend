@@ -27,6 +27,7 @@ from .platform import (
     PartnerActivationResultSerializer,
     RestaurantActivationResultSerializer,
     RestaurantActivationSerializer,
+    TariffOptionSerializer,
     TariffSerializer,
 )
 from .users import EmployeeSerializer, PermissionOptionSerializer, PermissionSerializer, RoleSerializer, UserSerializer
@@ -63,6 +64,7 @@ __all__ = [
     'RestaurantSerializer',
     'RoleSerializer',
     'TableSessionSerializer',
+    'TariffOptionSerializer',
     'TariffSerializer',
     'UserSerializer',
     'ZoneOrCabinSerializer',

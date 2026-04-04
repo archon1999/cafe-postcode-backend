@@ -13,6 +13,7 @@ from apps.admin.support import (
     AdminUserQuerysetMixin,
     PermissionListFilters,
     RoleListFilters,
+    employee_role_queryset,
     scoped_role_queryset,
     prevent_system_role_delete,
 )
@@ -50,7 +51,7 @@ class EmployeeRoleListView(AdminPermissionRequiredMixin, generics.ListAPIView):
     serializer_class = RoleSerializer
 
     def get_queryset(self):
-        queryset = scoped_role_queryset(self.request)
+        queryset = employee_role_queryset(self.request)
         return RoleListFilters.from_request(self.request).apply(queryset)
 
 

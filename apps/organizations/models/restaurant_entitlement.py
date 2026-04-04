@@ -23,7 +23,6 @@ class RestaurantEntitlement(BaseModel):
     yearly_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     permissions = models.ManyToManyField('accounts.Permission', blank=True, related_name='restaurant_entitlements')
     allowed_roles = models.ManyToManyField('accounts.Role', blank=True, related_name='restaurant_entitlements')
-    operational_settings = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ('restaurant__name',)

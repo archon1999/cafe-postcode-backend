@@ -7,6 +7,7 @@ from rest_framework import permissions, status
 from rest_framework.test import APIRequestFactory, APITestCase
 
 from apps.accounts.models import Permission, PermissionEndpoint, Role, User
+from apps.accounts.permission_registry import DEFAULT_ROLE_MAP
 from apps.accounts.signals.seed_default_roles import seed_default_roles_signal
 from apps.organizations.models import FeatureConfig, Restaurant, RestaurantEntitlement
 from common.api.permissions import AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS, EndpointRBACPermission
@@ -306,6 +307,45 @@ class EndpointRBACPermissionTests(TestCase):
                 url="api/v1/admin/reports/shifts/export/",
             ).exists()
         )
+
+    def test_default_product_owner_role_is_limited_to_business_partners_and_tariffs(self):
+        permission_codes = set(DEFAULT_ROLE_MAP["product_owner"]["permissions"])
+
+        self.assertEqual(
+            permission_codes,
+            {
+                "platform.product_owner.view",
+                "tariff_roles.view",
+                "tariff_permissions.view",
+                "business_partners.view",
+                "business_partners.create",
+                "business_partners.update",
+                "business_partners.activate",
+                "business_partners.deactivate",
+                "business_partners.reset_password",
+                "tariffs.view",
+                "tariffs.create",
+                "tariffs.update",
+            },
+        )
+
+    def test_restaurant_admin_defaults_exclude_roles_and_permissions_pages(self):
+        permission_codes = set(DEFAULT_ROLE_MAP["restaurant_admin"]["permissions"])
+
+        self.assertNotIn("roles.view", permission_codes)
+        self.assertNotIn("permissions.view", permission_codes)
+
+    def test_fast_food_admin_defaults_include_restaurant_management_and_catalog_without_floor(self):
+        permission_codes = set(DEFAULT_ROLE_MAP["fast_food_admin"]["permissions"])
+
+        self.assertIn("restaurant_settings.view", permission_codes)
+        self.assertIn("cash_desks.view", permission_codes)
+        self.assertIn("catalog_items.view", permission_codes)
+        self.assertIn("catalog_categories.view", permission_codes)
+        self.assertNotIn("halls.view", permission_codes)
+        self.assertNotIn("zones.view", permission_codes)
+        self.assertNotIn("tables.view", permission_codes)
+        self.assertNotIn("table_sessions.view", permission_codes)
 
     def test_every_protected_route_is_registered_in_permission_endpoints(self):
         missing = []

@@ -17,7 +17,6 @@ BUSINESS_PARTNER_ORDERING_FIELDS = {
 }
 TARIFF_ORDERING_FIELDS = {
     'name': 'name',
-    'classification': 'classification',
     'monthlyPrice': 'monthly_price',
     'yearlyPrice': 'yearly_price',
     'isActive': 'is_active',
@@ -75,7 +74,6 @@ def filter_tariffs(queryset, request):
     if search:
         queryset = queryset.filter(
             Q(name__icontains=search)
-            | Q(classification__icontains=search)
             | Q(description__icontains=search)
         )
     if is_active is not None:
@@ -89,6 +87,20 @@ def get_business_partner_role() -> Role:
 
 def get_restaurant_admin_role() -> Role:
     return Role.objects.get(code='restaurant_admin')
+
+
+def get_fast_food_admin_role() -> Role:
+    return Role.objects.get(code='fast_food_admin')
+
+
+def get_restaurant_admin_role_for_tariff(role_source) -> Role:
+    if role_source is None:
+        return get_restaurant_admin_role()
+
+    if role_source.allowed_roles.filter(code='fast_food_admin').exists():
+        return get_fast_food_admin_role()
+
+    return get_restaurant_admin_role()
 
 
 def get_restaurants_queryset_for_request(request):
