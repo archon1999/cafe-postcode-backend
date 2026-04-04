@@ -113,18 +113,18 @@ RESTAURANT_SPECS = (
 
 RESTAURANT_STAFF_SPECS = (
     StaffSpec('restaurant-owner', 'Restaurant mahsulot egasi', 'owner', 'admin', 'owner123'),
-    StaffSpec('restaurant-manager', 'Restaurant menejer', 'manager', 'pos', pin='1101', primary_hall_code='main', allowed_hall_codes=('main', 'family')),
-    StaffSpec('restaurant-waiter', 'Restaurant ofitsiant', 'waiter', 'pos', pin='1102', primary_hall_code='main', allowed_hall_codes=('main', 'family')),
-    StaffSpec('restaurant-cashier', 'Restaurant kassir', 'cashier', 'pos', pin='1103'),
-    StaffSpec('restaurant-chef', 'Restaurant oshpaz', 'chef', 'pos', pin='1104'),
-    StaffSpec('restaurant-barman', 'Restaurant barmen', 'barman', 'pos', pin='1105'),
+    StaffSpec('restaurant-manager', 'Restaurant menejer', 'manager', 'pos', pin='1111', primary_hall_code='main', allowed_hall_codes=('main', 'family')),
+    StaffSpec('restaurant-waiter', 'Restaurant ofitsiant', 'waiter', 'pos', pin='2222', primary_hall_code='main', allowed_hall_codes=('main', 'family')),
+    StaffSpec('restaurant-cashier', 'Restaurant kassir', 'cashier', 'pos', pin='3333'),
+    StaffSpec('restaurant-chef', 'Restaurant oshpaz', 'chef', 'pos', pin='4444'),
+    StaffSpec('restaurant-barman', 'Restaurant barmen', 'barman', 'pos', pin='5555'),
 )
 
 FAST_FOOD_STAFF_SPECS = (
     StaffSpec('fastfood-owner', 'Fast food mahsulot egasi', 'owner', 'admin', 'owner123'),
-    StaffSpec('fastfood-manager', 'Fast food menejer', 'fast_food_manager', 'pos', pin='2201'),
-    StaffSpec('fastfood-cashier', 'Fast food kassir', 'fast_food_cashier', 'pos', pin='2202'),
-    StaffSpec('fastfood-chef', 'Fast food oshpaz', 'chef', 'pos', pin='2203'),
+    StaffSpec('fastfood-manager', 'Fast food menejer', 'fast_food_manager', 'pos', pin='1111'),
+    StaffSpec('fastfood-cashier', 'Fast food kassir', 'fast_food_cashier', 'pos', pin='2222'),
+    StaffSpec('fastfood-chef', 'Fast food oshpaz', 'chef', 'pos', pin='3333'),
 )
 
 HALL_SPECS = (
@@ -298,8 +298,8 @@ FAST_FOOD_ORDER_SPECS = (
 )
 
 TOP_LEVEL_USERS = {
-    'superadmin': {'username': 'admin', 'password': 'admin123', 'full_name': 'System Administrator'},
-    'product_owner': {'username': 'padmin', 'password': 'padmin123', 'full_name': 'Platforma mahsulot egasi'},
+    'superadmin': {'username': 'superadmin', 'password': 'superadmin123', 'full_name': 'System Administrator'},
+    'product_owner': {'username': 'admin', 'password': 'admin123', 'full_name': 'Platforma mahsulot egasi'},
 }
 
 BUSINESS_PARTNER_SPEC = {

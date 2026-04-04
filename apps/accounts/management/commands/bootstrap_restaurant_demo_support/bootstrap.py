@@ -18,7 +18,7 @@ from .helpers import (
     upsert_restaurant,
 )
 from .orders import seed_orders
-from .specs import ORDER_SPECS_BY_RESTAURANT, RESTAURANT_SPECS, TARIFF_SPECS, TOP_LEVEL_USERS
+from .specs import ORDER_SPECS_BY_RESTAURANT, RESTAURANT_SPECS, STAFF_SPECS_BY_RESTAURANT, TARIFF_SPECS, TOP_LEVEL_USERS
 
 
 @transaction.atomic
@@ -30,7 +30,7 @@ def bootstrap_demo(command) -> None:
     partner = upsert_business_partner()
     partner_credentials = activate_business_partner_user(partner)
 
-    restaurant_credentials: dict[str, tuple[str, str]] = {}
+    restaurant_credentials: dict[str, tuple[str, str, str, list[tuple[str, str]]]] = {}
 
     for restaurant_spec in RESTAURANT_SPECS:
         restaurant = upsert_restaurant(partner, restaurant_spec)
@@ -65,7 +65,12 @@ def bootstrap_demo(command) -> None:
             cash_desk=setup['cash_desk'],
             distribution_points=setup['distribution_points'],
         )
-        restaurant_credentials[restaurant_spec.name] = (admin_credentials.username, admin_credentials.password)
+        restaurant_credentials[restaurant_spec.name] = (
+            admin_credentials.username,
+            admin_credentials.password,
+            restaurant.auth_code,
+            [(spec.username, spec.pin) for spec in STAFF_SPECS_BY_RESTAURANT[restaurant_spec.key] if spec.pin],
+        )
 
     command.stdout.write(command.style.SUCCESS('Restaurant demo bootstrap complete.'))
     command.stdout.write(f"superadmin: {TOP_LEVEL_USERS['superadmin']['username']} / {TOP_LEVEL_USERS['superadmin']['password']}")
@@ -73,5 +78,8 @@ def bootstrap_demo(command) -> None:
         f"product_owner: {TOP_LEVEL_USERS['product_owner']['username']} / {TOP_LEVEL_USERS['product_owner']['password']}"
     )
     command.stdout.write(f'business_partner: {partner_credentials.username} / {partner_credentials.password}')
-    for restaurant_name, (username, password) in restaurant_credentials.items():
-        command.stdout.write(f'{restaurant_name} admin: {username} / {password}')
+    for restaurant_name, (username, password, auth_code, staff_pins) in restaurant_credentials.items():
+        command.stdout.write(f'{restaurant_name} admin: {username} / {password} / auth_code: {auth_code}')
+        if staff_pins:
+            formatted_staff_pins = ', '.join(f'{staff_username}={pin}' for staff_username, pin in staff_pins)
+            command.stdout.write(f'{restaurant_name} staff pins: {formatted_staff_pins}')
