@@ -102,6 +102,23 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertIn(self.fast_food_tariff.name, tariff_names)
         self.assertNotIn(self.inactive_tariff.name, tariff_names)
 
+    def test_business_partner_can_fetch_activation_options(self):
+        self.client.force_authenticate(self.business_partner_user)
+
+        response = self.client.get('/api/v1/admin/platform/restaurants/activation-options/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual({item['name'] for item in response.data['tariffs']}, {self.fast_food_tariff.name, self.restaurant_tariff.name})
+        returned_role_codes = {item['code'] for item in response.data['roles']}
+        self.assertIn('restaurant_admin', returned_role_codes)
+        self.assertIn('fast_food_admin', returned_role_codes)
+        self.assertNotIn('product_owner', returned_role_codes)
+        self.assertNotIn('business_partner', returned_role_codes)
+        returned_permission_codes = {item['code'] for item in response.data['permissions']}
+        self.assertIn('employees.view', returned_permission_codes)
+        self.assertIn('pos_takeaway_menu.view', returned_permission_codes)
+        self.assertNotIn('platform.product_owner.view', returned_permission_codes)
+
     def test_tariff_create_derives_permissions_from_selected_roles(self):
         self.client.force_authenticate(self.product_owner_user)
 
@@ -184,3 +201,36 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
         self.assertTrue(self.restaurant.entitlement.is_active)
         self.assertEqual(self.restaurant.entitlement.tariff_id, self.fast_food_tariff.id)
+
+    def test_custom_activation_uses_selected_roles_and_permissions(self):
+        self.client.force_authenticate(self.business_partner_user)
+        employees_view_permission = Permission.objects.get(code='employees.view')
+        pos_takeaway_menu_view_permission = Permission.objects.get(code='pos_takeaway_menu.view')
+
+        response = self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+            {
+                'activation_type': 'custom',
+                'allowed_role_ids': [str(self.fast_food_admin_role.id), str(self.fast_food_cashier_role.id)],
+                'permission_ids': [str(employees_view_permission.id), str(pos_takeaway_menu_view_permission.id)],
+                'starts_on': '2026-04-04',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.restaurant.refresh_from_db()
+        self.assertTrue(self.restaurant.entitlement.is_active)
+        self.assertTrue(self.restaurant.entitlement.is_custom)
+        self.assertIsNone(self.restaurant.entitlement.tariff_id)
+        self.assertEqual(
+            set(self.restaurant.entitlement.allowed_roles.values_list('code', flat=True)),
+            {'fast_food_admin', 'fast_food_cashier'},
+        )
+        self.assertEqual(
+            set(self.restaurant.entitlement.permissions.values_list('code', flat=True)),
+            {'employees.view', 'pos_takeaway_menu.view'},
+        )
+        admin_user = User.objects.get(username=response.data['username'])
+        self.assertEqual(admin_user.role.code, 'fast_food_admin')
+        self.assertEqual(set(self.restaurant.feature_config.enabled_roles), {'fast_food_admin', 'fast_food_cashier'})

@@ -17,6 +17,7 @@ from apps.admin.support import (
     scoped_role_queryset,
     prevent_system_role_delete,
 )
+from apps.admin.support.business_partner import activation_permission_queryset, activation_role_queryset
 from common.api.scopes import get_request_restaurant
 
 
@@ -33,6 +34,8 @@ class PermissionOptionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
+        if getattr(self.request.user, 'actor_type', None) == self.request.user.ActorType.BUSINESS_PARTNER:
+            return activation_permission_queryset()
         return Permission.objects.order_by('code').all()
 
 
@@ -40,6 +43,9 @@ class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
     serializer_class = RoleSerializer
 
     def get_queryset(self):
+        if getattr(self.request.user, 'actor_type', None) == self.request.user.ActorType.BUSINESS_PARTNER:
+            queryset = activation_role_queryset()
+            return RoleListFilters.from_request(self.request).apply(queryset)
         queryset = scoped_role_queryset(self.request)
         return RoleListFilters.from_request(self.request).apply(queryset)
 

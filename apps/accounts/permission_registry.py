@@ -1059,7 +1059,7 @@ PERMISSION_DEFINITIONS.extend(
             group_key='tariffs',
             name="Tarif uchun rollar ro'yxatini ko'rish",
             endpoints=endpoint_specs(('GET', 'api/v1/admin/users/roles/')),
-            default_roles=PRODUCT_OWNER_ROLES,
+            default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
             ui_visible=False,
         ),
         action_permission(
@@ -1068,7 +1068,16 @@ PERMISSION_DEFINITIONS.extend(
             group_key='tariffs',
             name="Tarif uchun ruxsatlar ro'yxatini ko'rish",
             endpoints=endpoint_specs(('GET', 'api/v1/admin/users/permissions/options/')),
-            default_roles=PRODUCT_OWNER_ROLES,
+            default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+            ui_visible=False,
+        ),
+        action_permission(
+            'restaurants.activation_options',
+            surface='admin',
+            group_key='restaurants',
+            name='Restoran aktivatsiyasi uchun variantlarni ko‘rish',
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/platform/restaurants/activation-options/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
             ui_visible=False,
         ),
         action_permission(

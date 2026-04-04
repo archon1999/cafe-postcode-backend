@@ -5,14 +5,20 @@ from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.admin.permissions import AdminPermissionRequiredMixin
-from apps.admin.serializers import RestaurantActivationResultSerializer, RestaurantActivationSerializer, RestaurantSerializer
-from apps.organizations.models import Restaurant, RestaurantEntitlement
+from apps.admin.serializers import (
+    RestaurantActivationOptionsSerializer,
+    RestaurantActivationResultSerializer,
+    RestaurantActivationSerializer,
+    RestaurantSerializer,
+)
+from apps.admin.support.business_partner import activation_permission_queryset, activation_role_queryset
+from apps.organizations.models import FeatureConfig, Restaurant, RestaurantEntitlement, Tariff
 from apps.organizations.models.restaurant import generate_restaurant_auth_code
 
 from apps.admin.support.business_partner import (
     generate_password,
     generate_unique_username,
-    get_restaurant_admin_role_for_tariff,
+    get_restaurant_admin_role_for_source,
     normalize_username_base,
 )
 
@@ -52,16 +58,22 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
         validated = serializer.validated_data
 
         entitlement, _ = RestaurantEntitlement.objects.get_or_create(restaurant=restaurant)
-        tariff = validated['tariff']
+        tariff = validated.get('tariff')
+        activation_type = validated.get('activation_type', 'tariff')
+        allowed_roles = list(validated.get('allowed_roles', []))
+        permissions = list(validated.get('permissions', []))
         entitlement.tariff = tariff
-        entitlement.is_custom = False
+        entitlement.is_custom = activation_type == 'custom'
         entitlement.is_active = True
         entitlement.starts_on = validated['starts_on']
-        entitlement.monthly_price = tariff.monthly_price
-        entitlement.yearly_price = tariff.yearly_price
+        entitlement.monthly_price = tariff.monthly_price if tariff is not None else None
+        entitlement.yearly_price = tariff.yearly_price if tariff is not None else None
         entitlement.save()
         entitlement.permissions.clear()
         entitlement.allowed_roles.clear()
+        if activation_type == 'custom':
+            entitlement.allowed_roles.set(allowed_roles)
+            entitlement.permissions.set(permissions)
 
         password = generate_password()
         admin_user = restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).order_by('created_at').first()
@@ -69,7 +81,7 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
             f"admin-{normalize_username_base(restaurant.name, 'restaurant')}",
             exclude_user=admin_user,
         )
-        admin_role = get_restaurant_admin_role_for_tariff(tariff)
+        admin_role = get_restaurant_admin_role_for_source(tariff if tariff is not None else allowed_roles)
         if admin_user is None:
             admin_user = User.objects.create(
                 username=admin_username,
@@ -96,9 +108,23 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
         restaurant.activated_at = timezone.now()
         restaurant.deactivated_at = None
         restaurant.save(update_fields=['is_active', 'activated_at', 'deactivated_at', 'updated_at'])
+        feature_config, _ = FeatureConfig.objects.get_or_create(restaurant=restaurant)
+        feature_config.enabled_roles = sorted(entitlement.get_effective_role_codes())
+        feature_config.save(update_fields=['enabled_roles', 'updated_at'])
 
         payload = {'restaurant': restaurant, 'username': admin_user.username, 'password': password}
         return Response(RestaurantActivationResultSerializer(payload).data, status=status.HTTP_200_OK)
+
+
+class RestaurantActivationOptionsView(AdminPermissionRequiredMixin, APIView):
+
+    def get(self, request):
+        payload = {
+            'tariffs': Tariff.objects.filter(is_active=True).prefetch_related('permissions', 'allowed_roles').order_by('name'),
+            'roles': activation_role_queryset(),
+            'permissions': activation_permission_queryset(),
+        }
+        return Response(RestaurantActivationOptionsSerializer(payload).data, status=status.HTTP_200_OK)
 
 
 class RestaurantDeactivateView(AdminPermissionRequiredMixin, APIView):

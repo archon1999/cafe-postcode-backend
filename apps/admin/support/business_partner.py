@@ -4,7 +4,7 @@ import string
 from django.db.models import Q
 from django.utils.text import slugify
 
-from apps.accounts.models import Role, User
+from apps.accounts.models import Permission, Role, User
 from apps.organizations.models import BusinessPartner, Restaurant
 from common.api.query_params import apply_ordering, get_bool_query_param, get_ordering_query_param, get_str_query_param
 
@@ -21,6 +21,7 @@ TARIFF_ORDERING_FIELDS = {
     'yearlyPrice': 'yearly_price',
     'isActive': 'is_active',
 }
+ACTIVATION_EXCLUDED_ROLE_CODES = {'product_owner', 'business_partner'}
 
 
 def generate_password(length: int = 12) -> str:
@@ -72,10 +73,7 @@ def filter_tariffs(queryset, request):
     ordering = get_ordering_query_param(request.query_params, TARIFF_ORDERING_FIELDS)
 
     if search:
-        queryset = queryset.filter(
-            Q(name__icontains=search)
-            | Q(description__icontains=search)
-        )
+        queryset = queryset.filter(Q(name__icontains=search) | Q(description__icontains=search))
     if is_active is not None:
         queryset = queryset.filter(is_active=is_active)
     return apply_ordering(queryset, ordering, default_ordering=('name',))
@@ -93,11 +91,31 @@ def get_fast_food_admin_role() -> Role:
     return Role.objects.get(code='fast_food_admin')
 
 
-def get_restaurant_admin_role_for_tariff(role_source) -> Role:
+def activation_role_queryset():
+    return (
+        Role.objects.filter(is_system=True)
+        .exclude(code__in=ACTIVATION_EXCLUDED_ROLE_CODES)
+        .prefetch_related('permissions__endpoints')
+        .order_by('name')
+    )
+
+
+def activation_permission_queryset():
+    return Permission.objects.filter(roles__in=activation_role_queryset()).order_by('code').distinct()
+
+
+def get_restaurant_admin_role_for_source(role_source) -> Role:
     if role_source is None:
         return get_restaurant_admin_role()
 
-    if role_source.allowed_roles.filter(code='fast_food_admin').exists():
+    if hasattr(role_source, 'allowed_roles'):
+        role_queryset = role_source.allowed_roles.all()
+    elif hasattr(role_source, 'filter'):
+        role_queryset = role_source
+    else:
+        role_queryset = Role.objects.filter(id__in=[role.id for role in role_source])
+
+    if role_queryset.filter(code='fast_food_admin').exists():
         return get_fast_food_admin_role()
 
     return get_restaurant_admin_role()

@@ -67,6 +67,7 @@ from .reports import (
 )
 from .business_partner import (
     RestaurantActivateView,
+    RestaurantActivationOptionsView,
     RestaurantDeactivateView,
     RestaurantRotateAuthCodeView,
     RestaurantResetPasswordView,
@@ -153,6 +154,7 @@ __all__ = [
     'PrepStationDetailView',
     'PrepStationListCreateView',
     'RestaurantActivateView',
+    'RestaurantActivationOptionsView',
     'RestaurantDeactivateView',
     'RestaurantDetailView',
     'RestaurantFeatureConfigView',
