@@ -32,8 +32,14 @@ class UserSerializer(serializers.ModelSerializer):
         allow_blank=True,
         write_only=True,
     )
-    base_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True, write_only=True)
-    kpi_percent = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=100, write_only=True)
+    base_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    kpi_percent = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = User
@@ -149,13 +155,12 @@ class UserSerializer(serializers.ModelSerializer):
         base_amount = compensation_data.get('base_amount')
         kpi_percent = compensation_data.get('kpi_percent')
 
-        if salary_type == EmployeeCompensationProfile.SalaryType.KPI and kpi_percent is None:
-            raise serializers.ValidationError({'kpi_percent': _('KPI percent is required for KPI salary type.')})
-        if salary_type in {
-            EmployeeCompensationProfile.SalaryType.HOURLY,
-            EmployeeCompensationProfile.SalaryType.DAILY,
-        } and base_amount is None:
+        if salary_type and base_amount is None:
             raise serializers.ValidationError({'base_amount': _('Base amount is required for the selected salary type.')})
+        if base_amount is not None and base_amount < 0:
+            raise serializers.ValidationError({'base_amount': _('Base amount must be greater than or equal to 0.')})
+        if kpi_percent is not None and kpi_percent < 0:
+            raise serializers.ValidationError({'kpi_percent': _('KPI percent must be greater than or equal to 0.')})
 
     @staticmethod
     def _save_profile(instance, profile_data):

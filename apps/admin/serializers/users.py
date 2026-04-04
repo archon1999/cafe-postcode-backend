@@ -11,6 +11,7 @@ from apps.accounts.models import (
     Role,
     User,
 )
+from apps.admin.support.users import role_has_pos_permissions
 from apps.floor.models import Hall
 from common.api.scopes import get_optional_request_restaurant
 
@@ -57,8 +58,8 @@ class RoleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Role
-        fields = ('id', 'name', 'description', 'is_system', 'permissions', 'permission_ids')
-        read_only_fields = ('is_system',)
+        fields = ('id', 'code', 'name', 'description', 'is_system', 'permissions', 'permission_ids')
+        read_only_fields = ('code', 'is_system')
 
     def _generate_internal_code(self, name: str, instance: Role | None = None) -> str:
         base_code = slugify(name).replace('-', '_') or 'role'
@@ -119,8 +120,14 @@ class UserSerializer(serializers.ModelSerializer):
         allow_blank=True,
         write_only=True,
     )
-    base_amount = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True, write_only=True)
-    kpi_percent = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=100, write_only=True)
+    base_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    kpi_percent = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = User
@@ -218,6 +225,9 @@ class UserSerializer(serializers.ModelSerializer):
 
         if self.user_surface == 'employee' and restaurant is None:
             raise serializers.ValidationError({'detail': _('Employees must belong to a restaurant scope.')})
+
+        if self.user_surface == 'employee' and role is not None and not role_has_pos_permissions(role):
+            raise serializers.ValidationError({'roleId': _('Selected role is not available for employees.')})
 
         if restaurant is not None and primary_hall is not None and primary_hall.restaurant_id != restaurant.id:
             raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected restaurant.')})
@@ -317,13 +327,12 @@ class UserSerializer(serializers.ModelSerializer):
         base_amount = compensation_data.get('base_amount')
         kpi_percent = compensation_data.get('kpi_percent')
 
-        if salary_type == EmployeeCompensationProfile.SalaryType.KPI and kpi_percent is None:
-            raise serializers.ValidationError({'kpiPercent': _('KPI percent is required for KPI salary type.')})
-        if salary_type in {
-            EmployeeCompensationProfile.SalaryType.HOURLY,
-            EmployeeCompensationProfile.SalaryType.DAILY,
-        } and base_amount is None:
+        if salary_type and base_amount is None:
             raise serializers.ValidationError({'baseAmount': _('Base amount is required for the selected salary type.')})
+        if base_amount is not None and base_amount < 0:
+            raise serializers.ValidationError({'baseAmount': _('Base amount must be greater than or equal to 0.')})
+        if kpi_percent is not None and kpi_percent < 0:
+            raise serializers.ValidationError({'kpiPercent': _('KPI percent must be greater than or equal to 0.')})
 
     @staticmethod
     def _save_profile(instance, profile_data):

@@ -7,7 +7,7 @@ class EmployeeCompensationProfile(BaseModel):
     class SalaryType(models.TextChoices):
         HOURLY = 'hourly', 'Hourly'
         DAILY = 'daily', 'Daily'
-        KPI = 'kpi', 'KPI'
+        MONTHLY = 'monthly', 'Monthly'
 
     user = models.OneToOneField(
         'accounts.User',
