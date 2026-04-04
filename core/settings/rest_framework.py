@@ -6,7 +6,6 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'common.api.exception_handler.custom_exception_handler',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework.authentication.TokenAuthentication',
-        'common.api.authentication.CustomBasicAuthentication',
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
