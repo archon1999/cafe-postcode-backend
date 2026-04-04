@@ -3,8 +3,12 @@ from django.db import models
 from common.models import BaseModel
 
 
-class RestaurantUserProfile(BaseModel):
-    user = models.OneToOneField('accounts.User', on_delete=models.CASCADE, related_name='restaurant_profile')
+class RestaurantProfile(BaseModel):
+    user = models.OneToOneField(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='restaurant_profile'
+    )
     restaurant = models.ForeignKey(
         'organizations.Restaurant',
         on_delete=models.CASCADE,
@@ -19,10 +23,14 @@ class RestaurantUserProfile(BaseModel):
         null=True,
         blank=True,
     )
-    allowed_halls = models.ManyToManyField('floor.Hall', blank=True, related_name='restaurant_allowed_users')
+    allowed_halls = models.ManyToManyField(
+        'floor.Hall',
+        blank=True,
+        related_name='restaurant_allowed_users'
+    )
 
     class Meta:
         ordering = ('user__username',)
 
     def __str__(self):
-        return f'Restaurant user profile: {self.user.username}'
+        return f'Restaurant profile: {self.user.username}'

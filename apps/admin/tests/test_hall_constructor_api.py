@@ -3,21 +3,22 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import Permission, Role, User
 from apps.floor.models import DiningTable, Hall, TableSession
-from apps.organizations.models import Branch, Restaurant
+from apps.organizations.models import FeatureConfig, Restaurant, RestaurantEntitlement
+from apps.floor.models import ZoneOrCabin
 
 
 class AdminHallConstructorApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name='Test restaurant')
-        cls.branch = Branch.objects.create(
-            restaurant=cls.restaurant,
-            name='Main branch',
-            is_default=True,
-        )
+        cls.zone = ZoneOrCabin.objects.create(restaurant=cls.restaurant, name='Main zone', sort_order=1, is_active=True)
         cls.permission = Permission.objects.get_or_create(
-            code='halls.update_layout',
-            defaults={'name': 'Hall layout update', 'description': 'Hall layout update permission'},
+            code='halls.view',
+            defaults={'name': 'Hall view', 'description': 'Hall view permission'},
+        )[0]
+        cls.update_permission = Permission.objects.get_or_create(
+            code='halls.update',
+            defaults={'name': 'Hall update', 'description': 'Hall update permission'},
         )[0]
         cls.role = Role.objects.get_or_create(
             code='constructor-admin',
@@ -27,24 +28,36 @@ class AdminHallConstructorApiTests(APITestCase):
                 'is_system': False,
             },
         )[0]
-        cls.role.permissions.set([cls.permission])
+        cls.role.permissions.set([cls.permission, cls.update_permission])
+        cls.entitlement = RestaurantEntitlement.objects.create(
+            restaurant=cls.restaurant,
+            is_active=True,
+            is_custom=True,
+        )
+        cls.entitlement.permissions.set([cls.permission, cls.update_permission])
+        cls.entitlement.allowed_roles.set([cls.role])
+        FeatureConfig.objects.create(
+            restaurant=cls.restaurant,
+            hall_enabled=True,
+            kitchen_enabled=True,
+            cashier_enabled=True,
+            owner_dashboard_enabled=True,
+        )
 
         cls.user = User.objects.create_user(
             username='constructor-admin',
             password='secret123',
             full_name='Constructor Admin',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
         )
         cls.hall = Hall.objects.create(
-            restaurant=cls.restaurant,
-            branch=cls.branch,
+            zone_or_cabin=cls.zone,
             name='Asosiy zal',
             grid_columns=8,
             sort_order=1,
+            is_active=True,
         )
         cls.table_one = DiningTable.objects.create(
             hall=cls.hall,
@@ -95,7 +108,6 @@ class AdminHallConstructorApiTests(APITestCase):
         self.authenticate()
         session = TableSession.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             hall=self.hall,
             table=self.table_two,
             opened_by=self.user,
@@ -190,3 +202,4 @@ class AdminHallConstructorApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('tables', response.data)
+

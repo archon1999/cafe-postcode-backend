@@ -123,10 +123,12 @@ def get_restaurant_admin_role_for_source(role_source) -> Role:
 
 def get_restaurants_queryset_for_request(request):
     queryset = Restaurant.objects.select_related('business_partner').prefetch_related('entitlement', 'feature_config').order_by('name')
-    if request.user.is_superuser or request.user.actor_type == User.ActorType.PRODUCT_OWNER:
+    if request.user.is_superuser or request.user.role_code == 'product_owner':
         return queryset
-    if request.user.actor_type == User.ActorType.BUSINESS_PARTNER and request.user.business_partner_id:
-        return queryset.filter(business_partner_id=request.user.business_partner_id)
-    if request.user.restaurant_id:
-        return queryset.filter(pk=request.user.restaurant_id)
+    business_partner = request.user.get_business_partner_scope()
+    if business_partner is not None:
+        return queryset.filter(business_partner_id=business_partner.id)
+    restaurant = request.user.get_restaurant_scope()
+    if restaurant is not None:
+        return queryset.filter(pk=restaurant.id)
     return queryset.none()

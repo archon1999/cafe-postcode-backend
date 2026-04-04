@@ -17,9 +17,7 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
             password='secret123',
             full_name='Inactive POS User',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
             is_active=False,
         )
         cls.inactive_user.set_pin('2222')
@@ -32,9 +30,7 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
             password='secret123',
             full_name='Archived POS User',
             restaurant=cls.restaurant,
-            branch=cls.branch,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
             is_active=False,
         )
         cls.archived_user.set_pin('3333')
@@ -43,29 +39,46 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         cls.archived_user.employee_profile.save(update_fields=['employment_status'])
 
     def test_pos_pin_login_accepts_four_digit_pin_for_active_employee(self):
-        response = self.client.post('/api/v1/pos/auth/pin-login/', {'pin': '1111'}, format='json')
+        response = self.client.post(
+            '/api/v1/pos/auth/pin-login/',
+            {'restaurant_id': str(self.restaurant.id), 'pin': '1111'},
+            format='json',
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['user']['username'], self.user.username)
         self.assertIn('feature_config', response.data)
 
     def test_pos_pin_login_rejects_inactive_employee_with_explicit_message(self):
-        response = self.client.post('/api/v1/pos/auth/pin-login/', {'pin': '2222'}, format='json')
+        response = self.client.post(
+            '/api/v1/pos/auth/pin-login/',
+            {'restaurant_id': str(self.restaurant.id), 'pin': '2222'},
+            format='json',
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('pin', response.data)
         self.assertIn('inactive', response.data['pin'][0].lower())
 
     def test_pos_pin_login_rejects_archived_employee_with_explicit_message(self):
-        response = self.client.post('/api/v1/pos/auth/pin-login/', {'pin': '3333'}, format='json')
+        response = self.client.post(
+            '/api/v1/pos/auth/pin-login/',
+            {'restaurant_id': str(self.restaurant.id), 'pin': '3333'},
+            format='json',
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('pin', response.data)
         self.assertIn('archived', response.data['pin'][0].lower())
 
     def test_pos_pin_login_requires_exactly_four_digits(self):
-        response = self.client.post('/api/v1/pos/auth/pin-login/', {'pin': '11111'}, format='json')
+        response = self.client.post(
+            '/api/v1/pos/auth/pin-login/',
+            {'restaurant_id': str(self.restaurant.id), 'pin': '11111'},
+            format='json',
+        )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('pin', response.data)
         self.assertIn('4', str(response.data['pin'][0]))
+

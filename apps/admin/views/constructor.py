@@ -36,7 +36,7 @@ from common.exceptions import NotFoundError
 
 def get_restaurants_queryset_for_request(request):
     queryset = Restaurant.objects.prefetch_related('feature_config').select_related('business_partner').order_by('name')
-    if request.user.is_superuser or request.user.actor_type == request.user.ActorType.PRODUCT_OWNER:
+    if request.user.is_superuser or request.user.role_code == 'product_owner':
         return queryset
 
     business_partner = request.user.get_business_partner_scope()

@@ -44,7 +44,6 @@ class OrderStateApiTests(APITestCase):
             full_name='Orders Manager',
             restaurant=cls.restaurant,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
@@ -122,3 +121,4 @@ class OrderStateApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', response.data)
+

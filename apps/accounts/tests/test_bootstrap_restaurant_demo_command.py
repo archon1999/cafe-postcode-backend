@@ -26,11 +26,17 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertFalse(fast_food.zones.exists())
 
         self.assertEqual(
-            restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).first().role.code,
+            User.objects.filter(
+                restaurant_profile__restaurant=restaurant,
+                role__code__in=('restaurant_admin', 'fast_food_admin'),
+            ).first().role.code,
             'restaurant_admin',
         )
         self.assertEqual(
-            fast_food.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).first().role.code,
+            User.objects.filter(
+                restaurant_profile__restaurant=fast_food,
+                role__code__in=('restaurant_admin', 'fast_food_admin'),
+            ).first().role.code,
             'fast_food_admin',
         )
 
@@ -46,3 +52,4 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertFalse(
             Order.objects.filter(restaurant=fast_food).exclude(channel=Order.Channel.TAKEAWAY).exists()
         )
+

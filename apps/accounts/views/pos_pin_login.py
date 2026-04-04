@@ -26,5 +26,5 @@ class PosPinLoginView(APIView):
             raise
         user = serializer.validated_data['user']
         restaurant = serializer.validated_data['restaurant']
-        token, session = self.auth_session_service_class().issue(user=user, ui_channel='pos', request=request)
+        token, session = self.auth_session_service_class().issue(user=user, request=request)
         return Response(PosSessionSerializer({'token': token.key, 'user': user, 'session': session, 'restaurant': restaurant}).data)

@@ -18,7 +18,7 @@ class PosHallListViewTests(TestCase):
             is_active=True,
             is_custom=True,
         )
-        self.user = User.objects.create(
+        self.user = User.objects.create_user(
             username='admin',
             full_name='Admin User',
             is_superuser=True,

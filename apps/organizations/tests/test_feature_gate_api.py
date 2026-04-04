@@ -2,6 +2,7 @@ from rest_framework import status
 
 from apps.floor.models import TableSession
 from apps.orders.models import Order
+from apps.organizations.models import RestaurantEntitlement
 from common.tests.pos_api import PosAPITestCase
 
 
@@ -47,12 +48,6 @@ class FeatureGateApiTests(PosAPITestCase):
 
     def test_feature_gate_does_not_leak_between_restaurants(self):
         second_restaurant = self.restaurant.__class__.objects.create(name='Second restaurant')
-        second_branch = self.branch.__class__.objects.create(
-            restaurant=second_restaurant,
-            name='Second branch',
-            service_fee_percent=10,
-            is_default=True,
-        )
         second_feature_config = self.feature_config.__class__.objects.create(
             restaurant=second_restaurant,
             hall_enabled=False,
@@ -60,14 +55,19 @@ class FeatureGateApiTests(PosAPITestCase):
             cashier_enabled=False,
             owner_dashboard_enabled=True,
         )
+        second_entitlement = RestaurantEntitlement.objects.create(
+            restaurant=second_restaurant,
+            is_active=True,
+            is_custom=True,
+        )
+        second_entitlement.permissions.set(self.permissions)
+        second_entitlement.allowed_roles.set([self.role])
         second_user = self.user.__class__.objects.create_user(
             username='second-pos-user',
             password='secret123',
             full_name='Second POS User',
             restaurant=second_restaurant,
-            branch=second_branch,
             role=self.role,
-            ui_mode=self.user.ui_mode,
         )
 
         self.client.force_authenticate(self.user)
@@ -79,3 +79,4 @@ class FeatureGateApiTests(PosAPITestCase):
         self.assertEqual(first_response.status_code, status.HTTP_200_OK)
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(second_feature_config.hall_enabled)
+

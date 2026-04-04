@@ -1,4 +1,3 @@
-from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -17,12 +16,9 @@ class PosLoginSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         restaurant = attrs['restaurant_id']
-        candidate_users = User.objects.filter(
-            Q(restaurant_profile__restaurant=restaurant) | Q(restaurant=restaurant)
-        ).select_related(
+        candidate_users = User.objects.filter(restaurant_profile__restaurant=restaurant).select_related(
             'role',
             'employee_profile',
-            'restaurant',
             'restaurant_profile__restaurant',
         )
         matched_users = [user for user in candidate_users.distinct() if user.can_access_pos_ui and user.check_pin(attrs['pin'])]

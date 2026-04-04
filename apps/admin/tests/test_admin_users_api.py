@@ -68,8 +68,6 @@ class AdminUsersApiTests(APITestCase):
             full_name='Users Admin',
             restaurant=cls.restaurant,
             role=cls.restaurant_admin_role,
-            actor_type=User.ActorType.RESTAURANT_ADMIN,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -174,9 +172,9 @@ class AdminUsersApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         employee = User.objects.get(pk=response.data['id'])
-        self.assertEqual(employee.employee_compensation_profile.salary_type, 'monthly')
-        self.assertEqual(float(employee.employee_compensation_profile.base_amount), 0.0)
-        self.assertIsNone(employee.employee_compensation_profile.kpi_percent)
+        self.assertEqual(employee.employee_profile.salary_type, 'monthly')
+        self.assertEqual(float(employee.employee_profile.base_amount), 0.0)
+        self.assertIsNone(employee.employee_profile.kpi_percent)
 
     def test_employee_create_accepts_independent_kpi_percent(self):
         response = self.client.post(
@@ -197,7 +195,7 @@ class AdminUsersApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         employee = User.objects.get(pk=response.data['id'])
-        self.assertEqual(employee.employee_compensation_profile.kpi_percent, 15)
+        self.assertEqual(employee.employee_profile.kpi_percent, 15)
 
     def test_employee_create_rejects_negative_kpi_percent(self):
         response = self.client.post(
@@ -237,3 +235,4 @@ class AdminUsersApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('baseAmount', response.data)
+

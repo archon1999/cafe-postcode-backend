@@ -26,7 +26,7 @@ class AdminLoginView(AdminAllowAnyMixin, APIView):
             logger.warning('Admin login failed', extra={'ui_channel': 'admin', 'client_ip': request.META.get('REMOTE_ADDR')})
             raise
         user = serializer.validated_data['user']
-        token, session = self.auth_session_service_class().issue(user=user, ui_channel='admin', request=request)
+        token, session = self.auth_session_service_class().issue(user=user, request=request)
         return Response({'token': token.key, 'user': SessionUserSerializer(user).data, 'session': AuthSessionSerializer(session).data})
 
 

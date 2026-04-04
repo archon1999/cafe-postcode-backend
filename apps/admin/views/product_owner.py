@@ -77,20 +77,16 @@ class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
                 username=username,
                 full_name=partner.company_name,
                 phone=partner.phone,
-                ui_mode=User.UiMode.ADMIN,
-                actor_type=User.ActorType.BUSINESS_PARTNER,
-                business_partner=partner,
                 role=get_business_partner_role(),
                 is_active=True,
+                is_staff=True,
             )
             partner.owner_user = user
         else:
             user.username = username
-            user.business_partner = partner
             user.role = get_business_partner_role()
-            user.actor_type = User.ActorType.BUSINESS_PARTNER
-            user.ui_mode = User.UiMode.ADMIN
             user.is_active = True
+            user.is_staff = True
 
         user.set_password(password)
         user.save()

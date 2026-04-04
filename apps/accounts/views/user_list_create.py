@@ -13,8 +13,8 @@ class UserListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         return (
-            User.objects.filter(restaurant=restaurant)
-            .select_related('role', 'restaurant', 'restaurant_profile', 'restaurant_profile__primary_hall')
+            User.objects.filter(restaurant_profile__restaurant=restaurant)
+            .select_related('role', 'restaurant_profile', 'restaurant_profile__primary_hall')
             .prefetch_related('restaurant_profile__allowed_halls')
         )
 

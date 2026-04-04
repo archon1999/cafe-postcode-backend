@@ -4,13 +4,13 @@ from django.apps import apps as django_apps
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounts.models import BusinessPartnerUserProfile, RestaurantUserProfile, Role, User
+from apps.accounts.models import RestaurantProfile, Role, User
 from apps.accounts.signals.seed_default_roles import seed_default_roles_signal
 from apps.admin.support.business_partner import (
     generate_password,
     generate_unique_username,
     get_business_partner_role,
-    get_restaurant_admin_role_for_tariff,
+    get_restaurant_admin_role_for_source,
     normalize_username_base,
 )
 from apps.catalog.models import CatalogCategory, CatalogItem
@@ -70,17 +70,14 @@ def seed_top_level_users(roles_by_code: dict[str, Role]) -> dict[str, User]:
         username=TOP_LEVEL_USERS['superadmin']['username'],
         defaults={
             'full_name': TOP_LEVEL_USERS['superadmin']['full_name'],
-            'ui_mode': User.UiMode.ADMIN,
             'is_staff': True,
             'is_superuser': True,
         },
     )
     admin_user.full_name = TOP_LEVEL_USERS['superadmin']['full_name']
-    admin_user.ui_mode = User.UiMode.ADMIN
     admin_user.is_staff = True
     admin_user.is_superuser = True
     admin_user.role = None
-    admin_user.actor_type = User.ActorType.PRODUCT_OWNER
     admin_user.set_password(TOP_LEVEL_USERS['superadmin']['password'])
     admin_user.save()
 
@@ -88,18 +85,14 @@ def seed_top_level_users(roles_by_code: dict[str, Role]) -> dict[str, User]:
         username=TOP_LEVEL_USERS['product_owner']['username'],
         defaults={
             'full_name': TOP_LEVEL_USERS['product_owner']['full_name'],
-            'ui_mode': User.UiMode.ADMIN,
             'is_staff': True,
             'role': roles_by_code['product_owner'],
-            'actor_type': User.ActorType.PRODUCT_OWNER,
         },
     )
     product_owner_user.full_name = TOP_LEVEL_USERS['product_owner']['full_name']
-    product_owner_user.ui_mode = User.UiMode.ADMIN
     product_owner_user.is_staff = True
     product_owner_user.is_superuser = False
     product_owner_user.role = roles_by_code['product_owner']
-    product_owner_user.actor_type = User.ActorType.PRODUCT_OWNER
     product_owner_user.set_password(TOP_LEVEL_USERS['product_owner']['password'])
     product_owner_user.save()
 
@@ -179,9 +172,6 @@ def activate_business_partner_user(partner: BusinessPartner) -> GeneratedCredent
             username=username,
             full_name=partner.company_name,
             phone=partner.phone,
-            ui_mode=User.UiMode.ADMIN,
-            actor_type=User.ActorType.BUSINESS_PARTNER,
-            business_partner=partner,
             role=get_business_partner_role(),
             is_active=True,
             is_staff=True,
@@ -190,20 +180,12 @@ def activate_business_partner_user(partner: BusinessPartner) -> GeneratedCredent
         user.username = username
         user.full_name = partner.company_name
         user.phone = partner.phone
-        user.ui_mode = User.UiMode.ADMIN
-        user.actor_type = User.ActorType.BUSINESS_PARTNER
-        user.business_partner = partner
         user.role = get_business_partner_role()
         user.is_active = True
         user.is_staff = True
 
     user.set_password(password)
     user.save()
-
-    BusinessPartnerUserProfile.objects.update_or_create(
-        user=user,
-        defaults={'business_partner': partner},
-    )
     partner.owner_user = user
     partner.activated_at = timezone.now()
     partner.deactivated_at = None
@@ -214,7 +196,7 @@ def activate_business_partner_user(partner: BusinessPartner) -> GeneratedCredent
 
 def reset_restaurant_seed(restaurant: Restaurant) -> None:
     user_ids = list(
-        User.objects.filter(Q(restaurant=restaurant) | Q(restaurant_profile__restaurant=restaurant))
+        User.objects.filter(restaurant_profile__restaurant=restaurant)
         .distinct()
         .values_list('id', flat=True)
     )
@@ -294,21 +276,21 @@ def configure_feature_config(restaurant: Restaurant, spec, tariff: Tariff) -> Fe
 
 def activate_restaurant_admin_user(restaurant: Restaurant, tariff: Tariff) -> GeneratedCredentials:
     password = generate_password()
-    admin_user = restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).order_by('created_at').first()
+    admin_user = User.objects.filter(
+        restaurant_profile__restaurant=restaurant,
+        role__code__in=('restaurant_admin', 'fast_food_admin'),
+    ).order_by('created_at').first()
     admin_username = generate_unique_username(
         f"admin-{normalize_username_base(restaurant.name, 'restaurant')}",
         exclude_user=admin_user,
     )
-    admin_role = get_restaurant_admin_role_for_tariff(tariff)
+    admin_role = get_restaurant_admin_role_for_source(tariff)
 
     if admin_user is None:
         admin_user = User.objects.create(
             username=admin_username,
             full_name=f'{restaurant.name} Admin',
             phone=restaurant.phone,
-            ui_mode=User.UiMode.ADMIN,
-            actor_type=User.ActorType.RESTAURANT_ADMIN,
-            restaurant=restaurant,
             role=admin_role,
             is_active=True,
             is_staff=True,
@@ -317,15 +299,16 @@ def activate_restaurant_admin_user(restaurant: Restaurant, tariff: Tariff) -> Ge
         admin_user.username = admin_username
         admin_user.full_name = f'{restaurant.name} Admin'
         admin_user.phone = restaurant.phone
-        admin_user.ui_mode = User.UiMode.ADMIN
-        admin_user.actor_type = User.ActorType.RESTAURANT_ADMIN
-        admin_user.restaurant = restaurant
         admin_user.role = admin_role
         admin_user.is_active = True
         admin_user.is_staff = True
 
     admin_user.set_password(password)
     admin_user.save()
+    RestaurantProfile.objects.update_or_create(
+        user=admin_user,
+        defaults={'restaurant': restaurant},
+    )
     return GeneratedCredentials(username=admin_user.username, password=password)
 
 
@@ -396,7 +379,7 @@ def attach_restaurant_profile(
     allowed_halls=None,
     pin: str | None = None,
 ) -> None:
-    profile, _ = RestaurantUserProfile.objects.update_or_create(
+    profile, _ = RestaurantProfile.objects.update_or_create(
         user=user,
         defaults={
             'restaurant': restaurant,
@@ -528,21 +511,15 @@ def seed_staff(restaurant: Restaurant, restaurant_key: str, roles_by_code: dict[
             username=spec.username,
             defaults={
                 'full_name': spec.full_name,
-                'restaurant': restaurant,
                 'role': roles_by_code[spec.role_code],
-                'ui_mode': spec.ui_mode,
-                'actor_type': User.ActorType.RESTAURANT_STAFF,
                 'is_active': True,
             },
         )
         user.full_name = spec.full_name
-        user.restaurant = restaurant
         user.phone = restaurant.phone
         user.role = roles_by_code[spec.role_code]
-        user.ui_mode = spec.ui_mode
-        user.actor_type = User.ActorType.RESTAURANT_STAFF
         user.is_active = True
-        user.is_staff = spec.ui_mode == User.UiMode.ADMIN
+        user.is_staff = spec.surface == 'admin'
 
         if spec.password:
             user.set_password(spec.password)

@@ -52,7 +52,6 @@ class OpenCheckListApiTests(APITestCase):
             full_name='Open Checks Cashier',
             restaurant=cls.restaurant,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
@@ -177,3 +176,4 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(payload['service_fee'], 3000)
         self.assertEqual(payload['service_fee_percent'], 10)
         self.assertEqual(payload['total'], 33000)
+

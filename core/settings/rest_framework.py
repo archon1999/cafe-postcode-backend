@@ -30,6 +30,5 @@ REST_FRAMEWORK = {
         'login': '10/min',
         'pin_login': '20/min',
         'submit': '10/min',
-        'onetoone': '1/min',
     }
 }

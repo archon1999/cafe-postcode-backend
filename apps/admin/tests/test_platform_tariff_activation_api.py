@@ -20,8 +20,6 @@ class PlatformTariffActivationApiTests(APITestCase):
             password='secret123',
             full_name='Platform Owner',
             role=cls.product_owner_role,
-            actor_type=User.ActorType.PRODUCT_OWNER,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -37,9 +35,7 @@ class PlatformTariffActivationApiTests(APITestCase):
             password='secret123',
             full_name='Partner Owner',
             role=cls.business_partner_role,
-            actor_type=User.ActorType.BUSINESS_PARTNER,
             business_partner=cls.partner,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -234,3 +230,4 @@ class PlatformTariffActivationApiTests(APITestCase):
         admin_user = User.objects.get(username=response.data['username'])
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
         self.assertEqual(set(self.restaurant.feature_config.enabled_roles), {'fast_food_admin', 'fast_food_cashier'})
+

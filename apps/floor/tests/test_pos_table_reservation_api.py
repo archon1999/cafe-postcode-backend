@@ -31,7 +31,6 @@ class PosTableReservationApiTests(PosAPITestCase):
             full_name='Reservation User',
             restaurant=cls.restaurant,
             role=cls.reservation_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
         cls.table_manager_user = User.objects.create_user(
@@ -40,7 +39,6 @@ class PosTableReservationApiTests(PosAPITestCase):
             full_name='Table Manager User',
             restaurant=cls.restaurant,
             role=cls.table_manager_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
 
@@ -78,3 +76,4 @@ class PosTableReservationApiTests(PosAPITestCase):
         self.assertEqual(success_response.status_code, status.HTTP_201_CREATED, success_response.data)
         self.table.refresh_from_db()
         self.assertEqual(self.table.status, DiningTable.Status.OCCUPIED)
+

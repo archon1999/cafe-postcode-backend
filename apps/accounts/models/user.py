@@ -1,58 +1,72 @@
+from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
 
+from apps.accounts.permission_registry import ADMIN_UI_PERMISSION_CODES, POS_UI_PERMISSION_CODES
 from common.models import BaseModel
 
-from apps.accounts.permission_registry import ADMIN_UI_PERMISSION_CODES, POS_UI_PERMISSION_CODES
-
 from .permission import Permission
-from .user_manager import UserManager
+
+
+class UserManager(BaseUserManager):
+    use_in_migrations = True
+
+    def _create_user(self, username, password=None, **extra_fields):
+        if not username:
+            raise ValueError('The given username must be set')
+
+        restaurant = extra_fields.pop('restaurant', None)
+        business_partner = extra_fields.pop('business_partner', None)
+
+        user = self.model(username=username, **extra_fields)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+        user.save(using=self._db)
+
+        if restaurant is not None:
+            from apps.accounts.models.restaurant_profile import RestaurantProfile
+
+            RestaurantProfile.objects.update_or_create(
+                user=user,
+                defaults={'restaurant': restaurant},
+            )
+
+        if business_partner is not None:
+            business_partner.owner_user = user
+            business_partner.save(update_fields=['owner_user', 'updated_at'])
+
+        return user
+
+    def create_user(self, username, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        return self._create_user(username, password, **extra_fields)
+
+    def create_superuser(self, username, password=None, **extra_fields):
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+
+        return self._create_user(username, password, **extra_fields)
 
 
 class User(AbstractBaseUser, PermissionsMixin, BaseModel):
-    class ActorType(models.TextChoices):
-        PRODUCT_OWNER = 'product_owner', 'Product owner'
-        BUSINESS_PARTNER = 'business_partner', 'Business partner'
-        RESTAURANT_ADMIN = 'restaurant_admin', 'Restaurant admin'
-        RESTAURANT_STAFF = 'restaurant_staff', 'Restaurant staff'
-
-    class UiMode(models.TextChoices):
-        ADMIN = 'admin', 'Admin'
-        POS = 'pos', 'POS'
-
-    restaurant = models.ForeignKey(
-        'organizations.Restaurant',
-        on_delete=models.CASCADE,
-        related_name='users',
-        null=True,
-        blank=True,
-    )
-    business_partner = models.ForeignKey(
-        'organizations.BusinessPartner',
-        on_delete=models.SET_NULL,
-        related_name='users',
-        null=True,
-        blank=True,
-    )
     role = models.ForeignKey('accounts.Role', on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     username = models.CharField(max_length=150, unique=True)
     full_name = models.CharField(max_length=255)
     phone = models.CharField(max_length=30, blank=True, default='')
     pin_code = models.CharField(max_length=128, blank=True, default='')
-    actor_type = models.CharField(max_length=30, choices=ActorType.choices, default=ActorType.RESTAURANT_STAFF)
-    ui_mode = models.CharField(max_length=20, choices=UiMode.choices, default=UiMode.POS)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
-    hall_switch_permission = models.BooleanField(default=False)
-    primary_hall = models.ForeignKey(
-        'floor.Hall',
-        on_delete=models.SET_NULL,
-        related_name='primary_users',
-        null=True,
-        blank=True,
-    )
-    allowed_halls = models.ManyToManyField('floor.Hall', blank=True, related_name='allowed_users')
 
     USERNAME_FIELD = 'username'
     REQUIRED_FIELDS = ['full_name']
@@ -65,34 +79,38 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def __str__(self):
         return self.username
 
-    def get_restaurant_profile(self):
-        return getattr(self, 'restaurant_profile', None)
+    def _get_optional_relation(self, relation_name: str):
+        try:
+            return getattr(self, relation_name)
+        except ObjectDoesNotExist:
+            return None
 
-    def get_business_partner_profile(self):
-        return getattr(self, 'business_partner_user_profile', None)
+    @property
+    def role_code(self) -> str | None:
+        return getattr(self.role, 'code', None)
 
     def get_restaurant_scope(self):
-        profile = self.get_restaurant_profile()
+        profile = self._get_optional_relation('restaurant_profile')
         if profile and profile.restaurant_id:
             return profile.restaurant
-        return self.restaurant
+        return None
 
     def get_business_partner_scope(self):
-        profile = self.get_business_partner_profile()
-        if profile and profile.business_partner_id:
-            return profile.business_partner
-        return self.business_partner
+        business_partner = self._get_optional_relation('business_partner_profile')
+        if business_partner and business_partner.pk:
+            return business_partner
+        return None
 
     def set_pin(self, raw_pin: str):
         hashed_pin = make_password(raw_pin)
         self.pin_code = hashed_pin
-        profile = self.get_restaurant_profile()
+        profile = self._get_optional_relation('restaurant_profile')
         if profile is not None:
             profile.pin_code = hashed_pin
             profile.save(update_fields=['pin_code'])
 
     def check_pin(self, raw_pin: str) -> bool:
-        profile = self.get_restaurant_profile()
+        profile = self._get_optional_relation('restaurant_profile')
         if profile is not None and profile.pin_code and check_password(raw_pin, profile.pin_code):
             return True
         if not self.pin_code:
@@ -119,11 +137,6 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
         return sorted(role_permission_codes)
 
-    def has_permission_code(self, code: str) -> bool:
-        if self.is_superuser:
-            return True
-        return code in self.permission_codes
-
     @property
     def restaurant_access_active(self) -> bool:
         if self.is_superuser:
@@ -143,10 +156,10 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def can_access_admin_ui(self) -> bool:
         if self.is_superuser:
             return True
-        return bool(self.ui_mode == self.UiMode.ADMIN and set(self.permission_codes) & ADMIN_UI_PERMISSION_CODES)
+        return bool(set(self.permission_codes) & ADMIN_UI_PERMISSION_CODES)
 
     @property
     def can_access_pos_ui(self) -> bool:
         if self.is_superuser:
             return True
-        return bool(self.ui_mode == self.UiMode.POS and self.get_restaurant_scope() and set(self.permission_codes) & POS_UI_PERMISSION_CODES)
+        return bool(self.get_restaurant_scope() and set(self.permission_codes) & POS_UI_PERMISSION_CODES)

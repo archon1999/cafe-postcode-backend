@@ -34,7 +34,7 @@ class PermissionOptionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        if getattr(self.request.user, 'actor_type', None) == self.request.user.ActorType.BUSINESS_PARTNER:
+        if self.request.user.get_business_partner_scope() is not None and not self.request.user.is_superuser:
             return activation_permission_queryset()
         return Permission.objects.order_by('code').all()
 
@@ -43,7 +43,7 @@ class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
     serializer_class = RoleSerializer
 
     def get_queryset(self):
-        if getattr(self.request.user, 'actor_type', None) == self.request.user.ActorType.BUSINESS_PARTNER:
+        if self.request.user.get_business_partner_scope() is not None and not self.request.user.is_superuser:
             queryset = activation_role_queryset()
             return RoleListFilters.from_request(self.request).apply(queryset)
         queryset = scoped_role_queryset(self.request)

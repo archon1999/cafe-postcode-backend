@@ -1,13 +1,13 @@
+from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from django.utils.text import slugify
 from rest_framework import serializers
 
 from apps.accounts.models import (
-    EmployeeCompensationProfile,
     EmployeeProfile,
     Permission,
-    RestaurantUserProfile,
+    RestaurantProfile,
     Role,
     User,
 )
@@ -15,6 +15,14 @@ from apps.admin.support.users import role_has_pos_permissions
 from apps.floor.models import Hall
 from common.api.scopes import get_optional_request_restaurant
 
+
+def get_optional_restaurant_profile(instance):
+    if instance is None:
+        return None
+    try:
+        return instance.restaurant_profile
+    except ObjectDoesNotExist:
+        return None
 
 
 class PermissionSerializer(serializers.ModelSerializer):
@@ -115,7 +123,7 @@ class UserSerializer(serializers.ModelSerializer):
         write_only=True,
     )
     salary_type = serializers.ChoiceField(
-        choices=EmployeeCompensationProfile.SalaryType.choices,
+        choices=EmployeeProfile.SalaryType.choices,
         required=False,
         allow_blank=True,
         write_only=True,
@@ -211,15 +219,16 @@ class UserSerializer(serializers.ModelSerializer):
         restaurant = self._get_target_restaurant()
         role = attrs.get('role', getattr(self.instance, 'role', None))
         restaurant_profile_data = attrs.get('restaurant_profile', {}) or {}
+        current_restaurant_profile = get_optional_restaurant_profile(self.instance)
         primary_hall = restaurant_profile_data.get(
             'primary_hall',
-            getattr(getattr(self.instance, 'restaurant_profile', None), 'primary_hall', None),
+            getattr(current_restaurant_profile, 'primary_hall', None),
         )
 
         if 'allowed_halls' in restaurant_profile_data:
             allowed_halls = list(restaurant_profile_data['allowed_halls'])
-        elif getattr(self.instance, 'restaurant_profile', None):
-            allowed_halls = list(self.instance.restaurant_profile.allowed_halls.all())
+        elif current_restaurant_profile is not None:
+            allowed_halls = list(current_restaurant_profile.allowed_halls.all())
         else:
             allowed_halls = []
 
@@ -269,16 +278,15 @@ class UserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         profile = getattr(instance, 'employee_profile', None)
-        compensation = getattr(instance, 'employee_compensation_profile', None)
-        restaurant_profile = getattr(instance, 'restaurant_profile', None)
+        restaurant_profile = get_optional_restaurant_profile(instance)
 
         data['passport_series'] = profile.passport_series if profile else ''
         data['pnfl'] = profile.pnfl if profile else ''
         data['birth_date'] = profile.birth_date.isoformat() if profile and profile.birth_date else None
         data['employment_status'] = profile.employment_status if profile else EmployeeProfile.EmploymentStatus.ACTIVE
-        data['salary_type'] = compensation.salary_type if compensation and compensation.salary_type else None
-        data['base_amount'] = float(compensation.base_amount) if compensation and compensation.base_amount is not None else None
-        data['kpi_percent'] = compensation.kpi_percent if compensation else None
+        data['salary_type'] = profile.salary_type if profile and profile.salary_type else None
+        data['base_amount'] = float(profile.base_amount) if profile and profile.base_amount is not None else None
+        data['kpi_percent'] = profile.kpi_percent if profile else None
         data['primary_hall_id'] = getattr(restaurant_profile, 'primary_hall_id', None)
         data['allowed_hall_ids'] = (
             list(restaurant_profile.allowed_halls.values_list('id', flat=True)) if restaurant_profile else []
@@ -291,14 +299,6 @@ class UserSerializer(serializers.ModelSerializer):
         return {
             key: validated_data.pop(key)
             for key in ('passport_series', 'pnfl', 'birth_date', 'employment_status')
-            if key in validated_data
-        }
-
-    @staticmethod
-    def _extract_compensation_data(validated_data):
-        return {
-            key: validated_data.pop(key)
-            for key in ('salary_type', 'base_amount', 'kpi_percent')
             if key in validated_data
         }
 
@@ -322,10 +322,10 @@ class UserSerializer(serializers.ModelSerializer):
         validated_data['is_active'] = profile_data['employment_status'] == EmployeeProfile.EmploymentStatus.ACTIVE
 
     @staticmethod
-    def _validate_compensation_data(compensation_data):
-        salary_type = compensation_data.get('salary_type') or ''
-        base_amount = compensation_data.get('base_amount')
-        kpi_percent = compensation_data.get('kpi_percent')
+    def _validate_compensation_data(profile_data):
+        salary_type = profile_data.get('salary_type') or ''
+        base_amount = profile_data.get('base_amount')
+        kpi_percent = profile_data.get('kpi_percent')
 
         if salary_type and base_amount is None:
             raise serializers.ValidationError({'baseAmount': _('Base amount is required for the selected salary type.')})
@@ -341,19 +341,12 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(profile, attr, value)
         profile.save()
 
-    @staticmethod
-    def _save_compensation(instance, compensation_data):
-        profile, _ = EmployeeCompensationProfile.objects.get_or_create(user=instance)
-        for attr, value in compensation_data.items():
-            setattr(profile, attr, value)
-        profile.save()
-
     def _save_restaurant_profile(self, instance, restaurant_profile_data, pin):
-        restaurant = instance.get_restaurant_scope()
+        restaurant = restaurant_profile_data.pop('restaurant', None) or instance.get_restaurant_scope()
         if restaurant is None:
             return None
 
-        restaurant_profile, _ = RestaurantUserProfile.objects.get_or_create(
+        restaurant_profile, _ = RestaurantProfile.objects.get_or_create(
             user=instance,
             defaults={'restaurant': restaurant},
         )
@@ -377,17 +370,24 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         restaurant_profile_data = validated_data.pop('restaurant_profile', {})
+        restaurant = validated_data.pop('restaurant', None)
         profile_data = self._extract_profile_data(validated_data)
-        compensation_data = self._extract_compensation_data(validated_data)
+        profile_data.update(
+            {
+                key: validated_data.pop(key)
+                for key in ('salary_type', 'base_amount', 'kpi_percent')
+                if key in validated_data
+            }
+        )
         self._normalize_profile_status(validated_data, profile_data)
-        self._validate_compensation_data(compensation_data)
+        self._validate_compensation_data(profile_data)
 
         request = self.context.get('request')
         password = request.data.get('password') if request else None
         pin = request.data.get('pin') if request else None
-        restaurant = self._get_target_restaurant() if self.user_surface == 'employee' else None
+        restaurant = restaurant or (self._get_target_restaurant() if self.user_surface == 'employee' else None)
         if restaurant is not None:
-            validated_data['restaurant'] = restaurant
+            restaurant_profile_data['restaurant'] = restaurant
         if self.user_surface == 'employee':
             validated_data['username'] = self._generate_internal_username(
                 validated_data.get('full_name', ''),
@@ -405,21 +405,29 @@ class UserSerializer(serializers.ModelSerializer):
 
         self._save_restaurant_profile(user, restaurant_profile_data, pin)
         self._save_profile(user, profile_data)
-        self._save_compensation(user, compensation_data)
         user.refresh_from_db()
         return user
 
     def update(self, instance, validated_data):
         restaurant_profile_data = validated_data.pop('restaurant_profile', {})
+        restaurant = validated_data.pop('restaurant', None)
+        if restaurant is not None:
+            restaurant_profile_data['restaurant'] = restaurant
         profile_data = self._extract_profile_data(validated_data)
-        compensation_data = self._extract_compensation_data(validated_data)
+        profile_data.update(
+            {
+                key: validated_data.pop(key)
+                for key in ('salary_type', 'base_amount', 'kpi_percent')
+                if key in validated_data
+            }
+        )
         current_status = getattr(
             getattr(instance, 'employee_profile', None),
             'employment_status',
             EmployeeProfile.EmploymentStatus.ACTIVE,
         )
         self._normalize_profile_status(validated_data, profile_data, current_status=current_status)
-        self._validate_compensation_data(compensation_data)
+        self._validate_compensation_data(profile_data)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -437,7 +445,6 @@ class UserSerializer(serializers.ModelSerializer):
 
         self._save_restaurant_profile(instance, restaurant_profile_data, pin)
         self._save_profile(instance, profile_data)
-        self._save_compensation(instance, compensation_data)
         instance.refresh_from_db()
         return instance
 

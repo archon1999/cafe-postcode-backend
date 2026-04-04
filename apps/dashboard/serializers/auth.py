@@ -52,7 +52,7 @@ class OwnerDashboardLoginSerializer(serializers.Serializer):
             attrs['user'] = user
             return attrs
 
-        if 'dashboard.view' not in set(user.get_effective_permission_codes()):
+        if 'dashboard.view' not in set(user.permission_codes):
             raise serializers.ValidationError(_('Only users with dashboard access can open the owner dashboard.'))
 
         attrs['user'] = user

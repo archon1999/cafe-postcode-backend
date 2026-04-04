@@ -69,7 +69,6 @@ class PosTestDataMixin:
             full_name='POS Test User',
             restaurant=cls.restaurant,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
         cls.zone = ZoneOrCabin.objects.create(
@@ -224,3 +223,4 @@ class PosAPITestCase(PosTestDataMixin, APITestCase):
         response = self.client.post(f'/api/v1/pos/receipts/{receipt_id}/reprint/', {}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
         return response.data
+

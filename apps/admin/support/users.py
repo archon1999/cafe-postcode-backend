@@ -34,12 +34,10 @@ def employee_user_queryset(request) -> QuerySet[User]:
     return (
         User.objects.select_related(
             'role',
-            'restaurant',
             'restaurant_profile__restaurant',
             'restaurant_profile__primary_hall',
-            'business_partner_user_profile__business_partner',
+            'business_partner_profile',
             'employee_profile',
-            'employee_compensation_profile',
         )
         .prefetch_related('restaurant_profile__allowed_halls')
         .filter(restaurant_profile__restaurant=restaurant)
@@ -53,12 +51,10 @@ def system_user_queryset(_request) -> QuerySet[User]:
     return (
         User.objects.select_related(
             'role',
-            'restaurant',
             'restaurant_profile__restaurant',
             'restaurant_profile__primary_hall',
-            'business_partner_user_profile__business_partner',
+            'business_partner_profile',
             'employee_profile',
-            'employee_compensation_profile',
         )
         .prefetch_related('restaurant_profile__allowed_halls')
         .exclude(Q(password__startswith='!') | Q(restaurant_profile__pin_code__gt=''))
@@ -79,19 +75,17 @@ PERMISSION_ORDERING_FIELDS = {
 def admin_user_queryset(request) -> QuerySet[User]:
     queryset = User.objects.select_related(
         'role',
-        'restaurant',
         'restaurant_profile__restaurant',
         'restaurant_profile__primary_hall',
-        'business_partner_user_profile__business_partner',
+        'business_partner_profile',
         'employee_profile',
-        'employee_compensation_profile',
     ).prefetch_related('restaurant_profile__allowed_halls')
     restaurant = get_optional_request_restaurant(request)
     if restaurant is None and getattr(request.user, 'is_authenticated', False):
         restaurant = request.user.get_restaurant_scope()
     if restaurant is None:
         return queryset
-    return queryset.filter(Q(restaurant_profile__restaurant=restaurant) | Q(restaurant=restaurant)).distinct()
+    return queryset.filter(restaurant_profile__restaurant=restaurant).distinct()
 
 
 def scoped_role_queryset(request) -> QuerySet[Role]:

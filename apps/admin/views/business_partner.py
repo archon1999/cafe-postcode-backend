@@ -3,7 +3,7 @@ from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import User
+from apps.accounts.models import RestaurantProfile, User
 from apps.admin.permissions import AdminPermissionRequiredMixin
 from apps.admin.serializers import (
     RestaurantActivationOptionsSerializer,
@@ -25,7 +25,7 @@ from apps.admin.support.business_partner import (
 
 def get_restaurants_queryset_for_request(request):
     queryset = Restaurant.objects.prefetch_related('feature_config').select_related('business_partner').order_by('name')
-    if request.user.is_superuser or request.user.actor_type == request.user.ActorType.PRODUCT_OWNER:
+    if request.user.is_superuser or request.user.role_code == 'product_owner':
         return queryset
 
     business_partner = request.user.get_business_partner_scope()
@@ -76,7 +76,10 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
             entitlement.permissions.set(permissions)
 
         password = generate_password()
-        admin_user = restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).order_by('created_at').first()
+        admin_user = User.objects.filter(
+            restaurant_profile__restaurant=restaurant,
+            role__code__in=('restaurant_admin', 'fast_food_admin'),
+        ).order_by('created_at').first()
         admin_username = generate_unique_username(
             f"admin-{normalize_username_base(restaurant.name, 'restaurant')}",
             exclude_user=admin_user,
@@ -87,22 +90,22 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
                 username=admin_username,
                 full_name=f'{restaurant.name} Admin',
                 phone=restaurant.phone,
-                ui_mode=User.UiMode.ADMIN,
-                actor_type=User.ActorType.RESTAURANT_ADMIN,
-                restaurant=restaurant,
                 role=admin_role,
                 is_active=True,
+                is_staff=True,
             )
         else:
             admin_user.username = admin_username
             admin_user.role = admin_role
-            admin_user.actor_type = User.ActorType.RESTAURANT_ADMIN
-            admin_user.restaurant = restaurant
-            admin_user.ui_mode = User.UiMode.ADMIN
             admin_user.is_active = True
+            admin_user.is_staff = True
 
         admin_user.set_password(password)
         admin_user.save()
+        RestaurantProfile.objects.update_or_create(
+            user=admin_user,
+            defaults={'restaurant': restaurant},
+        )
 
         restaurant.is_active = True
         restaurant.activated_at = timezone.now()
@@ -145,7 +148,10 @@ class RestaurantResetPasswordView(AdminPermissionRequiredMixin, APIView):
 
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
-        admin_user = restaurant.users.filter(actor_type=User.ActorType.RESTAURANT_ADMIN).order_by('created_at').first()
+        admin_user = User.objects.filter(
+            restaurant_profile__restaurant=restaurant,
+            role__code__in=('restaurant_admin', 'fast_food_admin'),
+        ).order_by('created_at').first()
         if admin_user is None:
             raise serializers.ValidationError({'detail': 'Restaurant admin user was not found.'})
         password = generate_password()

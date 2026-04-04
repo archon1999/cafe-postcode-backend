@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BusinessPartnerUserProfile, Permission, PermissionEndpoint, RestaurantUserProfile, Role, User
+from .models import Permission, PermissionEndpoint, RestaurantProfile, Role, User
 
 
 @admin.register(Permission)
@@ -31,14 +31,8 @@ class UserAdmin(admin.ModelAdmin):
     filter_horizontal = ('groups', 'user_permissions')
 
 
-@admin.register(RestaurantUserProfile)
-class RestaurantUserProfileAdmin(admin.ModelAdmin):
+@admin.register(RestaurantProfile)
+class RestaurantProfileAdmin(admin.ModelAdmin):
     list_display = ('user', 'restaurant', 'primary_hall', 'hall_switch_permission')
     search_fields = ('user__username', 'restaurant__name')
     filter_horizontal = ('allowed_halls',)
-
-
-@admin.register(BusinessPartnerUserProfile)
-class BusinessPartnerUserProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'business_partner')
-    search_fields = ('user__username', 'business_partner__company_name', 'business_partner__inn')

@@ -49,7 +49,6 @@ class PaymentCreateApiTests(APITestCase):
             full_name='Payments Cashier',
             restaurant=cls.restaurant,
             role=cls.role,
-            ui_mode=User.UiMode.POS,
         )
         cls.category = CatalogCategory.objects.create(
             restaurant=cls.restaurant,
@@ -146,3 +145,4 @@ class PaymentCreateApiTests(APITestCase):
 
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', second_response.data)
+

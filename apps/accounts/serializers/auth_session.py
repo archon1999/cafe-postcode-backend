@@ -8,7 +8,6 @@ class AuthSessionSerializer(serializers.ModelSerializer):
         model = AuthSession
         fields = (
             'id',
-            'ui_channel',
             'status',
             'client_ip',
             'user_agent',

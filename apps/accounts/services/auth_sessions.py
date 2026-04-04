@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 
 class AuthSessionService:
-    def issue(self, *, user, ui_channel: str, request):
+    def issue(self, *, user, request):
         token, _ = Token.objects.get_or_create(user=user)
-        session = self._upsert_session(user=user, token_key=token.key, ui_channel=ui_channel, request=request)
+        session = self._upsert_session(user=user, token_key=token.key, request=request)
         logger.info(
             'Authentication session issued',
-            extra={'user_id': str(user.pk), 'ui_channel': ui_channel, 'session_id': str(session.pk)},
+            extra={'user_id': str(user.pk), 'session_id': str(session.pk)},
         )
         return token, session
 
@@ -38,19 +38,18 @@ class AuthSessionService:
             session.save(update_fields=['status', 'revoked_at', 'last_seen_at', 'updated_at'])
             logger.info(
                 'Authentication session revoked',
-                extra={'user_id': str(session.user_id), 'session_id': str(session.pk), 'ui_channel': session.ui_channel},
+                extra={'user_id': str(session.user_id), 'session_id': str(session.pk)},
             )
 
         token.delete()
         return session
 
-    def _upsert_session(self, *, user, token_key: str, ui_channel: str, request):
+    def _upsert_session(self, *, user, token_key: str, request):
         now = timezone.now()
         session, _ = AuthSession.objects.update_or_create(
             token_key_hash=AuthSession.build_token_key_hash(token_key),
             defaults={
                 'user': user,
-                'ui_channel': ui_channel,
                 'client_ip': self._get_client_ip(request),
                 'user_agent': request.headers.get('User-Agent', '')[:255],
                 'status': AuthSession.Status.ACTIVE,

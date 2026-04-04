@@ -46,7 +46,6 @@ class DashboardAuthApiTests(APITestCase):
             full_name="Owner User",
             restaurant=cls.restaurant,
             role=cls.owner_role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -56,7 +55,6 @@ class DashboardAuthApiTests(APITestCase):
             full_name="Staff User",
             restaurant=cls.restaurant,
             role=cls.staff_role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -85,3 +83,4 @@ class DashboardAuthApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
+

@@ -79,8 +79,6 @@ class AdminApiTests(APITestCase):
             full_name='Admin User',
             restaurant=cls.restaurant,
             role=cls.admin_role,
-            actor_type=User.ActorType.RESTAURANT_ADMIN,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
         )
 
@@ -107,8 +105,6 @@ class AdminApiTests(APITestCase):
             full_name='Limited User',
             restaurant=cls.restaurant,
             role=cls.limited_role,
-            actor_type=User.ActorType.RESTAURANT_ADMIN,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
         )
 
@@ -127,8 +123,6 @@ class AdminApiTests(APITestCase):
             full_name=username,
             restaurant=self.restaurant,
             role=role,
-            actor_type=User.ActorType.RESTAURANT_ADMIN,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
         )
 
@@ -800,7 +794,6 @@ class AdminApiTests(APITestCase):
             {
                 'username': 'pin-error-user',
                 'full_name': 'Pin Error User',
-                'ui_mode': User.UiMode.POS,
                 'is_active': True,
                 'role_id': str(self.admin_role.id),
                 'pin': 123456,
@@ -925,3 +918,4 @@ class AdminApiTests(APITestCase):
         partner.refresh_from_db()
         self.assertEqual(partner.company_name, 'Acme Updated')
         self.assertEqual(partner.faktura_payload['CompanyName'], 'Acme')
+

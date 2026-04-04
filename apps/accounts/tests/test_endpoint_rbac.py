@@ -70,7 +70,6 @@ class EndpointRBACApiTests(APITestCase):
             full_name="Hall User",
             restaurant=cls.restaurant,
             role=cls.hall_list_role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -80,7 +79,6 @@ class EndpointRBACApiTests(APITestCase):
             full_name="Dashboard User",
             restaurant=cls.restaurant,
             role=cls.dashboard_role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -90,7 +88,6 @@ class EndpointRBACApiTests(APITestCase):
             full_name="POS Hall User",
             restaurant=cls.restaurant,
             role=cls.pos_hall_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
             is_active=True,
         )
@@ -100,7 +97,6 @@ class EndpointRBACApiTests(APITestCase):
             full_name="No Access User",
             restaurant=cls.restaurant,
             role=cls.no_access_role,
-            ui_mode=User.UiMode.ADMIN,
             is_staff=True,
             is_active=True,
         )
@@ -391,3 +387,4 @@ class EndpointRBACPermissionTests(TestCase):
             if hasattr(view_cls, method.lower()):
                 methods.append(method)
         return methods
+

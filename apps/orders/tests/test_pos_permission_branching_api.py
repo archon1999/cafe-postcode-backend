@@ -39,7 +39,6 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             full_name='Hall Operator User',
             restaurant=cls.restaurant,
             role=cls.hall_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
         cls.takeaway_user = User.objects.create_user(
@@ -48,7 +47,6 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             full_name='Takeaway Operator User',
             restaurant=cls.restaurant,
             role=cls.takeaway_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
         cls.table_menu_user = User.objects.create_user(
@@ -57,7 +55,6 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             full_name='Table Menu User',
             restaurant=cls.restaurant,
             role=cls.table_menu_role,
-            ui_mode=User.UiMode.POS,
             is_staff=True,
         )
 
@@ -161,3 +158,4 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         self.assertEqual(takeaway_item_success.status_code, status.HTTP_201_CREATED, takeaway_item_success.data)
         takeaway_submit_success = self.client.post(f'/api/v1/pos/orders/{takeaway_order.id}/submit/', {}, format='json')
         self.assertEqual(takeaway_submit_success.status_code, status.HTTP_200_OK, takeaway_submit_success.data)
+

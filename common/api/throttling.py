@@ -2,10 +2,6 @@ from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.throttling import UserRateThrottle
 
 
-class OneToOneRateThrottle(UserRateThrottle):
-    scope = 'onetoone'
-
-
 class LoginRateThrottle(SimpleRateThrottle):
     scope = 'login'
 

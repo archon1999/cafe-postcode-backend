@@ -36,7 +36,7 @@ class StaffSpec:
     username: str
     full_name: str
     role_code: str
-    ui_mode: str
+    surface: str
     password: str | None = None
     pin: str | None = None
     primary_hall_code: str | None = None
@@ -298,8 +298,8 @@ FAST_FOOD_ORDER_SPECS = (
 )
 
 TOP_LEVEL_USERS = {
-    'superadmin': {'username': 'superadmin', 'password': 'superadmin123', 'full_name': 'System Administrator'},
-    'product_owner': {'username': 'admin', 'password': 'admin123', 'full_name': 'Platforma mahsulot egasi'},
+    'superadmin': {'username': 'admin', 'password': 'admin123', 'full_name': 'System Administrator'},
+    'product_owner': {'username': 'padmin', 'password': 'padmin123', 'full_name': 'Platforma mahsulot egasi'},
 }
 
 BUSINESS_PARTNER_SPEC = {
