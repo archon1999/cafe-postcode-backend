@@ -1,4 +1,4 @@
-from apps.organizations.models import Restaurant
+from apps.restaurants.models import Restaurant
 from common.exceptions import NotFoundError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers

@@ -1,7 +1,10 @@
 from rest_framework import serializers
 
 from apps.kitchen.models import KitchenTicket
-from apps.orders.serializers import OrderItemSerializer
+from apps.kitchen.serializers.order_item import OrderItemSerializer
+from apps.sales.helpers import get_order_item_model
+
+OrderItem = get_order_item_model()
 
 
 class KitchenTicketSerializer(serializers.ModelSerializer):
@@ -13,8 +16,6 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
 
     def get_items(self, obj):
-        from apps.orders.models import OrderItem
-
         item_queryset = (
             obj.order.items.filter(prep_station=obj.prep_station)
             .exclude(status=OrderItem.Status.CANCELLED)

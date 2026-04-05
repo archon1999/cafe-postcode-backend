@@ -1,9 +1,13 @@
 from rest_framework import serializers
 
 from apps.catalog.models import CatalogCategory
+from apps.catalog.serializers.mxik import MxikCodeValidationMixin
 
 
-class CatalogCategorySerializer(serializers.ModelSerializer):
+class CatalogCategorySerializer(MxikCodeValidationMixin, serializers.ModelSerializer):
+    mxik_required = True
+    sync_mxik_image = True
+
     class Meta:
         model = CatalogCategory
         fields = (
@@ -14,12 +18,15 @@ class CatalogCategorySerializer(serializers.ModelSerializer):
             'name_ru',
             'mxik_code',
             'mxik_name',
+            'image_url',
+            'image_source',
             'sort_order',
             'is_active',
         )
-
-    def validate(self, attrs):
-        mxik_code = (attrs.get('mxik_code') or getattr(self.instance, 'mxik_code', '')).strip()
-        if not mxik_code:
-            raise serializers.ValidationError({'mxik_code': 'MXIK code is required.'})
-        return attrs
+        extra_kwargs = {
+            'mxik_code': {'required': False, 'allow_blank': True},
+            'mxik_name': {'required': False, 'allow_blank': True},
+            'image_url': {'read_only': True},
+            'image_source': {'read_only': True},
+        }
+        validators = []

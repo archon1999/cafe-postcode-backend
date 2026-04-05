@@ -15,13 +15,13 @@ class KitchenTicket(BaseModel):
         BOTH = 'both', 'Both'
 
     restaurant = models.ForeignKey(
-        'organizations.Restaurant',
+        'restaurants.Restaurant',
         on_delete=models.CASCADE,
         related_name='kitchen_tickets',
     )
-    order = models.ForeignKey('orders.Order', on_delete=models.CASCADE, related_name='kitchen_tickets')
+    order = models.ForeignKey('sales.Order', on_delete=models.CASCADE, related_name='kitchen_tickets')
     prep_station = models.ForeignKey(
-        'organizations.PrepStation',
+        'restaurants.PrepStation',
         on_delete=models.CASCADE,
         related_name='kitchen_tickets',
     )

@@ -4,7 +4,7 @@ from common.models import BaseModel
 
 
 class CatalogItem(BaseModel):
-    restaurant = models.ForeignKey('organizations.Restaurant', on_delete=models.CASCADE, related_name='catalog_items')
+    restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.CASCADE, related_name='catalog_items')
     category = models.ForeignKey(
         'catalog.CatalogCategory',
         on_delete=models.SET_NULL,
@@ -13,7 +13,7 @@ class CatalogItem(BaseModel):
         blank=True,
     )
     prep_station = models.ForeignKey(
-        'organizations.PrepStation',
+        'restaurants.PrepStation',
         on_delete=models.SET_NULL,
         related_name='catalog_items',
         null=True,

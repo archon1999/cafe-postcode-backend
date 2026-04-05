@@ -2,7 +2,7 @@ from rest_framework import generics, permissions
 
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.serializers import KitchenTicketSerializer
-from apps.organizations.services import FeatureGateService
+from apps.platform.services import FeatureGateService
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
@@ -14,9 +14,7 @@ class KitchenQueueView(generics.ListAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        feature_config = self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
-        if feature_config.kitchen_mode == feature_config.KitchenMode.PRINTER:
-            return KitchenTicket.objects.none()
+        self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
 
         queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related(
             'prep_station',

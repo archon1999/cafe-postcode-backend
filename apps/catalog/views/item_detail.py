@@ -1,9 +1,9 @@
 from rest_framework import generics, permissions
 
+from apps.catalog.helpers import filter_catalog_queryset_by_scope
 from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import CatalogItemSerializer
 from common.api.permissions import EndpointRBACPermission
-from common.api.scopes import get_request_restaurant
 
 
 class ItemDetailView(generics.RetrieveUpdateAPIView):
@@ -11,5 +11,7 @@ class ItemDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
-        restaurant = get_request_restaurant(self.request)
-        return CatalogItem.objects.filter(restaurant=restaurant).select_related('category', 'prep_station')
+        return filter_catalog_queryset_by_scope(CatalogItem.objects.all(), self.request).select_related(
+            'category',
+            'prep_station',
+        )

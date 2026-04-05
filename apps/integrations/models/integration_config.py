@@ -14,7 +14,7 @@ class IntegrationConfig(BaseModel):
         LIVE = 'live', 'Live'
 
     restaurant = models.ForeignKey(
-        'organizations.Restaurant',
+        'restaurants.Restaurant',
         on_delete=models.CASCADE,
         related_name='integration_configs',
     )

@@ -1,8 +1,13 @@
 from django.db.models import Count, IntegerField, Sum, Value
 from django.db.models.functions import Coalesce
 
-from apps.orders.models import Order, OrderItem, Payment
+from apps.billing.helpers import get_payment_model
+from apps.sales.helpers import get_order_item_model, get_order_model
 from common.utils.date import tashkent_day_bounds, tashkent_now
+
+Order = get_order_model()
+OrderItem = get_order_item_model()
+Payment = get_payment_model()
 
 
 class OwnerDashboardOverviewService:

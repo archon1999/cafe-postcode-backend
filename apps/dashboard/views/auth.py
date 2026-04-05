@@ -5,9 +5,9 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.serializers import AuthSessionSerializer
-from apps.accounts.services import AuthSessionService
 from apps.dashboard.serializers import OwnerDashboardLoginSerializer, OwnerDashboardUserSerializer
+from apps.users.api.admin.serializers import AuthSessionSerializer
+from apps.users.services import AuthSessionService
 from common.api.permissions import EndpointRBACPermission
 from common.api.throttling import LoginRateThrottle
 

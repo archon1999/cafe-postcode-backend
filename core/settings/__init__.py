@@ -62,7 +62,7 @@ class CoreSettings(Settings):
     DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 
     AUTH_PASSWORD_VALIDATORS = AUTH_PASSWORD_VALIDATORS
-    AUTH_USER_MODEL = 'accounts.User'
+    AUTH_USER_MODEL = 'users.User'
     LOGIN_URL = '/admin/login'
     LOGOUT_URL = '/logout'
     LOGIN_REDIRECT_URL = '/'

@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.floor.models import DiningTable
-from apps.organizations.services import FeatureGateService
+from apps.platform.services import FeatureGateService
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 

@@ -9,7 +9,7 @@ class CatalogCategory(BaseModel):
         MANUAL = 'manual', 'Manual'
 
     restaurant = models.ForeignKey(
-        'organizations.Restaurant',
+        'restaurants.Restaurant',
         on_delete=models.CASCADE,
         related_name='catalog_categories',
     )

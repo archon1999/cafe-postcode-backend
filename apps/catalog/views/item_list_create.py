@@ -1,5 +1,6 @@
 from rest_framework import generics, permissions
 
+from apps.catalog.helpers import ItemListFilters, filter_catalog_queryset_by_scope
 from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import CatalogItemSerializer
 from common.api.permissions import EndpointRBACPermission
@@ -11,8 +12,9 @@ class ItemListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
-        restaurant = get_request_restaurant(self.request)
-        return CatalogItem.objects.filter(restaurant=restaurant).select_related('category', 'prep_station')
+        queryset = CatalogItem.objects.all().select_related('category', 'prep_station')
+        queryset = filter_catalog_queryset_by_scope(queryset, self.request)
+        return ItemListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)

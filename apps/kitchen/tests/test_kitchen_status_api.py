@@ -1,11 +1,12 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import Permission, Role, User
+from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.kitchen.models import KitchenTicket
-from apps.orders.models import Order, OrderItem
-from apps.organizations.models import DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
+from apps.sales.models import Order, OrderItem
+from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
+from apps.platform.models import RestaurantEntitlement
 
 
 class KitchenStatusApiTests(APITestCase):
@@ -13,17 +14,6 @@ class KitchenStatusApiTests(APITestCase):
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name='Test restaurant')
         cls.branch = cls.restaurant
-        cls.feature_config = FeatureConfig.objects.create(
-            restaurant=cls.restaurant,
-            hall_enabled=True,
-            kitchen_enabled=True,
-            cashier_enabled=True,
-            owner_dashboard_enabled=True,
-            order_entry_mode=FeatureConfig.OrderEntryMode.HALL,
-            kitchen_mode=FeatureConfig.KitchenMode.PRINTER,
-            enabled_modules=['hall', 'kitchen', 'cashier'],
-            enabled_roles=['chef'],
-        )
         cls.permission = Permission.objects.get_or_create(
             code='pos_kitchen_orders.update',
             defaults={'name': 'POS kitchen orders update', 'description': 'POS kitchen orders update permission'},
@@ -95,26 +85,30 @@ class KitchenStatusApiTests(APITestCase):
             order=self.order,
             prep_station=self.prep_station,
             status=KitchenTicket.Status.NEW,
-            routed_via=KitchenTicket.RouteMode.PRINTER,
+            routed_via=KitchenTicket.RouteMode.DISPLAY,
         )
 
-    def test_printer_mode_rejects_item_status_updates(self):
+    def test_item_status_update_marks_item_done(self):
         response = self.client.post(
             f'/api/v1/pos/kitchen/items/{self.item.id}/status/',
             {'status': 'done'},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('detail', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.status, OrderItem.Status.DONE)
 
-    def test_printer_mode_rejects_ticket_status_updates(self):
+    def test_ticket_status_update_marks_order_ready(self):
         response = self.client.post(
             f'/api/v1/pos/kitchen/tickets/{self.ticket.id}/status/',
             {'status': 'done'},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('detail', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.ticket.refresh_from_db()
+        self.order.refresh_from_db()
+        self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
+        self.assertEqual(self.order.status, Order.Status.READY)
 

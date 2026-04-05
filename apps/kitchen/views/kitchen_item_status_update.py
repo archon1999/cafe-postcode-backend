@@ -3,9 +3,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.kitchen.services.kitchen_status import KitchenStatusService
-from apps.orders.models import OrderItem
+from apps.sales.helpers import get_order_item_model
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
+
+OrderItem = get_order_item_model()
 
 
 class KitchenItemStatusUpdateView(APIView):

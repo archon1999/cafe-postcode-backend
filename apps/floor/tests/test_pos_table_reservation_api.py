@@ -1,8 +1,8 @@
 from rest_framework import status
 
-from apps.accounts.models import Permission, Role, User
+from apps.users.models import Permission, Role, User
 from apps.floor.models import DiningTable
-from common.tests.pos_api import PosAPITestCase
+from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
 class PosTableReservationApiTests(PosAPITestCase):
@@ -45,12 +45,12 @@ class PosTableReservationApiTests(PosAPITestCase):
     def test_reserve_endpoint_requires_reservation_permission(self):
         self.client.force_authenticate(self.table_manager_user)
 
-        forbidden_response = self.client.post(f'/api/v1/pos/halls/tables/{self.table.id}/reserve/', {}, format='json')
+        forbidden_response = self.client.post(f'/api/v1/pos/floor/tables/{self.table.id}/reserve/', {}, format='json')
 
         self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
 
         self.client.force_authenticate(self.reservation_user)
-        success_response = self.client.post(f'/api/v1/pos/halls/tables/{self.table.id}/reserve/', {}, format='json')
+        success_response = self.client.post(f'/api/v1/pos/floor/tables/{self.table.id}/reserve/', {}, format='json')
 
         self.assertEqual(success_response.status_code, status.HTTP_200_OK)
         self.table.refresh_from_db()
@@ -66,14 +66,15 @@ class PosTableReservationApiTests(PosAPITestCase):
         }
 
         self.client.force_authenticate(self.table_manager_user)
-        forbidden_response = self.client.post('/api/v1/pos/halls/table-sessions/', payload, format='json')
+        forbidden_response = self.client.post('/api/v1/pos/floor/table-sessions/', payload, format='json')
 
         self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
 
         self.client.force_authenticate(self.reservation_user)
-        success_response = self.client.post('/api/v1/pos/halls/table-sessions/', payload, format='json')
+        success_response = self.client.post('/api/v1/pos/floor/table-sessions/', payload, format='json')
 
         self.assertEqual(success_response.status_code, status.HTTP_201_CREATED, success_response.data)
         self.table.refresh_from_db()
         self.assertEqual(self.table.status, DiningTable.Status.OCCUPIED)
+
 

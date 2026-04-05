@@ -5,10 +5,11 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.kitchen.models import KitchenTicket
-from apps.kitchen.serializers import KitchenTicketSerializer
-from apps.orders.models import OrderItem
-from apps.orders.serializers import OrderItemSerializer
-from apps.organizations.services import FeatureGateService
+from apps.kitchen.serializers import KitchenTicketSerializer, OrderItemSerializer
+from apps.platform.services import FeatureGateService
+from apps.sales.helpers import get_order_item_model
+
+OrderItem = get_order_item_model()
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class KitchenStatusService:
     def update_ticket_status(self, *, ticket: KitchenTicket, status: str):
         from apps.kitchen.services import sync_order_tickets
 
-        feature_config = self.feature_gate_service_class().ensure_kitchen_access(
+        self.feature_gate_service_class().ensure_kitchen_access(
             restaurant=ticket.order.restaurant,
             interactive=True,
         )

@@ -20,12 +20,12 @@ LOGGING = {
             "level": "INFO",
             "propagate": True,
         },
-        "apps.accounts": {
+        "apps.users": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,
         },
-        "apps.orders": {
+        "apps.sales": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

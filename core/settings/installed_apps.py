@@ -11,14 +11,15 @@ DEFAULT_APPS = [
 
 LOCAL_APPS = [
     'apps.dashboard',
-    'apps.admin',
-    'apps.accounts',
-    'apps.organizations',
+    'apps.users',
+    'apps.platform',
+    'apps.restaurants',
     'apps.floor',
     'apps.catalog',
-    'apps.orders',
+    'apps.sales',
+    'apps.billing',
     'apps.kitchen',
-    'apps.reports',
+    'apps.reporting',
     'apps.integrations',
 ]
 

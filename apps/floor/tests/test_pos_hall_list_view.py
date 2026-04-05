@@ -2,39 +2,30 @@ from django.test import TestCase
 
 from rest_framework.test import APIClient
 
-from apps.accounts.models import User
+from apps.users.models import Permission, User
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.kitchen.models import KitchenTicket
-from apps.orders.models import Order
-from apps.organizations.models import DistributionPoint, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
+from apps.sales.models import Order
+from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
+from apps.platform.models import RestaurantEntitlement
 
 
 class PosHallListViewTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.restaurant = Restaurant.objects.create(name='Test restaurant')
-        RestaurantEntitlement.objects.create(
+        entitlement = RestaurantEntitlement.objects.create(
             restaurant=self.restaurant,
             is_active=True,
             is_custom=True,
         )
+        entitlement.permissions.set([Permission.objects.get(code='pos_halls.view')])
         self.user = User.objects.create_user(
             username='admin',
             full_name='Admin User',
             is_superuser=True,
             is_staff=True,
             restaurant=self.restaurant,
-        )
-        FeatureConfig.objects.create(
-            restaurant=self.restaurant,
-            hall_enabled=True,
-            kitchen_enabled=True,
-            cashier_enabled=True,
-            owner_dashboard_enabled=True,
-            order_entry_mode=FeatureConfig.OrderEntryMode.HALL,
-            kitchen_mode=FeatureConfig.KitchenMode.DISPLAY,
-            enabled_modules=['hall', 'kitchen', 'cashier'],
-            enabled_roles=['waiter', 'cashier', 'chef'],
         )
         self.client.force_authenticate(self.user)
         self.zone = ZoneOrCabin.objects.create(
@@ -149,7 +140,7 @@ class PosHallListViewTests(TestCase):
         return table
 
     def test_pos_halls_returns_positioned_tables_and_service_states(self):
-        response = self.client.get('/api/v1/pos/halls/')
+        response = self.client.get('/api/v1/pos/floor/halls/')
 
         self.assertEqual(response.status_code, 200)
         halls = response.json()['data']

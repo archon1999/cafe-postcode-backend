@@ -7,8 +7,11 @@ from rest_framework.views import APIView
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.serializers import TableSessionSerializer
+from apps.sales.helpers import get_order_model
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
+
+Order = get_order_model()
 
 
 class TableSessionMergeView(APIView):
@@ -16,8 +19,6 @@ class TableSessionMergeView(APIView):
 
     @transaction.atomic
     def post(self, request, pk):
-        from apps.orders.models import Order
-
         restaurant = get_request_restaurant(request)
         target_session = generics.get_object_or_404(
             TableSession,

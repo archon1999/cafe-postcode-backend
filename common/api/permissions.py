@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
 
-from apps.accounts.models import PermissionEndpoint
+from apps.users.models import PermissionEndpoint
 
 User = get_user_model()
 
@@ -110,7 +110,7 @@ AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
     ('POST', 'api/v1/pos/auth/logout/'),
     ('GET', 'api/v1/admin/auth/me/'),
     ('POST', 'api/v1/admin/auth/logout/'),
-    ('GET', 'api/v1/admin/constructor/my-restaurant/'),
+    ('GET', 'api/v1/admin/restaurants/my-restaurant/'),
     ('POST', 'api/v1/dashboard/auth/logout/'),
 }
 

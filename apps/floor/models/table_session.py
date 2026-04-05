@@ -13,7 +13,7 @@ class TableSession(BaseModel):
         MERGED = 'merged', 'Merged'
 
     restaurant = models.ForeignKey(
-        'organizations.Restaurant',
+        'restaurants.Restaurant',
         on_delete=models.CASCADE,
         related_name='table_sessions',
     )

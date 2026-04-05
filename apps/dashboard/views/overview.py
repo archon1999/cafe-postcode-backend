@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 
 from apps.dashboard.serializers import DashboardOverviewSerializer
 from apps.dashboard.services import OwnerDashboardOverviewService
-from apps.organizations.services import FeatureGateService
+from apps.platform.services import FeatureGateService
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 

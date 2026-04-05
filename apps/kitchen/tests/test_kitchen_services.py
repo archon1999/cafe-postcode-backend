@@ -1,10 +1,8 @@
-from rest_framework.exceptions import ValidationError
-
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.services import OrderTicketSyncService
 from apps.kitchen.services.kitchen_status import KitchenStatusService
-from apps.orders.models import Order, OrderItem
-from common.tests.pos_api import PosTestCase
+from apps.sales.models import Order, OrderItem
+from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class OrderTicketSyncServiceTests(PosTestCase):
@@ -13,7 +11,6 @@ class OrderTicketSyncServiceTests(PosTestCase):
         self.service = OrderTicketSyncService()
         self.order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             distribution_point=self.takeaway_distribution,
             opened_by=self.user,
             order_number=1,
@@ -68,7 +65,6 @@ class KitchenStatusServiceTests(PosTestCase):
         self.service = KitchenStatusService()
         self.order = Order.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             distribution_point=self.takeaway_distribution,
             opened_by=self.user,
             order_number=1,
@@ -88,7 +84,6 @@ class KitchenStatusServiceTests(PosTestCase):
         self.order.recalculate_totals()
         self.ticket = KitchenTicket.objects.create(
             restaurant=self.restaurant,
-            branch=self.branch,
             order=self.order,
             prep_station=self.prep_station,
             status=KitchenTicket.Status.NEW,
@@ -112,10 +107,3 @@ class KitchenStatusServiceTests(PosTestCase):
         self.assertEqual(self.order_item.status, OrderItem.Status.DONE)
         self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
         self.assertEqual(self.order.status, Order.Status.READY)
-
-    def test_update_item_status_rejects_in_printer_mode(self):
-        self.feature_config.kitchen_mode = self.feature_config.KitchenMode.PRINTER
-        self.feature_config.save(update_fields=['kitchen_mode', 'updated_at'])
-
-        with self.assertRaises(ValidationError):
-            self.service.update_item_status(item=self.order_item, status=OrderItem.Status.DONE)

@@ -2,7 +2,9 @@ from rest_framework import serializers
 
 from apps.floor.models import TableSession
 from apps.kitchen.models import KitchenTicket
-from apps.orders.models import Order
+from apps.sales.helpers import get_order_model
+
+Order = get_order_model()
 
 
 ACTIVE_ORDER_STATUSES = {

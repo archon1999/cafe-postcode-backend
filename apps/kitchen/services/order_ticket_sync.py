@@ -3,17 +3,21 @@ import logging
 from django.utils import timezone
 
 from apps.integrations.services import print_kitchen_ticket
-from apps.orders.models import Order, OrderItem
+from apps.sales.helpers import get_order_item_model, get_order_model
 
 from ..models import KitchenTicket
 
 logger = logging.getLogger(__name__)
 
+Order = get_order_model()
+OrderItem = get_order_item_model()
+
 
 class OrderTicketSyncService:
+    route_mode = KitchenTicket.RouteMode.DISPLAY
+
     def sync(self, order: Order):
-        feature_config = getattr(order.restaurant, 'feature_config', None)
-        if order.status == Order.Status.OPEN or not feature_config or not feature_config.kitchen_enabled:
+        if order.status == Order.Status.OPEN:
             deleted_count, _ = KitchenTicket.objects.filter(order=order).delete()
             if deleted_count:
                 logger.info('Kitchen tickets cleared for order', extra={'order_id': str(order.pk), 'deleted_count': deleted_count})
@@ -44,15 +48,15 @@ class OrderTicketSyncService:
                 defaults={
                     'restaurant': order.restaurant,
                     'status': ticket_status,
-                    'routed_via': feature_config.kitchen_mode,
+                    'routed_via': self.route_mode,
                 },
             )
             updates = []
             if not created and ticket.status != ticket_status:
                 ticket.status = ticket_status
                 updates.append('status')
-            if ticket.routed_via != feature_config.kitchen_mode:
-                ticket.routed_via = feature_config.kitchen_mode
+            if ticket.routed_via != self.route_mode:
+                ticket.routed_via = self.route_mode
                 updates.append('routed_via')
             if ticket_status == KitchenTicket.Status.DONE and not ticket.completed_at:
                 ticket.completed_at = timezone.now()
@@ -67,10 +71,7 @@ class OrderTicketSyncService:
                     extra={'ticket_id': str(ticket.pk), 'order_id': str(order.pk), 'status': ticket.status},
                 )
 
-            if created and feature_config and feature_config.kitchen_mode in [
-                feature_config.KitchenMode.PRINTER,
-                feature_config.KitchenMode.BOTH,
-            ]:
+            if created and self.route_mode in [KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH]:
                 print_result = print_kitchen_ticket(ticket)
                 ticket.is_printed = bool(print_result.get('ok'))
                 ticket.printed_payload = print_result

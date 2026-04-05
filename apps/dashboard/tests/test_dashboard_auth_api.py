@@ -1,21 +1,15 @@
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import Permission, Role, User
-from apps.organizations.models import FeatureConfig, Restaurant, RestaurantEntitlement
+from apps.users.models import Permission, Role, User
+from apps.restaurants.models import Restaurant
+from apps.platform.models import RestaurantEntitlement
 
 
 class DashboardAuthApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name="Test restaurant")
-        FeatureConfig.objects.create(
-            restaurant=cls.restaurant,
-            owner_dashboard_enabled=True,
-            hall_enabled=True,
-            kitchen_enabled=True,
-            cashier_enabled=True,
-        )
         cls.entitlement = RestaurantEntitlement.objects.create(restaurant=cls.restaurant, is_active=True)
         cls.entitlement.permissions.set(Permission.objects.all())
 
@@ -73,14 +67,11 @@ class DashboardAuthApiTests(APITestCase):
         response = self.client.get("/api/v1/dashboard/overview/")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_dashboard_overview_requires_owner_dashboard_feature(self):
+    def test_dashboard_overview_requires_entitlement_permission(self):
         self.client.force_authenticate(self.owner_user)
-        feature_config = self.restaurant.feature_config
-        feature_config.owner_dashboard_enabled = False
-        feature_config.save(update_fields=["owner_dashboard_enabled", "updated_at"])
+        self.entitlement.permissions.remove(self.dashboard_permission)
 
         response = self.client.get("/api/v1/dashboard/overview/")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("detail", response.data)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
