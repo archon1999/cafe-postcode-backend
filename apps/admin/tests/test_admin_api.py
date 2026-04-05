@@ -11,10 +11,11 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import AuthSession, Permission, Role, User
+from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.orders.models import Order, Payment
-from apps.organizations.models import BusinessPartner, FeatureConfig, Restaurant, RestaurantEntitlement
+from apps.organizations.models import BusinessPartner, FeatureConfig, PrepStation, Restaurant, RestaurantEntitlement
 from apps.organizations.services.faktura import FakturaError
 from common.api.exception_handler import custom_exception_handler
 from common.utils.date import TASHKENT_TIMEZONE
@@ -569,6 +570,105 @@ class AdminApiTests(APITestCase):
         item_names = {row['name'] for row in items_response.data['data']}
         self.assertIn('Croissant', item_names)
         self.assertNotIn('Old Pie', item_names)
+
+    def test_restaurant_admin_catalog_list_is_limited_to_own_restaurant(self):
+        self.authenticate()
+
+        other_restaurant = Restaurant.objects.create(
+            name='Another Restaurant',
+            phone='+998900000222',
+            address='Bukhara',
+        )
+        own_category = CatalogCategory.objects.create(
+            restaurant=self.restaurant,
+            name='Own category',
+            mxik_code='10000000000000011',
+            mxik_name='Own category',
+            sort_order=1,
+            is_active=True,
+        )
+        foreign_category = CatalogCategory.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign category',
+            mxik_code='10000000000000012',
+            mxik_name='Foreign category',
+            sort_order=1,
+            is_active=True,
+        )
+        CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=own_category,
+            name='Own item',
+            description='',
+            is_active=True,
+            is_stoplisted=False,
+        )
+        CatalogItem.objects.create(
+            restaurant=other_restaurant,
+            category=foreign_category,
+            name='Foreign item',
+            description='',
+            is_active=True,
+            is_stoplisted=False,
+        )
+
+        categories_response = self.client.get('/api/v1/admin/catalog/categories/')
+        items_response = self.client.get('/api/v1/admin/catalog/items/')
+
+        self.assertEqual(categories_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(items_response.status_code, status.HTTP_200_OK)
+        self.assertEqual({row['name'] for row in categories_response.data['data']}, {'Own category'})
+        self.assertEqual({row['name'] for row in items_response.data['data']}, {'Own item'})
+
+    def test_restaurant_admin_cannot_create_item_with_foreign_category_or_prep_station(self):
+        self.authenticate()
+
+        other_restaurant = Restaurant.objects.create(
+            name='External Restaurant',
+            phone='+998900000333',
+            address='Nukus',
+        )
+        foreign_category = CatalogCategory.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign category',
+            mxik_code='10000000000000013',
+            mxik_name='Foreign category',
+            sort_order=1,
+            is_active=True,
+        )
+        foreign_prep_station = PrepStation.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign prep',
+            is_active=True,
+        )
+
+        category_response = self.client.post(
+            '/api/v1/admin/catalog/items/',
+            {
+                'category': str(foreign_category.id),
+                'name': 'Leaked item',
+                'description': '',
+                'is_active': True,
+                'is_stoplisted': False,
+            },
+            format='json',
+        )
+        prep_station_response = self.client.post(
+            '/api/v1/admin/catalog/items/',
+            {
+                'prep_station': str(foreign_prep_station.id),
+                'name': 'Leaked prep item',
+                'description': '',
+                'is_active': True,
+                'is_stoplisted': False,
+            },
+            format='json',
+        )
+
+        self.assertEqual(category_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('category', category_response.data)
+        self.assertEqual(prep_station_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('prep_station', prep_station_response.data)
 
     @patch('apps.admin.views.catalog.MxikClient.lookup')
     @patch('apps.admin.views.catalog.MxikClient.search')

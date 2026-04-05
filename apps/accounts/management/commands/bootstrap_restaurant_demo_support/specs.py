@@ -298,8 +298,8 @@ FAST_FOOD_ORDER_SPECS = (
 )
 
 TOP_LEVEL_USERS = {
-    'superadmin': {'username': 'admin', 'password': 'admin123', 'full_name': 'System Administrator'},
-    'product_owner': {'username': 'padmin', 'password': 'padmin123', 'full_name': 'Platforma mahsulot egasi'},
+    'superadmin': {'username': 'superadmin', 'password': 'superadmin123', 'full_name': 'System Administrator'},
+    'product_owner': {'username': 'admin', 'password': 'admin123', 'full_name': 'Platforma mahsulot egasi'},
 }
 
 BUSINESS_PARTNER_SPEC = {

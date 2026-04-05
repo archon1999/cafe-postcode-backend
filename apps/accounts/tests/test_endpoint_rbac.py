@@ -343,6 +343,13 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertNotIn("tables.view", permission_codes)
         self.assertNotIn("table_sessions.view", permission_codes)
 
+    def test_waiter_defaults_exclude_table_reservation_permission(self):
+        waiter_permission_codes = set(DEFAULT_ROLE_MAP["waiter"]["permissions"])
+        manager_permission_codes = set(DEFAULT_ROLE_MAP["manager"]["permissions"])
+
+        self.assertNotIn("pos_table_reservations.manage", waiter_permission_codes)
+        self.assertIn("pos_table_reservations.manage", manager_permission_codes)
+
     def test_every_protected_route_is_registered_in_permission_endpoints(self):
         missing = []
 

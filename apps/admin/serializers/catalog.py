@@ -1,9 +1,11 @@
 import re
 
 from rest_framework import serializers
+from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.services.mxik import MxikClient, MxikError
+from common.api.scopes import get_request_restaurant
 
 MXIK_CODE_PATTERN = re.compile(r'^\d{17}$')
 
@@ -118,6 +120,26 @@ class CatalogCategorySerializer(MxikCodeValidationMixin, serializers.ModelSerial
 class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get('request')
+        if request is None:
+            return attrs
+
+        restaurant = get_request_restaurant(request)
+        category = attrs.get('category')
+        prep_station = attrs.get('prep_station')
+
+        if category is not None and category.restaurant_id != restaurant.id:
+            raise serializers.ValidationError({'category': _('Selected category does not belong to the current restaurant.')})
+
+        if prep_station is not None and prep_station.restaurant_id != restaurant.id:
+            raise serializers.ValidationError(
+                {'prep_station': _('Selected prep station does not belong to the current restaurant.')}
+            )
+
+        return attrs
 
     class Meta:
         model = CatalogItem

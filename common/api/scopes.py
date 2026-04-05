@@ -33,8 +33,9 @@ def get_optional_request_restaurant(request) -> Restaurant | None:
             if restaurant is None:
                 raise serializers.ValidationError({'restaurantId': _('Selected restaurant was not found.')})
             return restaurant
+        return None
 
-    return None
+    return getattr(request.user, 'get_restaurant_scope', lambda: None)()
 
 
 def get_request_restaurant(request) -> Restaurant:
