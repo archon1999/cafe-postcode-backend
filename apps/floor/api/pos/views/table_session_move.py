@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.floor.models import DiningTable, TableSession
-from apps.floor.serializers import TableSessionSerializer
+from apps.floor.api.admin.serializers import TableSessionSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 

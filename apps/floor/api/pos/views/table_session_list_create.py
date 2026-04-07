@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 
 from apps.floor.models import DiningTable, TableSession
-from apps.floor.serializers import TableSessionSerializer
+from apps.floor.api.admin.serializers import TableSessionSerializer
 from apps.platform.services import FeatureGateService
 from common.api.permissions import (
     EndpointRBACPermission,

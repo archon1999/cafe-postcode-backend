@@ -1,13 +1,12 @@
+from .active_session_summary import ActiveSessionSummarySerializer
+from .dining_table import DiningTableSerializer
 from .hall import HallSerializer
-from .hall_constructor import HallConstructorSerializer, HallConstructorUpdateSerializer
-from .table import DiningTableSerializer
 from .table_session import TableSessionSerializer
-from .zone import ZoneOrCabinSerializer
+from .zone_or_cabin import ZoneOrCabinSerializer
 
 __all__ = [
+    'ActiveSessionSummarySerializer',
     'DiningTableSerializer',
-    'HallConstructorSerializer',
-    'HallConstructorUpdateSerializer',
     'HallSerializer',
     'TableSessionSerializer',
     'ZoneOrCabinSerializer',
