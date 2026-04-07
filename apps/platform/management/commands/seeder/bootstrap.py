@@ -15,7 +15,7 @@ from .helpers import (
     upsert_restaurant,
 )
 from .orders import seed_orders
-from .specs import ORDER_SPECS_BY_RESTAURANT, RESTAURANT_SPECS, TARIFF_SPECS, TOP_LEVEL_USERS, STAFF_SPECS_BY_RESTAURANT
+from .specs import RESTAURANT_SPECS, TARIFF_SPECS, TOP_LEVEL_USERS
 
 
 def bootstrap_demo(command) -> None:
@@ -34,25 +34,14 @@ def bootstrap_demo(command) -> None:
         tariff = tariffs[restaurant_spec.tariff_key]
         configure_entitlement(restaurant, tariff)
 
-        halls_by_code, tables_by_key = seed_halls_and_tables(restaurant, restaurant_spec.hall_enabled)
-        setup = seed_setup_entities(restaurant, restaurant_spec.key)
-        hall_distribution_point = setup['distribution_points'].get('hall')
-        if hall_distribution_point and halls_by_code:
-            hall_distribution_point.assigned_hall = next(iter(halls_by_code.values()))
-            hall_distribution_point.save(update_fields=['assigned_hall', 'updated_at'])
-
-        for device in setup['devices']:
-            if device.mode == 'waiter' and halls_by_code:
-                device.primary_hall = next(iter(halls_by_code.values()))
-                device.save(update_fields=['primary_hall', 'updated_at'])
-                device.allowed_halls.set(halls_by_code.values())
-
-        items_by_code = seed_catalog(restaurant, restaurant_spec.key, setup['prep_stations'])
+        halls_by_code, tables_by_key = seed_halls_and_tables(restaurant, restaurant_spec.floor)
+        setup = seed_setup_entities(restaurant, restaurant_spec.setup, halls_by_code)
+        items_by_code = seed_catalog(restaurant, restaurant_spec.catalog, setup['prep_stations'])
         admin_credentials = activate_restaurant_admin_user(restaurant, tariff)
-        staff_users = seed_staff(restaurant, restaurant_spec.key, roles_by_code, halls_by_code)
+        staff_users = seed_staff(restaurant, restaurant_spec.staff, roles_by_code, halls_by_code)
         seed_orders(
             restaurant=restaurant,
-            order_specs=ORDER_SPECS_BY_RESTAURANT[restaurant_spec.key],
+            restaurant_spec=restaurant_spec,
             users_by_username=staff_users,
             items_by_code=items_by_code,
             halls_by_code=halls_by_code,
@@ -64,7 +53,7 @@ def bootstrap_demo(command) -> None:
             admin_credentials.username,
             admin_credentials.password,
             restaurant.auth_code,
-            [(spec.username, spec.pin) for spec in STAFF_SPECS_BY_RESTAURANT[restaurant_spec.key] if spec.pin],
+            [(spec.username, spec.pin) for spec in restaurant_spec.staff if spec.pin],
         )
 
     command.stdout.write(command.style.SUCCESS('Restaurant demo bootstrap complete.'))

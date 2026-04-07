@@ -22,14 +22,6 @@ from apps.restaurants.models import CashDesk, Device, DistributionPoint, PrepSta
 
 from .specs import (
     BUSINESS_PARTNER_SPEC,
-    CASH_DESK_SPECS,
-    DEVICE_SPECS,
-    DISTRIBUTION_POINT_SPECS,
-    HALL_SPECS,
-    TABLE_SPECS,
-    CATALOG_SPECS,
-    PREP_STATION_SPECS,
-    STAFF_SPECS_BY_RESTAURANT,
     TOP_LEVEL_USERS,
 )
 
@@ -191,21 +183,22 @@ def reset_restaurant_seed(restaurant: Restaurant) -> None:
         .distinct()
         .values_list('id', flat=True)
     )
-    if user_ids:
-        User.objects.filter(id__in=user_ids).delete()
-
     restaurant.kitchen_tickets.all().delete()
     restaurant.orders.all().delete()
     restaurant.table_sessions.all().delete()
+    restaurant.cash_desks.all().delete()
+    restaurant.devices.all().delete()
+    restaurant.prep_stations.all().delete()
     DiningTable.objects.filter(hall__zone_or_cabin__restaurant=restaurant).delete()
     Hall.objects.filter(zone_or_cabin__restaurant=restaurant).delete()
     restaurant.catalog_items.all().delete()
     restaurant.catalog_categories.all().delete()
     restaurant.distribution_points.all().delete()
-    restaurant.cash_desks.all().delete()
-    restaurant.devices.all().delete()
-    restaurant.prep_stations.all().delete()
     restaurant.zones.all().delete()
+    if user_ids:
+        User.objects.filter(id__in=user_ids).delete()
+    restaurant.last_order_number = 0
+    restaurant.save(update_fields=['last_order_number', 'updated_at'])
 
 
 def upsert_restaurant(partner: BusinessPartner, spec) -> Restaurant:
@@ -290,54 +283,53 @@ def activate_restaurant_admin_user(restaurant: Restaurant, tariff: Tariff) -> Ge
     return GeneratedCredentials(username=admin_user.username, password=password)
 
 
-def seed_setup_entities(restaurant: Restaurant, restaurant_key: str):
+def seed_setup_entities(restaurant: Restaurant, setup_spec, halls_by_code: dict[str, Hall]):
     prep_stations = {}
-    for spec in PREP_STATION_SPECS[restaurant_key]:
+    for spec in setup_spec.prep_stations:
         station, _ = PrepStation.objects.get_or_create(
             restaurant=restaurant,
-            name=spec['name'],
-            defaults={'kind': spec['kind']},
+            name=spec.name,
+            defaults={'kind': spec.kind},
         )
-        station.kind = spec['kind']
+        station.kind = spec.kind
         station.is_active = True
         station.save()
-        prep_stations[spec['code']] = station
+        prep_stations[spec.code] = station
 
-    cash_desk_name, cash_desk_location = CASH_DESK_SPECS[restaurant_key]
     cash_desk, _ = CashDesk.objects.get_or_create(
         restaurant=restaurant,
-        name=cash_desk_name,
-        defaults={'location': cash_desk_location},
+        name=setup_spec.cash_desk_name,
+        defaults={'location': setup_spec.cash_desk_location},
     )
-    cash_desk.location = cash_desk_location
+    cash_desk.location = setup_spec.cash_desk_location
     cash_desk.is_active = True
     cash_desk.save()
 
     distribution_points = {}
-    for spec in DISTRIBUTION_POINT_SPECS[restaurant_key]:
+    for spec in setup_spec.distribution_points:
         point, _ = DistributionPoint.objects.get_or_create(
             restaurant=restaurant,
-            name=spec['name'],
-            defaults={'kind': spec['kind']},
+            name=spec.name,
+            defaults={'kind': spec.kind},
         )
-        point.kind = spec['kind']
+        point.kind = spec.kind
         point.is_active = True
-        point.assigned_hall = None
+        point.assigned_hall = halls_by_code.get(spec.assigned_hall_code) if spec.assigned_hall_code else None
         point.save()
-        distribution_points[spec['kind']] = point
+        distribution_points[spec.kind] = point
 
     devices = []
-    for spec in DEVICE_SPECS[restaurant_key]:
+    for spec in setup_spec.devices:
         device, _ = Device.objects.get_or_create(
             restaurant=restaurant,
-            name=spec['name'],
-            defaults={'mode': spec['mode']},
+            name=spec.name,
+            defaults={'mode': spec.mode},
         )
-        device.mode = spec['mode']
-        device.primary_hall = None
+        device.mode = spec.mode
+        device.primary_hall = halls_by_code.get(spec.primary_hall_code) if spec.primary_hall_code else None
         device.is_active = True
         device.save()
-        device.allowed_halls.clear()
+        device.allowed_halls.set([halls_by_code[code] for code in spec.allowed_hall_codes if code in halls_by_code])
         devices.append(device)
 
     return {
@@ -375,116 +367,120 @@ def attach_restaurant_profile(
         profile.save(update_fields=['pin_code'])
 
 
-def seed_halls_and_tables(restaurant: Restaurant, hall_enabled: bool):
-    if not hall_enabled:
+def seed_halls_and_tables(restaurant: Restaurant, floor_spec):
+    if floor_spec is None:
         return {}, {}
 
-    zone, _ = ZoneOrCabin.objects.get_or_create(
-        restaurant=restaurant,
-        name='Asosiy zona',
-        defaults={'sort_order': 1, 'is_active': True},
-    )
-    zone.sort_order = 1
-    zone.is_active = True
-    zone.save()
+    zones_by_code = {}
+    for zone_spec in floor_spec.zones:
+        zone, _ = ZoneOrCabin.objects.get_or_create(
+            restaurant=restaurant,
+            name=zone_spec.name,
+            defaults={'sort_order': zone_spec.sort_order, 'is_active': True},
+        )
+        zone.sort_order = zone_spec.sort_order
+        zone.is_active = True
+        zone.save()
+        zones_by_code[zone_spec.code] = zone
 
     halls = {}
     tables = {}
-    for spec in HALL_SPECS:
+    for spec in floor_spec.halls:
+        zone = zones_by_code[spec.zone_code]
         hall, _ = Hall.objects.get_or_create(
             zone_or_cabin=zone,
-            name=spec['name'],
+            name=spec.name,
             defaults={
-                'description': spec['description'],
+                'description': spec.description,
                 'grid_columns': 8,
-                'sort_order': spec['sort_order'],
+                'sort_order': spec.sort_order,
                 'is_active': True,
             },
         )
-        hall.description = spec['description']
+        hall.description = spec.description
         hall.grid_columns = 8
-        hall.sort_order = spec['sort_order']
+        hall.sort_order = spec.sort_order
         hall.is_active = True
         hall.save()
-        halls[spec['code']] = hall
+        halls[spec.code] = hall
 
-        for table_spec in TABLE_SPECS[spec['code']]:
+        for table_spec in spec.tables:
             table, _ = DiningTable.objects.get_or_create(
                 hall=hall,
-                table_number=table_spec['table_number'],
+                table_number=table_spec.table_number,
                 defaults={
                     'zone': zone,
-                    'name': table_spec['name'],
-                    'seat_count': table_spec['seat_count'],
+                    'name': table_spec.name,
+                    'seat_count': table_spec.seat_count,
                     'shape': DiningTable.Shape.SQUARE,
-                    'shape_variant': DiningTable.get_default_shape_variant(table_spec['seat_count']),
-                    'status': DiningTable.Status.AVAILABLE,
-                    'position_x': table_spec['position_x'],
-                    'position_y': table_spec['position_y'],
-                    'width': 1,
-                    'height': 1,
+                    'shape_variant': DiningTable.get_default_shape_variant(table_spec.seat_count),
+                    'status': table_spec.status,
+                    'position_x': table_spec.position_x,
+                    'position_y': table_spec.position_y,
+                    'width': table_spec.width,
+                    'height': table_spec.height,
                 },
             )
             table.zone = zone
-            table.name = table_spec['name']
-            table.seat_count = table_spec['seat_count']
+            table.name = table_spec.name
+            table.seat_count = table_spec.seat_count
             table.shape = DiningTable.Shape.SQUARE
-            table.shape_variant = DiningTable.get_default_shape_variant(table_spec['seat_count'])
-            table.status = DiningTable.Status.AVAILABLE
-            table.position_x = table_spec['position_x']
-            table.position_y = table_spec['position_y']
-            table.width = 1
-            table.height = 1
+            table.shape_variant = DiningTable.get_default_shape_variant(table_spec.seat_count)
+            table.status = table_spec.status
+            table.position_x = table_spec.position_x
+            table.position_y = table_spec.position_y
+            table.width = table_spec.width
+            table.height = table_spec.height
             table.save()
-            tables[(spec['code'], table_spec['table_number'])] = table
+            tables[(spec.code, table_spec.table_number)] = table
 
     return halls, tables
 
 
-def seed_catalog(restaurant: Restaurant, restaurant_key: str, prep_stations: dict[str, PrepStation]):
+def seed_catalog(restaurant: Restaurant, catalog_specs, prep_stations: dict[str, PrepStation]):
     items_by_code = {}
 
-    for category_index, category_spec in enumerate(CATALOG_SPECS[restaurant_key], start=1):
+    for category_index, category_spec in enumerate(catalog_specs, start=1):
         category, _ = CatalogCategory.objects.get_or_create(
             restaurant=restaurant,
-            mxik_code=category_spec['category_code'],
-            defaults={'name': category_spec['category_name'], 'sort_order': category_index},
+            mxik_code=category_spec.category_code,
+            defaults={'name': category_spec.category_name, 'sort_order': category_index},
         )
-        category.name = category_spec['category_name']
-        category.mxik_name = category_spec.get('category_mxik_name', category_spec['category_name'])
-        category.image_url = category_spec.get('image_url')
+        category.name = category_spec.category_name
+        category.mxik_name = category_spec.category_mxik_name
+        category.image_url = category_spec.image_url
         category.image_source = CatalogCategory.ImageSource.MXIK_CACHE if category.image_url else ''
         category.sort_order = category_index
         category.is_active = True
         category.save()
 
-        for item_spec in category_spec['items']:
+        for item_spec in category_spec.items:
             item, _ = CatalogItem.objects.get_or_create(
                 restaurant=restaurant,
-                name=item_spec['name'],
+                name=item_spec.name,
                 defaults={
                     'category': category,
-                    'prep_station': prep_stations.get(item_spec['prep_station_code']),
-                    'price': item_spec['price'],
+                    'prep_station': prep_stations.get(item_spec.prep_station_code),
+                    'price': item_spec.price,
                 },
             )
             item.category = category
-            item.prep_station = prep_stations.get(item_spec['prep_station_code'])
-            item.price = item_spec['price']
-            item.description = item_spec.get('description', item_spec['name'])
+            item.prep_station = prep_stations.get(item_spec.prep_station_code)
+            item.price = item_spec.price
+            item.description = item_spec.description
             item.is_active = True
             item.is_stoplisted = False
-            item.mxik_code = item_spec.get('mxik_code', item_spec['code'])
-            item.mxik_name = item_spec.get('mxik_name', item_spec['name'])
+            item.mxik_code = item_spec.mxik_code
+            item.mxik_name = item_spec.mxik_name
             item.save()
-            items_by_code[item_spec['code']] = item
+            items_by_code[item_spec.code] = item
 
     return items_by_code
 
 
-def seed_staff(restaurant: Restaurant, restaurant_key: str, roles_by_code: dict[str, Role], halls_by_code: dict[str, Hall]):
+def seed_staff(restaurant: Restaurant, staff_specs, roles_by_code: dict[str, Role], halls_by_code: dict[str, Hall]):
     users_by_username = {}
-    for spec in STAFF_SPECS_BY_RESTAURANT[restaurant_key]:
+    for spec in staff_specs:
         user, _ = User.objects.get_or_create(
             username=spec.username,
             defaults={
