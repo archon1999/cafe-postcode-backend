@@ -1,9 +1,16 @@
 from django.urls import path
 
-from apps.floor.api.admin.views.halls import HallConstructorView, HallDetailView, HallListCreateView
-from apps.floor.api.admin.views.table_sessions import TableSessionDetailView, TableSessionListCreateView
-from apps.floor.api.admin.views.tables import DiningTableDetailView, DiningTableListCreateView
-from apps.floor.api.admin.views.zones import ZoneDetailView, ZoneListCreateView
+from apps.floor.api.admin.views import (
+    HallDetailView,
+    HallListCreateView,
+    TableSessionDetailView,
+    TableSessionListCreateView,
+    DiningTableDetailView,
+    DiningTableListCreateView,
+    ZoneDetailView,
+    ZoneListCreateView,
+    HallConstructorView
+)
 
 urlpatterns = [
     path('halls/', HallListCreateView.as_view()),

@@ -5,18 +5,21 @@ from rest_framework.views import APIView
 from apps.dashboard.api.serializers import DashboardOverviewSerializer
 from apps.dashboard.services import OwnerDashboardOverviewService
 from apps.platform.services import FeatureGateService
-from common.api.permissions import EndpointRBACPermission
+from apps.reporting.services import get_report_period
+from common.api.permissions import require_any_permission_code
 from common.api.scopes import get_request_restaurant
 
 
 class DashboardOverviewView(APIView):
-    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    permission_classes = [permissions.IsAuthenticated]
     overview_service_class = OwnerDashboardOverviewService
     feature_gate_service_class = FeatureGateService
 
     def get(self, request):
+        require_any_permission_code(request.user, 'dashboard.view')
         restaurant = get_request_restaurant(request)
+        period = get_report_period(request.query_params)
         self.feature_gate_service_class().ensure_owner_dashboard_access(restaurant=restaurant)
-        payload = self.overview_service_class().build(restaurant=restaurant)
+        payload = self.overview_service_class().build(restaurant=restaurant, period=period)
         serializer = DashboardOverviewSerializer(payload)
         return Response(serializer.data)

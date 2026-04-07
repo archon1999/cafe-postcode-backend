@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from apps.kitchen.models import KitchenTicket
-from apps.kitchen.serializers.order_item import OrderItemSerializer
+from .order_item import OrderItemSerializer
 from apps.sales.helpers import get_order_item_model
 
 OrderItem = get_order_item_model()

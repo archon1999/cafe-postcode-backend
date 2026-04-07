@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 
 from apps.kitchen.models import KitchenTicket
-from apps.kitchen.serializers import KitchenTicketSerializer
+from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
 from apps.platform.services import FeatureGateService
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant

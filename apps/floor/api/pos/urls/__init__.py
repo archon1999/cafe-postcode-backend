@@ -1,7 +1,13 @@
 from django.urls import path
 
-from apps.floor.api.pos.views.halls import DiningTableReserveView, PosHallListView
-from apps.floor.api.pos.views.table_sessions import TableSessionDetailView, TableSessionListCreateView, TableSessionMergeView, TableSessionMoveView
+from apps.floor.api.pos.views import (
+    DiningTableReserveView,
+    PosHallListView,
+    TableSessionDetailView,
+    TableSessionListCreateView,
+    TableSessionMergeView,
+    TableSessionMoveView,
+)
 
 urlpatterns = [
     path('halls/', PosHallListView.as_view()),

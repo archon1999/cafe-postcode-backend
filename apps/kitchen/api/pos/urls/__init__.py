@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.kitchen.api.pos.views.queue import KitchenItemStatusUpdateView, KitchenQueueView, KitchenTicketDetailView, KitchenTicketStatusUpdateView
+from apps.kitchen.api.pos.views import KitchenItemStatusUpdateView, KitchenQueueView, KitchenTicketDetailView, KitchenTicketStatusUpdateView
 
 urlpatterns = [
     path('queue/', KitchenQueueView.as_view()),

@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 
 from apps.floor.models import ZoneOrCabin
-from apps.floor.serializers import ZoneOrCabinSerializer
+from apps.floor.api.admin.serializers import ZoneOrCabinSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 

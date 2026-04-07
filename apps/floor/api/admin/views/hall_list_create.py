@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 
 from apps.floor.models import Hall
-from apps.floor.serializers import HallSerializer
+from apps.floor.api.admin.serializers import HallSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 

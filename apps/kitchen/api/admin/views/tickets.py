@@ -1,7 +1,7 @@
 from rest_framework import generics
 
+from apps.kitchen.api.admin.serializers import KitchenTicketSerializer
 from apps.kitchen.selectors.tickets import KitchenTicketListFilters, admin_kitchen_ticket_queryset
-from apps.kitchen.serializers import KitchenTicketSerializer
 from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 

@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.kitchen.models import KitchenTicket
-from apps.kitchen.serializers import KitchenTicketSerializer, OrderItemSerializer
+from apps.kitchen.api.pos.serializers import KitchenTicketSerializer, OrderItemSerializer
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_item_model
 

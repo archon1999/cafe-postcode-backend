@@ -1,7 +1,7 @@
 from rest_framework import generics, permissions
 
 from apps.integrations.models import IntegrationConfig
-from apps.integrations.serializers import IntegrationConfigSerializer
+from apps.integrations.api.admin.serializers import IntegrationConfigSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
