@@ -174,6 +174,69 @@ class AdminApiTests(APITestCase):
         self.assertEqual(session.status, AuthSession.Status.REVOKED)
         self.assertIsNotNone(session.revoked_at)
 
+    def test_admin_auth_me_includes_restaurant_context_from_session(self):
+        self.authenticate(self.admin_user)
+
+        response = self.client.get('/api/v1/admin/auth/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['restaurant_name'], self.restaurant.name)
+        self.assertEqual(response.data['activation_type'], 'tariff')
+        self.assertEqual(response.data['billing_period'], None)
+        self.assertEqual(response.data['expires_on'], None)
+        self.assertEqual(response.data['tariff']['id'], str(self.tariff.id))
+        self.assertEqual(response.data['tariff']['name'], self.tariff.name)
+
+    def test_admin_auth_me_includes_business_partner_context_from_session(self):
+        partner = BusinessPartner.objects.create(
+            inn='123456789',
+            company_name='Acme Partner',
+            legal_name='Acme Partner LLC',
+            owner_user=None,
+        )
+        partner_user = User.objects.create_user(
+            username='partner-owner',
+            password='secret123',
+            full_name='Partner Owner',
+            business_partner=partner,
+            role=self.admin_role,
+            is_staff=True,
+        )
+        self.authenticate(partner_user)
+
+        response = self.client.get('/api/v1/admin/auth/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['business_partner_id'], str(partner.id))
+        self.assertEqual(response.data['company_name'], 'Acme Partner')
+        self.assertEqual(response.data['inn'], '123456789')
+        self.assertIsNone(response.data['business_partners_count'])
+        self.assertIsNone(response.data['restaurant_name'])
+
+    def test_admin_auth_me_includes_business_partner_count_for_platform_owner(self):
+        BusinessPartner.objects.create(
+            inn='987654321',
+            company_name='Beta Partner',
+            legal_name='Beta Partner LLC',
+        )
+        owner_user = User.objects.create_user(
+            username='platform-owner',
+            password='secret123',
+            full_name='Platform Owner',
+            role=self.admin_role,
+            is_staff=True,
+        )
+        self.authenticate(owner_user)
+
+        response = self.client.get('/api/v1/admin/auth/me/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['business_partners_count'], BusinessPartner.objects.count())
+        self.assertIsNone(response.data['business_partner_id'])
+        self.assertIsNone(response.data['restaurant_id'])
+        self.assertIsNone(response.data['company_name'])
+        self.assertIsNone(response.data['restaurant_name'])
+
     def test_admin_permissions_are_enforced(self):
         self.authenticate(self.limited_user)
 
