@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from .bootstrap_restaurant_demo_support import bootstrap_demo
+from .seeder import bootstrap_demo
 
 
 class Command(BaseCommand):
