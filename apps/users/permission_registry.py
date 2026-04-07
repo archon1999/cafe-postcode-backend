@@ -1064,6 +1064,14 @@ PERMISSION_DEFINITIONS.extend(
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
+            'restaurants.extend',
+            surface='admin',
+            group_key='restaurants',
+            name='Restoran tarif muddatini uzaytirish',
+            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/extend/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
+        ),
+        action_permission(
             'restaurants.reset_password',
             surface='admin',
             group_key='restaurants',

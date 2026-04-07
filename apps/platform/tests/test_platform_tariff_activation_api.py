@@ -1,3 +1,7 @@
+from datetime import date
+from unittest.mock import patch
+
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -187,6 +191,7 @@ class PlatformTariffActivationApiTests(APITestCase):
         response = self.client.post(
             f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
             {
+                'billing_period': 'monthly',
                 'tariff_id': str(self.fast_food_tariff.id),
                 'starts_on': '2026-04-04',
             },
@@ -198,6 +203,10 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
         self.assertTrue(self.restaurant.entitlement.is_active)
         self.assertEqual(self.restaurant.entitlement.tariff_id, self.fast_food_tariff.id)
+        self.assertEqual(self.restaurant.entitlement.billing_period, 'monthly')
+        self.assertEqual(self.restaurant.entitlement.expires_on, date(2026, 5, 4))
+        self.assertEqual(response.data['restaurant']['billing_period'], 'monthly')
+        self.assertEqual(response.data['restaurant']['expires_on'], date(2026, 5, 4))
 
     def test_custom_activation_uses_selected_roles_and_permissions(self):
         self.client.force_authenticate(self.business_partner_user)
@@ -208,6 +217,7 @@ class PlatformTariffActivationApiTests(APITestCase):
             f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
             {
                 'activation_type': 'custom',
+                'billing_period': 'yearly',
                 'allowed_role_ids': [str(self.fast_food_admin_role.id), str(self.fast_food_cashier_role.id)],
                 'permission_ids': [str(employees_view_permission.id), str(pos_takeaway_menu_view_permission.id)],
                 'starts_on': '2026-04-04',
@@ -231,4 +241,90 @@ class PlatformTariffActivationApiTests(APITestCase):
         admin_user = User.objects.get(username=response.data['username'])
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
         self.assertEqual(self.restaurant.entitlement.get_effective_role_codes(), {'fast_food_admin', 'fast_food_cashier'})
+        self.assertEqual(self.restaurant.entitlement.billing_period, 'yearly')
+        self.assertEqual(self.restaurant.entitlement.expires_on, date(2027, 4, 4))
+        self.assertEqual(response.data['restaurant']['activation_type'], 'custom')
+        self.assertEqual(response.data['restaurant']['starts_on'], date(2026, 4, 4))
+        self.assertEqual(response.data['restaurant']['expires_on'], date(2027, 4, 4))
+
+    def test_extend_active_entitlement_from_current_expiry(self):
+        self.client.force_authenticate(self.business_partner_user)
+        self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+            {
+                'billing_period': 'monthly',
+                'tariff_id': str(self.fast_food_tariff.id),
+                'starts_on': '2026-04-04',
+            },
+            format='json',
+        )
+
+        response = self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/extend/',
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.restaurant.refresh_from_db()
+        self.assertEqual(self.restaurant.entitlement.expires_on, date(2026, 6, 4))
+        self.assertTrue(self.restaurant.is_active)
+        self.assertTrue(self.restaurant.entitlement.is_active)
+        self.assertEqual(response.data['billing_period'], 'monthly')
+        self.assertEqual(response.data['expires_on'], date(2026, 6, 4))
+
+    def test_extend_expired_entitlement_restarts_from_today(self):
+        self.client.force_authenticate(self.business_partner_user)
+        self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+            {
+                'billing_period': 'monthly',
+                'tariff_id': str(self.fast_food_tariff.id),
+                'starts_on': '2026-02-01',
+            },
+            format='json',
+        )
+        self.restaurant.is_active = False
+        self.restaurant.deactivated_at = timezone.now()
+        self.restaurant.save(update_fields=['is_active', 'deactivated_at', 'updated_at'])
+        self.restaurant.entitlement.is_active = False
+        self.restaurant.entitlement.expires_on = date(2026, 3, 1)
+        self.restaurant.entitlement.save(update_fields=['is_active', 'expires_on', 'updated_at'])
+
+        with patch('apps.platform.services.restaurant_subscriptions.timezone.localdate', return_value=date(2026, 4, 7)):
+            response = self.client.post(
+                f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/extend/',
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.restaurant.refresh_from_db()
+        self.assertTrue(self.restaurant.is_active)
+        self.assertTrue(self.restaurant.entitlement.is_active)
+        self.assertEqual(self.restaurant.entitlement.starts_on, date(2026, 4, 7))
+        self.assertEqual(self.restaurant.entitlement.expires_on, date(2026, 5, 7))
+        self.assertIsNotNone(self.restaurant.activated_at)
+        self.assertEqual(response.data['starts_on'], date(2026, 4, 7))
+        self.assertEqual(response.data['expires_on'], date(2026, 5, 7))
+
+    def test_restaurant_list_includes_subscription_dates(self):
+        self.client.force_authenticate(self.business_partner_user)
+        self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+            {
+                'billing_period': 'monthly',
+                'tariff_id': str(self.fast_food_tariff.id),
+                'starts_on': '2026-04-04',
+            },
+            format='json',
+        )
+
+        response = self.client.get('/api/v1/admin/restaurants/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        row = next(item for item in response.data['data'] if item['id'] == str(self.restaurant.id))
+        self.assertEqual(row['activation_type'], 'tariff')
+        self.assertEqual(row['billing_period'], 'monthly')
+        self.assertEqual(row['starts_on'], date(2026, 4, 4))
+        self.assertEqual(row['expires_on'], date(2026, 5, 4))
+        self.assertIsNotNone(row['activated_at'])
 

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.platform.helpers import get_tariff_model
+from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_model
 from apps.platform.selectors.business_partners import ACTIVATION_EXCLUDED_ROLE_CODES
 from apps.restaurants.api.admin.serializers import RestaurantSerializer
 from apps.users.api.admin.serializers import PermissionOptionSerializer, RoleSerializer
@@ -11,10 +11,12 @@ from .tariff import TariffOptionSerializer
 Permission = get_permission_model()
 Role = get_role_model()
 Tariff = get_tariff_model()
+RestaurantEntitlement = get_restaurant_entitlement_model()
 
 
 class RestaurantActivationSerializer(serializers.Serializer):
     activation_type = serializers.ChoiceField(choices=('tariff', 'custom'), default='tariff')
+    billing_period = serializers.ChoiceField(choices=RestaurantEntitlement.BillingPeriod.choices)
     tariff_id = serializers.PrimaryKeyRelatedField(
         source='tariff',
         queryset=Tariff.objects.filter(is_active=True),

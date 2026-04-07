@@ -20,6 +20,10 @@ class RestaurantSerializer(serializers.ModelSerializer):
     permission_codes = serializers.SerializerMethodField()
     role_codes = serializers.SerializerMethodField()
     tariff = serializers.SerializerMethodField()
+    starts_on = serializers.SerializerMethodField()
+    expires_on = serializers.SerializerMethodField()
+    billing_period = serializers.SerializerMethodField()
+    activation_type = serializers.SerializerMethodField()
 
     class Meta:
         model = Restaurant
@@ -33,7 +37,13 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'currency',
             'auth_code',
             'is_active',
+            'activated_at',
+            'deactivated_at',
             'restaurant_access_active',
+            'activation_type',
+            'starts_on',
+            'expires_on',
+            'billing_period',
             'permission_codes',
             'role_codes',
             'tariff',
@@ -72,6 +82,24 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'permission_codes': sorted(entitlement.get_effective_permission_codes()),
             'role_codes': sorted(entitlement.get_effective_role_codes()),
         }
+
+    def get_starts_on(self, instance):
+        entitlement = self._get_entitlement(instance)
+        return entitlement.starts_on if entitlement is not None else None
+
+    def get_expires_on(self, instance):
+        entitlement = self._get_entitlement(instance)
+        return entitlement.expires_on if entitlement is not None else None
+
+    def get_billing_period(self, instance):
+        entitlement = self._get_entitlement(instance)
+        return entitlement.billing_period if entitlement is not None else None
+
+    def get_activation_type(self, instance):
+        entitlement = self._get_entitlement(instance)
+        if entitlement is None:
+            return None
+        return 'custom' if entitlement.is_custom else 'tariff'
 
     def _sync_entitlement(self, restaurant, tariff=serializers.empty):
         if tariff is serializers.empty:

@@ -26,7 +26,9 @@ poetry install --no-root
 poetry run python manage.py migrate --noinput
 poetry run python manage.py collectstatic --noinput
 sudo -n systemctl restart postcode-backend
+sudo -n systemctl restart postcode-qcluster
 sudo -n systemctl is-active postcode-backend
+sudo -n systemctl is-active postcode-qcluster
 ```
 
 ## Required files on the server
@@ -54,6 +56,15 @@ sudo systemctl restart postcode-backend
 sudo systemctl status postcode-backend
 ```
 
+Create a second worker service for Django Q, for example `postcode-qcluster.service`, and run:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable postcode-qcluster
+sudo systemctl restart postcode-qcluster
+sudo systemctl status postcode-qcluster
+```
+
 ## Sudo requirement for CI/CD
 
 The SSH user used by GitHub Actions must be allowed to restart the service without an interactive password.
@@ -61,5 +72,5 @@ The SSH user used by GitHub Actions must be allowed to restart the service witho
 Example sudoers entry:
 
 ```bash
-username ALL=(ALL) NOPASSWD: /bin/systemctl restart postcode-backend, /bin/systemctl is-active postcode-backend
+username ALL=(ALL) NOPASSWD: /bin/systemctl restart postcode-backend, /bin/systemctl is-active postcode-backend, /bin/systemctl restart postcode-qcluster, /bin/systemctl is-active postcode-qcluster
 ```

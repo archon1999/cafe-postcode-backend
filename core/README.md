@@ -26,9 +26,10 @@
 
 These modules are imported by `settings/__init__.py` and are part of the current runtime configuration.
 
-## Optional kept file
+## Background jobs
 
-- `settings/q_cluster.py` stays in the repository for background-worker configuration, but it is not loaded by default from `settings/__init__.py`
+- `settings/q_cluster.py` is loaded by default from `settings/__init__.py`
+- `django_q` is part of the active runtime and is used for restaurant subscription expiry checks
 
 ## Notes
 

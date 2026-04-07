@@ -17,6 +17,7 @@ from apps.platform.selectors.business_partners import (
     get_restaurant_admin_role_for_source,
     normalize_username_base,
 )
+from apps.platform.services import add_billing_period, deactivate_restaurant_access, extend_restaurant_entitlement
 from apps.restaurants.api.admin.serializers import RestaurantSerializer
 from apps.restaurants.helpers import generate_restaurant_auth_code, get_restaurant_model
 from apps.restaurants.selectors.restaurants import get_restaurants_queryset_for_request
@@ -52,10 +53,13 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
         activation_type = validated.get('activation_type', 'tariff')
         allowed_roles = list(validated.get('allowed_roles', []))
         permissions = list(validated.get('permissions', []))
+        billing_period = validated['billing_period']
         entitlement.tariff = tariff
         entitlement.is_custom = activation_type == 'custom'
         entitlement.is_active = True
         entitlement.starts_on = validated['starts_on']
+        entitlement.billing_period = billing_period
+        entitlement.expires_on = add_billing_period(validated['starts_on'], billing_period)
         entitlement.monthly_price = tariff.monthly_price if tariff is not None else None
         entitlement.yearly_price = tariff.yearly_price if tariff is not None else None
         entitlement.save()
@@ -119,14 +123,20 @@ class RestaurantActivationOptionsView(AdminPermissionRequiredMixin, APIView):
 class RestaurantDeactivateView(AdminPermissionRequiredMixin, APIView):
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
-        restaurant.is_active = False
-        restaurant.deactivated_at = timezone.now()
-        restaurant.save(update_fields=['is_active', 'deactivated_at', 'updated_at'])
-        entitlement = getattr(restaurant, 'entitlement', None)
-        if entitlement is not None:
-            entitlement.is_active = False
-            entitlement.save(update_fields=['is_active', 'updated_at'])
+        deactivate_restaurant_access(restaurant=restaurant, deactivated_at=timezone.now())
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class RestaurantExtendView(AdminPermissionRequiredMixin, APIView):
+    def post(self, request, pk):
+        restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
+        entitlement = getattr(restaurant, 'entitlement', None)
+        if entitlement is None or not entitlement.billing_period:
+            raise serializers.ValidationError({'detail': 'Restaurant subscription period is not configured.'})
+
+        extend_restaurant_entitlement(restaurant=restaurant, entitlement=entitlement)
+        restaurant.refresh_from_db()
+        return Response(RestaurantSerializer(restaurant).data, status=status.HTTP_200_OK)
 
 
 class RestaurantResetPasswordView(AdminPermissionRequiredMixin, APIView):
@@ -155,6 +165,7 @@ __all__ = [
     'RestaurantActivateView',
     'RestaurantActivationOptionsView',
     'RestaurantDeactivateView',
+    'RestaurantExtendView',
     'RestaurantRotateAuthCodeView',
     'RestaurantResetPasswordView',
 ]

@@ -17,6 +17,7 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, ZoneOrCabin
 from apps.integrations.services import ensure_mock_configs
 from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
+from apps.platform.services import add_billing_period
 from apps.restaurants.models import CashDesk, Device, DistributionPoint, PrepStation, Restaurant
 
 from .specs import (
@@ -240,6 +241,8 @@ def configure_entitlement(restaurant: Restaurant, tariff: Tariff) -> RestaurantE
     entitlement.is_custom = False
     entitlement.is_active = True
     entitlement.starts_on = timezone.localdate()
+    entitlement.billing_period = RestaurantEntitlement.BillingPeriod.MONTHLY
+    entitlement.expires_on = add_billing_period(entitlement.starts_on, entitlement.billing_period)
     entitlement.monthly_price = tariff.monthly_price
     entitlement.yearly_price = tariff.yearly_price
     entitlement.save()

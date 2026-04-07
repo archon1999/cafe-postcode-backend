@@ -23,6 +23,7 @@ from .installed_apps import INSTALLED_APPS
 from .locale_paths import LOCALE_PATHS
 from .logging import LOGGING
 from .middleware import MIDDLEWARE
+from .q_cluster import Q_CLUSTER
 from .rest_framework import REST_FRAMEWORK
 from .templates import TEMPLATES
 from .swagger import SWAGGER_SETTINGS
@@ -102,6 +103,7 @@ class CoreSettings(Settings):
     REST_FRAMEWORK = REST_FRAMEWORK
     CACHES = CACHES
     CHANNEL_LAYERS = CHANNEL_LAYERS
+    Q_CLUSTER = Q_CLUSTER
     SWAGGER_SETTINGS = SWAGGER_SETTINGS
 
     CORS_ALLOW_CREDENTIALS = CORS_ALLOW_CREDENTIALS

@@ -19,6 +19,11 @@ RESTAURANT_ORDERING_FIELDS = {
     'phone': 'phone',
     'currency': 'currency',
     'isActive': 'is_active',
+    'activatedAt': 'activated_at',
+    'deactivatedAt': 'deactivated_at',
+    'startsOn': 'entitlement__starts_on',
+    'expiresOn': 'entitlement__expires_on',
+    'billingPeriod': 'entitlement__billing_period',
 }
 
 

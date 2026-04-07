@@ -27,6 +27,7 @@ THIRD_PARTY_APPS = [
     'modeltranslation',
     'corsheaders',
     'django_filters',
+    'django_q',
     'rest_framework',
     'channels',
     'rest_framework.authtoken',

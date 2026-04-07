@@ -4,6 +4,10 @@ from common.models import BaseModel
 
 
 class RestaurantEntitlement(BaseModel):
+    class BillingPeriod(models.TextChoices):
+        MONTHLY = 'monthly', 'Monthly'
+        YEARLY = 'yearly', 'Yearly'
+
     restaurant = models.OneToOneField(
         'restaurants.Restaurant',
         on_delete=models.CASCADE,
@@ -19,6 +23,8 @@ class RestaurantEntitlement(BaseModel):
     is_custom = models.BooleanField(default=False)
     is_active = models.BooleanField(default=False)
     starts_on = models.DateField(null=True, blank=True)
+    expires_on = models.DateField(null=True, blank=True)
+    billing_period = models.CharField(max_length=16, choices=BillingPeriod.choices, null=True, blank=True)
     monthly_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     yearly_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     permissions = models.ManyToManyField('users.Permission', blank=True, related_name='restaurant_entitlements')
