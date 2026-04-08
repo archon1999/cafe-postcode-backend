@@ -8,6 +8,22 @@ RestaurantEntitlement = get_restaurant_entitlement_model()
 Tariff = get_tariff_model()
 
 
+def _restore_faktura_payload(value):
+    if isinstance(value, list):
+        return [_restore_faktura_payload(item) for item in value]
+
+    if not isinstance(value, dict):
+        return value
+
+    restored = {}
+    for key, item in value.items():
+        restored_key = key
+        if isinstance(key, str) and key.startswith('_'):
+            restored_key = ''.join(part.capitalize() for part in key[1:].split('_') if part)
+        restored[restored_key] = _restore_faktura_payload(item)
+    return restored
+
+
 class RestaurantSerializer(serializers.ModelSerializer):
     tariff_id = serializers.PrimaryKeyRelatedField(
         source='tariff',
@@ -24,6 +40,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
     expires_on = serializers.SerializerMethodField()
     billing_period = serializers.SerializerMethodField()
     activation_type = serializers.SerializerMethodField()
+    faktura_payload = serializers.JSONField(required=False)
 
     class Meta:
         model = Restaurant
@@ -34,6 +51,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'tax_number',
             'phone',
             'address',
+            'faktura_payload',
             'currency',
             'auth_code',
             'is_active',
@@ -116,14 +134,27 @@ class RestaurantSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         tariff = validated_data.pop('tariff', serializers.empty)
+        faktura_payload = _restore_faktura_payload(validated_data.pop('faktura_payload', {}))
         validated_data['currency'] = 'UZS'
-        restaurant = super().create(validated_data)
+        restaurant = super().create({**validated_data, 'faktura_payload': faktura_payload})
         self._sync_entitlement(restaurant, tariff)
         return restaurant
 
     def update(self, instance, validated_data):
         tariff = validated_data.pop('tariff', serializers.empty)
+        faktura_payload = validated_data.pop('faktura_payload', serializers.empty)
+        if faktura_payload is not serializers.empty:
+            validated_data['faktura_payload'] = _restore_faktura_payload(faktura_payload)
         validated_data['currency'] = 'UZS'
         restaurant = super().update(instance, validated_data)
         self._sync_entitlement(restaurant, tariff)
         return restaurant
+
+
+class RestaurantLookupSerializer(serializers.Serializer):
+    tax_number = serializers.CharField(source='taxNumber')
+    name = serializers.CharField()
+    legal_name = serializers.CharField()
+    phone = serializers.CharField(allow_blank=True)
+    address = serializers.CharField(allow_blank=True)
+    faktura_payload = serializers.JSONField()

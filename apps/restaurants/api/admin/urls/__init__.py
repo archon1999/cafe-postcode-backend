@@ -8,11 +8,12 @@ from apps.restaurants.api.admin.views.distribution_points import (
 )
 from apps.restaurants.api.admin.views.my_restaurant import MyRestaurantDetailView, RestaurantConfigView
 from apps.restaurants.api.admin.views.prep_stations import PrepStationDetailView, PrepStationListCreateView
-from apps.restaurants.api.admin.views.restaurants import RestaurantDetailView, RestaurantListCreateView
+from apps.restaurants.api.admin.views.restaurants import RestaurantDetailView, RestaurantListCreateView, RestaurantLookupView
 
 urlpatterns = [
     path('settings/', RestaurantConfigView.as_view()),
     path('my-restaurant/', MyRestaurantDetailView.as_view()),
+    path('lookup/', RestaurantLookupView.as_view()),
     path('prep-stations/', PrepStationListCreateView.as_view()),
     path('prep-stations/<uuid:pk>/', PrepStationDetailView.as_view()),
     path('cash-desks/', CashDeskListCreateView.as_view()),

@@ -305,6 +305,105 @@ class AdminApiTests(APITestCase):
         self.assertIn(self.admin_role.code, response.data['role_codes'])
         self.assertNotIn('timezone', response.data)
 
+    @patch('apps.restaurants.api.admin.views.restaurants.FakturaClient.lookup_company_basic_details')
+    def test_restaurant_lookup_returns_normalized_payload(self, lookup_mock):
+        self.authenticate(self.superuser)
+        lookup_mock.return_value = {
+            'CompanyInn': '311926992',
+            'CompanyName': 'GULISTON RESTAURANT',
+            'PhoneNumber': '+998337700586',
+            'CompanyAddress': 'Buxoro',
+        }
+
+        response = self.client.get('/api/v1/admin/restaurants/lookup/', {'taxNumber': '311926992'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['tax_number'], '311926992')
+        self.assertEqual(response.data['name'], 'GULISTON RESTAURANT')
+        self.assertEqual(response.data['legal_name'], 'GULISTON RESTAURANT')
+        self.assertEqual(response.data['phone'], '+998337700586')
+        self.assertEqual(response.data['address'], 'Buxoro')
+        self.assertEqual(response.data['faktura_payload']['CompanyName'], 'GULISTON RESTAURANT')
+
+    def test_restaurant_lookup_requires_tax_number(self):
+        self.authenticate(self.superuser)
+
+        response = self.client.get('/api/v1/admin/restaurants/lookup/')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('taxNumber', response.data)
+
+    @patch('apps.restaurants.api.admin.views.restaurants.FakturaClient.lookup_company_basic_details')
+    def test_restaurant_lookup_returns_502_on_upstream_failure(self, lookup_mock):
+        self.authenticate(self.superuser)
+        lookup_mock.side_effect = FakturaError('boom')
+
+        response = self.client.get('/api/v1/admin/restaurants/lookup/', {'taxNumber': '311926992'})
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(response.data['detail'], 'boom')
+
+    def test_restaurant_lookup_is_permission_protected(self):
+        self.authenticate(self.limited_user)
+
+        response = self.client.get('/api/v1/admin/restaurants/lookup/', {'taxNumber': '311926992'})
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('apps.restaurants.api.admin.views.restaurants.FakturaClient.lookup_company_basic_details')
+    def test_restaurant_lookup_allows_create_permission(self, lookup_mock):
+        lookup_mock.return_value = {'CompanyInn': '311926992', 'CompanyName': 'GULISTON RESTAURANT'}
+        create_only_user = self.create_admin_user_with_permissions('restaurant-create-only', ['restaurants.create'])
+
+        self.authenticate(create_only_user)
+        response = self.client.get('/api/v1/admin/restaurants/lookup/', {'taxNumber': '311926992'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['tax_number'], '311926992')
+
+    @patch('apps.restaurants.api.admin.views.restaurants.FakturaClient.lookup_company_basic_details')
+    def test_restaurant_lookup_allows_update_permission(self, lookup_mock):
+        lookup_mock.return_value = {'CompanyInn': '311926992', 'CompanyName': 'GULISTON RESTAURANT'}
+        update_only_user = self.create_admin_user_with_permissions('restaurant-update-only', ['restaurants.update'])
+
+        self.authenticate(update_only_user)
+        response = self.client.get('/api/v1/admin/restaurants/lookup/', {'taxNumber': '311926992'})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['tax_number'], '311926992')
+
+    def test_restaurant_create_and_update_preserve_faktura_payload(self):
+        self.authenticate(self.superuser)
+
+        create_response = self.client.post(
+            '/api/v1/admin/restaurants/',
+            {
+                'name': 'Lookup Restaurant',
+                'legalName': 'Lookup Restaurant MCHJ',
+                'taxNumber': '311926992',
+                'phone': '+998337700586',
+                'address': 'Buxoro',
+                'isActive': True,
+                'fakturaPayload': {'CompanyName': 'Lookup Restaurant', 'CompanyInn': '311926992'},
+            },
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        restaurant = self.restaurant.__class__.objects.get(pk=create_response.data['id'])
+        self.assertEqual(restaurant.faktura_payload['CompanyName'], 'Lookup Restaurant')
+
+        update_response = self.client.patch(
+            f'/api/v1/admin/restaurants/{restaurant.id}/',
+            {'name': 'Lookup Restaurant Updated'},
+            format='json',
+        )
+
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        restaurant.refresh_from_db()
+        self.assertEqual(restaurant.name, 'Lookup Restaurant Updated')
+        self.assertEqual(restaurant.faktura_payload['CompanyName'], 'Lookup Restaurant')
+
     def test_report_summary_uses_tashkent_day_boundaries(self):
         self.authenticate()
 

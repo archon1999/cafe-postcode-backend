@@ -482,6 +482,7 @@ PERMISSION_DEFINITIONS = [
             ('PATCH', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
+            ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
         ),
         default_roles=POS_TABLE_MANAGE_ROLES,
     ),
@@ -518,6 +519,7 @@ PERMISSION_DEFINITIONS = [
             ('PATCH', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
+            ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
         ),
         default_roles=POS_TAKEAWAY_MENU_VIEW_ROLES,
     ),
@@ -670,10 +672,17 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/restaurants/',
         detail_url='api/v1/admin/restaurants/<uuid:pk>/',
         default_roles=BUSINESS_PARTNER_ROLES,
-        update_endpoints=endpoint_specs(
-            ('PUT', 'api/v1/admin/restaurants/<uuid:pk>/'),
-            ('PATCH', 'api/v1/admin/restaurants/<uuid:pk>/'),
-            ('DELETE', 'api/v1/admin/restaurants/<uuid:pk>/'),
+        create_endpoints=merge_endpoint_specs(
+            endpoint_specs(('POST', 'api/v1/admin/restaurants/')),
+            endpoint_specs(('GET', 'api/v1/admin/restaurants/lookup/')),
+        ),
+        update_endpoints=merge_endpoint_specs(
+            endpoint_specs(
+                ('PUT', 'api/v1/admin/restaurants/<uuid:pk>/'),
+                ('PATCH', 'api/v1/admin/restaurants/<uuid:pk>/'),
+                ('DELETE', 'api/v1/admin/restaurants/<uuid:pk>/'),
+            ),
+            endpoint_specs(('GET', 'api/v1/admin/restaurants/lookup/')),
         ),
         include_delete=False,
     )
@@ -1036,6 +1045,15 @@ PERMISSION_DEFINITIONS.extend(
             name="Tarif uchun ruxsatlar ro'yxatini ko'rish",
             endpoints=endpoint_specs(('GET', 'api/v1/admin/permissions/options/')),
             default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+            ui_visible=False,
+        ),
+        action_permission(
+            'restaurants.lookup',
+            surface='admin',
+            group_key='restaurants',
+            name="Restoranni STIR bo'yicha qidirish",
+            endpoints=endpoint_specs(('GET', 'api/v1/admin/restaurants/lookup/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
             ui_visible=False,
         ),
         action_permission(

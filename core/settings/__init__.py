@@ -29,7 +29,19 @@ from .templates import TEMPLATES
 from .swagger import SWAGGER_SETTINGS
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-dotenv.load_dotenv(BASE_DIR / 'core' / 'settings' / 'config.env')
+
+
+def load_env_files() -> None:
+    env_files = (
+        BASE_DIR / 'core' / 'settings' / 'config.env',
+        BASE_DIR / '.env',
+    )
+    for env_file in env_files:
+        if env_file.exists():
+            dotenv.load_dotenv(env_file, override=True)
+
+
+load_env_files()
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -46,6 +58,14 @@ def env_list(name: str, default: list[str]) -> list[str]:
         return default
 
     return [item.strip() for item in value.split(',') if item.strip()]
+
+
+def env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+
+    return float(value.strip())
 
 
 class CoreSettings(Settings):
@@ -89,6 +109,14 @@ class CoreSettings(Settings):
     LOCALE_PATHS = LOCALE_PATHS
     MODELTRANSLATION_DEFAULT_LANGUAGE = 'uz'
     TIME_ZONE = 'Asia/Tashkent'
+
+    FAKTURA_TOKEN_URL = os.getenv('FAKTURA_TOKEN_URL', 'https://account.faktura.uz/token').strip()
+    FAKTURA_API_BASE_URL = os.getenv('FAKTURA_API_BASE_URL', 'https://api.faktura.uz').strip()
+    FAKTURA_USERNAME = os.getenv('FAKTURA_USERNAME', '').strip()
+    FAKTURA_PASSWORD = os.getenv('FAKTURA_PASSWORD', '').strip()
+    FAKTURA_CLIENT_ID = os.getenv('FAKTURA_CLIENT_ID', '').strip()
+    FAKTURA_CLIENT_SECRET = os.getenv('FAKTURA_CLIENT_SECRET', '').strip()
+    FAKTURA_TIMEOUT = env_float('FAKTURA_TIMEOUT', 10.0)
 
     STATIC_URL = '/static/'
     STATIC_ROOT = (BASE_DIR / 'staticfiles').as_posix()

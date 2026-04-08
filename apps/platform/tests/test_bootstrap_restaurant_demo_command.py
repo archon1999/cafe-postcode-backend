@@ -6,8 +6,10 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.billing.models import CashShift, Payment, Receipt
-from apps.floor.models import DiningTable, Hall
-from apps.platform.models import Tariff
+from apps.catalog.models import CatalogCategory, CatalogItem
+from apps.floor.models import DiningTable, Hall, ZoneOrCabin
+from apps.integrations.models import IntegrationConfig
+from apps.platform.models import BusinessPartner, Tariff
 from apps.platform.services import add_billing_period
 from apps.restaurants.models import Restaurant
 from apps.sales.models import Order
@@ -15,6 +17,30 @@ from apps.users.models import User
 
 
 class BootstrapRestaurantDemoCommandTests(TestCase):
+    def test_command_reuses_legacy_demo_restaurant_without_delete(self):
+        legacy_restaurant = Restaurant.objects.create(
+            name='Postcode Restaurant',
+            legal_name='Legacy Demo',
+            tax_number='309999001',
+            phone='+998900000001',
+            address='Legacy address',
+        )
+        zone = ZoneOrCabin.objects.create(restaurant=legacy_restaurant, name='Legacy zone')
+        Hall.objects.create(zone_or_cabin=zone, name='Legacy hall')
+        category = CatalogCategory.objects.create(restaurant=legacy_restaurant, name='Legacy category')
+        CatalogItem.objects.create(restaurant=legacy_restaurant, category=category, name='Legacy item', price=1000)
+
+        call_command('run_seeder')
+
+        legacy_restaurant.refresh_from_db()
+        self.assertEqual(legacy_restaurant.name, 'GULISTON RESTAURANT')
+        self.assertEqual(legacy_restaurant.tax_number, '311926992')
+        self.assertEqual(legacy_restaurant.business_partner.inn, '310162774')
+        self.assertFalse(Restaurant.objects.filter(name='Postcode Restaurant').exists())
+        self.assertGreater(legacy_restaurant.zones.count(), 0)
+        self.assertGreater(legacy_restaurant.catalog_categories.count(), 0)
+        self.assertGreater(legacy_restaurant.catalog_items.count(), 0)
+
     def test_command_seeds_rich_two_restaurant_demo_dataset(self):
         call_command('run_seeder')
 
@@ -25,11 +51,31 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         tariffs = Tariff.objects.filter(name__in=['Restaurant tarifi', 'Fast food tarifi']).order_by('name')
         self.assertEqual(tariffs.count(), 2)
 
-        restaurant = Restaurant.objects.get(name='Postcode Restaurant')
-        fast_food = Restaurant.objects.get(name='Postcode Fast Food')
+        partner = BusinessPartner.objects.get(inn='310162774')
+        restaurant = Restaurant.objects.get(name='GULISTON RESTAURANT')
+        fast_food = Restaurant.objects.get(name='BROCCOLI FOOD')
+        restaurant_printer = IntegrationConfig.objects.get(
+            restaurant=restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+        )
+        fast_food_printer = IntegrationConfig.objects.get(
+            restaurant=fast_food,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='mock-printer',
+        )
 
         self.assertEqual(restaurant.entitlement.tariff.name, 'Restaurant tarifi')
         self.assertEqual(fast_food.entitlement.tariff.name, 'Fast food tarifi')
+        self.assertEqual(restaurant_printer.mode, IntegrationConfig.Mode.LIVE)
+        self.assertTrue(restaurant_printer.is_enabled)
+        self.assertEqual(restaurant_printer.settings.get('printer_name'), 'POS-80 USB')
+        self.assertEqual(fast_food_printer.mode, IntegrationConfig.Mode.MOCK)
+        self.assertTrue(fast_food_printer.is_enabled)
+        self.assertEqual(partner.company_name, 'ABSOLYUT POWER SYSTEM MCHJ')
+        self.assertEqual(partner.director_name, 'Jurayev Akmaljon Ruzibayevich')
+        self.assertEqual(restaurant.tax_number, '311926992')
+        self.assertEqual(fast_food.tax_number, '304459113')
         self.assertEqual(restaurant.entitlement.starts_on, timezone.localdate())
         self.assertEqual(fast_food.entitlement.starts_on, timezone.localdate())
         self.assertEqual(

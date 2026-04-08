@@ -1,42 +1,69 @@
-import os
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from django.conf import settings
 
 
 class FakturaError(Exception):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class FakturaConfig:
+    token_url: str
+    api_base_url: str
+    username: str
+    password: str
+    client_id: str
+    client_secret: str
+    timeout: float
+
+    @classmethod
+    def from_settings(cls) -> 'FakturaConfig':
+        return cls(
+            token_url=str(getattr(settings, 'FAKTURA_TOKEN_URL', 'https://account.faktura.uz/token')).strip(),
+            api_base_url=str(getattr(settings, 'FAKTURA_API_BASE_URL', 'https://api.faktura.uz')).strip(),
+            username=str(getattr(settings, 'FAKTURA_USERNAME', '')).strip(),
+            password=str(getattr(settings, 'FAKTURA_PASSWORD', '')).strip(),
+            client_id=str(getattr(settings, 'FAKTURA_CLIENT_ID', '')).strip(),
+            client_secret=str(getattr(settings, 'FAKTURA_CLIENT_SECRET', '')).strip(),
+            timeout=float(getattr(settings, 'FAKTURA_TIMEOUT', 10.0)),
+        )
+
+    def validate(self) -> None:
+        required_fields = {
+            'FAKTURA_USERNAME': self.username,
+            'FAKTURA_PASSWORD': self.password,
+            'FAKTURA_CLIENT_ID': self.client_id,
+            'FAKTURA_CLIENT_SECRET': self.client_secret,
+        }
+        missing_fields = [key for key, value in required_fields.items() if not value]
+        if missing_fields:
+            missing = ', '.join(missing_fields)
+            raise FakturaError(f'Faktura credentials are not configured: {missing}.')
+
+
 class FakturaClient:
-    def __init__(self):
-        self.token_url = os.getenv('FAKTURA_TOKEN_URL', 'https://account.faktura.uz/token')
-        self.api_base_url = os.getenv('FAKTURA_API_BASE_URL', 'https://api.faktura.uz')
-        self.username = os.getenv('FAKTURA_USERNAME', '')
-        self.password = os.getenv('FAKTURA_PASSWORD', '')
-        self.client_id = os.getenv('FAKTURA_CLIENT_ID', '')
-        self.client_secret = os.getenv('FAKTURA_CLIENT_SECRET', '')
-        self.timeout = float(os.getenv('FAKTURA_TIMEOUT', '10'))
+    def __init__(self, config: FakturaConfig | None = None):
+        self.config = config or FakturaConfig.from_settings()
 
     def _get_token(self) -> str:
-        if not self.username or not self.password:
-            raise FakturaError('Faktura credentials are not configured.')
+        self.config.validate()
 
         request_data = {
             'grant_type': 'password',
-            'username': self.username,
-            'password': self.password,
+            'username': self.config.username,
+            'password': self.config.password,
+            'client_id': self.config.client_id,
+            'client_secret': self.config.client_secret,
         }
-        if self.client_id:
-            request_data['client_id'] = self.client_id
-        if self.client_secret:
-            request_data['client_secret'] = self.client_secret
 
         try:
             response = httpx.post(
-                self.token_url,
+                self.config.token_url,
                 data=request_data,
-                timeout=self.timeout,
+                timeout=self.config.timeout,
             )
             response.raise_for_status()
             payload = response.json()
@@ -56,10 +83,10 @@ class FakturaClient:
         token = self._get_token()
         try:
             response = httpx.get(
-                f'{self.api_base_url}/Api/Company/GetCompanyBasicDetails',
+                f'{self.config.api_base_url}/Api/Company/GetCompanyBasicDetails',
                 params={'companyInn': normalized_inn},
                 headers={'Authorization': f'Bearer {token}'},
-                timeout=self.timeout,
+                timeout=self.config.timeout,
             )
             response.raise_for_status()
             payload = response.json()

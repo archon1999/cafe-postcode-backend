@@ -15,6 +15,7 @@ from apps.platform.selectors.business_partners import (
 )
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, ZoneOrCabin
+from apps.integrations.models import IntegrationConfig
 from apps.integrations.services import ensure_mock_configs
 from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
 from apps.platform.services import add_billing_period
@@ -30,6 +31,12 @@ from .specs import (
 class GeneratedCredentials:
     username: str
     password: str
+
+
+LEGACY_RESTAURANT_NAMES_BY_KEY = {
+    'restaurant': ('Postcode Restaurant', 'Postcode kafe'),
+    'fast_food': ('Postcode Fast Food',),
+}
 
 
 def seed_system_roles_and_permissions() -> None:
@@ -90,7 +97,15 @@ def cleanup_legacy_demo_tariffs() -> None:
 
 
 def cleanup_legacy_demo_restaurants() -> None:
-    Restaurant.objects.filter(name='Postcode kafe').delete()
+    # Legacy demo restaurants can have protected related rows. Reuse them in place
+    # during upsert instead of hard-deleting them.
+    return None
+
+
+def cleanup_legacy_demo_business_partners() -> None:
+    BusinessPartner.objects.filter(
+        Q(inn='309876543') | Q(company_name='Postcode hamkor') | Q(legal_name='Postcode hamkor MCHJ')
+    ).delete()
 
 
 def seed_tariffs(tariff_specs, roles_by_code: dict[str, Role]) -> dict[str, Tariff]:
@@ -120,6 +135,7 @@ def seed_tariffs(tariff_specs, roles_by_code: dict[str, Role]) -> dict[str, Tari
 
 
 def upsert_business_partner() -> BusinessPartner:
+    cleanup_legacy_demo_business_partners()
     partner, _ = BusinessPartner.objects.get_or_create(
         inn=BUSINESS_PARTNER_SPEC['inn'],
         defaults={
@@ -203,18 +219,29 @@ def reset_restaurant_seed(restaurant: Restaurant) -> None:
 
 def upsert_restaurant(partner: BusinessPartner, spec) -> Restaurant:
     cleanup_legacy_demo_restaurants()
-    restaurant, _ = Restaurant.objects.get_or_create(
-        name=spec.name,
-        defaults={
-            'business_partner': partner,
-            'legal_name': spec.legal_name,
-            'tax_number': spec.tax_number,
-            'phone': spec.phone,
-            'address': spec.address,
-            'service_fee_percent': spec.service_fee_percent,
-            'is_active': True,
-        },
+    restaurant = (
+        Restaurant.objects.filter(Q(name=spec.name) | Q(tax_number=spec.tax_number))
+        .order_by('created_at')
+        .first()
     )
+    if restaurant is None:
+        legacy_names = LEGACY_RESTAURANT_NAMES_BY_KEY.get(spec.key, ())
+        if legacy_names:
+            restaurant = Restaurant.objects.filter(name__in=legacy_names).order_by('created_at').first()
+
+    if restaurant is None:
+        restaurant = Restaurant.objects.create(
+            name=spec.name,
+            business_partner=partner,
+            legal_name=spec.legal_name,
+            tax_number=spec.tax_number,
+            phone=spec.phone,
+            address=spec.address,
+            service_fee_percent=spec.service_fee_percent,
+            is_active=True,
+        )
+
+    restaurant.name = spec.name
     restaurant.business_partner = partner
     restaurant.legal_name = spec.legal_name
     restaurant.tax_number = spec.tax_number
@@ -243,6 +270,41 @@ def configure_entitlement(restaurant: Restaurant, tariff: Tariff) -> RestaurantE
     entitlement.allowed_roles.clear()
     ensure_mock_configs(restaurant)
     return entitlement
+
+
+def configure_demo_printer_integration(restaurant: Restaurant, *, use_live_windows_printer: bool) -> None:
+    if use_live_windows_printer:
+        IntegrationConfig.objects.filter(
+            restaurant=restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+        ).exclude(provider='windows-raw').update(is_enabled=False)
+        IntegrationConfig.objects.update_or_create(
+            restaurant=restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            defaults={
+                'mode': IntegrationConfig.Mode.LIVE,
+                'is_enabled': True,
+                'settings': {
+                    'printer_name': 'POS-80 USB',
+                    'paper_width_mm': 80,
+                    'cut_after_print': True,
+                    'encoding': 'cp437',
+                },
+            },
+        )
+        return
+
+    IntegrationConfig.objects.update_or_create(
+        restaurant=restaurant,
+        kind=IntegrationConfig.Kind.PRINTER,
+        provider='mock-printer',
+        defaults={
+            'mode': IntegrationConfig.Mode.MOCK,
+            'is_enabled': True,
+            'settings': {},
+        },
+    )
 
 
 def activate_restaurant_admin_user(restaurant: Restaurant, tariff: Tariff) -> GeneratedCredentials:

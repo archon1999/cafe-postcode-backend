@@ -586,11 +586,11 @@ FAST_FOOD_HISTORY_PROFILE = HistoryProfileSpec(
 RESTAURANT_SPECS = (
     RestaurantSpec(
         key='restaurant',
-        name='Postcode Restaurant',
-        legal_name='Postcode Restaurant MCHJ',
-        tax_number='200100300',
-        phone='+998901112233',
-        address='Toshkent shahri, Yunusobod tumani',
+        name='GULISTON RESTAURANT',
+        legal_name='GULISTON RESTAURANT MCHJ',
+        tax_number='311926992',
+        phone='+998337700586',
+        address="Buxoro viloyati, Buxoro shahri, Gulchorbog' MFY, Gazli shoh ko'chasi, 291-uy",
         tariff_key='restaurant',
         hall_enabled=True,
         kitchen_enabled=True,
@@ -607,11 +607,11 @@ RESTAURANT_SPECS = (
     ),
     RestaurantSpec(
         key='fast_food',
-        name='Postcode Fast Food',
-        legal_name='Postcode Fast Food MCHJ',
-        tax_number='200100301',
-        phone='+998901112244',
-        address='Toshkent shahri, Chilonzor tumani',
+        name='BROCCOLI FOOD',
+        legal_name='BROCCOLI FOOD MCHJ',
+        tax_number='304459113',
+        phone='+998909112881',
+        address="Toshkent shahri, Mirobod tumani, Fidokor ko'chasi, 7-uy",
         tariff_key='fast_food',
         hall_enabled=False,
         kitchen_enabled=True,
@@ -636,11 +636,11 @@ TOP_LEVEL_USERS = {
 
 
 BUSINESS_PARTNER_SPEC = {
-    'inn': '309876543',
-    'company_name': 'Postcode hamkor',
-    'legal_name': 'Postcode hamkor MCHJ',
-    'director_name': 'Demo Director',
-    'phone': '+998901234567',
-    'email': 'partner.demo@postcode.uz',
-    'address': 'Toshkent shahri, Shayxontohur tumani',
+    'inn': '310162774',
+    'company_name': 'ABSOLYUT POWER SYSTEM MCHJ',
+    'legal_name': 'ABSOLYUT POWER SYSTEM MCHJ',
+    'director_name': 'Jurayev Akmaljon Ruzibayevich',
+    'phone': '+998983381004',
+    'email': 'info@absolyutpower.uz',
+    'address': "Toshkent viloyati, Chirchiq shahri, Umid mahallasi, V. Qodirov ko'chasi, 1-V uy",
 }

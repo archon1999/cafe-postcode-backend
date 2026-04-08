@@ -26,6 +26,7 @@ class Restaurant(BaseModel):
     tax_number = models.CharField(max_length=60, blank=True)
     phone = models.CharField(max_length=30, blank=True)
     address = models.CharField(max_length=255, blank=True)
+    faktura_payload = models.JSONField(default=dict, blank=True)
     currency = models.CharField(max_length=10, default='UZS')
     auth_code = models.CharField(max_length=6, unique=True, default=generate_restaurant_auth_code)
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)

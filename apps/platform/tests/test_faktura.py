@@ -1,25 +1,21 @@
-import os
 from unittest.mock import Mock, patch
 
 import httpx
 from django.test import SimpleTestCase
+from django.test.utils import override_settings
 
 from apps.platform.services.faktura import FakturaClient, FakturaError
 
 
 class FakturaClientTests(SimpleTestCase):
-    @patch.dict(
-        os.environ,
-        {
-            'FAKTURA_TOKEN_URL': 'https://account.faktura.uz/token',
-            'FAKTURA_API_BASE_URL': 'https://api.faktura.uz',
-            'FAKTURA_USERNAME': 'user@example.com',
-            'FAKTURA_PASSWORD': 'secret',
-            'FAKTURA_CLIENT_ID': 'client-id',
-            'FAKTURA_CLIENT_SECRET': 'client-secret',
-            'FAKTURA_TIMEOUT': '12',
-        },
-        clear=False,
+    @override_settings(
+        FAKTURA_TOKEN_URL='https://account.faktura.uz/token',
+        FAKTURA_API_BASE_URL='https://api.faktura.uz',
+        FAKTURA_USERNAME='user@example.com',
+        FAKTURA_PASSWORD='secret',
+        FAKTURA_CLIENT_ID='client-id',
+        FAKTURA_CLIENT_SECRET='client-secret',
+        FAKTURA_TIMEOUT=12.0,
     )
     @patch('apps.platform.services.faktura.httpx.get')
     @patch('apps.platform.services.faktura.httpx.post')
@@ -55,13 +51,11 @@ class FakturaClientTests(SimpleTestCase):
             timeout=12.0,
         )
 
-    @patch.dict(
-        os.environ,
-        {
-            'FAKTURA_USERNAME': 'user@example.com',
-            'FAKTURA_PASSWORD': 'secret',
-        },
-        clear=False,
+    @override_settings(
+        FAKTURA_USERNAME='user@example.com',
+        FAKTURA_PASSWORD='secret',
+        FAKTURA_CLIENT_ID='client-id',
+        FAKTURA_CLIENT_SECRET='client-secret',
     )
     @patch('apps.platform.services.faktura.httpx.post')
     def test_auth_failures_are_wrapped_in_faktura_error(self, post_mock):
@@ -70,13 +64,11 @@ class FakturaClientTests(SimpleTestCase):
         with self.assertRaisesMessage(FakturaError, 'Failed to authenticate with Faktura.'):
             FakturaClient().lookup_company_basic_details('123456789')
 
-    @patch.dict(
-        os.environ,
-        {
-            'FAKTURA_USERNAME': 'user@example.com',
-            'FAKTURA_PASSWORD': 'secret',
-        },
-        clear=False,
+    @override_settings(
+        FAKTURA_USERNAME='user@example.com',
+        FAKTURA_PASSWORD='secret',
+        FAKTURA_CLIENT_ID='client-id',
+        FAKTURA_CLIENT_SECRET='client-secret',
     )
     @patch('apps.platform.services.faktura.httpx.get')
     @patch('apps.platform.services.faktura.httpx.post')
@@ -89,4 +81,17 @@ class FakturaClientTests(SimpleTestCase):
         get_mock.side_effect = httpx.RequestError('lookup down')
 
         with self.assertRaisesMessage(FakturaError, 'Failed to fetch company details from Faktura.'):
+            FakturaClient().lookup_company_basic_details('123456789')
+
+    @override_settings(
+        FAKTURA_USERNAME='user@example.com',
+        FAKTURA_PASSWORD='secret',
+        FAKTURA_CLIENT_ID='',
+        FAKTURA_CLIENT_SECRET='',
+    )
+    def test_missing_client_credentials_raise_configuration_error(self):
+        with self.assertRaisesMessage(
+            FakturaError,
+            'Faktura credentials are not configured: FAKTURA_CLIENT_ID, FAKTURA_CLIENT_SECRET.',
+        ):
             FakturaClient().lookup_company_basic_details('123456789')
