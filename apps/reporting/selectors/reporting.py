@@ -18,7 +18,10 @@ Payment = get_payment_model()
 REPORT_PERIOD_DAY = 'day'
 REPORT_PERIOD_MONTH = 'month'
 REPORT_PERIOD_YEAR = 'year'
-REPORT_PERIOD_VALUES = frozenset({REPORT_PERIOD_DAY, REPORT_PERIOD_MONTH, REPORT_PERIOD_YEAR})
+REPORT_PERIOD_RANGE = 'range'
+REPORT_PERIOD_VALUES = frozenset(
+    {REPORT_PERIOD_DAY, REPORT_PERIOD_MONTH, REPORT_PERIOD_YEAR, REPORT_PERIOD_RANGE}
+)
 PAYMENT_METHOD_VALUES = frozenset({choice for choice, _label in Payment.Method.choices})
 ORDER_STATUS_VALUES = frozenset({choice for choice, _label in Order.Status.choices})
 SHIFT_STATUS_VALUES = frozenset({choice for choice, _label in CashShift.Status.choices})
@@ -36,9 +39,25 @@ class ReportPeriod:
 
 def get_report_period(query_params) -> ReportPeriod:
     now = tashkent_now()
-    period_type = get_str_query_param(query_params, 'period_type', aliases=('periodType',)) or REPORT_PERIOD_DAY
+    start_date_value = get_str_query_param(query_params, 'start_date', aliases=('startDate',))
+    end_date_value = get_str_query_param(query_params, 'end_date', aliases=('endDate',))
+    period_type = get_str_query_param(query_params, 'period_type', aliases=('periodType',))
     if period_type not in REPORT_PERIOD_VALUES:
-        period_type = REPORT_PERIOD_DAY
+        period_type = REPORT_PERIOD_RANGE if start_date_value or end_date_value else REPORT_PERIOD_DAY
+
+    if period_type == REPORT_PERIOD_RANGE:
+        start_date, end_date = _resolve_range_dates(start_date_value, end_date_value, now)
+        start, _ = tashkent_day_bounds(start_date)
+        _, end = tashkent_day_bounds(end_date)
+        value = f'{start_date.isoformat()} - {end_date.isoformat()}'
+        return ReportPeriod(
+            period_type=period_type,
+            start=start,
+            end=end,
+            value=value,
+            label=value,
+            file_label=f'range-{start_date.isoformat()}-to-{end_date.isoformat()}',
+        )
 
     if period_type == REPORT_PERIOD_MONTH:
         month_value = _resolve_month_value(get_str_query_param(query_params, 'month'), now)
@@ -207,6 +226,28 @@ def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
 def _resolve_date_value(raw_value: str, now: datetime) -> date_cls:
     parsed = parse_date(raw_value) if raw_value else None
     return parsed or now.date()
+
+
+def _resolve_range_dates(
+    start_raw_value: str,
+    end_raw_value: str,
+    now: datetime,
+) -> tuple[date_cls, date_cls]:
+    parsed_start = parse_date(start_raw_value) if start_raw_value else None
+    parsed_end = parse_date(end_raw_value) if end_raw_value else None
+
+    if parsed_start is None and parsed_end is None:
+        parsed_start = now.date()
+        parsed_end = parsed_start
+    elif parsed_start is None:
+        parsed_start = parsed_end
+    elif parsed_end is None:
+        parsed_end = parsed_start
+
+    if parsed_start > parsed_end:
+        parsed_start, parsed_end = parsed_end, parsed_start
+
+    return parsed_start, parsed_end
 
 
 def _resolve_month_value(raw_value: str, now: datetime) -> str:

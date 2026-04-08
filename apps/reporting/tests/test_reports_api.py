@@ -17,6 +17,7 @@ from apps.reporting.services.export_localization import (
     get_shift_columns,
 )
 from apps.sales.tests.support.pos_api import PosAPITestCase
+from common.utils.date import TASHKENT_TIMEZONE
 
 
 class ReportsApiTests(PosAPITestCase):
@@ -130,8 +131,15 @@ class ReportsApiTests(PosAPITestCase):
             notes_close='End of day',
         )
 
+    def current_range_params(self):
+        current_date = timezone.localtime(timezone.now(), TASHKENT_TIMEZONE).date().isoformat()
+        return {
+            'start_date': current_date,
+            'end_date': current_date,
+        }
+
     def test_sales_report_is_scoped_to_branch(self):
-        response = self.client.get('/api/v1/admin/reporting/sales/')
+        response = self.client.get('/api/v1/admin/reporting/sales/', self.current_range_params())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data['data']
@@ -140,7 +148,7 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['total'], self.closed_order.total)
 
     def test_open_checks_report_returns_current_branch_rows(self):
-        response = self.client.get('/api/v1/admin/reporting/open-checks/')
+        response = self.client.get('/api/v1/admin/reporting/open-checks/', self.current_range_params())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data['data']
@@ -149,12 +157,17 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['total'], self.open_order.total)
 
     def test_sales_report_export_returns_expected_columns(self):
-        response = self.client.get('/api/v1/admin/reporting/sales/export/')
+        range_params = self.current_range_params()
+        response = self.client.get('/api/v1/admin/reporting/sales/export/', range_params)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        self.assertIn(
+            f'sales-report-range-{range_params["start_date"]}-to-{range_params["end_date"]}.xlsx',
+            response['Content-Disposition'],
         )
         workbook = load_workbook(filename=BytesIO(response.content))
         sheet = workbook.active
@@ -165,7 +178,7 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual([sheet['A7'].value, sheet['B7'].value, sheet['C7'].value], sales_columns)
 
     def test_admin_shift_report_returns_shift_rows(self):
-        response = self.client.get('/api/v1/admin/reporting/shifts/')
+        response = self.client.get('/api/v1/admin/reporting/shifts/', self.current_range_params())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         rows = response.data['data']
@@ -175,9 +188,14 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['reprint_count'], 1)
 
     def test_admin_shift_report_export_returns_expected_columns(self):
-        response = self.client.get('/api/v1/admin/reporting/shifts/export/')
+        range_params = self.current_range_params()
+        response = self.client.get('/api/v1/admin/reporting/shifts/export/', range_params)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            f'shift-report-range-{range_params["start_date"]}-to-{range_params["end_date"]}.xlsx',
+            response['Content-Disposition'],
+        )
         workbook = load_workbook(filename=BytesIO(response.content))
         sheet = workbook.active
         shift_columns = [str(label) for _key, label in get_shift_columns()]

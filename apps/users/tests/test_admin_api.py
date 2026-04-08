@@ -779,10 +779,11 @@ class AdminApiTests(APITestCase):
 
     def test_admin_reports_summary_and_export(self):
         self.authenticate()
+        range_params = {'start_date': '2026-03-27', 'end_date': '2026-03-27'}
 
         summary_response = self.client.get(
             '/api/v1/admin/reporting/summary/',
-            {'period_type': 'day', 'date': '2026-03-27'},
+            range_params,
         )
         self.assertEqual(summary_response.status_code, status.HTTP_200_OK)
         self.assertEqual(summary_response.data['sales_total'], 0)
@@ -790,18 +791,18 @@ class AdminApiTests(APITestCase):
 
         summary_export_response = self.client.get(
             '/api/v1/admin/reporting/summary/export/',
-            {'period_type': 'day', 'date': '2026-03-27'},
+            range_params,
         )
         self.assertEqual(summary_export_response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             summary_export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('summary-report-day-2026-03-27.xlsx', summary_export_response['Content-Disposition'])
+        self.assertIn('summary-report-range-2026-03-27-to-2026-03-27.xlsx', summary_export_response['Content-Disposition'])
 
         sales_response = self.client.get(
             '/api/v1/admin/reporting/sales/',
-            {'period_type': 'month', 'month': '2026-03', 'page_size': 10},
+            {**range_params, 'page_size': 10},
         )
         self.assertEqual(sales_response.status_code, status.HTTP_200_OK)
         self.assertEqual(sales_response.data['pageSize'], 10)
@@ -810,29 +811,32 @@ class AdminApiTests(APITestCase):
 
         export_response = self.client.get(
             '/api/v1/admin/reporting/sales/export/',
-            {'period_type': 'month', 'month': '2026-03'},
+            range_params,
         )
         self.assertEqual(export_response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('sales-report-month-2026-03.xlsx', export_response['Content-Disposition'])
+        self.assertIn('sales-report-range-2026-03-27-to-2026-03-27.xlsx', export_response['Content-Disposition'])
 
         open_checks_export_response = self.client.get(
             '/api/v1/admin/reporting/open-checks/export/',
-            {'period_type': 'year', 'year': '2026'},
+            range_params,
         )
         self.assertEqual(open_checks_export_response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             open_checks_export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('open-checks-report-year-2026.xlsx', open_checks_export_response['Content-Disposition'])
+        self.assertIn(
+            'open-checks-report-range-2026-03-27-to-2026-03-27.xlsx',
+            open_checks_export_response['Content-Disposition'],
+        )
 
         top_items_response = self.client.get(
             '/api/v1/admin/reporting/top-items/',
-            {'period_type': 'month', 'month': '2026-03', 'page_size': 10},
+            {**range_params, 'page_size': 10},
         )
         self.assertEqual(top_items_response.status_code, status.HTTP_200_OK)
         self.assertEqual(top_items_response.data['pageSize'], 10)
@@ -841,14 +845,17 @@ class AdminApiTests(APITestCase):
 
         top_items_export_response = self.client.get(
             '/api/v1/admin/reporting/top-items/export/',
-            {'period_type': 'month', 'month': '2026-03'},
+            range_params,
         )
         self.assertEqual(top_items_export_response.status_code, status.HTTP_200_OK)
         self.assertEqual(
             top_items_export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('top-items-report-month-2026-03.xlsx', top_items_export_response['Content-Disposition'])
+        self.assertIn(
+            'top-items-report-range-2026-03-27-to-2026-03-27.xlsx',
+            top_items_export_response['Content-Disposition'],
+        )
 
     def test_admin_report_exports_are_localized_by_request_language(self):
         self.authenticate()

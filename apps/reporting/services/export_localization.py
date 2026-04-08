@@ -5,7 +5,13 @@ from django.utils.translation import gettext as _
 from apps.billing.helpers import get_payment_model
 from apps.sales.helpers import get_order_model
 
-from apps.reporting.selectors.reporting import REPORT_PERIOD_DAY, REPORT_PERIOD_MONTH, REPORT_PERIOD_YEAR, ReportPeriod
+from apps.reporting.selectors.reporting import (
+    REPORT_PERIOD_DAY,
+    REPORT_PERIOD_MONTH,
+    REPORT_PERIOD_RANGE,
+    REPORT_PERIOD_YEAR,
+    ReportPeriod,
+)
 
 Order = get_order_model()
 Payment = get_payment_model()
@@ -123,6 +129,7 @@ def get_report_period_type_label(period_type: str) -> str:
     labels = {
         REPORT_PERIOD_DAY: _('Day'),
         REPORT_PERIOD_MONTH: _('Month'),
+        REPORT_PERIOD_RANGE: _('Range'),
         REPORT_PERIOD_YEAR: _('Year'),
     }
     return labels.get(period_type, period_type)
