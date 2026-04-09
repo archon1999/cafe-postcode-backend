@@ -31,4 +31,5 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}pos/sales/', include('apps.sales.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/billing/', include('apps.billing.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/kitchen/', include('apps.kitchen.api.pos.urls')),
+    path(f'{API_V1_PREFIX}pos/monitor/', include('apps.kitchen.api.pos.monitor_urls')),
 ]
