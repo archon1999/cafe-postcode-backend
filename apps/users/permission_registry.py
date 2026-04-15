@@ -865,18 +865,6 @@ PERMISSION_DEFINITIONS.extend(
 )
 PERMISSION_DEFINITIONS.extend(
     crud_permissions(
-        'devices',
-        surface='admin',
-        group_key='restaurant_setup',
-        singular_label='Qurilma',
-        plural_label='Qurilmalar',
-        list_url='api/v1/admin/restaurants/devices/',
-        detail_url='api/v1/admin/restaurants/devices/<uuid:pk>/',
-        default_roles=RESTAURANT_SETUP_ROLES,
-    )
-)
-PERMISSION_DEFINITIONS.extend(
-    crud_permissions(
         'prep_stations',
         surface='admin',
         group_key='restaurant_setup',

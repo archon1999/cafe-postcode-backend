@@ -1,7 +1,6 @@
 from django.urls import path
 
 from apps.restaurants.api.admin.views.cash_desks import CashDeskDetailView, CashDeskListCreateView
-from apps.restaurants.api.admin.views.devices import DeviceDetailView, DeviceListCreateView
 from apps.restaurants.api.admin.views.distribution_points import (
     DistributionPointDetailView,
     DistributionPointListCreateView,
@@ -18,8 +17,6 @@ urlpatterns = [
     path('prep-stations/<uuid:pk>/', PrepStationDetailView.as_view()),
     path('cash-desks/', CashDeskListCreateView.as_view()),
     path('cash-desks/<uuid:pk>/', CashDeskDetailView.as_view()),
-    path('devices/', DeviceListCreateView.as_view()),
-    path('devices/<uuid:pk>/', DeviceDetailView.as_view()),
     path('distribution-points/', DistributionPointListCreateView.as_view()),
     path('distribution-points/<uuid:pk>/', DistributionPointDetailView.as_view()),
     path('', RestaurantListCreateView.as_view()),

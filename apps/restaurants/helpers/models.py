@@ -5,10 +5,6 @@ def get_cash_desk_model():
     return apps.get_model('restaurants', 'CashDesk')
 
 
-def get_device_model():
-    return apps.get_model('restaurants', 'Device')
-
-
 def get_distribution_point_model():
     return apps.get_model('restaurants', 'DistributionPoint')
 

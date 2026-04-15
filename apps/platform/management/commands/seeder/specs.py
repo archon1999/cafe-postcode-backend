@@ -81,20 +81,11 @@ class DistributionPointSpec:
 
 
 @dataclass(frozen=True)
-class DeviceSpec:
-    name: str
-    mode: str
-    primary_hall_code: str | None = None
-    allowed_hall_codes: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
 class SetupSpec:
     prep_stations: tuple[PrepStationSpec, ...]
     distribution_points: tuple[DistributionPointSpec, ...]
     cash_desk_name: str
     cash_desk_location: str
-    devices: tuple[DeviceSpec, ...]
 
 
 @dataclass(frozen=True)
@@ -350,15 +341,6 @@ RESTAURANT_SETUP_SPEC = SetupSpec(
     ),
     cash_desk_name='Asosiy kassa',
     cash_desk_location='Kirish qismi',
-    devices=(
-        DeviceSpec(name='Waiter Tablet 1', mode='waiter', primary_hall_code='main', allowed_hall_codes=('main', 'family', 'terrace')),
-        DeviceSpec(name='Waiter Tablet 2', mode='waiter', primary_hall_code='family', allowed_hall_codes=('family', 'vip_1', 'vip_2')),
-        DeviceSpec(name='Cashier POS 1', mode='cashier'),
-        DeviceSpec(name='Cashier POS 2', mode='cashier'),
-        DeviceSpec(name='Kitchen Display Hot', mode='kitchen_display'),
-        DeviceSpec(name='Kitchen Display Grill', mode='kitchen_display'),
-        DeviceSpec(name='Owner Dashboard', mode='owner_dashboard'),
-    ),
 )
 
 
@@ -375,13 +357,6 @@ FAST_FOOD_SETUP_SPEC = SetupSpec(
     ),
     cash_desk_name='Fast food kassa',
     cash_desk_location='Front desk',
-    devices=(
-        DeviceSpec(name='Front POS 1', mode='cashier'),
-        DeviceSpec(name='Front POS 2', mode='cashier'),
-        DeviceSpec(name='Kitchen Screen', mode='kitchen_display'),
-        DeviceSpec(name='Beverage Screen', mode='kitchen_display'),
-        DeviceSpec(name='Owner Dashboard', mode='owner_dashboard'),
-    ),
 )
 
 

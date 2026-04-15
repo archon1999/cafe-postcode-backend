@@ -19,7 +19,7 @@ from apps.integrations.models import IntegrationConfig
 from apps.integrations.services import ensure_mock_configs
 from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
 from apps.platform.services import add_billing_period
-from apps.restaurants.models import CashDesk, Device, DistributionPoint, PrepStation, Restaurant
+from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 
 from .specs import (
     BUSINESS_PARTNER_SPEC,
@@ -203,7 +203,6 @@ def reset_restaurant_seed(restaurant: Restaurant) -> None:
     restaurant.orders.all().delete()
     restaurant.table_sessions.all().delete()
     restaurant.cash_desks.all().delete()
-    restaurant.devices.all().delete()
     restaurant.prep_stations.all().delete()
     DiningTable.objects.filter(hall__zone_or_cabin__restaurant=restaurant).delete()
     Hall.objects.filter(zone_or_cabin__restaurant=restaurant).delete()
@@ -380,25 +379,10 @@ def seed_setup_entities(restaurant: Restaurant, setup_spec, halls_by_code: dict[
         point.save()
         distribution_points[spec.kind] = point
 
-    devices = []
-    for spec in setup_spec.devices:
-        device, _ = Device.objects.get_or_create(
-            restaurant=restaurant,
-            name=spec.name,
-            defaults={'mode': spec.mode},
-        )
-        device.mode = spec.mode
-        device.primary_hall = halls_by_code.get(spec.primary_hall_code) if spec.primary_hall_code else None
-        device.is_active = True
-        device.save()
-        device.allowed_halls.set([halls_by_code[code] for code in spec.allowed_hall_codes if code in halls_by_code])
-        devices.append(device)
-
     return {
         'prep_stations': prep_stations,
         'cash_desk': cash_desk,
         'distribution_points': distribution_points,
-        'devices': devices,
     }
 
 
