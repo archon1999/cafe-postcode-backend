@@ -38,6 +38,7 @@ python-levenshtein = "^0.24.0"
 numpy = "^1.26.4"
 httpx = "^0.28.1"
 djangorestframework-stubs = "^3.16.8"
+cryptography = "^45.0.5"
 
 [build-system]
 requires = ["poetry-core"]

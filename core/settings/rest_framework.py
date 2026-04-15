@@ -31,3 +31,11 @@ REST_FRAMEWORK = {
         'submit': '10/min',
     }
 }
+
+JSON_CAMEL_CASE = {
+    'JSON_UNDERSCOREIZE': {
+        'no_underscore_before_number': False,
+        'ignore_fields': ('mxik_payload',),
+        'ignore_keys': None,
+    },
+}

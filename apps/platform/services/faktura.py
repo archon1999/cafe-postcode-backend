@@ -18,6 +18,7 @@ class FakturaConfig:
     client_id: str
     client_secret: str
     timeout: float
+    proxy_url: str | None
 
     @classmethod
     def from_settings(cls) -> 'FakturaConfig':
@@ -29,6 +30,7 @@ class FakturaConfig:
             client_id=str(getattr(settings, 'FAKTURA_CLIENT_ID', '')).strip(),
             client_secret=str(getattr(settings, 'FAKTURA_CLIENT_SECRET', '')).strip(),
             timeout=float(getattr(settings, 'FAKTURA_TIMEOUT', 10.0)),
+            proxy_url=str(getattr(settings, 'FAKTURA_PROXY_URL', '')).strip() or None,
         )
 
     def validate(self) -> None:
@@ -63,6 +65,7 @@ class FakturaClient:
             response = httpx.post(
                 self.config.token_url,
                 data=request_data,
+                proxy=self.config.proxy_url,
                 timeout=self.config.timeout,
             )
             response.raise_for_status()
@@ -86,6 +89,7 @@ class FakturaClient:
                 f'{self.config.api_base_url}/Api/Company/GetCompanyBasicDetails',
                 params={'companyInn': normalized_inn},
                 headers={'Authorization': f'Bearer {token}'},
+                proxy=self.config.proxy_url,
                 timeout=self.config.timeout,
             )
             response.raise_for_status()

@@ -819,38 +819,6 @@ class AdminApiTests(APITestCase):
         self.assertEqual(prep_station_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('prep_station', prep_station_response.data)
 
-    @patch('apps.catalog.api.admin.views.mxik.MxikClient.lookup')
-    @patch('apps.catalog.api.admin.views.mxik.MxikClient.search')
-    def test_mxik_endpoints_allow_create_permissions(self, search_mock, lookup_mock):
-        search_mock.return_value = [{'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}]
-        lookup_mock.return_value = {'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}
-
-        for permission_code in ('catalog_categories.create', 'catalog_items.create'):
-            user = self.create_admin_user_with_permissions(f'{permission_code.replace(".", "-")}-user', [permission_code])
-            self.authenticate(user)
-
-            search_response = self.client.get('/api/v1/admin/catalog/mxik/search/', {'query': 'hot'})
-            lookup_response = self.client.get('/api/v1/admin/catalog/mxik/10000000000000001/')
-
-            self.assertEqual(search_response.status_code, status.HTTP_200_OK)
-            self.assertEqual(lookup_response.status_code, status.HTTP_200_OK)
-
-    @patch('apps.catalog.api.admin.views.mxik.MxikClient.lookup')
-    @patch('apps.catalog.api.admin.views.mxik.MxikClient.search')
-    def test_mxik_endpoints_allow_update_permissions(self, search_mock, lookup_mock):
-        search_mock.return_value = [{'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}]
-        lookup_mock.return_value = {'code': '10000000000000001', 'name': 'Hot Drinks', 'label': 'Hot Drinks'}
-
-        for permission_code in ('catalog_categories.update', 'catalog_items.update'):
-            user = self.create_admin_user_with_permissions(f'{permission_code.replace(".", "-")}-user', [permission_code])
-            self.authenticate(user)
-
-            search_response = self.client.get('/api/v1/admin/catalog/mxik/search/', {'query': 'hot'})
-            lookup_response = self.client.get('/api/v1/admin/catalog/mxik/10000000000000001/')
-
-            self.assertEqual(search_response.status_code, status.HTTP_200_OK)
-            self.assertEqual(lookup_response.status_code, status.HTTP_200_OK)
-
     def test_admin_integration_config_create_and_update(self):
         self.authenticate()
 

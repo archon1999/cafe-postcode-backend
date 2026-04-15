@@ -2,6 +2,8 @@ from .config_resolver import IntegrationConfigResolverService
 from .mock_fiscal import MockFiscalIntegrationService
 from .mock_payment import MockPaymentIntegrationService
 from .mock_printer import MockPrinterIntegrationService
+from .qz_tray_printer import QzTrayPrinterIntegrationService
+from .windows_raw_printer import WindowsRawPrinterIntegrationService
 
 
 def ensure_mock_configs(restaurant):
@@ -31,3 +33,30 @@ def issue_refund_receipt(order, payment, refund):
 
 def print_kitchen_ticket(ticket):
     return MockPrinterIntegrationService().print_ticket(ticket=ticket)
+
+
+def print_prebill(order, payload):
+    config = IntegrationConfigResolverService().get_config(kind='printer', restaurant=order.restaurant)
+    if config is None or config.mode != 'live':
+        raise ValueError('Live printer integration is not configured.')
+
+    if config.provider == 'qz-tray':
+        service = QzTrayPrinterIntegrationService(config)
+    elif config.provider == 'windows-raw':
+        service = WindowsRawPrinterIntegrationService(config)
+    elif config.provider == 'mock-printer':
+        service = MockPrinterIntegrationService(config=config)
+    else:
+        raise ValueError(f"Unsupported printer provider '{config.provider}'.")
+
+    try:
+        return service.print_prebill(order=order, payload=payload)
+    except ValueError:
+        raise
+    except Exception as error:
+        return {
+            'ok': False,
+            'provider': config.provider,
+            'mode': config.mode,
+            'detail': str(error),
+        }

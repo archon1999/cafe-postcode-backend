@@ -11,6 +11,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'http://localhost:4300',
     'http://localhost:4400',
+    'http://localhost:4401',
     'http://localhost:3000',
     'http://localhost:5173',
     'http://localhost:5174',

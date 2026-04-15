@@ -1,6 +1,7 @@
 from .helpers import (
     activate_business_partner_user,
     activate_restaurant_admin_user,
+    configure_demo_printer_integration,
     configure_entitlement,
     get_roles_by_code,
     reset_restaurant_seed,
@@ -33,6 +34,10 @@ def bootstrap_demo(command) -> None:
         reset_restaurant_seed(restaurant)
         tariff = tariffs[restaurant_spec.tariff_key]
         configure_entitlement(restaurant, tariff)
+        configure_demo_printer_integration(
+            restaurant,
+            use_live_windows_printer=restaurant_spec.key == 'restaurant',
+        )
 
         halls_by_code, tables_by_key = seed_halls_and_tables(restaurant, restaurant_spec.floor)
         setup = seed_setup_entities(restaurant, restaurant_spec.setup, halls_by_code)

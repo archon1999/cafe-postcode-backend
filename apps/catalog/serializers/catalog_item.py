@@ -61,6 +61,7 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
             'name_ru',
             'mxik_code',
             'mxik_name',
+            'mxik_payload',
             'description',
             'description_uz',
             'description_uz_crl',
@@ -72,5 +73,6 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
         extra_kwargs = {
             'mxik_code': {'required': False, 'allow_blank': True},
             'mxik_name': {'required': False, 'allow_blank': True},
+            'mxik_payload': {'required': False},
         }
         validators = []

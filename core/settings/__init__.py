@@ -24,7 +24,7 @@ from .locale_paths import LOCALE_PATHS
 from .logging import LOGGING
 from .middleware import MIDDLEWARE
 from .q_cluster import Q_CLUSTER
-from .rest_framework import REST_FRAMEWORK
+from .rest_framework import JSON_CAMEL_CASE, REST_FRAMEWORK
 from .templates import TEMPLATES
 from .swagger import SWAGGER_SETTINGS
 
@@ -117,6 +117,13 @@ class CoreSettings(Settings):
     FAKTURA_CLIENT_ID = os.getenv('FAKTURA_CLIENT_ID', '').strip()
     FAKTURA_CLIENT_SECRET = os.getenv('FAKTURA_CLIENT_SECRET', '').strip()
     FAKTURA_TIMEOUT = env_float('FAKTURA_TIMEOUT', 10.0)
+    FAKTURA_PROXY_URL = os.getenv('FAKTURA_PROXY_URL', '').strip()
+
+    QZ_TRAY_CERTIFICATE_PEM = os.getenv('QZ_TRAY_CERTIFICATE_PEM', '').replace('\\n', '\n').strip()
+    QZ_TRAY_PRIVATE_KEY_PEM = os.getenv('QZ_TRAY_PRIVATE_KEY_PEM', '').replace('\\n', '\n').strip()
+    QZ_TRAY_CERTIFICATE_PATH = os.getenv('QZ_TRAY_CERTIFICATE_PATH', '').strip()
+    QZ_TRAY_PRIVATE_KEY_PATH = os.getenv('QZ_TRAY_PRIVATE_KEY_PATH', '').strip()
+    QZ_TRAY_PRIVATE_KEY_PASSWORD = os.getenv('QZ_TRAY_PRIVATE_KEY_PASSWORD', '').strip()
 
     STATIC_URL = '/static/'
     STATIC_ROOT = (BASE_DIR / 'staticfiles').as_posix()
@@ -129,6 +136,7 @@ class CoreSettings(Settings):
     STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 
     REST_FRAMEWORK = REST_FRAMEWORK
+    JSON_CAMEL_CASE = JSON_CAMEL_CASE
     CACHES = CACHES
     CHANNEL_LAYERS = CHANNEL_LAYERS
     Q_CLUSTER = Q_CLUSTER

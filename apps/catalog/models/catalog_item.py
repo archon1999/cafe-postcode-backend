@@ -22,6 +22,7 @@ class CatalogItem(BaseModel):
     name = models.CharField(max_length=255)
     mxik_code = models.CharField(max_length=17, blank=True, db_index=True)
     mxik_name = models.CharField(max_length=512, blank=True)
+    mxik_payload = models.JSONField(default=dict, blank=True)
     description = models.TextField(blank=True)
     price = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)

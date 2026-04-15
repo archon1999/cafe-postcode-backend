@@ -3,21 +3,16 @@ import re
 from rest_framework import serializers
 
 from apps.catalog.models import CatalogCategory
-from apps.catalog.services.mxik import MxikClient, MxikError
 
 MXIK_CODE_PATTERN = re.compile(r'^\d{17}$')
 
 
-class MxikLookupResultSerializer(serializers.Serializer):
-    code = serializers.CharField()
-    name = serializers.CharField(allow_blank=True)
-    label = serializers.CharField(allow_blank=True)
-    raw = serializers.JSONField(required=False)
+class CatalogCategorySerializerMixin:
+    pass
 
 
 class MxikCodeValidationMixin(serializers.Serializer):
     mxik_required = False
-    sync_mxik_image = False
 
     def validate_mxik_code(self, value: str) -> str:
         normalized_value = value.strip()
@@ -29,61 +24,81 @@ class MxikCodeValidationMixin(serializers.Serializer):
             raise serializers.ValidationError('MXIK code must contain exactly 17 digits.')
         return normalized_value
 
+    def validate_mxik_payload(self, value):
+        if value in (None, ''):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('MXIK payload must be an object.')
+        return value
+
+    @staticmethod
+    def _payload_name(payload: dict) -> str:
+        name = str(
+            payload.get('mxikName')
+            or payload.get('mxik_name')
+            or payload.get('name')
+            or payload.get('shortName')
+            or ''
+        ).strip()
+        if name:
+            return name
+
+        return ' / '.join(
+            filter(
+                None,
+                [
+                    str(payload.get('subPositionName') or payload.get('sub_position_name') or '').strip(),
+                    str(payload.get('positionName') or payload.get('position_name') or '').strip(),
+                    str(payload.get('className') or payload.get('class_name') or '').strip(),
+                ],
+            )
+        ).strip()
+
+    def _clear_cached_mxik_image(self, attrs):
+        if not isinstance(self, CatalogCategorySerializerMixin):
+            return
+
+        existing_image_source = getattr(self.instance, 'image_source', '')
+        if self.instance is None or existing_image_source == CatalogCategory.ImageSource.MXIK_CACHE:
+            attrs['image_url'] = None
+            attrs['image_source'] = ''
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        mxik_code = attrs.get('mxik_code')
-        mxik_name = (attrs.get('mxik_name') or '').strip()
+        mxik_code_provided = 'mxik_code' in attrs
+        mxik_payload_provided = 'mxik_payload' in attrs
         existing_mxik_code = getattr(self.instance, 'mxik_code', '')
-        existing_image_source = getattr(self.instance, 'image_source', '')
-        existing_image_url = getattr(self.instance, 'image_url', None)
-        should_sync_image = self.sync_mxik_image and bool(mxik_code) and (
-            self.instance is None
-            or mxik_code != existing_mxik_code
-            or existing_image_source == CatalogCategory.ImageSource.MXIK_CACHE
-            or not existing_image_url
-        )
-        lookup_result = None
-        client = None
 
+        mxik_code = attrs.get('mxik_code')
         if self.instance is not None and mxik_code is None:
-            mxik_code = self.instance.mxik_code
+            mxik_code = existing_mxik_code
+
+        mxik_name = (attrs.get('mxik_name') or '').strip()
         if self.instance is not None and not mxik_name:
             mxik_name = self.instance.mxik_name
+
+        existing_payload = getattr(self.instance, 'mxik_payload', {}) or {}
+        code_changed = self.instance is not None and mxik_code_provided and mxik_code != existing_mxik_code
+        if mxik_payload_provided:
+            mxik_payload = attrs.get('mxik_payload') or {}
+        elif self.instance is not None and not code_changed:
+            mxik_payload = existing_payload
+        else:
+            mxik_payload = {}
 
         if self.mxik_required and not mxik_code and self.instance is None:
             raise serializers.ValidationError({'mxik_code': 'MXIK code is required.'})
 
         if not mxik_code:
             attrs['mxik_name'] = ''
-            if self.sync_mxik_image and (
-                self.instance is None or existing_image_source == CatalogCategory.ImageSource.MXIK_CACHE
-            ):
-                attrs['image_url'] = None
-                attrs['image_source'] = ''
+            attrs['mxik_payload'] = {}
+            self._clear_cached_mxik_image(attrs)
             return attrs
 
-        if not mxik_name or should_sync_image:
-            try:
-                client = MxikClient()
-                lookup_result = client.lookup(mxik_code)
-            except MxikError:
-                lookup_result = None
+        attrs['mxik_name'] = mxik_name or self._payload_name(mxik_payload)
+        attrs['mxik_payload'] = mxik_payload
 
-        if mxik_name:
-            attrs['mxik_name'] = mxik_name
-        elif lookup_result is not None:
-            attrs['mxik_name'] = lookup_result.get('name', '')
-        else:
-            attrs['mxik_name'] = mxik_name
-
-        if should_sync_image:
-            image_url = ''
-            if client is not None:
-                try:
-                    image_url = client.get_primary_picture_url(mxik_code)
-                except MxikError:
-                    image_url = ''
-            attrs['image_url'] = image_url or None
-            attrs['image_source'] = CatalogCategory.ImageSource.MXIK_CACHE if image_url else ''
+        if code_changed and not attrs.get('image_url'):
+            self._clear_cached_mxik_image(attrs)
 
         return attrs

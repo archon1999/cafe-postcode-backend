@@ -428,6 +428,9 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/pos/billing/shifts/open/'),
             ('POST', 'api/v1/pos/billing/shifts/current/close/'),
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
+            ('GET', 'api/v1/pos/billing/qz/certificate/'),
+            ('POST', 'api/v1/pos/billing/qz/sign/'),
+            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
             ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/reprint/'),
         ),
         default_roles=PAYMENT_OPERATION_ROLES,
@@ -483,6 +486,9 @@ PERMISSION_DEFINITIONS = [
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
+            ('GET', 'api/v1/pos/billing/qz/certificate/'),
+            ('POST', 'api/v1/pos/billing/qz/sign/'),
+            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
         ),
         default_roles=POS_TABLE_MANAGE_ROLES,
     ),
@@ -520,6 +526,9 @@ PERMISSION_DEFINITIONS = [
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
+            ('GET', 'api/v1/pos/billing/qz/certificate/'),
+            ('POST', 'api/v1/pos/billing/qz/sign/'),
+            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
         ),
         default_roles=POS_TAKEAWAY_MENU_VIEW_ROLES,
     ),
@@ -579,6 +588,9 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/pos/billing/shifts/current/close/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/pay/'),
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
+            ('GET', 'api/v1/pos/billing/qz/certificate/'),
+            ('POST', 'api/v1/pos/billing/qz/sign/'),
+            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
             ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/reprint/'),
         ),
         default_roles=POS_PAYMENT_OPERATION_ROLES,
@@ -739,22 +751,10 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/categories/',
         detail_url='api/v1/admin/catalog/categories/<uuid:pk>/',
         default_roles=CATALOG_ADMIN_ROLES,
-        create_endpoints=merge_endpoint_specs(
-            endpoint_specs(('POST', 'api/v1/admin/catalog/categories/')),
-            endpoint_specs(
-                ('GET', 'api/v1/admin/catalog/mxik/search/'),
-                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
-            ),
-        ),
-        update_endpoints=merge_endpoint_specs(
-            endpoint_specs(
-                ('PUT', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
-                ('PATCH', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
-            ),
-            endpoint_specs(
-                ('GET', 'api/v1/admin/catalog/mxik/search/'),
-                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
-            ),
+        create_endpoints=endpoint_specs(('POST', 'api/v1/admin/catalog/categories/')),
+        update_endpoints=endpoint_specs(
+            ('PUT', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
+            ('PATCH', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
         ),
     )
 )
@@ -768,23 +768,11 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/items/',
         detail_url='api/v1/admin/catalog/items/<uuid:pk>/',
         default_roles=CATALOG_ADMIN_ROLES,
-        create_endpoints=merge_endpoint_specs(
-            endpoint_specs(('POST', 'api/v1/admin/catalog/items/')),
-            endpoint_specs(
-                ('GET', 'api/v1/admin/catalog/mxik/search/'),
-                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
-            ),
-        ),
-        update_endpoints=merge_endpoint_specs(
-            endpoint_specs(
-                ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
-                ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
-                ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
-            ),
-            endpoint_specs(
-                ('GET', 'api/v1/admin/catalog/mxik/search/'),
-                ('GET', 'api/v1/admin/catalog/mxik/<str:code>/'),
-            ),
+        create_endpoints=endpoint_specs(('POST', 'api/v1/admin/catalog/items/')),
+        update_endpoints=endpoint_specs(
+            ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+            ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+            ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
         ),
     )
 )
@@ -1093,24 +1081,6 @@ PERMISSION_DEFINITIONS.extend(
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/rotate-auth-code/')),
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
-        action_permission(
-            'mxik.search',
-            surface='admin',
-            group_key='catalog',
-            name='MXIK bo‘yicha qidirish',
-            endpoints=endpoint_specs(('GET', 'api/v1/admin/catalog/mxik/search/')),
-            default_roles=RESTAURANT_ADMIN_UI_ROLES,
-            ui_visible=False,
-        ),
-        action_permission(
-            'mxik.view',
-            surface='admin',
-            group_key='catalog',
-            name='MXIK ma’lumotini ko‘rish',
-            endpoints=endpoint_specs(('GET', 'api/v1/admin/catalog/mxik/<str:code>/')),
-            default_roles=RESTAURANT_ADMIN_UI_ROLES,
-            ui_visible=False,
-        ),
     ]
 )
 
@@ -1120,8 +1090,6 @@ PERMISSION_DEFINITIONS = [
     if item['code']
     not in {
         'business_partners.lookup',
-        'mxik.search',
-        'mxik.view',
         'catalog_menu.view',
         'open_checks.view',
         'payments.create',

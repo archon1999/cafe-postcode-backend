@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.integrations.api.admin.views.configs import IntegrationConfigDetailView, IntegrationConfigListCreateView
+from apps.integrations.api.admin.views import IntegrationConfigDetailView, IntegrationConfigListCreateView
 
 urlpatterns = [
     path('configs/', IntegrationConfigListCreateView.as_view()),

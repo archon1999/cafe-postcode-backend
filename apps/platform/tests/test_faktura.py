@@ -16,6 +16,7 @@ class FakturaClientTests(SimpleTestCase):
         FAKTURA_CLIENT_ID='client-id',
         FAKTURA_CLIENT_SECRET='client-secret',
         FAKTURA_TIMEOUT=12.0,
+        FAKTURA_PROXY_URL='http://proxy.local:8080',
     )
     @patch('apps.platform.services.faktura.httpx.get')
     @patch('apps.platform.services.faktura.httpx.post')
@@ -42,12 +43,14 @@ class FakturaClientTests(SimpleTestCase):
                 'client_id': 'client-id',
                 'client_secret': 'client-secret',
             },
+            proxy='http://proxy.local:8080',
             timeout=12.0,
         )
         get_mock.assert_called_once_with(
             'https://api.faktura.uz/Api/Company/GetCompanyBasicDetails',
             params={'companyInn': '123456789'},
             headers={'Authorization': 'Bearer token-123'},
+            proxy='http://proxy.local:8080',
             timeout=12.0,
         )
 

@@ -276,15 +276,16 @@ def configure_demo_printer_integration(restaurant: Restaurant, *, use_live_windo
         IntegrationConfig.objects.filter(
             restaurant=restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
-        ).exclude(provider='windows-raw').update(is_enabled=False)
+        ).exclude(provider='qz-tray').update(is_enabled=False)
         IntegrationConfig.objects.update_or_create(
             restaurant=restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
-            provider='windows-raw',
+            provider='qz-tray',
             defaults={
                 'mode': IntegrationConfig.Mode.LIVE,
                 'is_enabled': True,
                 'settings': {
+                    'connection_type': 'system_printer',
                     'printer_name': 'POS-80 USB',
                     'paper_width_mm': 80,
                     'cut_after_print': True,

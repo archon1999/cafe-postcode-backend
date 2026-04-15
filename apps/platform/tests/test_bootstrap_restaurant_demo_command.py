@@ -57,7 +57,7 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         restaurant_printer = IntegrationConfig.objects.get(
             restaurant=restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
-            provider='windows-raw',
+            provider='qz-tray',
         )
         fast_food_printer = IntegrationConfig.objects.get(
             restaurant=fast_food,
@@ -69,6 +69,7 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertEqual(fast_food.entitlement.tariff.name, 'Fast food tarifi')
         self.assertEqual(restaurant_printer.mode, IntegrationConfig.Mode.LIVE)
         self.assertTrue(restaurant_printer.is_enabled)
+        self.assertEqual(restaurant_printer.settings.get('connection_type'), 'system_printer')
         self.assertEqual(restaurant_printer.settings.get('printer_name'), 'POS-80 USB')
         self.assertEqual(fast_food_printer.mode, IntegrationConfig.Mode.MOCK)
         self.assertTrue(fast_food_printer.is_enabled)

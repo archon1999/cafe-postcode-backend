@@ -8,6 +8,7 @@ from apps.billing.helpers import get_payment_model
 from apps.reporting.services import (
     REPORT_PERIOD_DAY,
     REPORT_PERIOD_MONTH,
+    REPORT_PERIOD_RANGE,
     REPORT_PERIOD_YEAR,
     ReportPeriod,
     build_summary_payload,
@@ -52,7 +53,60 @@ class OwnerDashboardBaseService:
     overview_open_checks_limit = 5
     overview_shift_limit = 4
 
+    def get_period_start_date(self, period: ReportPeriod):
+        return as_edate(period.start)
+
+    def get_period_end_date(self, period: ReportPeriod):
+        return as_edate(period.end - timedelta(days=1))
+
+    def get_period_day_span(self, period: ReportPeriod) -> int:
+        return (self.get_period_end_date(period) - self.get_period_start_date(period)).days + 1
+
+    def is_single_day_period(self, period: ReportPeriod) -> bool:
+        return self.get_period_day_span(period) == 1
+
+    def get_day_label(self, value) -> str:
+        return f'{value.day:02d} {MONTH_LABELS[value.month - 1]} {value.year}'
+
+    def get_range_label(self, period: ReportPeriod) -> str:
+        start_date = self.get_period_start_date(period)
+        end_date = self.get_period_end_date(period)
+
+        if start_date == end_date:
+            return self.get_day_label(start_date)
+
+        if start_date.year == end_date.year and start_date.month == end_date.month:
+            return f'{start_date.day:02d}-{end_date.day:02d} {MONTH_LABELS[start_date.month - 1]} {start_date.year}'
+
+        if start_date.year == end_date.year:
+            return (
+                f'{start_date.day:02d} {MONTH_LABELS[start_date.month - 1]} - '
+                f'{end_date.day:02d} {MONTH_LABELS[end_date.month - 1]} {start_date.year}'
+            )
+
+        return (
+            f'{start_date.day:02d} {MONTH_LABELS[start_date.month - 1]} {start_date.year} - '
+            f'{end_date.day:02d} {MONTH_LABELS[end_date.month - 1]} {end_date.year}'
+        )
+
     def get_previous_period(self, period: ReportPeriod) -> ReportPeriod:
+        if period.period_type == REPORT_PERIOD_RANGE:
+            current_start = self.get_period_start_date(period)
+            current_span = self.get_period_day_span(period)
+            previous_end = current_start.yesterday()
+            previous_start = as_edate(previous_end - timedelta(days=current_span - 1))
+            start, _ = tashkent_day_bounds(previous_start)
+            _, end = tashkent_day_bounds(previous_end)
+            value = f'{previous_start.isoformat()}:{previous_end.isoformat()}'
+            return ReportPeriod(
+                period_type=REPORT_PERIOD_RANGE,
+                start=start,
+                end=end,
+                value=value,
+                label=value,
+                file_label=f'range-{previous_start.isoformat()}-{previous_end.isoformat()}',
+            )
+
         if period.period_type == REPORT_PERIOD_MONTH:
             year = period.start.year
             month = period.start.month - 1
@@ -214,13 +268,17 @@ class OwnerDashboardBaseService:
         return breakdown
 
     def get_period_label(self, period: ReportPeriod) -> str:
+        if period.period_type == REPORT_PERIOD_RANGE:
+            return self.get_range_label(period)
         if period.period_type == REPORT_PERIOD_MONTH:
             return f'{MONTH_LABELS[period.start.month - 1]} {period.start.year}'
         if period.period_type == REPORT_PERIOD_YEAR:
             return str(period.start.year)
-        return f'{period.start.day:02d} {MONTH_LABELS[period.start.month - 1]} {period.start.year}'
+        return self.get_day_label(period.start)
 
     def get_chart_granularity(self, period: ReportPeriod) -> str:
+        if period.period_type == REPORT_PERIOD_RANGE:
+            return 'hour' if self.is_single_day_period(period) else 'day'
         if period.period_type == REPORT_PERIOD_YEAR:
             return 'month'
         if period.period_type == REPORT_PERIOD_MONTH:
@@ -232,8 +290,12 @@ class OwnerDashboardBaseService:
             'period_type': period.period_type,
             'value': period.value,
             'label': self.get_period_label(period),
+            'start_date': self.get_period_start_date(period),
+            'end_date': self.get_period_end_date(period),
             'comparison_value': comparison_period.value,
             'comparison_label': self.get_period_label(comparison_period),
+            'comparison_start_date': self.get_period_start_date(comparison_period),
+            'comparison_end_date': self.get_period_end_date(comparison_period),
             'chart_granularity': self.get_chart_granularity(period),
         }
 
@@ -279,6 +341,19 @@ class OwnerDashboardBaseService:
                 if row.get('bucket') is not None
             }
 
+        if period.period_type == REPORT_PERIOD_RANGE and not self.is_single_day_period(period):
+            start_date = self.get_period_start_date(period)
+            rows = (
+                queryset.annotate(bucket=TruncDate(field_name, tzinfo=TASHKENT_TIMEZONE))
+                .values('bucket')
+                .annotate(total=Coalesce(Sum('amount'), Value(0), output_field=IntegerField()))
+            )
+            return {
+                (as_edate(row['bucket']) - start_date).days: self.get_safe_number(row.get('total'))
+                for row in rows
+                if row.get('bucket') is not None
+            }
+
         if period.period_type == REPORT_PERIOD_MONTH:
             rows = (
                 queryset.annotate(bucket=TruncDate(field_name, tzinfo=TASHKENT_TIMEZONE))
@@ -315,6 +390,19 @@ class OwnerDashboardBaseService:
                 if row.get('bucket') is not None
             }
 
+        if period.period_type == REPORT_PERIOD_RANGE and not self.is_single_day_period(period):
+            start_date = self.get_period_start_date(period)
+            rows = (
+                queryset.annotate(bucket=TruncDate('closed_at', tzinfo=TASHKENT_TIMEZONE))
+                .values('bucket')
+                .annotate(total=Count('id'))
+            )
+            return {
+                (as_edate(row['bucket']) - start_date).days: self.get_safe_number(row.get('total'))
+                for row in rows
+                if row.get('bucket') is not None
+            }
+
         if period.period_type == REPORT_PERIOD_MONTH:
             rows = (
                 queryset.annotate(bucket=TruncDate('closed_at', tzinfo=TASHKENT_TIMEZONE))
@@ -346,6 +434,26 @@ class OwnerDashboardBaseService:
                     'label': MONTH_LABELS[month - 1],
                 }
                 for month in range(1, 13)
+            ]
+
+        if period.period_type == REPORT_PERIOD_RANGE:
+            if self.is_single_day_period(period):
+                return [
+                    {
+                        'bucket_index': hour,
+                        'label': f'{hour:02d}:00',
+                    }
+                    for hour in range(24)
+                ]
+
+            start_date = self.get_period_start_date(period)
+            total_days = self.get_period_day_span(period)
+            return [
+                {
+                    'bucket_index': day_offset,
+                    'label': self.get_day_label(as_edate(start_date + timedelta(days=day_offset))),
+                }
+                for day_offset in range(total_days)
             ]
 
         if period.period_type == REPORT_PERIOD_MONTH:
@@ -541,8 +649,18 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
                 'top_item': top_items[0] if top_items else None,
                 'top_waiter': waiters[0] if waiters else None,
                 'top_cashier': cashiers[0] if cashiers else None,
-                'top_channel': channel_breakdown[0] if channel_breakdown else None,
-                'top_payment_method': payment_method_breakdown[0] if payment_method_breakdown else None,
+                'top_channel': max(
+                    channel_breakdown,
+                    key=lambda row: (row['sales_total'], row['orders_count']),
+                )
+                if channel_breakdown
+                else None,
+                'top_payment_method': max(
+                    payment_method_breakdown,
+                    key=lambda row: (row['sales_total'], row['orders_count']),
+                )
+                if payment_method_breakdown
+                else None,
                 'peak_time_bucket': self.get_peak_time_bucket(revenue_series),
             },
             'revenue_series': revenue_series,

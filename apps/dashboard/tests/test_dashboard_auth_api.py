@@ -533,6 +533,10 @@ class DashboardAuthApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['period']['period_type'], 'day')
+        self.assertEqual(response.data['period']['start_date'], '2026-04-07')
+        self.assertEqual(response.data['period']['end_date'], '2026-04-07')
+        self.assertEqual(response.data['period']['comparison_start_date'], '2026-04-06')
+        self.assertEqual(response.data['period']['comparison_end_date'], '2026-04-06')
         self.assertEqual(response.data['period']['chart_granularity'], 'hour')
         self.assertEqual(response.data['summary']['sales_total'], 32000)
         self.assertEqual(response.data['summary']['orders_count'], 1)
@@ -567,6 +571,29 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(len(year_response.data['revenue_series']), 12)
         self.assertEqual(len(year_response.data['previous_revenue_series']), 12)
 
+    def test_dashboard_overview_returns_range_payload(self):
+        self.client.force_authenticate(self.owner_user)
+
+        response = self.client.get(
+            '/api/v1/dashboard/overview/?period_type=range&start_date=2026-04-01&end_date=2026-04-07'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['period']['period_type'], 'range')
+        self.assertEqual(response.data['period']['start_date'], '2026-04-01')
+        self.assertEqual(response.data['period']['end_date'], '2026-04-07')
+        self.assertEqual(response.data['period']['comparison_start_date'], '2026-03-25')
+        self.assertEqual(response.data['period']['comparison_end_date'], '2026-03-31')
+        self.assertEqual(response.data['period']['chart_granularity'], 'day')
+        self.assertEqual(response.data['summary']['sales_total'], 114000)
+        self.assertEqual(response.data['summary']['orders_count'], 3)
+        self.assertEqual(response.data['summary']['open_checks'], 1)
+        self.assertEqual(response.data['summary']['active_tables'], 2)
+        self.assertEqual(len(response.data['revenue_series']), 7)
+        self.assertEqual(len(response.data['previous_revenue_series']), 7)
+        self.assertEqual(response.data['spotlight']['top_payment_method']['code'], 'card')
+        self.assertEqual(response.data['cash_shift_snapshot']['open_count'], 1)
+
     def test_dashboard_detail_endpoints_are_paginated_and_owner_scoped(self):
         self.client.force_authenticate(self.owner_user)
 
@@ -587,6 +614,34 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(staff_response.data['data'][0]['sales_total'], 32000)
         self.assertEqual(shifts_response.data['total'], 2)
         self.assertEqual(shifts_response.data['data'][0]['cash_desk_name'], 'Front cash desk')
+
+    def test_dashboard_detail_endpoints_support_range_filters(self):
+        self.client.force_authenticate(self.owner_user)
+
+        open_checks_response = self.client.get(
+            '/api/v1/dashboard/open-checks/?period_type=range&start_date=2026-04-01&end_date=2026-04-07'
+        )
+        top_items_response = self.client.get(
+            '/api/v1/dashboard/top-items/?period_type=range&start_date=2026-04-01&end_date=2026-04-07'
+        )
+        staff_response = self.client.get(
+            '/api/v1/dashboard/staff/?period_type=range&start_date=2026-04-01&end_date=2026-04-07&role=cashier'
+        )
+        shifts_response = self.client.get(
+            '/api/v1/dashboard/shifts/?period_type=range&start_date=2026-04-01&end_date=2026-04-07'
+        )
+
+        self.assertEqual(open_checks_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(top_items_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(staff_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(shifts_response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(open_checks_response.data['total'], 1)
+        self.assertEqual(open_checks_response.data['data'][0]['order_number'], 106)
+        self.assertEqual(top_items_response.data['data'][0]['item_name'], 'Pizza')
+        self.assertEqual(staff_response.data['data'][0]['user_name'], 'Cashier User')
+        self.assertEqual(staff_response.data['data'][0]['sales_total'], 114000)
+        self.assertEqual(shifts_response.data['total'], 2)
 
     def test_dashboard_detail_endpoints_require_dashboard_permission(self):
         self.client.force_authenticate(self.staff_user)

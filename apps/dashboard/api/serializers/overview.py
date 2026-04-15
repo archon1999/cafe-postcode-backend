@@ -12,8 +12,12 @@ class DashboardPeriodSerializer(serializers.Serializer):
     period_type = serializers.CharField()
     value = serializers.CharField()
     label = serializers.CharField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
     comparison_value = serializers.CharField()
     comparison_label = serializers.CharField()
+    comparison_start_date = serializers.DateField()
+    comparison_end_date = serializers.DateField()
     chart_granularity = serializers.CharField()
 
 

@@ -1,13 +1,15 @@
-from django.contrib.auth import authenticate
+from django.apps import apps
+from django.contrib.auth import authenticate, get_user_model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
-
-from apps.platform.models import BusinessPartner
-from apps.users.helpers import get_user_model
 
 from .role import RoleSerializer
 
 User = get_user_model()
+
+
+def get_business_partner_model():
+    return apps.get_model('platform', 'BusinessPartner')
 
 
 class AdminLoginSerializer(serializers.Serializer):
@@ -52,7 +54,7 @@ class SessionUserSerializer(serializers.ModelSerializer):
     def get_business_partners_count(self, obj):
         if obj.is_superuser or obj.get_restaurant_scope() is not None or obj.get_business_partner_scope() is not None:
             return None
-        return BusinessPartner.objects.count()
+        return get_business_partner_model().objects.count()
 
     def get_company_name(self, obj):
         business_partner = obj.get_business_partner_scope()
