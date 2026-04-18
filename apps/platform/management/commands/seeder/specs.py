@@ -190,16 +190,16 @@ TARIFF_SPECS = (
         name='Restaurant tarifi',
         description='Zallar, restoran boshqaruvi, oshxona va POS oqimlari bilan toliq restoran tarifi.',
         role_codes=('restaurant_admin', 'manager', 'cashier', 'waiter', 'chef', 'barman'),
-        monthly_price=990000,
-        yearly_price=9900000,
+        monthly_price=99000,
+        yearly_price=990000,
     ),
     TariffSpec(
         key='fast_food',
         name='Fast food tarifi',
         description='Zalsiz, olib ketish va tezkor kassaga mos fast food tarifi.',
         role_codes=('fast_food_admin', 'fast_food_manager', 'fast_food_cashier', 'chef'),
-        monthly_price=590000,
-        yearly_price=5900000,
+        monthly_price=59000,
+        yearly_price=590000,
     ),
 )
 
