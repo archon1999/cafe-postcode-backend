@@ -1,3 +1,4 @@
+from rest_framework import generics
 from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.response import Response
@@ -7,7 +8,10 @@ from apps.platform.api.admin.serializers import (
     RestaurantActivationOptionsSerializer,
     RestaurantActivationResultSerializer,
     RestaurantActivationSerializer,
+    RestaurantBalanceTopUpSerializer,
+    RestaurantBalanceTransactionSerializer,
 )
+from apps.platform.helpers import get_restaurant_balance_transaction_model
 from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_model
 from apps.platform.selectors.business_partners import (
     activation_permission_queryset,
@@ -17,15 +21,22 @@ from apps.platform.selectors.business_partners import (
     get_restaurant_admin_role_for_source,
     normalize_username_base,
 )
-from apps.platform.services import add_billing_period, deactivate_restaurant_access, extend_restaurant_entitlement
+from apps.platform.services import (
+    add_billing_period,
+    create_restaurant_top_up,
+    deactivate_restaurant_access,
+    extend_restaurant_entitlement,
+)
 from apps.restaurants.api.admin.serializers import RestaurantSerializer
 from apps.restaurants.helpers import generate_restaurant_auth_code, get_restaurant_model
 from apps.restaurants.selectors.restaurants import get_restaurants_queryset_for_request
 from apps.users.helpers import get_restaurant_profile_model, get_user_model
+from common.api.paginations import SmallResultsSetPagination
 from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 Restaurant = get_restaurant_model()
 RestaurantEntitlement = get_restaurant_entitlement_model()
+RestaurantBalanceTransaction = get_restaurant_balance_transaction_model()
 RestaurantProfile = get_restaurant_profile_model()
 Tariff = get_tariff_model()
 User = get_user_model()
@@ -60,8 +71,8 @@ class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
         entitlement.starts_on = validated['starts_on']
         entitlement.billing_period = billing_period
         entitlement.expires_on = add_billing_period(validated['starts_on'], billing_period)
-        entitlement.monthly_price = tariff.monthly_price if tariff is not None else None
-        entitlement.yearly_price = tariff.yearly_price if tariff is not None else None
+        entitlement.monthly_price = tariff.monthly_price if tariff is not None else validated.get('monthly_price')
+        entitlement.yearly_price = tariff.yearly_price if tariff is not None else validated.get('yearly_price')
         entitlement.save()
         entitlement.permissions.clear()
         entitlement.allowed_roles.clear()
@@ -161,9 +172,43 @@ class RestaurantRotateAuthCodeView(AdminPermissionRequiredMixin, APIView):
         regenerate_restaurant_auth_code(restaurant)
         return Response(RestaurantSerializer(restaurant).data, status=status.HTTP_200_OK)
 
+
+class RestaurantBalanceTransactionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
+    serializer_class = RestaurantBalanceTransactionSerializer
+    pagination_class = SmallResultsSetPagination
+
+    def _get_restaurant(self):
+        if not hasattr(self, '_restaurant'):
+            self._restaurant = get_restaurants_queryset_for_request(self.request).get(pk=self.kwargs['pk'])
+        return self._restaurant
+
+    def get_queryset(self):
+        restaurant = self._get_restaurant()
+        return (
+            RestaurantBalanceTransaction.objects.filter(restaurant=restaurant)
+            .select_related('performed_by')
+            .order_by('-created_at', '-id')
+        )
+
+
+class RestaurantBalanceTopUpView(AdminPermissionRequiredMixin, APIView):
+    def post(self, request, pk):
+        restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
+        serializer = RestaurantBalanceTopUpSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        transaction_item = create_restaurant_top_up(
+            restaurant=restaurant,
+            amount=serializer.validated_data['amount'],
+            note=serializer.validated_data.get('note', ''),
+            performed_by=request.user,
+        )
+        return Response(RestaurantBalanceTransactionSerializer(transaction_item).data, status=status.HTTP_200_OK)
+
 __all__ = [
     'RestaurantActivateView',
     'RestaurantActivationOptionsView',
+    'RestaurantBalanceTopUpView',
+    'RestaurantBalanceTransactionsView',
     'RestaurantDeactivateView',
     'RestaurantExtendView',
     'RestaurantRotateAuthCodeView',

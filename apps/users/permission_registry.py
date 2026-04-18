@@ -690,6 +690,11 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/restaurants/',
         detail_url='api/v1/admin/restaurants/<uuid:pk>/',
         default_roles=BUSINESS_PARTNER_ROLES,
+        view_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/restaurants/<uuid:pk>/'),
+            ('GET', 'api/v1/admin/restaurants/<uuid:pk>/detail/'),
+            ('GET', 'api/v1/admin/platform/restaurants/<uuid:pk>/balance-transactions/'),
+        ),
         create_endpoints=merge_endpoint_specs(
             endpoint_specs(('POST', 'api/v1/admin/restaurants/')),
             endpoint_specs(('GET', 'api/v1/admin/restaurants/lookup/')),
@@ -1072,6 +1077,14 @@ PERMISSION_DEFINITIONS.extend(
             group_key='restaurants',
             name='Restoran tarif muddatini uzaytirish',
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/extend/')),
+            default_roles=BUSINESS_PARTNER_ROLES,
+        ),
+        action_permission(
+            'restaurants.top_up',
+            surface='admin',
+            group_key='restaurants',
+            name="Restoran balansini to'ldirish",
+            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/top-up/')),
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(

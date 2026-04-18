@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.platform.api.admin.views.business_partners import (
     BusinessPartnerActivateView,
+    BusinessPartnerActivationDefaultsView,
     BusinessPartnerDeactivateView,
     BusinessPartnerDetailView,
     BusinessPartnerListCreateView,
@@ -11,6 +12,8 @@ from apps.platform.api.admin.views.business_partners import (
 from apps.platform.api.admin.views.restaurants import (
     RestaurantActivateView,
     RestaurantActivationOptionsView,
+    RestaurantBalanceTopUpView,
+    RestaurantBalanceTransactionsView,
     RestaurantDeactivateView,
     RestaurantExtendView,
     RestaurantRotateAuthCodeView,
@@ -22,6 +25,7 @@ urlpatterns = [
     path('business-partners/', BusinessPartnerListCreateView.as_view()),
     path('business-partners/lookup/', BusinessPartnerLookupView.as_view()),
     path('business-partners/<uuid:pk>/', BusinessPartnerDetailView.as_view()),
+    path('business-partners/<uuid:pk>/activation-defaults/', BusinessPartnerActivationDefaultsView.as_view()),
     path('business-partners/<uuid:pk>/activate/', BusinessPartnerActivateView.as_view()),
     path('business-partners/<uuid:pk>/deactivate/', BusinessPartnerDeactivateView.as_view()),
     path('business-partners/<uuid:pk>/reset-password/', BusinessPartnerResetPasswordView.as_view()),
@@ -32,6 +36,8 @@ urlpatterns = [
     path('restaurants/<uuid:pk>/activate/', RestaurantActivateView.as_view()),
     path('restaurants/<uuid:pk>/deactivate/', RestaurantDeactivateView.as_view()),
     path('restaurants/<uuid:pk>/extend/', RestaurantExtendView.as_view()),
+    path('restaurants/<uuid:pk>/balance-transactions/', RestaurantBalanceTransactionsView.as_view()),
+    path('restaurants/<uuid:pk>/top-up/', RestaurantBalanceTopUpView.as_view()),
     path('restaurants/<uuid:pk>/rotate-auth-code/', RestaurantRotateAuthCodeView.as_view()),
     path('restaurants/<uuid:pk>/reset-password/', RestaurantResetPasswordView.as_view()),
 ]

@@ -5,6 +5,8 @@ from rest_framework.views import APIView
 
 from apps.platform.api.admin.serializers import (
     BusinessPartnerLookupSerializer,
+    PartnerActivationDefaultsSerializer,
+    PartnerActivationSerializer,
     BusinessPartnerSerializer,
     PartnerActivationResultSerializer,
 )
@@ -23,18 +25,27 @@ BusinessPartner = get_business_partner_model()
 User = get_user_model()
 
 
+def _build_partner_activation_defaults(partner):
+    password = generate_password()
+    username = generate_unique_username(f'bh-{partner.inn}', exclude_user=partner.owner_user)
+    return {'username': username, 'password': password}
+
+
 class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = BusinessPartnerSerializer
 
     def get_queryset(self):
-        return filter_partners(BusinessPartner.objects.select_related('owner_user'), self.request)
+        return filter_partners(
+            BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants'),
+            self.request,
+        )
 
 
 class BusinessPartnerDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = BusinessPartnerSerializer
 
     def get_queryset(self):
-        return BusinessPartner.objects.select_related('owner_user').order_by('company_name')
+        return BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').order_by('company_name')
 
 
 class BusinessPartnerLookupView(AdminPermissionRequiredMixin, APIView):
@@ -62,12 +73,25 @@ class BusinessPartnerLookupView(AdminPermissionRequiredMixin, APIView):
         return Response(BusinessPartnerLookupSerializer(payload).data, status=status.HTTP_200_OK)
 
 
+class BusinessPartnerActivationDefaultsView(AdminPermissionRequiredMixin, APIView):
+    def get(self, request, pk):
+        partner = BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').get(pk=pk)
+        payload = _build_partner_activation_defaults(partner)
+        return Response(PartnerActivationDefaultsSerializer(payload).data, status=status.HTTP_200_OK)
+
+
 class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
     def post(self, request, pk):
-        partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
-        password = generate_password()
+        partner = BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').get(pk=pk)
+        activation_serializer = PartnerActivationSerializer(
+            data=request.data,
+            context={'partner': partner, 'user_model': User},
+        )
+        activation_serializer.is_valid(raise_exception=True)
+        defaults = _build_partner_activation_defaults(partner)
         user = partner.owner_user
-        username = generate_unique_username(f'bh-{partner.inn}', exclude_user=user)
+        username = activation_serializer.validated_data.get('username', defaults['username'])
+        password = activation_serializer.validated_data.get('password', defaults['password'])
 
         if user is None:
             user = User.objects.create(
@@ -122,6 +146,7 @@ class BusinessPartnerResetPasswordView(AdminPermissionRequiredMixin, APIView):
 
 __all__ = [
     'BusinessPartnerActivateView',
+    'BusinessPartnerActivationDefaultsView',
     'BusinessPartnerDeactivateView',
     'BusinessPartnerDetailView',
     'BusinessPartnerListCreateView',

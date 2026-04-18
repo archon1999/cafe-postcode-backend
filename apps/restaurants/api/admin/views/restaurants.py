@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.platform.services import FakturaClient, FakturaError
-from apps.restaurants.api.admin.serializers import RestaurantLookupSerializer, RestaurantSerializer
+from apps.restaurants.api.admin.serializers import RestaurantDetailSerializer, RestaurantLookupSerializer, RestaurantSerializer
 from apps.restaurants.selectors.restaurants import RestaurantListFilters, get_restaurants_queryset_for_request
 from common.api.admin_permissions import AdminPermissionRequiredMixin
 
@@ -53,4 +53,11 @@ class RestaurantDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdate
     def get_queryset(self):
         return get_restaurants_queryset_for_request(self.request)
 
-__all__ = ['RestaurantDetailView', 'RestaurantListCreateView', 'RestaurantLookupView']
+
+class RestaurantReadDetailView(AdminPermissionRequiredMixin, generics.RetrieveAPIView):
+    serializer_class = RestaurantDetailSerializer
+
+    def get_queryset(self):
+        return get_restaurants_queryset_for_request(self.request)
+
+__all__ = ['RestaurantDetailView', 'RestaurantListCreateView', 'RestaurantLookupView', 'RestaurantReadDetailView']

@@ -24,6 +24,8 @@ def _restore_faktura_payload(value):
 class BusinessPartnerSerializer(serializers.ModelSerializer):
     owner_user_id = serializers.UUIDField(read_only=True)
     faktura_payload = serializers.JSONField(required=False)
+    restaurants = serializers.SerializerMethodField()
+    restaurants_count = serializers.SerializerMethodField()
 
     class Meta:
         model = BusinessPartner
@@ -41,6 +43,8 @@ class BusinessPartnerSerializer(serializers.ModelSerializer):
             'activated_at',
             'deactivated_at',
             'faktura_payload',
+            'restaurants',
+            'restaurants_count',
         )
 
     def create(self, validated_data):
@@ -59,6 +63,18 @@ class BusinessPartnerSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
+    def get_restaurants(self, instance):
+        return [
+            {
+                'id': restaurant.id,
+                'name': restaurant.name,
+            }
+            for restaurant in instance.restaurants.all()
+        ]
+
+    def get_restaurants_count(self, instance):
+        return len(instance.restaurants.all())
+
 
 class BusinessPartnerLookupSerializer(serializers.Serializer):
     inn = serializers.CharField()
@@ -69,6 +85,54 @@ class BusinessPartnerLookupSerializer(serializers.Serializer):
     email = serializers.CharField(allow_blank=True)
     address = serializers.CharField(allow_blank=True)
     faktura_payload = serializers.JSONField()
+
+
+class PartnerActivationDefaultsSerializer(serializers.Serializer):
+    username = serializers.CharField()
+    password = serializers.CharField()
+
+
+class PartnerActivationSerializer(serializers.Serializer):
+    username = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+    password = serializers.CharField(required=False, allow_blank=True, trim_whitespace=False)
+
+    def validate(self, attrs):
+        username_provided = 'username' in attrs
+        password_provided = 'password' in attrs
+
+        if not username_provided and not password_provided:
+            return attrs
+
+        errors = {}
+
+        if not username_provided:
+            errors['username'] = 'This field is required.'
+        if not password_provided:
+            errors['password'] = 'This field is required.'
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        username = attrs['username'].strip()
+        if not username:
+            errors['username'] = 'This field may not be blank.'
+
+        password = attrs['password']
+        if not password.strip():
+            errors['password'] = 'This field may not be blank.'
+
+        partner = self.context['partner']
+        owner_user = partner.owner_user
+        user_queryset = self.context['user_model'].objects.all()
+        if owner_user is not None:
+            user_queryset = user_queryset.exclude(pk=owner_user.pk)
+        if username and user_queryset.filter(username=username).exists():
+            errors['username'] = 'A user with that username already exists.'
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        attrs['username'] = username
+        return attrs
 
 
 class PartnerActivationResultSerializer(serializers.Serializer):

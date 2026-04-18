@@ -10,6 +10,12 @@ from django.utils import timezone
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.helpers import get_restaurant_model
 
+from .restaurant_balances import (
+    create_restaurant_renewal_charge,
+    get_restaurant_current_balance,
+    get_restaurant_next_charge_amount,
+)
+
 Restaurant = get_restaurant_model()
 
 EXPIRY_SCHEDULE_NAME = 'platform.expire_restaurant_entitlements'
@@ -63,6 +69,27 @@ def extend_restaurant_entitlement(*, restaurant, entitlement, today=None):
     return entitlement
 
 
+@transaction.atomic
+def try_auto_renew_restaurant_entitlement(*, restaurant, entitlement, today=None) -> bool:
+    charge_amount = get_restaurant_next_charge_amount(entitlement)
+    if charge_amount is None:
+        return False
+
+    current_balance = get_restaurant_current_balance(restaurant)
+    if current_balance < charge_amount:
+        return False
+
+    extend_restaurant_entitlement(restaurant=restaurant, entitlement=entitlement, today=today)
+    if charge_amount > 0:
+        create_restaurant_renewal_charge(
+            restaurant=restaurant,
+            amount=charge_amount,
+            period_start=entitlement.starts_on,
+            period_end=entitlement.expires_on,
+        )
+    return True
+
+
 def expire_restaurant_entitlements() -> int:
     today = timezone.localdate()
     expired_entitlements = (
@@ -73,7 +100,12 @@ def expire_restaurant_entitlements() -> int:
 
     expired_count = 0
     for entitlement in expired_entitlements:
-        deactivate_restaurant_access(restaurant=entitlement.restaurant, entitlement=entitlement)
+        if not try_auto_renew_restaurant_entitlement(
+            restaurant=entitlement.restaurant,
+            entitlement=entitlement,
+            today=today,
+        ):
+            deactivate_restaurant_access(restaurant=entitlement.restaurant, entitlement=entitlement)
         expired_count += 1
 
     return expired_count

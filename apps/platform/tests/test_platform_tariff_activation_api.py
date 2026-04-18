@@ -233,6 +233,8 @@ class PlatformTariffActivationApiTests(APITestCase):
             {
                 'activation_type': 'custom',
                 'billing_period': 'yearly',
+                'monthly_price': '2500',
+                'yearly_price': '25000',
                 'allowed_role_ids': [str(self.fast_food_admin_role.id), str(self.fast_food_cashier_role.id)],
                 'permission_ids': [str(employees_view_permission.id), str(pos_takeaway_menu_view_permission.id)],
                 'starts_on': '2026-04-04',
@@ -245,6 +247,8 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertTrue(self.restaurant.entitlement.is_active)
         self.assertTrue(self.restaurant.entitlement.is_custom)
         self.assertIsNone(self.restaurant.entitlement.tariff_id)
+        self.assertEqual(self.restaurant.entitlement.monthly_price, 2500)
+        self.assertEqual(self.restaurant.entitlement.yearly_price, 25000)
         self.assertEqual(
             set(self.restaurant.entitlement.allowed_roles.values_list('code', flat=True)),
             {'fast_food_admin', 'fast_food_cashier'},
