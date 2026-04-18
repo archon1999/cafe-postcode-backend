@@ -47,6 +47,7 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertTrue(User.objects.filter(username='admin').exists())
         self.assertTrue(User.objects.filter(username='superadmin').exists())
         self.assertTrue(User.objects.filter(role__code='business_partner').exists())
+        self.assertFalse(User.objects.filter(role__code='owner').exists())
 
         tariffs = Tariff.objects.filter(name__in=['Restaurant tarifi', 'Fast food tarifi']).order_by('name')
         self.assertEqual(tariffs.count(), 2)
@@ -67,6 +68,8 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
 
         self.assertEqual(restaurant.entitlement.tariff.name, 'Restaurant tarifi')
         self.assertEqual(fast_food.entitlement.tariff.name, 'Fast food tarifi')
+        self.assertIn('dashboard.view', restaurant.entitlement.get_effective_permission_codes())
+        self.assertIn('dashboard.view', fast_food.entitlement.get_effective_permission_codes())
         self.assertEqual(restaurant_printer.mode, IntegrationConfig.Mode.LIVE)
         self.assertTrue(restaurant_printer.is_enabled)
         self.assertEqual(restaurant_printer.settings.get('connection_type'), 'system_printer')
@@ -77,6 +80,8 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertEqual(partner.director_name, 'Jurayev Akmaljon Ruzibayevich')
         self.assertEqual(restaurant.tax_number, '311926992')
         self.assertEqual(fast_food.tax_number, '304459113')
+        self.assertTrue(User.objects.filter(restaurant_profile__restaurant=restaurant, role__code='restaurant_admin').exists())
+        self.assertTrue(User.objects.filter(restaurant_profile__restaurant=fast_food, role__code='fast_food_admin').exists())
         self.assertEqual(restaurant.entitlement.starts_on, timezone.localdate())
         self.assertEqual(fast_food.entitlement.starts_on, timezone.localdate())
         self.assertEqual(

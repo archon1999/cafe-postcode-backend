@@ -84,8 +84,9 @@ class AdminUsersApiTests(APITestCase):
         role_codes = {item['code'] for item in response.data['data']}
         self.assertIn('waiter', role_codes)
         self.assertIn('cashier', role_codes)
-        self.assertNotIn('restaurant_admin', role_codes)
+        self.assertIn('restaurant_admin', role_codes)
         self.assertNotIn('fast_food_cashier', role_codes)
+        self.assertNotIn('fast_food_admin', role_codes)
 
     def test_employee_create_rejects_role_outside_tariff(self):
         response = self.client.post(
@@ -104,7 +105,7 @@ class AdminUsersApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('roleId', response.data)
 
-    def test_employee_create_rejects_admin_only_role(self):
+    def test_employee_create_requires_credentials_for_admin_role(self):
         response = self.client.post(
             '/api/v1/admin/employees/',
             {
@@ -113,13 +114,47 @@ class AdminUsersApiTests(APITestCase):
                 'is_active': True,
                 'role_id': str(self.restaurant_admin_role.id),
                 'employment_status': 'active',
-                'pin': '1234',
             },
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('roleId', response.data)
+        self.assertIn('username', response.data)
+        self.assertIn('password', response.data)
+
+    def test_employee_create_accepts_admin_role_with_login_credentials(self):
+        response = self.client.post(
+            '/api/v1/admin/employees/',
+            {
+                'full_name': 'Restaurant Admin Clone',
+                'phone': '+998901112244',
+                'is_active': True,
+                'role_id': str(self.restaurant_admin_role.id),
+                'employment_status': 'active',
+                'username': 'restaurant-admin-clone',
+                'password': 'Secret123!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['username'], 'restaurant-admin-clone')
+
+        employee = User.objects.get(pk=response.data['id'])
+        self.assertEqual(employee.role_id, self.restaurant_admin_role.id)
+        self.assertTrue(employee.check_password('Secret123!'))
+        self.assertEqual(employee.restaurant_profile.restaurant_id, self.restaurant.id)
+        self.assertEqual(employee.restaurant_profile.pin_code, '')
+        self.assertIn('dashboard.view', employee.permission_codes)
+
+        list_response = self.client.get('/api/v1/admin/employees/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        listed_ids = {item['id'] for item in list_response.data['data']}
+        self.assertIn(str(employee.id), listed_ids)
+
+        detail_response = self.client.get(f'/api/v1/admin/employees/{employee.id}/')
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail_response.data['username'], 'restaurant-admin-clone')
 
     def test_employee_create_persists_pin_and_hall_assignments_for_waiter(self):
         response = self.client.post(
@@ -149,6 +184,7 @@ class AdminUsersApiTests(APITestCase):
 
         employee = User.objects.get(pk=response.data['id'])
         self.assertTrue(employee.check_pin('1234'))
+        self.assertFalse(employee.has_usable_password())
         self.assertEqual(employee.restaurant_profile.primary_hall_id, self.primary_hall.id)
         self.assertSetEqual(
             set(employee.restaurant_profile.allowed_halls.values_list('id', flat=True)),

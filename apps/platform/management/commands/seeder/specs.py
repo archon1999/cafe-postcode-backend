@@ -137,7 +137,6 @@ class RestaurantSpec:
     hall_enabled: bool
     kitchen_enabled: bool
     cashier_enabled: bool
-    owner_dashboard_enabled: bool
     order_entry_mode: str
     kitchen_mode: str
     floor: FloorSpec | None
@@ -190,7 +189,7 @@ TARIFF_SPECS = (
         key='restaurant',
         name='Restaurant tarifi',
         description='Zallar, restoran boshqaruvi, oshxona va POS oqimlari bilan toliq restoran tarifi.',
-        role_codes=('owner', 'restaurant_admin', 'manager', 'cashier', 'waiter', 'chef', 'barman'),
+        role_codes=('restaurant_admin', 'manager', 'cashier', 'waiter', 'chef', 'barman'),
         monthly_price=990000,
         yearly_price=9900000,
     ),
@@ -198,7 +197,7 @@ TARIFF_SPECS = (
         key='fast_food',
         name='Fast food tarifi',
         description='Zalsiz, olib ketish va tezkor kassaga mos fast food tarifi.',
-        role_codes=('owner', 'fast_food_admin', 'fast_food_manager', 'fast_food_cashier', 'chef'),
+        role_codes=('fast_food_admin', 'fast_food_manager', 'fast_food_cashier', 'chef'),
         monthly_price=590000,
         yearly_price=5900000,
     ),
@@ -280,7 +279,6 @@ RESTAURANT_FLOOR_SPEC = FloorSpec(
 
 
 RESTAURANT_STAFF_SPECS = (
-    StaffSpec('restaurant-owner', 'Restaurant mahsulot egasi', 'owner', 'admin', password='owner123'),
     StaffSpec(
         'restaurant-manager',
         'Restaurant menejer',
@@ -317,7 +315,6 @@ RESTAURANT_STAFF_SPECS = (
 
 
 FAST_FOOD_STAFF_SPECS = (
-    StaffSpec('fastfood-owner', 'Fast food mahsulot egasi', 'owner', 'admin', password='owner123'),
     StaffSpec('fastfood-manager', 'Fast food menejer', 'fast_food_manager', 'pos', pin='6111'),
     StaffSpec('fastfood-cashier-1', 'Fast food kassir 1', 'fast_food_cashier', 'pos', pin='6221'),
     StaffSpec('fastfood-cashier-2', 'Fast food kassir 2', 'fast_food_cashier', 'pos', pin='6222'),
@@ -570,7 +567,6 @@ RESTAURANT_SPECS = (
         hall_enabled=True,
         kitchen_enabled=True,
         cashier_enabled=True,
-        owner_dashboard_enabled=True,
         order_entry_mode='hall',
         kitchen_mode='both',
         floor=RESTAURANT_FLOOR_SPEC,
@@ -591,7 +587,6 @@ RESTAURANT_SPECS = (
         hall_enabled=False,
         kitchen_enabled=True,
         cashier_enabled=True,
-        owner_dashboard_enabled=True,
         order_entry_mode='cashier_builder',
         kitchen_mode='display',
         floor=None,

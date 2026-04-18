@@ -11,6 +11,7 @@ from apps.users.helpers import (
     get_role_model,
     get_user_model,
 )
+from apps.users.permission_registry import RESTAURANT_ADMIN_UI_ROLES
 from common.api.query_params import (
     apply_ordering,
     get_ordering_query_param,
@@ -23,6 +24,7 @@ EmployeeProfile = get_employee_profile_model()
 Permission = get_permission_model()
 Role = get_role_model()
 User = get_user_model()
+EMPLOYEE_LOGIN_ROLE_CODES = frozenset(RESTAURANT_ADMIN_UI_ROLES)
 
 ROLE_TYPE_VALUES = {'system', 'custom'}
 USER_ORDERING_FIELDS = {
@@ -62,7 +64,6 @@ def employee_user_queryset(request) -> QuerySet:
         )
         .prefetch_related('restaurant_profile__allowed_halls')
         .filter(restaurant_profile__restaurant=restaurant)
-        .filter(Q(password__startswith='!') | Q(restaurant_profile__pin_code__gt=''))
         .exclude(is_superuser=True)
         .distinct()
     )
@@ -122,13 +123,27 @@ def scoped_role_queryset(request) -> QuerySet:
 
 
 def employee_role_queryset(request) -> QuerySet:
-    return scoped_role_queryset(request).filter(permissions__code__in=POS_UI_PERMISSION_CODES).distinct()
+    return (
+        scoped_role_queryset(request)
+        .filter(Q(permissions__code__in=POS_UI_PERMISSION_CODES) | Q(code__in=EMPLOYEE_LOGIN_ROLE_CODES))
+        .distinct()
+    )
 
 
 def role_has_pos_permissions(role: Role | None) -> bool:
     if role is None:
         return False
     return role.permissions.filter(code__in=POS_UI_PERMISSION_CODES).exists()
+
+
+def role_requires_login_credentials(role: Role | None) -> bool:
+    if role is None:
+        return False
+    return role.code in EMPLOYEE_LOGIN_ROLE_CODES
+
+
+def role_is_allowed_for_employee_surface(role: Role | None) -> bool:
+    return role_has_pos_permissions(role) or role_requires_login_credentials(role)
 
 
 @dataclass(frozen=True)
@@ -247,7 +262,7 @@ class AdminUserQuerysetMixin:
                 role_ids=filters.role_ids,
                 employment_statuses=filters.employment_statuses,
                 ordering=filters.ordering,
-                include_username_in_search=False,
+                include_username_in_search=True,
                 default_ordering=('full_name',),
             )
         return filters.apply(self.get_user_queryset())

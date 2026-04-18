@@ -26,7 +26,8 @@ TARIFF_ORDERING_FIELDS = {
     'yearlyPrice': 'yearly_price',
     'isActive': 'is_active',
 }
-ACTIVATION_EXCLUDED_ROLE_CODES = {'product_owner', 'business_partner'}
+RESTAURANT_LOGIN_ROLE_CODES = frozenset({'restaurant_admin', 'fast_food_admin'})
+ACTIVATION_EXCLUDED_ROLE_CODES = {'product_owner', 'business_partner', 'owner'}
 
 
 def generate_password(length: int = 12) -> str:
@@ -107,6 +108,24 @@ def activation_role_queryset():
 
 def activation_permission_queryset():
     return Permission.objects.filter(roles__in=activation_role_queryset()).order_by('code').distinct()
+
+
+def ensure_dashboard_permission_for_admin_roles(allowed_roles, permissions):
+    allowed_roles = list(allowed_roles)
+    permissions = list(permissions)
+
+    if not any(role.code in RESTAURANT_LOGIN_ROLE_CODES for role in allowed_roles):
+        return permissions
+
+    dashboard_permission = Permission.objects.filter(code='dashboard.view').first()
+    if dashboard_permission is None:
+        return permissions
+
+    permission_ids = {permission.id for permission in permissions}
+    if dashboard_permission.id not in permission_ids:
+        permissions.append(dashboard_permission)
+
+    return permissions
 
 
 def get_restaurant_admin_role_for_source(role_source) -> Role:

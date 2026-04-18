@@ -48,7 +48,6 @@ ROLE_DEFINITIONS = {
     'business_partner': {'name': t('Biznes hamkor')},
     'restaurant_admin': {'name': t('Restoran admini')},
     'fast_food_admin': {'name': t('Fast food admini')},
-    'owner': {'name': t('Mahsulot egasi')},
     'manager': {'name': t('Menejer')},
     'cashier': {'name': t('Kassir')},
     'waiter': {'name': t('Ofitsiant')},
@@ -341,8 +340,15 @@ PERMISSION_DEFINITIONS = [
         ui_visible=True,
         group_key='dashboard',
         name='Dashboardni ko‘rish',
-        endpoints=endpoint_specs(('GET', 'api/v1/dashboard/auth/me/'), ('GET', 'api/v1/dashboard/overview/')),
-        default_roles=('owner',),
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/dashboard/auth/me/'),
+            ('GET', 'api/v1/dashboard/overview/'),
+            ('GET', 'api/v1/dashboard/open-checks/'),
+            ('GET', 'api/v1/dashboard/top-items/'),
+            ('GET', 'api/v1/dashboard/staff/'),
+            ('GET', 'api/v1/dashboard/shifts/'),
+        ),
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
     ),
     permission_definition(
         'permissions.view',
@@ -389,7 +395,7 @@ PERMISSION_DEFINITIONS = [
         group_key='catalog',
         name='POS menyusini ko‘rish',
         endpoints=endpoint_specs(('GET', 'api/v1/pos/catalog/menu/')),
-        default_roles=('owner', 'restaurant_admin', 'cashier', 'waiter', 'universal_operator'),
+        default_roles=('restaurant_admin', 'cashier', 'waiter', 'universal_operator'),
     ),
     permission_definition(
         'open_checks.view',
@@ -968,7 +974,10 @@ PERMISSION_DEFINITIONS.extend(
             surface='admin',
             group_key='business_partners',
             name='Biznes hamkorni faollashtirish',
-            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/business-partners/<uuid:pk>/activate/')),
+            endpoints=endpoint_specs(
+                ('GET', 'api/v1/admin/platform/business-partners/<uuid:pk>/activation-defaults/'),
+                ('POST', 'api/v1/admin/platform/business-partners/<uuid:pk>/activate/'),
+            ),
             default_roles=PRODUCT_OWNER_ROLES,
         ),
         action_permission(

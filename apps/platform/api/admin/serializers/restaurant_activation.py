@@ -1,7 +1,10 @@
 from rest_framework import serializers
 
 from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_model
-from apps.platform.selectors.business_partners import ACTIVATION_EXCLUDED_ROLE_CODES
+from apps.platform.selectors.business_partners import (
+    ACTIVATION_EXCLUDED_ROLE_CODES,
+    ensure_dashboard_permission_for_admin_roles,
+)
 from apps.restaurants.api.admin.serializers import RestaurantSerializer
 from apps.users.api.admin.serializers import PermissionOptionSerializer, RoleSerializer
 from apps.users.helpers import get_permission_model, get_role_model
@@ -68,11 +71,11 @@ class RestaurantActivationSerializer(serializers.Serializer):
 
         if not permissions:
             permissions = self._derive_permissions(allowed_roles)
-            attrs['permissions'] = permissions
 
         if not permissions:
             raise serializers.ValidationError({'permissionIds': 'Kamida bitta ruxsat tanlang.'})
 
+        attrs['permissions'] = ensure_dashboard_permission_for_admin_roles(allowed_roles, permissions)
         attrs['tariff'] = None
         return attrs
 

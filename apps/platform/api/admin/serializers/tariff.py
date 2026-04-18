@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.platform.helpers import get_tariff_model
+from apps.platform.selectors.business_partners import ensure_dashboard_permission_for_admin_roles
 from apps.users.helpers import get_permission_model, get_role_model
 
 Tariff = get_tariff_model()
@@ -19,7 +20,7 @@ class TariffReadMixin:
 class TariffSerializer(TariffReadMixin, serializers.ModelSerializer):
     allowed_role_ids = serializers.PrimaryKeyRelatedField(
         source='allowed_roles',
-        queryset=Role.objects.filter(is_system=True),
+        queryset=Role.objects.filter(is_system=True).exclude(code='owner'),
         many=True,
         required=False,
         write_only=True,
@@ -62,9 +63,10 @@ class TariffSerializer(TariffReadMixin, serializers.ModelSerializer):
         permissions = validated_data.pop('permissions', serializers.empty)
         tariff = Tariff.objects.create(**validated_data)
         tariff.allowed_roles.set(allowed_roles)
-        tariff.permissions.set(
+        final_permissions = (
             list(permissions) if permissions is not serializers.empty else self._derive_permissions(allowed_roles)
         )
+        tariff.permissions.set(ensure_dashboard_permission_for_admin_roles(allowed_roles, final_permissions))
         return tariff
 
     def update(self, instance, validated_data):
@@ -82,9 +84,14 @@ class TariffSerializer(TariffReadMixin, serializers.ModelSerializer):
             instance.allowed_roles.set(final_allowed_roles)
 
         if permissions is not serializers.empty:
-            instance.permissions.set(list(permissions))
+            instance.permissions.set(ensure_dashboard_permission_for_admin_roles(final_allowed_roles, list(permissions)))
         elif allowed_roles is not serializers.empty:
-            instance.permissions.set(self._derive_permissions(final_allowed_roles))
+            instance.permissions.set(
+                ensure_dashboard_permission_for_admin_roles(
+                    final_allowed_roles,
+                    self._derive_permissions(final_allowed_roles),
+                )
+            )
         return instance
 
 

@@ -315,12 +315,14 @@ class EndpointRBACPermissionTests(TestCase):
     def test_restaurant_admin_defaults_exclude_roles_and_permissions_pages(self):
         permission_codes = set(DEFAULT_ROLE_MAP["restaurant_admin"]["permissions"])
 
+        self.assertIn("dashboard.view", permission_codes)
         self.assertNotIn("roles.view", permission_codes)
         self.assertNotIn("permissions.view", permission_codes)
 
     def test_fast_food_admin_defaults_include_restaurant_management_and_catalog_without_floor(self):
         permission_codes = set(DEFAULT_ROLE_MAP["fast_food_admin"]["permissions"])
 
+        self.assertIn("dashboard.view", permission_codes)
         self.assertIn("restaurant_settings.view", permission_codes)
         self.assertIn("cash_desks.view", permission_codes)
         self.assertIn("catalog_items.view", permission_codes)
@@ -336,6 +338,9 @@ class EndpointRBACPermissionTests(TestCase):
 
         self.assertNotIn("pos_table_reservations.manage", waiter_permission_codes)
         self.assertIn("pos_table_reservations.manage", manager_permission_codes)
+
+    def test_owner_role_is_removed_from_default_role_map(self):
+        self.assertNotIn("owner", DEFAULT_ROLE_MAP)
 
     def test_every_protected_route_is_registered_in_permission_endpoints(self):
         missing = []

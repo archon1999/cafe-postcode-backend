@@ -10,7 +10,10 @@ from apps.users.helpers import (
     get_role_model,
     get_user_model,
 )
-from apps.users.selectors.users import role_has_pos_permissions
+from apps.users.selectors.users import (
+    role_is_allowed_for_employee_surface,
+    role_requires_login_credentials,
+)
 from common.api.scopes import get_optional_request_restaurant
 
 from .role import RoleSerializer
@@ -152,8 +155,10 @@ class UserSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         request_data = getattr(request, 'data', {}) or {}
         pin = request_data.get('pin')
+        password = request_data.get('password')
         restaurant = self._get_target_restaurant()
         role = attrs.get('role', getattr(self.instance, 'role', None))
+        requires_login_credentials = self.user_surface == 'employee' and role_requires_login_credentials(role)
         restaurant_profile_data = attrs.get('restaurant_profile', {}) or {}
         current_restaurant_profile = get_optional_restaurant_profile(self.instance)
         primary_hall = restaurant_profile_data.get(
@@ -171,8 +176,27 @@ class UserSerializer(serializers.ModelSerializer):
         if self.user_surface == 'employee' and restaurant is None:
             raise serializers.ValidationError({'detail': _('Employees must belong to a restaurant scope.')})
 
-        if self.user_surface == 'employee' and role is not None and not role_has_pos_permissions(role):
+        if self.user_surface == 'employee' and role is not None and not role_is_allowed_for_employee_surface(role):
             raise serializers.ValidationError({'roleId': _('Selected role is not available for employees.')})
+
+        if requires_login_credentials:
+            errors = {}
+            username = attrs.get('username', getattr(self.instance, 'username', ''))
+            if isinstance(username, str):
+                username = username.strip()
+            if not username:
+                errors['username'] = _('Username is required for admin employees.')
+            else:
+                attrs['username'] = username
+
+            if self.instance is None and (not isinstance(password, str) or not password.strip()):
+                errors['password'] = _('Password is required for admin employees.')
+
+            if pin not in (None, ''):
+                errors['pin'] = _('PIN code is not used for admin employees.')
+
+            if errors:
+                raise serializers.ValidationError(errors)
 
         if restaurant is not None and primary_hall is not None and primary_hall.restaurant_id != restaurant.id:
             raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected restaurant.')})
@@ -277,7 +301,7 @@ class UserSerializer(serializers.ModelSerializer):
             setattr(profile, attr, value)
         profile.save()
 
-    def _save_restaurant_profile(self, instance, restaurant_profile_data, pin):
+    def _save_restaurant_profile(self, instance, restaurant_profile_data, pin, *, clear_pin=False):
         restaurant = restaurant_profile_data.pop('restaurant', None) or instance.get_restaurant_scope()
         if restaurant is None:
             return None
@@ -300,13 +324,20 @@ class UserSerializer(serializers.ModelSerializer):
         if allowed_halls is not None:
             restaurant_profile.allowed_halls.set(allowed_halls)
 
-        if pin:
+        if clear_pin:
+            instance.pin_code = ''
+            instance.save(update_fields=['pin_code'])
+            restaurant_profile.pin_code = ''
+            restaurant_profile.save(update_fields=['pin_code'])
+        elif pin:
             instance.set_pin(pin)
         return restaurant_profile
 
     def create(self, validated_data):
         restaurant_profile_data = validated_data.pop('restaurant_profile', {})
         restaurant = validated_data.pop('restaurant', None)
+        role = validated_data.get('role')
+        requires_login_credentials = self.user_surface == 'employee' and role_requires_login_credentials(role)
         profile_data = self._extract_profile_data(validated_data)
         profile_data.update(
             {
@@ -324,7 +355,7 @@ class UserSerializer(serializers.ModelSerializer):
         restaurant = restaurant or (self._get_target_restaurant() if self.user_surface == 'employee' else None)
         if restaurant is not None:
             restaurant_profile_data['restaurant'] = restaurant
-        if self.user_surface == 'employee':
+        if self.user_surface == 'employee' and not requires_login_credentials:
             validated_data['username'] = self._generate_internal_username(
                 validated_data.get('full_name', ''),
                 restaurant=restaurant,
@@ -333,13 +364,21 @@ class UserSerializer(serializers.ModelSerializer):
         user = User.objects.create(**validated_data)
 
         if self.user_surface == 'employee':
-            user.set_unusable_password()
+            if requires_login_credentials:
+                user.set_password(password)
+            else:
+                user.set_unusable_password()
             user.save(update_fields=['password'])
         elif password:
             user.set_password(password)
             user.save(update_fields=['password'])
 
-        self._save_restaurant_profile(user, restaurant_profile_data, pin)
+        self._save_restaurant_profile(
+            user,
+            restaurant_profile_data,
+            pin if not requires_login_credentials else None,
+            clear_pin=requires_login_credentials,
+        )
         self._save_profile(user, profile_data)
         user.refresh_from_db()
         return user
@@ -347,6 +386,8 @@ class UserSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         restaurant_profile_data = validated_data.pop('restaurant_profile', {})
         restaurant = validated_data.pop('restaurant', None)
+        role = validated_data.get('role', instance.role)
+        requires_login_credentials = self.user_surface == 'employee' and role_requires_login_credentials(role)
         if restaurant is not None:
             restaurant_profile_data['restaurant'] = restaurant
         profile_data = self._extract_profile_data(validated_data)
@@ -365,6 +406,9 @@ class UserSerializer(serializers.ModelSerializer):
         self._normalize_profile_status(validated_data, profile_data, current_status=current_status)
         self._validate_compensation_data(profile_data)
 
+        if self.user_surface == 'employee' and not requires_login_credentials:
+            validated_data.pop('username', None)
+
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
 
@@ -372,14 +416,20 @@ class UserSerializer(serializers.ModelSerializer):
         password = request.data.get('password') if request else None
         pin = request.data.get('pin') if request else None
         if self.user_surface == 'employee':
-            validated_data.pop('username', None)
-        if password:
+            if requires_login_credentials and password:
+                instance.set_password(password)
+            elif not requires_login_credentials:
+                instance.set_unusable_password()
+        elif password:
             instance.set_password(password)
-        elif self.user_surface == 'employee':
-            instance.set_unusable_password()
         instance.save()
 
-        self._save_restaurant_profile(instance, restaurant_profile_data, pin)
+        self._save_restaurant_profile(
+            instance,
+            restaurant_profile_data,
+            pin if not requires_login_credentials else None,
+            clear_pin=requires_login_credentials,
+        )
         self._save_profile(instance, profile_data)
         instance.refresh_from_db()
         return instance

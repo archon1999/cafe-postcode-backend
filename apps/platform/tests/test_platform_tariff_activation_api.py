@@ -113,10 +113,12 @@ class PlatformTariffActivationApiTests(APITestCase):
         returned_role_codes = {item['code'] for item in response.data['roles']}
         self.assertIn('restaurant_admin', returned_role_codes)
         self.assertIn('fast_food_admin', returned_role_codes)
+        self.assertNotIn('owner', returned_role_codes)
         self.assertNotIn('product_owner', returned_role_codes)
         self.assertNotIn('business_partner', returned_role_codes)
         returned_permission_codes = {item['code'] for item in response.data['permissions']}
         self.assertIn('employees.view', returned_permission_codes)
+        self.assertIn('dashboard.view', returned_permission_codes)
         self.assertIn('pos_takeaway_menu.view', returned_permission_codes)
         self.assertNotIn('platform.product_owner.view', returned_permission_codes)
 
@@ -138,7 +140,9 @@ class PlatformTariffActivationApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         permission_codes = {permission['code'] for permission in response.data['permissions']}
-        self.assertTrue({'employees.view', 'orders.view', 'restaurant_settings.view', 'catalog_items.view'}.issubset(permission_codes))
+        self.assertTrue(
+            {'employees.view', 'orders.view', 'restaurant_settings.view', 'catalog_items.view', 'dashboard.view'}.issubset(permission_codes)
+        )
         self.assertIn('pos_takeaway_menu.view', permission_codes)
         self.assertNotIn('halls.view', permission_codes)
         self.assertNotIn('tables.view', permission_codes)
@@ -164,7 +168,7 @@ class PlatformTariffActivationApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         permission_codes = {permission['code'] for permission in response.data['permissions']}
-        self.assertEqual(permission_codes, {'roles.view'})
+        self.assertEqual(permission_codes, {'dashboard.view', 'roles.view'})
 
     def test_product_owner_can_fetch_role_options_for_tariff_form(self):
         self.client.force_authenticate(self.product_owner_user)
@@ -201,12 +205,23 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         admin_user = User.objects.get(username=response.data['username'])
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
+        self.assertIn('dashboard.view', admin_user.permission_codes)
         self.assertTrue(self.restaurant.entitlement.is_active)
         self.assertEqual(self.restaurant.entitlement.tariff_id, self.fast_food_tariff.id)
         self.assertEqual(self.restaurant.entitlement.billing_period, 'monthly')
         self.assertEqual(self.restaurant.entitlement.expires_on, date(2026, 5, 4))
         self.assertEqual(response.data['restaurant']['billing_period'], 'monthly')
         self.assertEqual(response.data['restaurant']['expires_on'], date(2026, 5, 4))
+
+        dashboard_login_response = self.client.post(
+            '/api/v1/dashboard/auth/login/',
+            {
+                'username': response.data['username'],
+                'password': response.data['password'],
+            },
+            format='json',
+        )
+        self.assertEqual(dashboard_login_response.status_code, status.HTTP_200_OK, dashboard_login_response.data)
 
     def test_custom_activation_uses_selected_roles_and_permissions(self):
         self.client.force_authenticate(self.business_partner_user)
@@ -236,11 +251,13 @@ class PlatformTariffActivationApiTests(APITestCase):
         )
         self.assertEqual(
             set(self.restaurant.entitlement.permissions.values_list('code', flat=True)),
-            {'employees.view', 'pos_takeaway_menu.view'},
+            {'dashboard.view', 'employees.view', 'pos_takeaway_menu.view'},
         )
         admin_user = User.objects.get(username=response.data['username'])
         self.assertEqual(admin_user.role.code, 'fast_food_admin')
+        self.assertIn('dashboard.view', admin_user.permission_codes)
         self.assertEqual(self.restaurant.entitlement.get_effective_role_codes(), {'fast_food_admin', 'fast_food_cashier'})
+        self.assertIn('dashboard.view', self.restaurant.entitlement.get_effective_permission_codes())
         self.assertEqual(self.restaurant.entitlement.billing_period, 'yearly')
         self.assertEqual(self.restaurant.entitlement.expires_on, date(2027, 4, 4))
         self.assertEqual(response.data['restaurant']['activation_type'], 'custom')
