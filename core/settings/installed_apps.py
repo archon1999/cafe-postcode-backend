@@ -26,6 +26,7 @@ LOCAL_APPS = [
 THIRD_PARTY_APPS = [
     'modeltranslation',
     'corsheaders',
+    'storages',
     'django_filters',
     'django_q',
     'rest_framework',

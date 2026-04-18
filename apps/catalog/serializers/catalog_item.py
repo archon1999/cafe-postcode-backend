@@ -3,14 +3,14 @@ from django.utils.translation import gettext_lazy as _
 
 from apps.catalog.models import CatalogItem
 from apps.catalog.models import CatalogCategory
-from apps.catalog.serializers.mxik import MxikCodeValidationMixin
+from apps.catalog.serializers.mxik import CatalogImageSerializerMixin, MxikCodeValidationMixin
 from apps.restaurants.helpers import get_prep_station_model
 from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
 PrepStation = get_prep_station_model()
 
 
-class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer):
+class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
 
@@ -62,6 +62,11 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
             'mxik_code',
             'mxik_name',
             'mxik_payload',
+            'image_url',
+            'image_source',
+            'image_file',
+            'clear_image',
+            'restore_mxik_image',
             'description',
             'description_uz',
             'description_uz_crl',
@@ -74,5 +79,8 @@ class CatalogItemSerializer(MxikCodeValidationMixin, serializers.ModelSerializer
             'mxik_code': {'required': False, 'allow_blank': True},
             'mxik_name': {'required': False, 'allow_blank': True},
             'mxik_payload': {'required': False},
+            'image_url': {'required': False, 'allow_null': True, 'allow_blank': True},
+            'image_source': {'required': False, 'allow_blank': True},
+            'image_file': {'required': False, 'allow_null': True},
         }
         validators = []

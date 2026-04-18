@@ -125,6 +125,21 @@ class CoreSettings(Settings):
     QZ_TRAY_PRIVATE_KEY_PATH = os.getenv('QZ_TRAY_PRIVATE_KEY_PATH', '').strip()
     QZ_TRAY_PRIVATE_KEY_PASSWORD = os.getenv('QZ_TRAY_PRIVATE_KEY_PASSWORD', '').strip()
 
+    AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID', '').strip()
+    AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', '').strip()
+    AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME', 'cpython').strip()
+    AWS_S3_MEDIA_PREFIX = os.getenv('AWS_S3_MEDIA_PREFIX', 'media/cafe-postcode').strip().strip('/')
+    AWS_DEFAULT_ACL = os.getenv('AWS_DEFAULT_ACL', 'public-read').strip()
+    AWS_S3_CUSTOM_DOMAIN = os.getenv(
+        'AWS_S3_CUSTOM_DOMAIN',
+        f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com',
+    ).strip()
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_QUERYSTRING_AUTH = False
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=31536000',
+    }
+
     STATIC_URL = '/static/'
     STATIC_ROOT = (BASE_DIR / 'staticfiles').as_posix()
     MEDIA_URL = '/media/'

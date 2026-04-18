@@ -1,6 +1,16 @@
+from pathlib import Path
+import uuid
+
 from django.db import models
 
 from common.models import BaseModel
+from common.storages import CatalogCategoryImageStorage
+
+
+def catalog_category_image_upload_to(instance, filename: str) -> str:
+    suffix = Path(filename or '').suffix.lower() or '.bin'
+    restaurant_id = instance.restaurant_id or 'unassigned'
+    return f'{restaurant_id}/{uuid.uuid4().hex}{suffix}'
 
 
 class CatalogCategory(BaseModel):
@@ -19,6 +29,12 @@ class CatalogCategory(BaseModel):
     mxik_payload = models.JSONField(default=dict, blank=True)
     image_url = models.URLField(blank=True, null=True)
     image_source = models.CharField(max_length=32, blank=True, choices=ImageSource.choices)
+    image_file = models.ImageField(
+        blank=True,
+        null=True,
+        storage=CatalogCategoryImageStorage,
+        upload_to=catalog_category_image_upload_to,
+    )
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

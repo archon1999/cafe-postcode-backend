@@ -20,6 +20,9 @@ class CatalogCategorySerializer(CatalogCategorySerializerMixin, MxikCodeValidati
             'mxik_payload',
             'image_url',
             'image_source',
+            'image_file',
+            'clear_image',
+            'restore_mxik_image',
             'sort_order',
             'is_active',
         )
@@ -29,5 +32,6 @@ class CatalogCategorySerializer(CatalogCategorySerializerMixin, MxikCodeValidati
             'mxik_payload': {'required': False},
             'image_url': {'required': False, 'allow_null': True, 'allow_blank': True},
             'image_source': {'required': False, 'allow_blank': True},
+            'image_file': {'required': False, 'allow_null': True},
         }
         validators = []
