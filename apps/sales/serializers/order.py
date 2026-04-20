@@ -20,6 +20,9 @@ class OrderSerializer(serializers.ModelSerializer):
     service_fee = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
 
+    def validate_display_name(self, value: str) -> str:
+        return value.strip()
+
     def get_service_fee(self, obj):
         subtotal = obj.subtotal or 0
         total = obj.total or 0
@@ -48,6 +51,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'cashier',
             'cashier_name',
             'order_number',
+            'display_name',
             'channel',
             'status',
             'guest_count',

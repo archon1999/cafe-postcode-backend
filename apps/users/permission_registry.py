@@ -68,6 +68,7 @@ FLOOR_ADMIN_ROLES = ('restaurant_admin',)
 ORDER_VIEW_ROLES = ('restaurant_admin', 'fast_food_admin')
 PAYMENT_ADMIN_ROLES = ('restaurant_admin', 'fast_food_admin')
 REPORTING_ROLES = ('restaurant_admin', 'fast_food_admin')
+ADMIN_KITCHEN_ROLES = ('restaurant_admin',)
 POS_HALL_VIEW_ROLES = ('waiter', 'manager')
 POS_TABLE_MANAGE_ROLES = ('waiter', 'manager')
 POS_TABLE_MENU_VIEW_ROLES = ('waiter', 'manager')
@@ -75,6 +76,7 @@ POS_TAKEAWAY_MENU_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast
 POS_KITCHEN_VIEW_ROLES = ('chef', 'barman')
 POS_KITCHEN_UPDATE_ROLES = ('chef', 'barman')
 POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_TABLE_RESERVATION_ROLES = ('manager',)
 CASHIER_ROLES = POS_OPEN_CHECKS_VIEW_ROLES
@@ -581,6 +583,17 @@ PERMISSION_DEFINITIONS = [
         default_roles=POS_OPEN_CHECKS_VIEW_ROLES,
     ),
     permission_definition(
+        'pos_payment_order_items.create',
+        surface='pos',
+        resource='pos_payment_order_items',
+        action='create',
+        ui_visible=True,
+        group_key='payments',
+        name="POS to'lov oynasidan mahsulot qo'shish",
+        endpoints=endpoint_specs(('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/')),
+        default_roles=POS_PAYMENT_ORDER_ITEM_CREATE_ROLES,
+    ),
+    permission_definition(
         'pos_payments.create',
         surface='pos',
         resource='pos_payments',
@@ -897,6 +910,10 @@ PERMISSION_DEFINITIONS.extend(
         detail_url='api/v1/admin/integrations/configs/<uuid:pk>/',
         default_roles=RESTAURANT_SETUP_ROLES,
         include_delete=False,
+        list_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/integrations/configs/'),
+            ('GET', 'api/v1/admin/integrations/fiscal-devices/'),
+        ),
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -963,7 +980,7 @@ PERMISSION_DEFINITIONS.extend(
         plural_label='Oshxona buyurtmalari',
         list_url='api/v1/admin/kitchen/tickets/',
         detail_url='api/v1/admin/kitchen/tickets/<uuid:pk>/',
-        default_roles=REPORTING_ROLES,
+        default_roles=ADMIN_KITCHEN_ROLES,
         list_endpoints=endpoint_specs(('GET', 'api/v1/admin/kitchen/tickets/')),
         view_endpoints=endpoint_specs(('GET', 'api/v1/admin/kitchen/tickets/<uuid:pk>/')),
         include_create=False,
@@ -1132,6 +1149,7 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_kitchen_orders.view',
         'pos_kitchen_orders.update',
         'pos_open_checks.view',
+        'pos_payment_order_items.create',
         'pos_payments.create',
         'pos_table_reservations.manage',
     }

@@ -14,6 +14,7 @@ POS_TAKEAWAY_MENU_VIEW_PERMISSION = 'pos_takeaway_menu.view'
 POS_KITCHEN_ORDERS_VIEW_PERMISSION = 'pos_kitchen_orders.view'
 POS_KITCHEN_ORDERS_UPDATE_PERMISSION = 'pos_kitchen_orders.update'
 POS_OPEN_CHECKS_VIEW_PERMISSION = 'pos_open_checks.view'
+POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION = 'pos_payment_order_items.create'
 POS_PAYMENTS_CREATE_PERMISSION = 'pos_payments.create'
 POS_TABLE_RESERVATIONS_MANAGE_PERMISSION = 'pos_table_reservations.manage'
 

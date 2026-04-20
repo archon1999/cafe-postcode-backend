@@ -242,7 +242,7 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             IntegrationConfig.objects.filter(
                 restaurant=instance,
                 kind=IntegrationConfig.Kind.FISCAL,
-                provider='soliq-ofd',
+                provider__in=('soliq-ofd', 'fiscal-drive-service'),
             )
             .order_by('-created_at')
             .first()

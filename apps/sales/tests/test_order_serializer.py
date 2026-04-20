@@ -13,6 +13,7 @@ class OrderSerializerTests(PosTestCase):
             opened_by=self.user,
             cashier=self.user,
             order_number=1,
+            display_name='VIP stol',
             channel=Order.Channel.HALL,
             status=Order.Status.CLOSED,
             guest_count=2,
@@ -47,6 +48,7 @@ class OrderSerializerTests(PosTestCase):
 
         self.assertEqual(data['service_fee'], 3000)
         self.assertEqual(data['service_fee_percent'], 10)
+        self.assertEqual(data['display_name'], 'VIP stol')
         self.assertEqual(data['channel'], Order.Channel.HALL)
         self.assertEqual(len(data['payments']), 1)
         self.assertEqual(data['payments'][0]['id'], str(payment.id))

@@ -10,6 +10,7 @@ def default_enabled_payment_methods():
 class CashDesk(BaseModel):
     class FiscalProvider(models.TextChoices):
         MOCK = 'mock', 'Mock'
+        SOLIQ_OFD = 'soliq-ofd', 'Soliq OFD'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.CASCADE, related_name='cash_desks')
     name = models.CharField(max_length=255)

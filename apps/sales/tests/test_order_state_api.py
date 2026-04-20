@@ -116,3 +116,48 @@ class OrderStateApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', response.data)
 
+    def test_open_order_can_update_display_name(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.distribution_point,
+            opened_by=self.user,
+            order_number=11,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.OPEN,
+            guest_count=1,
+        )
+
+        response = self.client.patch(
+            f'/api/v1/pos/sales/orders/{order.id}/',
+            {'displayName': '  VIP mijoz  '},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.display_name, 'VIP mijoz')
+        self.assertEqual(response.data.get('displayName') or response.data.get('display_name'), 'VIP mijoz')
+
+    def test_closed_order_display_name_update_is_rejected(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.distribution_point,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=12,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+        )
+
+        response = self.client.patch(
+            f'/api/v1/pos/sales/orders/{order.id}/',
+            {'displayName': 'Yangi nom'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('displayName', response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.display_name, '')
+

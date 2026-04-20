@@ -7,6 +7,7 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_kitchen_orders.view',
         'pos_kitchen_orders.update',
         'pos_open_checks.view',
+        'pos_payment_order_items.create',
         'pos_payments.create',
         'pos_table_reservations.manage',
     }

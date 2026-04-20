@@ -51,6 +51,7 @@ class Order(BaseModel):
         blank=True,
     )
     order_number = models.PositiveIntegerField(default=1)
+    display_name = models.CharField(max_length=120, blank=True, default='')
     channel = models.CharField(max_length=20, choices=Channel.choices, default=Channel.HALL)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     guest_count = models.PositiveIntegerField(default=1)

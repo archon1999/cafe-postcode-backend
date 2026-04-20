@@ -215,6 +215,7 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertTrue(Permission.objects.filter(code="pos_kitchen_orders.view").exists())
         self.assertTrue(Permission.objects.filter(code="pos_kitchen_orders.update").exists())
         self.assertTrue(Permission.objects.filter(code="pos_open_checks.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_payment_order_items.create").exists())
         self.assertTrue(Permission.objects.filter(code="pos_payments.create").exists())
         self.assertTrue(Permission.objects.filter(code="pos_table_reservations.manage").exists())
         self.assertTrue(Permission.objects.filter(code="reports.view").exists())
@@ -240,6 +241,13 @@ class EndpointRBACPermissionTests(TestCase):
             PermissionEndpoint.objects.filter(
                 permission__code="pos_takeaway_menu.view",
                 method="GET",
+                url="api/v1/pos/sales/orders/<uuid:order_id>/items/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_payment_order_items.create",
+                method="POST",
                 url="api/v1/pos/sales/orders/<uuid:order_id>/items/",
             ).exists()
         )
@@ -319,7 +327,7 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertNotIn("roles.view", permission_codes)
         self.assertNotIn("permissions.view", permission_codes)
 
-    def test_fast_food_admin_defaults_include_restaurant_management_and_catalog_without_floor(self):
+    def test_fast_food_admin_defaults_exclude_kitchen_and_floor(self):
         permission_codes = set(DEFAULT_ROLE_MAP["fast_food_admin"]["permissions"])
 
         self.assertIn("dashboard.view", permission_codes)
@@ -327,6 +335,7 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertIn("cash_desks.view", permission_codes)
         self.assertIn("catalog_items.view", permission_codes)
         self.assertIn("catalog_categories.view", permission_codes)
+        self.assertNotIn("kitchen_tickets.view", permission_codes)
         self.assertNotIn("halls.view", permission_codes)
         self.assertNotIn("zones.view", permission_codes)
         self.assertNotIn("tables.view", permission_codes)
@@ -338,6 +347,13 @@ class EndpointRBACPermissionTests(TestCase):
 
         self.assertNotIn("pos_table_reservations.manage", waiter_permission_codes)
         self.assertIn("pos_table_reservations.manage", manager_permission_codes)
+
+    def test_payment_page_item_add_defaults_only_to_fast_food_cashier_flow(self):
+        cashier_permission_codes = set(DEFAULT_ROLE_MAP["cashier"]["permissions"])
+        fast_food_cashier_permission_codes = set(DEFAULT_ROLE_MAP["fast_food_cashier"]["permissions"])
+
+        self.assertNotIn("pos_payment_order_items.create", cashier_permission_codes)
+        self.assertIn("pos_payment_order_items.create", fast_food_cashier_permission_codes)
 
     def test_owner_role_is_removed_from_default_role_map(self):
         self.assertNotIn("owner", DEFAULT_ROLE_MAP)
