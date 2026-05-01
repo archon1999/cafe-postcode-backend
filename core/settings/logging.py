@@ -1,44 +1,68 @@
+import os
+
+
 DEFAULT_FORMATTER = '%(asctime)s %(levelname)s %(name)s %(message)s'
+JSON_FORMATTER = (
+    '%(asctime)s %(levelname)s %(name)s %(message)s %(request_id)s %(user_id)s '
+    '%(restaurant_id)s %(method)s %(path)s %(status_code)s %(latency_ms)s'
+)
+
+CONSOLE_FORMATTER = 'standard' if os.getenv('LOG_FORMAT', 'json').strip().lower() == 'text' else 'json'
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
 
 LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "standard": {
-            "format": DEFAULT_FORMATTER,
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'request_context': {
+            '()': 'core.observability.RequestContextFilter',
         },
     },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "standard",
+    'formatters': {
+        'standard': {
+            'format': DEFAULT_FORMATTER,
+        },
+        'json': {
+            'class': 'pythonjsonlogger.json.JsonFormatter',
+            'format': JSON_FORMATTER,
         },
     },
-    "loggers": {
-        "django": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": True,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': CONSOLE_FORMATTER,
+            'filters': ['request_context'],
         },
-        "apps.users": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': LOG_LEVEL,
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
         },
-        "apps.sales": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
+        'django.request': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
         },
-        "apps.kitchen": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
+        'core': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
         },
-        "common.api": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
+        'apps': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
+        },
+        'common': {
+            'handlers': ['console'],
+            'level': LOG_LEVEL,
+            'propagate': False,
         },
     },
 }

@@ -1,76 +1,73 @@
 # Backend Deployment
 
-## CI/CD
+## Docker Compose Production Stack
 
-This repository uses:
+Production is prepared for Docker Compose with:
 
-- `develop` for ongoing development
-- `production` for deployment
+- `web`: Django + Gunicorn on `0.0.0.0:8888`
+- `qcluster`: Django Q worker
+- `postgres`: PostgreSQL
+- `redis`: cache, channel layer, and Django Q broker
+- `nginx`: public reverse proxy; `/metrics` is blocked externally
+- `prometheus`, `grafana`, `postgres-exporter`, `redis-exporter`: monitoring
 
-Deployment runs on every push to `production` via GitHub Actions over SSH.
-
-Required GitHub repository secrets:
-
-- `HOST`
-- `PORT`
-- `USERNAME`
-- `PASSWORD`
-
-The workflow SSHes into the server and runs:
+Create an env file from the example and replace every placeholder secret:
 
 ```bash
-cd /home/postcode/backend
-git checkout production
-git pull --ff-only origin production
-poetry install --no-root
-poetry run python manage.py migrate --noinput
-poetry run python manage.py collectstatic --noinput
-sudo -n systemctl restart postcode-backend
-sudo -n systemctl restart postcode-qcluster
-sudo -n systemctl is-active postcode-backend
-sudo -n systemctl is-active postcode-qcluster
+cp .env.production.example .env.production
+docker compose --env-file .env.production up -d --build
 ```
 
-## Required files on the server
+The `web` service runs migrations and `collectstatic` before Gunicorn starts. Prometheus scrapes Django metrics directly on the internal Docker network at `web:8888/metrics`.
 
-Create `/home/postcode/backend/core/settings/config.env` before the first deploy.
-You can start from `core/settings/config.env.example`.
+## Required Production Settings
 
-## Runtime port
+`DJANGO_PRODUCTION=1` enforces:
 
-Run the service on:
+- `DEBUG=0`
+- explicit `ALLOWED_HOSTS`
+- strong `SECRET_KEY`
+- PostgreSQL via `DB_ENGINE=postgres`
+- `REDIS_URL`
 
-- `127.0.0.1:8888`
-
-Put your own Nginx reverse proxy in front of that port.
-
-## Example systemd service
-
-Copy `deploy/postcode-backend.service.example` to `/etc/systemd/system/postcode-backend.service`,
-adjust paths if needed, then run:
+The production Compose defaults expect TLS to be terminated before or at Nginx:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable postcode-backend
-sudo systemctl restart postcode-backend
-sudo systemctl status postcode-backend
+SECURE_SSL_REDIRECT=1
+SESSION_COOKIE_SECURE=1
+CSRF_COOKIE_SECURE=1
 ```
 
-Create a second worker service for Django Q, for example `postcode-qcluster.service`, and run:
+For local HTTP-only smoke tests, temporarily set those three values to `0` in `.env.production`.
+
+Only enable API docs intentionally:
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable postcode-qcluster
-sudo systemctl restart postcode-qcluster
-sudo systemctl status postcode-qcluster
+ENABLE_API_DOCS=1
 ```
 
-## Sudo requirement for CI/CD
+## Health And Monitoring
 
-The SSH user used by GitHub Actions must be allowed to restart the service without an interactive password.
+Public health endpoints:
 
-Example sudoers entry:
+- `/healthz/`: process liveness
+- `/readyz/`: database and Redis readiness
+
+Internal metrics:
+
+- `/metrics`: available to Prometheus on the Docker network, blocked by Nginx
+
+Grafana is exposed on `127.0.0.1:3001` by default. Prometheus is exposed on `127.0.0.1:9090`.
+
+## Verification
+
+Run these before release:
 
 ```bash
-username ALL=(ALL) NOPASSWD: /bin/systemctl restart postcode-backend, /bin/systemctl is-active postcode-backend, /bin/systemctl restart postcode-qcluster, /bin/systemctl is-active postcode-qcluster
+poetry run python manage.py test --noinput
+poetry run python manage.py makemigrations --check --dry-run
+DJANGO_PRODUCTION=1 DEBUG=0 SECRET_KEY=<strong-secret> ALLOWED_HOSTS=cafe-postcode.uz DB_ENGINE=postgres REDIS_URL=redis://127.0.0.1:6379/0 poetry run python manage.py check --deploy
+docker compose --env-file .env.production config
 ```
+
+Run load tests from `loadtests/README.md` against a staging or production-like stack.

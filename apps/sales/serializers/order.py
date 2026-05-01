@@ -34,6 +34,10 @@ class OrderSerializer(serializers.ModelSerializer):
         return getattr(obj.restaurant, 'service_fee_percent', 10) or 0
 
     def get_items(self, obj):
+        prefetched_items = getattr(obj, '_prefetched_objects_cache', {}).get('items')
+        if prefetched_items is not None:
+            return OrderItemSerializer(prefetched_items, many=True).data
+
         item_queryset = obj.items.select_related('catalog_item', 'prep_station')
         return OrderItemSerializer(item_queryset, many=True).data
 

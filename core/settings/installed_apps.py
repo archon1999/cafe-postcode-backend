@@ -24,6 +24,7 @@ LOCAL_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'django_prometheus',
     'modeltranslation',
     'corsheaders',
     'storages',

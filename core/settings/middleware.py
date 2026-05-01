@@ -3,10 +3,13 @@ Django middleware configuration.
 """
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
+
     # Debug toolbar middleware
     # "debug_toolbar.middleware.DebugToolbarMiddleware",
 
     # Compression and security middleware
+    'django.middleware.security.SecurityMiddleware',
     'django.middleware.gzip.GZipMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -23,6 +26,7 @@ MIDDLEWARE = [
     
     # Authentication middleware
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'core.observability.RequestLogMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 
@@ -30,4 +34,5 @@ MIDDLEWARE = [
     'core.middleware.ParamsSnakeCaseMiddleware',
     'core.middleware.DisableCSRFMiddleware',
     'core.middleware.SystemTimeAdderMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]

@@ -1,15 +1,16 @@
+from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
 from common.constants import API_PREFIX, API_V1_PREFIX
-from core.yasg import schema_view
+from core.health import healthz, readyz
 
 urlpatterns = [
+    path('healthz/', healthz, name='healthz'),
+    path('readyz/', readyz, name='readyz'),
+    path('', include('django_prometheus.urls')),
     path('admin/', admin.site.urls),
     path(f'{API_PREFIX}i18n/', include('django.conf.urls.i18n')),
-    path(f'{API_PREFIX}swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
-    path(f'{API_PREFIX}swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path(f'{API_PREFIX}redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path(f'{API_V1_PREFIX}dashboard/', include('apps.dashboard.api.urls')),
     path(f'{API_V1_PREFIX}admin/auth/', include('apps.users.api.admin.urls.auth')),
     path(f'{API_V1_PREFIX}admin/users/', include('apps.users.api.admin.urls.users')),
@@ -33,3 +34,12 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}pos/kitchen/', include('apps.kitchen.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/monitor/', include('apps.kitchen.api.pos.monitor_urls')),
 ]
+
+if settings.ENABLE_API_DOCS:
+    from core.yasg import schema_view
+
+    urlpatterns = [
+        path(f'{API_PREFIX}swagger<format>/', schema_view.without_ui(cache_timeout=0), name='schema-json'),
+        path(f'{API_PREFIX}swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+        path(f'{API_PREFIX}redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+    ] + urlpatterns

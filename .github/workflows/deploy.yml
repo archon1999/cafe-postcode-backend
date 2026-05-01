@@ -22,11 +22,9 @@ jobs:
           script: |
             set -e
             cd /home/postcode/backend
-            test -f core/settings/config.env
+            test -f .env.production
             git checkout production
             git pull --ff-only origin production
-            poetry install --no-root
-            poetry run python manage.py migrate --noinput
-            poetry run python manage.py collectstatic --noinput
-            sudo -n systemctl restart postcode-backend
-            sudo -n systemctl is-active postcode-backend
+            docker compose --env-file .env.production up -d --build
+            docker compose --env-file .env.production ps
+            docker compose --env-file .env.production exec -T web python manage.py check --deploy

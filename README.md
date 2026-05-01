@@ -54,8 +54,14 @@ poetry run python manage.py test
 poetry run python manage.py makemigrations --check
 ```
 
+## Production
+
+Docker Compose production deployment, monitoring, and load testing instructions are in `DEPLOYMENT.md` and `loadtests/README.md`.
+
 ## API docs
 
 - Swagger UI: `/api/swagger/`
 - ReDoc: `/api/redoc/`
 - OpenAPI schema: `/api/swagger.json` or `/api/swagger.yaml`
+
+In production these routes are available only when `ENABLE_API_DOCS=1`.

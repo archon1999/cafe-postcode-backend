@@ -6,6 +6,7 @@ from .business_partner import (
     PartnerActivationResultSerializer,
 )
 from .restaurant_activation import (
+    CUSTOM_TARIFF_PERMISSION_CODE,
     RestaurantActivationOptionsSerializer,
     RestaurantActivationResultSerializer,
     RestaurantActivationSerializer,
@@ -19,6 +20,7 @@ __all__ = [
     'PartnerActivationSerializer',
     'BusinessPartnerSerializer',
     'PartnerActivationResultSerializer',
+    'CUSTOM_TARIFF_PERMISSION_CODE',
     'RestaurantActivationOptionsSerializer',
     'RestaurantActivationResultSerializer',
     'RestaurantActivationSerializer',

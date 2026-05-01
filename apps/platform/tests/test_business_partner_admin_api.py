@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 
 from apps.platform.models import BusinessPartner
 from apps.restaurants.models import Restaurant
-from apps.users.models import Role, User
+from apps.users.models import Permission, Role, User
 
 
 class BusinessPartnerAdminApiTests(APITestCase):
@@ -11,6 +11,7 @@ class BusinessPartnerAdminApiTests(APITestCase):
     def setUpTestData(cls):
         cls.product_owner_role = Role.objects.get(code='product_owner')
         cls.business_partner_role = Role.objects.get(code='business_partner')
+        cls.custom_tariff_permission = Permission.objects.get(code='restaurants.custom_tariff')
 
         cls.product_owner_user = User.objects.create_user(
             username='platform-owner',
@@ -56,6 +57,28 @@ class BusinessPartnerAdminApiTests(APITestCase):
             [restaurant['name'] for restaurant in row['restaurants']],
             ['Alpha Restaurant', 'Beta Restaurant', 'Zeta Restaurant'],
         )
+        self.assertFalse(row['custom_tariff_allowed'])
+
+    def test_business_partner_serializer_persists_custom_tariff_permission(self):
+        response = self.client.patch(
+            f'/api/v1/admin/platform/business-partners/{self.partner.id}/',
+            {'custom_tariff_allowed': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['custom_tariff_allowed'])
+        self.assertTrue(self.partner.extra_permissions.filter(code='restaurants.custom_tariff').exists())
+
+        response = self.client.patch(
+            f'/api/v1/admin/platform/business-partners/{self.partner.id}/',
+            {'custom_tariff_allowed': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(response.data['custom_tariff_allowed'])
+        self.assertFalse(self.partner.extra_permissions.filter(code='restaurants.custom_tariff').exists())
 
     def test_activation_defaults_returns_generated_credentials(self):
         response = self.client.get(f'/api/v1/admin/platform/business-partners/{self.partner.id}/activation-defaults/')

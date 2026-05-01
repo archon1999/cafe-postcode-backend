@@ -41,7 +41,15 @@ numpy = "^1.26.4"
 httpx = "^0.28.1"
 djangorestframework-stubs = "^3.16.8"
 cryptography = "^45.0.5"
+django-prometheus = "^2.4.1"
+python-json-logger = "^4.1.0"
+channels-redis = "^4.3.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+loadtest = [
+    "locust (>=2.43.4,<3.0.0)"
+]

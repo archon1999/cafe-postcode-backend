@@ -1,0 +1,141 @@
+import os
+import random
+import uuid
+
+from locust import HttpUser, between, task
+
+
+API_PREFIX = '/api/v1'
+RESTAURANT_CODE = os.getenv('LOCUST_RESTAURANT_CODE', '').strip()
+RESTAURANT_ID = os.getenv('LOCUST_RESTAURANT_ID', '').strip()
+PIN = os.getenv('LOCUST_PIN', '').strip()
+ENABLE_PAYMENTS = os.getenv('LOCUST_ENABLE_PAYMENTS', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def first_payload_rows(payload):
+    if isinstance(payload, dict):
+        rows = payload.get('data')
+        if isinstance(rows, list):
+            return rows
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+def find_nested_ids(rows, key):
+    values = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        value = row.get(key)
+        if value:
+            values.append(value)
+        for nested_value in row.values():
+            if isinstance(nested_value, list):
+                values.extend(find_nested_ids(nested_value, key))
+    return values
+
+
+class PosApiUser(HttpUser):
+    wait_time = between(0.2, 1.2)
+
+    def on_start(self):
+        self.restaurant_id = RESTAURANT_ID
+        self.catalog_item_ids = []
+        self.table_ids = []
+
+        if not self.restaurant_id and RESTAURANT_CODE:
+            response = self.client.post(
+                f'{API_PREFIX}/pos/auth/restaurant-code/',
+                json={'code': RESTAURANT_CODE},
+                name='pos auth: restaurant-code',
+            )
+            if response.ok:
+                self.restaurant_id = response.json().get('restaurantId') or response.json().get('restaurant_id')
+
+        if self.restaurant_id and PIN:
+            response = self.client.post(
+                f'{API_PREFIX}/pos/auth/pin-login/',
+                json={'restaurantId': self.restaurant_id, 'pin': PIN},
+                name='pos auth: pin-login',
+            )
+            if response.ok:
+                token = response.json().get('token')
+                if token:
+                    self.client.headers.update({'Authorization': f'Token {token}'})
+
+        self.refresh_menu()
+        self.refresh_halls()
+
+    @task(20)
+    def refresh_menu(self):
+        response = self.client.get(f'{API_PREFIX}/pos/catalog/menu/', name='pos catalog: menu')
+        if response.ok:
+            rows = first_payload_rows(response.json())
+            self.catalog_item_ids = find_nested_ids(rows, 'id') if not self.catalog_item_ids else self.catalog_item_ids
+            item_ids = []
+            for category in rows:
+                item_ids.extend(find_nested_ids(category.get('items', []), 'id') if isinstance(category, dict) else [])
+            if item_ids:
+                self.catalog_item_ids = item_ids
+
+    @task(12)
+    def refresh_halls(self):
+        response = self.client.get(f'{API_PREFIX}/pos/floor/halls/', name='pos floor: halls')
+        if response.ok:
+            self.table_ids = find_nested_ids(first_payload_rows(response.json()), 'id')
+
+    @task(10)
+    def open_checks(self):
+        self.client.get(f'{API_PREFIX}/pos/billing/open-checks/', name='pos billing: open checks')
+
+    @task(10)
+    def kitchen_queue(self):
+        self.client.get(f'{API_PREFIX}/pos/kitchen/queue/', name='pos kitchen: queue')
+
+    @task(6)
+    def create_takeaway_order_flow(self):
+        if not self.catalog_item_ids:
+            self.refresh_menu()
+        if not self.catalog_item_ids:
+            return
+
+        order_response = self.client.post(
+            f'{API_PREFIX}/pos/sales/orders/',
+            json={
+                'channel': 'takeaway',
+                'guestCount': 1,
+                'displayName': f'load-{uuid.uuid4().hex[:8]}',
+            },
+            name='pos sales: create takeaway order',
+        )
+        if not order_response.ok:
+            return
+
+        order = order_response.json()
+        order_id = order.get('id')
+        item_id = random.choice(self.catalog_item_ids)
+        item_response = self.client.post(
+            f'{API_PREFIX}/pos/sales/orders/{order_id}/items/',
+            json={'catalogItem': item_id, 'quantity': random.randint(1, 3)},
+            name='pos sales: add order item',
+        )
+        if not item_response.ok:
+            return
+
+        submit_response = self.client.post(
+            f'{API_PREFIX}/pos/sales/orders/{order_id}/submit/',
+            name='pos sales: submit order',
+        )
+        if ENABLE_PAYMENTS and submit_response.ok:
+            submitted_order = submit_response.json()
+            amount = submitted_order.get('total') or submitted_order.get('subtotal') or 1
+            self.client.post(
+                f'{API_PREFIX}/pos/billing/orders/{order_id}/pay/',
+                json={'method': 'cash', 'amount': amount},
+                name='pos billing: pay order',
+            )
+
+    @task(2)
+    def table_sessions_read(self):
+        self.client.get(f'{API_PREFIX}/pos/floor/table-sessions/?status=open', name='pos floor: table sessions')

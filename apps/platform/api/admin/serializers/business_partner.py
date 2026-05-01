@@ -1,8 +1,11 @@
 from rest_framework import serializers
 
 from apps.platform.helpers import get_business_partner_model
+from apps.users.helpers import get_permission_model
 
 BusinessPartner = get_business_partner_model()
+Permission = get_permission_model()
+CUSTOM_TARIFF_PERMISSION_CODE = 'restaurants.custom_tariff'
 
 
 def _restore_faktura_payload(value):
@@ -26,6 +29,7 @@ class BusinessPartnerSerializer(serializers.ModelSerializer):
     faktura_payload = serializers.JSONField(required=False)
     restaurants = serializers.SerializerMethodField()
     restaurants_count = serializers.SerializerMethodField()
+    custom_tariff_allowed = serializers.BooleanField(required=False, default=False, write_only=True)
 
     class Meta:
         model = BusinessPartner
@@ -43,16 +47,21 @@ class BusinessPartnerSerializer(serializers.ModelSerializer):
             'activated_at',
             'deactivated_at',
             'faktura_payload',
+            'custom_tariff_allowed',
             'restaurants',
             'restaurants_count',
         )
 
     def create(self, validated_data):
         faktura_payload = _restore_faktura_payload(validated_data.pop('faktura_payload', {}))
-        return BusinessPartner.objects.create(faktura_payload=faktura_payload, **validated_data)
+        custom_tariff_allowed = validated_data.pop('custom_tariff_allowed', False)
+        instance = BusinessPartner.objects.create(faktura_payload=faktura_payload, **validated_data)
+        self._set_custom_tariff_permission(instance, custom_tariff_allowed)
+        return instance
 
     def update(self, instance, validated_data):
         faktura_payload = validated_data.pop('faktura_payload', serializers.empty)
+        custom_tariff_allowed = validated_data.pop('custom_tariff_allowed', serializers.empty)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -61,7 +70,25 @@ class BusinessPartnerSerializer(serializers.ModelSerializer):
             instance.faktura_payload = _restore_faktura_payload(faktura_payload)
 
         instance.save()
+        if custom_tariff_allowed is not serializers.empty:
+            self._set_custom_tariff_permission(instance, custom_tariff_allowed)
         return instance
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['custom_tariff_allowed'] = instance.extra_permissions.filter(code=CUSTOM_TARIFF_PERMISSION_CODE).exists()
+        return data
+
+    @staticmethod
+    def _set_custom_tariff_permission(instance, enabled):
+        permission = Permission.objects.filter(code=CUSTOM_TARIFF_PERMISSION_CODE).first()
+        if permission is None:
+            return
+
+        if enabled:
+            instance.extra_permissions.add(permission)
+        else:
+            instance.extra_permissions.remove(permission)
 
     def get_restaurants(self, instance):
         return [

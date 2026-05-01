@@ -16,12 +16,21 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
 
     def get_items(self, obj):
-        item_queryset = (
+        prefetched_items = getattr(obj.order, '_prefetched_objects_cache', {}).get('items')
+        if prefetched_items is not None:
+            items = [
+                item
+                for item in prefetched_items
+                if item.prep_station_id == obj.prep_station_id and item.status != OrderItem.Status.CANCELLED
+            ]
+            return OrderItemSerializer(items, many=True).data
+
+        queryset = (
             obj.order.items.filter(prep_station=obj.prep_station)
             .exclude(status=OrderItem.Status.CANCELLED)
             .select_related('catalog_item', 'prep_station')
         )
-        return OrderItemSerializer(item_queryset, many=True).data
+        return OrderItemSerializer(queryset, many=True).data
 
     class Meta:
         model = KitchenTicket

@@ -14,6 +14,7 @@ class KitchenTicketDetailView(generics.RetrieveAPIView):
         restaurant = get_request_restaurant(self.request)
         return KitchenTicket.objects.filter(restaurant=restaurant).select_related(
             'prep_station',
+            'order__opened_by',
             'order__table_session__hall',
             'order__table_session__table',
-        )
+        ).prefetch_related('order__items__catalog_item', 'order__items__prep_station')

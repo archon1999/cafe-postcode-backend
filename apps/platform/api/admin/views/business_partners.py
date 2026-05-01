@@ -36,7 +36,7 @@ class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListC
 
     def get_queryset(self):
         return filter_partners(
-            BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants'),
+            BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants', 'extra_permissions'),
             self.request,
         )
 
@@ -45,7 +45,7 @@ class BusinessPartnerDetailView(AdminPermissionRequiredMixin, generics.RetrieveU
     serializer_class = BusinessPartnerSerializer
 
     def get_queryset(self):
-        return BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').order_by('company_name')
+        return BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants', 'extra_permissions').order_by('company_name')
 
 
 class BusinessPartnerLookupView(AdminPermissionRequiredMixin, APIView):

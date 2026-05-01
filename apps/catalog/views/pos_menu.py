@@ -1,6 +1,7 @@
+from django.db.models import Prefetch
 from rest_framework import generics, permissions
 
-from apps.catalog.models import CatalogCategory
+from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.serializers import CatalogMenuCategorySerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
@@ -12,4 +13,7 @@ class PosMenuView(generics.ListAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return CatalogCategory.objects.filter(restaurant=restaurant, is_active=True).prefetch_related('items__prep_station')
+        item_queryset = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related('prep_station')
+        return CatalogCategory.objects.filter(restaurant=restaurant, is_active=True).prefetch_related(
+            Prefetch('items', queryset=item_queryset, to_attr='active_menu_items')
+        )

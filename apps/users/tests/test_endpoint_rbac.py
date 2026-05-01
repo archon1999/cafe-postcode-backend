@@ -328,6 +328,13 @@ class EndpointRBACPermissionTests(TestCase):
             },
         )
 
+    def test_custom_tariff_permission_is_seeded_without_default_role(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("users"))
+
+        self.assertTrue(Permission.objects.filter(code="restaurants.custom_tariff", ui_visible=True).exists())
+        self.assertFalse(PermissionEndpoint.objects.filter(permission__code="restaurants.custom_tariff").exists())
+        self.assertFalse(any("restaurants.custom_tariff" in role_data["permissions"] for role_data in DEFAULT_ROLE_MAP.values()))
+
     def test_restaurant_admin_defaults_exclude_roles_and_permissions_pages(self):
         permission_codes = set(DEFAULT_ROLE_MAP["restaurant_admin"]["permissions"])
 

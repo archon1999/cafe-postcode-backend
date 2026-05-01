@@ -135,6 +135,11 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
                 return []
             return sorted(role_permission_codes & entitlement.get_effective_permission_codes())
 
+        business_partner = self.get_business_partner_scope()
+        if business_partner is not None:
+            extra_permission_codes = set(business_partner.extra_permissions.values_list('code', flat=True))
+            return sorted(role_permission_codes | extra_permission_codes)
+
         return sorted(role_permission_codes)
 
     @property

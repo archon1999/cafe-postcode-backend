@@ -17,6 +17,7 @@ Permission = get_permission_model()
 Role = get_role_model()
 Tariff = get_tariff_model()
 RestaurantEntitlement = get_restaurant_entitlement_model()
+CUSTOM_TARIFF_PERMISSION_CODE = 'restaurants.custom_tariff'
 
 
 class RestaurantActivationSerializer(serializers.Serializer):
@@ -79,6 +80,10 @@ class RestaurantActivationSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'tariffId': 'Tarif tanlang.'})
             return attrs
 
+        request = self.context.get('request')
+        if CUSTOM_TARIFF_PERMISSION_CODE not in set(getattr(getattr(request, 'user', None), 'permission_codes', [])):
+            raise serializers.ValidationError({'activationType': 'Maxsus tarif uchun ruxsat yo‘q.'})
+
         if not allowed_roles:
             raise serializers.ValidationError({'allowedRoleIds': 'Kamida bitta rol tanlang.'})
 
@@ -106,6 +111,7 @@ class RestaurantActivationOptionsSerializer(serializers.Serializer):
     tariffs = TariffOptionSerializer(many=True, read_only=True)
     roles = RoleSerializer(many=True, read_only=True)
     permissions = PermissionOptionSerializer(many=True, read_only=True)
+    custom_tariff_allowed = serializers.BooleanField(read_only=True)
 
 
 class RestaurantActivationResultSerializer(serializers.Serializer):

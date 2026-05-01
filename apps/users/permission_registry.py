@@ -368,6 +368,17 @@ PERMISSION_DEFINITIONS = [
         default_roles=ROLE_MANAGEMENT_ROLES,
     ),
     permission_definition(
+        'restaurants.custom_tariff',
+        surface='admin',
+        resource='restaurants',
+        action='custom_tariff',
+        ui_visible=True,
+        group_key='restaurants',
+        name='Restoran uchun maxsus tarif berish',
+        description='Biznes hamkorga restoran aktivatsiyasida maxsus tarif tanlash ruxsati',
+        default_roles=(),
+    ),
+    permission_definition(
         'restaurant_settings.view',
         surface='admin',
         resource='restaurant_settings',

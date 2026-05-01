@@ -50,4 +50,6 @@ class Payment(BaseModel):
         ordering = ('-created_at',)
         indexes = [
             state_timestamp_index('status', 'paid_at', name='payment_status_paid_idx'),
+            models.Index(fields=['order', 'status'], name='payment_order_status_idx'),
+            models.Index(fields=['cash_shift', 'status'], name='payment_shift_status_idx'),
         ]

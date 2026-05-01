@@ -36,6 +36,10 @@ class OrderItem(BaseModel):
 
     class Meta:
         ordering = ('created_at',)
+        indexes = [
+            models.Index(fields=['order', 'status'], name='orderitem_order_status_idx'),
+            models.Index(fields=['prep_station', 'status'], name='orderitem_station_status_idx'),
+        ]
 
     def save(self, *args, **kwargs):
         self.line_total = (self.quantity or 0) * (self.unit_price or 0)

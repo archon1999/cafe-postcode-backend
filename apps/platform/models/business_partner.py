@@ -18,6 +18,7 @@ class BusinessPartner(BaseModel):
     address = models.CharField(max_length=255, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     owner_user = models.OneToOneField('users.User', on_delete=models.SET_NULL, related_name='business_partner_profile', null=True, blank=True)
+    extra_permissions = models.ManyToManyField('users.Permission', related_name='business_partners', blank=True)
     activated_at = models.DateTimeField(null=True, blank=True)
     deactivated_at = models.DateTimeField(null=True, blank=True)
     faktura_payload = models.JSONField(default=dict, blank=True)

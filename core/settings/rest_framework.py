@@ -1,4 +1,25 @@
+import os
+
 from common.constants import DEFAULT_PAGE_SIZE
+
+
+def env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+DEBUG = env_bool('DEBUG', env_bool('DJANGO_DEBUG', True))
+ENABLE_BROWSABLE_API = env_bool('ENABLE_BROWSABLE_API', DEBUG)
+
+DEFAULT_RENDERER_CLASSES = (
+    'djangorestframework_camel_case.render.CamelCaseJSONRenderer',
+)
+if ENABLE_BROWSABLE_API:
+    DEFAULT_RENDERER_CLASSES = DEFAULT_RENDERER_CLASSES + (
+        'djangorestframework_camel_case.render.CamelCaseBrowsableAPIRenderer',
+    )
 
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'common.api.paginations.Pagination',
@@ -9,10 +30,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ),
-    'DEFAULT_RENDERER_CLASSES': (
-        'djangorestframework_camel_case.render.CamelCaseJSONRenderer',
-        'djangorestframework_camel_case.render.CamelCaseBrowsableAPIRenderer',
-    ),
+    'DEFAULT_RENDERER_CLASSES': DEFAULT_RENDERER_CLASSES,
     'DEFAULT_PARSER_CLASSES': (
         'djangorestframework_camel_case.parser.CamelCaseFormParser',
         'djangorestframework_camel_case.parser.CamelCaseMultiPartParser',

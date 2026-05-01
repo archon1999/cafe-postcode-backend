@@ -19,6 +19,7 @@ class PlatformTariffActivationApiTests(APITestCase):
         cls.fast_food_admin_role = Role.objects.get(code='fast_food_admin')
         cls.waiter_role = Role.objects.get(code='waiter')
         cls.fast_food_cashier_role = Role.objects.get(code='fast_food_cashier')
+        cls.custom_tariff_permission = Permission.objects.get(code='restaurants.custom_tariff')
 
         cls.product_owner_user = User.objects.create_user(
             username='platform-owner',
@@ -121,6 +122,16 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertIn('dashboard.view', returned_permission_codes)
         self.assertIn('pos_takeaway_menu.view', returned_permission_codes)
         self.assertNotIn('platform.product_owner.view', returned_permission_codes)
+        self.assertFalse(response.data['custom_tariff_allowed'])
+
+    def test_activation_options_marks_custom_tariff_allowed_when_partner_has_permission(self):
+        self.partner.extra_permissions.add(self.custom_tariff_permission)
+        self.client.force_authenticate(self.business_partner_user)
+
+        response = self.client.get('/api/v1/admin/platform/restaurants/activation-options/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['custom_tariff_allowed'])
 
     def test_tariff_create_derives_permissions_from_selected_roles(self):
         self.client.force_authenticate(self.product_owner_user)
@@ -224,6 +235,7 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(dashboard_login_response.status_code, status.HTTP_200_OK, dashboard_login_response.data)
 
     def test_custom_activation_uses_selected_roles_and_permissions(self):
+        self.partner.extra_permissions.add(self.custom_tariff_permission)
         self.client.force_authenticate(self.business_partner_user)
         employees_view_permission = Permission.objects.get(code='employees.view')
         pos_takeaway_menu_view_permission = Permission.objects.get(code='pos_takeaway_menu.view')
@@ -267,6 +279,27 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(response.data['restaurant']['activation_type'], 'custom')
         self.assertEqual(response.data['restaurant']['starts_on'], date(2026, 4, 4))
         self.assertEqual(response.data['restaurant']['expires_on'], date(2027, 4, 4))
+
+    def test_custom_activation_requires_custom_tariff_permission(self):
+        self.client.force_authenticate(self.business_partner_user)
+        employees_view_permission = Permission.objects.get(code='employees.view')
+
+        response = self.client.post(
+            f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+            {
+                'activation_type': 'custom',
+                'billing_period': 'yearly',
+                'monthly_price': '2500',
+                'yearly_price': '25000',
+                'allowed_role_ids': [str(self.fast_food_admin_role.id)],
+                'permission_ids': [str(employees_view_permission.id)],
+                'starts_on': '2026-04-04',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('activationType', response.data)
 
     def test_extend_active_entitlement_from_current_expiry(self):
         self.client.force_authenticate(self.business_partner_user)

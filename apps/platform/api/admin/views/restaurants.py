@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.platform.api.admin.serializers import (
+    CUSTOM_TARIFF_PERMISSION_CODE,
     RestaurantActivationOptionsSerializer,
     RestaurantActivationResultSerializer,
     RestaurantActivationSerializer,
@@ -55,7 +56,7 @@ def regenerate_restaurant_auth_code(restaurant: Restaurant) -> Restaurant:
 class RestaurantActivateView(AdminPermissionRequiredMixin, APIView):
     def post(self, request, pk):
         restaurant = get_restaurants_queryset_for_request(request).get(pk=pk)
-        serializer = RestaurantActivationSerializer(data=request.data)
+        serializer = RestaurantActivationSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         validated = serializer.validated_data
 
@@ -127,6 +128,7 @@ class RestaurantActivationOptionsView(AdminPermissionRequiredMixin, APIView):
             'tariffs': Tariff.objects.filter(is_active=True).prefetch_related('permissions', 'allowed_roles').order_by('name'),
             'roles': activation_role_queryset(),
             'permissions': activation_permission_queryset(),
+            'custom_tariff_allowed': CUSTOM_TARIFF_PERMISSION_CODE in set(request.user.permission_codes),
         }
         return Response(RestaurantActivationOptionsSerializer(payload).data, status=status.HTTP_200_OK)
 

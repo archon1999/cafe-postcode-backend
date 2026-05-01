@@ -34,3 +34,7 @@ class KitchenTicket(BaseModel):
     class Meta:
         ordering = ('-created_at',)
         unique_together = ('order', 'prep_station')
+        indexes = [
+            models.Index(fields=['restaurant', 'status', 'created_at'], name='kt_rest_status_created_idx'),
+            models.Index(fields=['restaurant', 'status', 'completed_at'], name='kt_rest_status_done_idx'),
+        ]

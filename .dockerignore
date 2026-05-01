@@ -1,0 +1,15 @@
+.git
+.github
+.idea
+.pytest_cache
+**/__pycache__
+**/*.pyc
+*.sqlite3
+.env
+.env.*
+!/.env.production.example
+core/settings/config.env
+media
+staticfiles
+var
+loadtests/reports
