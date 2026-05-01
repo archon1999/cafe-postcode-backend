@@ -113,6 +113,32 @@ class OpenCheckListApiTests(APITestCase):
         returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
         self.assertEqual(returned_ids, {str(submitted_order.id), str(ready_order.id)})
 
+    def test_open_status_respects_limit(self):
+        self.create_order(status=Order.Status.SUBMITTED)
+        self.create_order(status=Order.Status.SUBMITTED)
+        self.create_order(status=Order.Status.READY)
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=open&limit=2')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(self.unwrap_response_items(response)), 2)
+
+    def test_open_status_allows_full_list(self):
+        self.create_order(status=Order.Status.SUBMITTED)
+        self.create_order(status=Order.Status.SUBMITTED)
+        self.create_order(status=Order.Status.READY)
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=open&limit=all')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(self.unwrap_response_items(response)), 3)
+
+    def test_invalid_limit_returns_validation_error(self):
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=open&limit=bad')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('limit', response.data)
+
     def test_closed_status_returns_only_today_closed_orders(self):
         today_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
         yesterday_order = self.create_order(
@@ -166,4 +192,3 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(payload['service_fee'], 3000)
         self.assertEqual(payload['service_fee_percent'], 10)
         self.assertEqual(payload['total'], 33000)
-

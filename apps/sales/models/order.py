@@ -66,6 +66,8 @@ class Order(BaseModel):
             scoped_status_index('restaurant', name='order_restaurant_status_idx'),
             scoped_timestamp_index('restaurant', 'closed_at', name='order_restaurant_closed_idx'),
             scoped_timestamp_index('restaurant', 'created_at', name='order_restaurant_created_idx'),
+            models.Index(fields=['restaurant', 'status', '-created_at'], name='order_open_checks_idx'),
+            models.Index(fields=['restaurant', 'status', '-closed_at'], name='order_closed_checks_idx'),
         ]
         constraints = [
             models.UniqueConstraint(fields=('restaurant', 'order_number'), name='orders_unique_restaurant_order_number'),

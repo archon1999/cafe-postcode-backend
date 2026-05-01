@@ -1,12 +1,15 @@
+from django.db.models import Prefetch
 from rest_framework import generics, permissions
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing.helpers import get_payment_model, get_receipt_model
 from apps.billing.serializers import CashShiftCloseSerializer, CashShiftOpenSerializer, CashierContextSerializer
 from apps.billing.services import CashShiftService
 from apps.platform.services import FeatureGateService
 from apps.restaurants.helpers import get_cash_desk_model
-from apps.sales.helpers import get_order_model
+from apps.sales.helpers import get_order_item_model, get_order_model
 from apps.sales.serializers import OrderSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
@@ -14,6 +17,12 @@ from common.utils.date import tashkent_day_bounds
 
 CashDesk = get_cash_desk_model()
 Order = get_order_model()
+OrderItem = get_order_item_model()
+Payment = get_payment_model()
+Receipt = get_receipt_model()
+
+OPEN_CHECKS_DEFAULT_LIMIT = 100
+OPEN_CHECKS_MAX_LIMIT = 500
 
 
 class CashierContextView(APIView):
@@ -92,25 +101,69 @@ class OpenCheckListView(generics.ListAPIView):
     pagination_class = None
     feature_gate_service_class = FeatureGateService
 
+    def get_limit(self):
+        raw_limit = self.request.query_params.get('limit')
+        if raw_limit is None:
+            return OPEN_CHECKS_DEFAULT_LIMIT
+        if raw_limit == 'all':
+            return None
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({'limit': 'Limit must be a positive integer or "all".'}) from exc
+        if limit < 1:
+            raise ValidationError({'limit': 'Limit must be a positive integer or "all".'})
+        return min(limit, OPEN_CHECKS_MAX_LIMIT)
+
+    def apply_limit(self, queryset):
+        limit = self.get_limit()
+        if limit is None:
+            return queryset
+        return queryset[:limit]
+
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         status_filter = self.request.query_params.get('status', 'open')
+        item_queryset = OrderItem.objects.select_related('catalog_item', 'prep_station').only(
+            'id',
+            'order_id',
+            'catalog_item_id',
+            'catalog_item__name',
+            'prep_station_id',
+            'prep_station__name',
+            'quantity',
+            'unit_price',
+            'line_total',
+            'status',
+            'note',
+            'created_at',
+        )
+        payment_queryset = Payment.objects.prefetch_related('refunds')
+        receipt_queryset = Receipt.objects.all()
         queryset = (
             Order.objects.filter(restaurant=restaurant)
             .select_related(
+                'restaurant',
                 'table_session',
                 'table_session__hall',
                 'table_session__table',
+                'distribution_point',
                 'opened_by',
                 'cashier',
             )
-            .prefetch_related('items__catalog_item', 'items__prep_station', 'payments', 'receipts')
+            .prefetch_related(
+                Prefetch('items', queryset=item_queryset),
+                Prefetch('payments', queryset=payment_queryset),
+                Prefetch('receipts', queryset=receipt_queryset),
+            )
         )
         if status_filter == 'closed':
             start, end = tashkent_day_bounds()
-            return queryset.filter(status=Order.Status.CLOSED, closed_at__gte=start, closed_at__lt=end)
+            return self.apply_limit(
+                queryset.filter(status=Order.Status.CLOSED, closed_at__gte=start, closed_at__lt=end).order_by('-closed_at')
+            )
 
-        return queryset.filter(status__in=[Order.Status.SUBMITTED, Order.Status.READY])
+        return self.apply_limit(queryset.filter(status__in=[Order.Status.SUBMITTED, Order.Status.READY]).order_by('-created_at'))
 
 __all__ = ['CashierContextView', 'CashShiftCloseView', 'CashShiftOpenView', 'OpenCheckListView']
