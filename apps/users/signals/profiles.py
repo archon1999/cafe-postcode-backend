@@ -7,6 +7,9 @@ from apps.users.models import EmployeeProfile, User
 
 @receiver(post_save, sender=User)
 def ensure_user_profiles(sender, instance: User, **kwargs):
+    if kwargs.get('raw'):
+        return
+
     EmployeeProfile.objects.get_or_create(user=instance)
     try:
         restaurant_profile = instance.restaurant_profile

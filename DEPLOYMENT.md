@@ -20,6 +20,8 @@ docker compose --env-file .env.production up -d --build
 
 The `web` service runs migrations and `collectstatic` before Gunicorn starts. Prometheus scrapes Django metrics directly on the internal Docker network at `web:8888/metrics`.
 
+By default Docker Nginx binds to `127.0.0.1:8880` so it can run behind the host Certbot/TLS Nginx. The migrated host-level `cafe-postcode` Nginx template is stored at `docker/edge-nginx.cafe-postcode.conf`.
+
 ## Required Production Settings
 
 `DJANGO_PRODUCTION=1` enforces:

@@ -21,11 +21,14 @@ __pycache__/
 /db.sqlite3
 /db.sqlite3-journal
 /var/
+/backups/
+/loadtests/reports/
 *.log
 *.mo
 
 /core/settings/config.env
 .env
+.env.production
 
 build/
 dist/

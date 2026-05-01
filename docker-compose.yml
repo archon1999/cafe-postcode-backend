@@ -27,16 +27,19 @@ services:
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
-    command: >
-      sh -c "python manage.py migrate --noinput &&
-             python manage.py collectstatic --noinput &&
-             gunicorn core.wsgi:application
-             --bind 0.0.0.0:8888
-             --workers $${GUNICORN_WORKERS}
-             --threads $${GUNICORN_THREADS}
-             --timeout $${GUNICORN_TIMEOUT}
-             --access-logfile -
-             --error-logfile -"
+    command:
+      - sh
+      - -c
+      - >-
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        exec gunicorn core.wsgi:application
+        --bind 0.0.0.0:8888
+        --workers $${GUNICORN_WORKERS}
+        --threads $${GUNICORN_THREADS}
+        --timeout $${GUNICORN_TIMEOUT}
+        --access-logfile -
+        --error-logfile -
     depends_on:
       postgres:
         condition: service_healthy
@@ -84,7 +87,7 @@ services:
       web:
         condition: service_healthy
     ports:
-      - "${HTTP_PORT:-80}:80"
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8880}:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - staticfiles:/app/staticfiles:ro
@@ -123,6 +126,8 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
+      - "--web.external-url=https://cafe-postcode.uz/prometheus/"
+      - "--web.route-prefix=/prometheus"
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     volumes:
@@ -142,6 +147,10 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env.production}
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://cafe-postcode.uz/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     volumes:

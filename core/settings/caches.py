@@ -8,10 +8,8 @@ if REDIS_URL:
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": REDIS_URL,
             "OPTIONS": {
-                "pool_options": {
-                    "socket_connect_timeout": 2,
-                    "socket_timeout": 2,
-                },
+                "socket_connect_timeout": 2,
+                "socket_timeout": 2,
             },
         }
     }

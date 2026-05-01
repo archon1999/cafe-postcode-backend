@@ -9,6 +9,7 @@ API_PREFIX = '/api/v1'
 RESTAURANT_CODE = os.getenv('LOCUST_RESTAURANT_CODE', '').strip()
 RESTAURANT_ID = os.getenv('LOCUST_RESTAURANT_ID', '').strip()
 PIN = os.getenv('LOCUST_PIN', '').strip()
+TOKEN = os.getenv('LOCUST_TOKEN', '').strip()
 ENABLE_PAYMENTS = os.getenv('LOCUST_ENABLE_PAYMENTS', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
@@ -43,6 +44,12 @@ class PosApiUser(HttpUser):
         self.restaurant_id = RESTAURANT_ID
         self.catalog_item_ids = []
         self.table_ids = []
+
+        if TOKEN:
+            self.client.headers.update({'Authorization': f'Token {TOKEN}'})
+            self.refresh_menu()
+            self.refresh_halls()
+            return
 
         if not self.restaurant_id and RESTAURANT_CODE:
             response = self.client.post(
