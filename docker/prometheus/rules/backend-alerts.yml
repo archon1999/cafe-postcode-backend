@@ -1,0 +1,74 @@
+groups:
+  - name: postcode-backend
+    rules:
+      - alert: PostcodeTargetDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Monitoring target is down"
+          description: "{{ $labels.job }} target {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: PostcodeHigh5xxRate
+        expr: sum(rate(django_http_responses_total_by_status_total{status=~"5.."}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Backend 5xx responses increased"
+          description: "Backend is returning more than 0.05 server errors per second over the last 5 minutes."
+
+      - alert: PostcodeHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(django_http_requests_latency_seconds_by_view_method_bucket{view!="prometheus-django-metrics"}[5m])) by (le)) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Backend p95 latency is high"
+          description: "Backend p95 request latency has been above 1 second for 5 minutes."
+
+      - alert: PostcodeHighDjangoMemory
+        expr: process_resident_memory_bytes{job="django"} > 800 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Django memory usage is high"
+          description: "Django resident memory has been above 800 MiB for 5 minutes."
+
+      - alert: PostcodePostgresConnectionsHigh
+        expr: pg_stat_database_numbackends{datname="cafe_postcode"} > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Postgres connection count is high"
+          description: "Postgres database cafe_postcode has more than 80 active backends for 5 minutes."
+
+      - alert: PostcodePostgresDeadlocks
+        expr: increase(pg_stat_database_deadlocks{datname="cafe_postcode"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres deadlocks detected"
+          description: "Postgres reported at least one deadlock in cafe_postcode during the last 5 minutes."
+
+      - alert: PostcodeRedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis exporter cannot reach Redis"
+          description: "Redis has been reported down by redis-exporter for more than 1 minute."
+
+      - alert: PostcodeRedisRejectedConnections
+        expr: increase(redis_rejected_connections_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis rejected client connections"
+          description: "Redis rejected at least one client connection during the last 5 minutes."
