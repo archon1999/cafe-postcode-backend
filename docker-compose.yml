@@ -141,6 +141,8 @@ services:
         condition: service_started
       redis-exporter:
         condition: service_started
+      node-exporter:
+        condition: service_started
     restart: unless-stopped
 
   grafana:
@@ -179,6 +181,15 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
     restart: unless-stopped
 
 volumes:

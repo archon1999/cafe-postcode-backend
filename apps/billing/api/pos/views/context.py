@@ -1,16 +1,17 @@
-from django.db.models import Prefetch
+from django.db.models import Exists, IntegerField, OuterRef, Prefetch, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from rest_framework import generics, permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.billing.helpers import get_payment_model, get_receipt_model
+from apps.billing.api.pos.serializers import OpenCheckOrderSerializer
+from apps.billing.helpers import get_payment_model, get_payment_refund_model, get_receipt_model
 from apps.billing.serializers import CashShiftCloseSerializer, CashShiftOpenSerializer, CashierContextSerializer
 from apps.billing.services import CashShiftService
 from apps.platform.services import FeatureGateService
 from apps.restaurants.helpers import get_cash_desk_model
 from apps.sales.helpers import get_order_item_model, get_order_model
-from apps.sales.serializers import OrderSerializer
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 from common.utils.date import tashkent_day_bounds
@@ -19,6 +20,7 @@ CashDesk = get_cash_desk_model()
 Order = get_order_model()
 OrderItem = get_order_item_model()
 Payment = get_payment_model()
+PaymentRefund = get_payment_refund_model()
 Receipt = get_receipt_model()
 
 OPEN_CHECKS_DEFAULT_LIMIT = 100
@@ -96,10 +98,18 @@ class CashShiftCloseView(APIView):
 
 
 class OpenCheckListView(generics.ListAPIView):
-    serializer_class = OrderSerializer
+    serializer_class = OpenCheckOrderSerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     pagination_class = None
     feature_gate_service_class = FeatureGateService
+
+    def get_status_filter(self):
+        return self.request.query_params.get('status', 'open')
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['include_billing'] = self.get_status_filter() == 'closed'
+        return context
 
     def get_limit(self):
         raw_limit = self.request.query_params.get('limit')
@@ -124,7 +134,7 @@ class OpenCheckListView(generics.ListAPIView):
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
-        status_filter = self.request.query_params.get('status', 'open')
+        status_filter = self.get_status_filter()
         item_queryset = OrderItem.objects.select_related('catalog_item', 'prep_station').only(
             'id',
             'order_id',
@@ -139,8 +149,6 @@ class OpenCheckListView(generics.ListAPIView):
             'note',
             'created_at',
         )
-        payment_queryset = Payment.objects.prefetch_related('refunds')
-        receipt_queryset = Receipt.objects.all()
         queryset = (
             Order.objects.filter(restaurant=restaurant)
             .select_related(
@@ -152,16 +160,80 @@ class OpenCheckListView(generics.ListAPIView):
                 'opened_by',
                 'cashier',
             )
+            .only(
+                'id',
+                'restaurant_id',
+                'restaurant__service_fee_percent',
+                'table_session_id',
+                'table_session__hall_id',
+                'table_session__hall__name',
+                'table_session__table_id',
+                'table_session__table__name',
+                'distribution_point_id',
+                'opened_by_id',
+                'opened_by__full_name',
+                'cashier_id',
+                'cashier__full_name',
+                'order_number',
+                'display_name',
+                'channel',
+                'status',
+                'guest_count',
+                'note',
+                'subtotal',
+                'total',
+                'closed_at',
+                'created_at',
+                'updated_at',
+            )
             .prefetch_related(
                 Prefetch('items', queryset=item_queryset),
-                Prefetch('payments', queryset=payment_queryset),
-                Prefetch('receipts', queryset=receipt_queryset),
             )
         )
         if status_filter == 'closed':
+            refund_exists = PaymentRefund.objects.filter(
+                payment_id=OuterRef('pk'),
+                status=PaymentRefund.Status.SUCCEEDED,
+            )
+            payment_queryset = (
+                Payment.objects.only(
+                    'id',
+                    'order_id',
+                    'method',
+                    'amount',
+                    'status',
+                    'paid_at',
+                    'created_at',
+                )
+                .annotate(
+                    refunds_total=Coalesce(
+                        Sum('refunds__amount', filter=Q(refunds__status=PaymentRefund.Status.SUCCEEDED)),
+                        Value(0),
+                        output_field=IntegerField(),
+                    ),
+                    is_refunded=Exists(refund_exists),
+                )
+                .order_by('-created_at')
+            )
+            receipt_queryset = Receipt.objects.only(
+                'id',
+                'order_id',
+                'payment_id',
+                'kind',
+                'status',
+                'payload',
+                'reprint_count',
+                'last_reprinted_at',
+                'created_at',
+            ).order_by('-created_at')
             start, end = tashkent_day_bounds()
             return self.apply_limit(
-                queryset.filter(status=Order.Status.CLOSED, closed_at__gte=start, closed_at__lt=end).order_by('-closed_at')
+                queryset.prefetch_related(
+                    Prefetch('payments', queryset=payment_queryset),
+                    Prefetch('receipts', queryset=receipt_queryset),
+                )
+                .filter(status=Order.Status.CLOSED, closed_at__gte=start, closed_at__lt=end)
+                .order_by('-closed_at')
             )
 
         return self.apply_limit(queryset.filter(status__in=[Order.Status.SUBMITTED, Order.Status.READY]).order_by('-created_at'))

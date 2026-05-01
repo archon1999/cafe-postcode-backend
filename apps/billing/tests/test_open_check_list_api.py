@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.users.models import Permission, Role, User
+from apps.billing.models import Payment, PaymentRefund, Receipt
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import DistributionPoint, Restaurant
@@ -180,6 +181,60 @@ class OpenCheckListApiTests(APITestCase):
         payload = next(item for item in self.unwrap_response_items(response) if item['id'] == str(order.id))
         statuses = {item['status'] for item in payload['items']}
         self.assertIn(OrderItem.Status.CANCELLED, statuses)
+
+    def test_open_status_omits_billing_details(self):
+        order = self.create_order(status=Order.Status.SUBMITTED)
+        payment = Payment.objects.create(
+            order=order,
+            method=Payment.Method.CASH,
+            amount=order.total,
+            status=Payment.Status.SUCCEEDED,
+            provider_payload={'large': 'payload'},
+        )
+        Receipt.objects.create(
+            order=order,
+            payment=payment,
+            status=Receipt.Status.SENT,
+            payload={'receiptNumber': 'R-1'},
+        )
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = next(item for item in self.unwrap_response_items(response) if item['id'] == str(order.id))
+        self.assertEqual(payload['payments'], [])
+        self.assertEqual(payload['receipts'], [])
+
+    def test_closed_status_returns_minimal_billing_details(self):
+        order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        payment = Payment.objects.create(
+            order=order,
+            method=Payment.Method.CASH,
+            amount=order.total,
+            status=Payment.Status.SUCCEEDED,
+            provider_payload={'large': 'payload'},
+        )
+        PaymentRefund.objects.create(
+            payment=payment,
+            amount=order.total,
+            status=PaymentRefund.Status.SUCCEEDED,
+        )
+        Receipt.objects.create(
+            order=order,
+            payment=payment,
+            status=Receipt.Status.SENT,
+            payload={'receiptNumber': 'R-1'},
+        )
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=closed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = next(item for item in self.unwrap_response_items(response) if item['id'] == str(order.id))
+        self.assertEqual(payload['payments'][0]['id'], str(payment.id))
+        self.assertEqual(payload['payments'][0]['refunds_total'], order.total)
+        self.assertTrue(payload['payments'][0]['is_refunded'])
+        self.assertNotIn('provider_payload', payload['payments'][0])
+        self.assertEqual(payload['receipts'][0]['payload']['receiptNumber'], 'R-1')
 
     def test_hall_order_applies_restaurant_service_fee_percent(self):
         order = self.create_order(status=Order.Status.SUBMITTED)
