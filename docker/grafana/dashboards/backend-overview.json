@@ -236,6 +236,122 @@
       ],
       "title": "Host Network I/O",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"backend.*\"}[5m]))",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "type": "timeseries",
+      "id": 9,
+      "title": "Docker Container CPU",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\"backend.*\"}",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "type": "timeseries",
+      "id": 10,
+      "title": "Docker Container Memory",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(container_network_receive_bytes_total{name=~\"backend.*\"}[5m]))",
+          "legendFormat": "rx {{name}}"
+        },
+        {
+          "expr": "sum by (name) (rate(container_network_transmit_bytes_total{name=~\"backend.*\"}[5m]))",
+          "legendFormat": "tx {{name}}"
+        }
+      ],
+      "type": "timeseries",
+      "id": 11,
+      "title": "Docker Container Network I/O",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (name) (rate(container_fs_reads_bytes_total{name=~\"backend.*\"}[5m]))",
+          "legendFormat": "read {{name}}"
+        },
+        {
+          "expr": "sum by (name) (rate(container_fs_writes_bytes_total{name=~\"backend.*\"}[5m]))",
+          "legendFormat": "write {{name}}"
+        }
+      ],
+      "type": "timeseries",
+      "id": 12,
+      "title": "Docker Container FS I/O",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      }
     }
   ],
   "refresh": "15s",
@@ -256,6 +372,6 @@
   "timezone": "browser",
   "title": "Cafe Postcode Backend Overview",
   "uid": "cafe-postcode-backend",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
