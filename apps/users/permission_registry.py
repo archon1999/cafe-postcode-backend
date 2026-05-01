@@ -77,6 +77,7 @@ POS_KITCHEN_VIEW_ROLES = ('chef', 'barman')
 POS_KITCHEN_UPDATE_ROLES = ('chef', 'barman')
 POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
+POS_PAYMENT_ORDER_ITEM_DELETE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_TABLE_RESERVATION_ROLES = ('manager',)
 CASHIER_ROLES = POS_OPEN_CHECKS_VIEW_ROLES
@@ -592,6 +593,17 @@ PERMISSION_DEFINITIONS = [
         name="POS to'lov oynasidan mahsulot qo'shish",
         endpoints=endpoint_specs(('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/')),
         default_roles=POS_PAYMENT_ORDER_ITEM_CREATE_ROLES,
+    ),
+    permission_definition(
+        'pos_payment_order_items.delete',
+        surface='pos',
+        resource='pos_payment_order_items',
+        action='delete',
+        ui_visible=True,
+        group_key='payments',
+        name="POS to'lov oynasidan mahsulot kamaytirish",
+        endpoints=endpoint_specs(('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/')),
+        default_roles=POS_PAYMENT_ORDER_ITEM_DELETE_ROLES,
     ),
     permission_definition(
         'pos_payments.create',
@@ -1150,6 +1162,7 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_kitchen_orders.update',
         'pos_open_checks.view',
         'pos_payment_order_items.create',
+        'pos_payment_order_items.delete',
         'pos_payments.create',
         'pos_table_reservations.manage',
     }

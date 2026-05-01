@@ -2,7 +2,7 @@ from rest_framework import status
 
 from apps.users.models import Permission, Role, User
 from apps.floor.models import DiningTable
-from apps.sales.models import Order
+from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
@@ -38,7 +38,15 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             is_system=False,
         )
         cls.payment_add_role.permissions.set(Permission.objects.filter(code__in=['pos_payment_order_items.create']))
+        cls.payment_delete_role = Role.objects.create(
+            code='pos-payment-delete-role',
+            name='POS Payment Delete Role',
+            description='POS payment delete role',
+            is_system=False,
+        )
+        cls.payment_delete_role.permissions.set(Permission.objects.filter(code__in=['pos_payment_order_items.delete']))
         cls.entitlement.allowed_roles.add(cls.hall_role, cls.takeaway_role, cls.table_menu_role, cls.payment_add_role)
+        cls.entitlement.allowed_roles.add(cls.payment_delete_role)
 
         cls.hall_user = User.objects.create_user(
             username='hall-operator-user',
@@ -70,6 +78,14 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             full_name='Payment Add User',
             restaurant=cls.restaurant,
             role=cls.payment_add_role,
+            is_staff=True,
+        )
+        cls.payment_delete_user = User.objects.create_user(
+            username='payment-delete-user',
+            password='secret123',
+            full_name='Payment Delete User',
+            restaurant=cls.restaurant,
+            role=cls.payment_delete_role,
             is_staff=True,
         )
 
@@ -198,5 +214,51 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
 
         payment_add_submit_forbidden = self.client.post(f'/api/v1/pos/sales/orders/{takeaway_order.id}/submit/', {}, format='json')
         self.assertEqual(payment_add_submit_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_payment_item_delete_permission_only_removes_takeaway_items(self):
+        hall_session = self.create_table_session()
+        self.table.status = DiningTable.Status.OCCUPIED
+        self.table.save(update_fields=['status', 'updated_at'])
+        hall_order = Order.objects.create(
+            restaurant=self.restaurant,
+            table_session=hall_session,
+            distribution_point=self.hall_distribution,
+            opened_by=self.hall_user,
+            order_number=5101,
+            channel=Order.Channel.HALL,
+            status=Order.Status.OPEN,
+            guest_count=2,
+        )
+        takeaway_order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.takeaway_user,
+            order_number=5102,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.OPEN,
+            guest_count=1,
+        )
+        hall_item = OrderItem.objects.create(
+            order=hall_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            unit_price=self.catalog_item.price,
+        )
+        takeaway_item = OrderItem.objects.create(
+            order=takeaway_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            unit_price=self.catalog_item.price,
+        )
+
+        self.client.force_authenticate(self.payment_delete_user)
+        hall_forbidden = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')
+        self.assertEqual(hall_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+        takeaway_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{takeaway_item.id}/')
+        self.assertEqual(takeaway_success.status_code, status.HTTP_204_NO_CONTENT)
+
+        self.client.force_authenticate(self.hall_user)
+        hall_manager_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')
+        self.assertEqual(hall_manager_success.status_code, status.HTTP_204_NO_CONTENT)
 
 

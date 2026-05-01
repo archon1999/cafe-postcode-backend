@@ -7,6 +7,7 @@ from apps.sales.services import OrderStateService
 from common.api.permissions import (
     EndpointRBACPermission,
     POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION,
+    POS_PAYMENT_ORDER_ITEMS_DELETE_PERMISSION,
     POS_TABLES_MANAGE_PERMISSION,
     POS_TAKEAWAY_MENU_VIEW_PERMISSION,
     require_any_permission_code,
@@ -68,8 +69,14 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
     @transaction.atomic
     def perform_destroy(self, instance):
         order = instance.order
-        required_permission = POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
-        require_any_permission_code(self.request.user, required_permission)
+        if order.table_session_id:
+            require_any_permission_code(self.request.user, POS_TABLES_MANAGE_PERMISSION)
+        else:
+            require_any_permission_code(
+                self.request.user,
+                POS_TAKEAWAY_MENU_VIEW_PERMISSION,
+                POS_PAYMENT_ORDER_ITEMS_DELETE_PERMISSION,
+            )
         self.state_service_class().ensure_order_mutable(order=order)
         instance.delete()
         self.state_service_class().sync_after_items_changed(order=order)

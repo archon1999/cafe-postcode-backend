@@ -216,6 +216,7 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertTrue(Permission.objects.filter(code="pos_kitchen_orders.update").exists())
         self.assertTrue(Permission.objects.filter(code="pos_open_checks.view").exists())
         self.assertTrue(Permission.objects.filter(code="pos_payment_order_items.create").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_payment_order_items.delete").exists())
         self.assertTrue(Permission.objects.filter(code="pos_payments.create").exists())
         self.assertTrue(Permission.objects.filter(code="pos_table_reservations.manage").exists())
         self.assertTrue(Permission.objects.filter(code="reports.view").exists())
@@ -249,6 +250,13 @@ class EndpointRBACPermissionTests(TestCase):
                 permission__code="pos_payment_order_items.create",
                 method="POST",
                 url="api/v1/pos/sales/orders/<uuid:order_id>/items/",
+            ).exists()
+        )
+        self.assertTrue(
+            PermissionEndpoint.objects.filter(
+                permission__code="pos_payment_order_items.delete",
+                method="DELETE",
+                url="api/v1/pos/sales/orders/items/<uuid:pk>/",
             ).exists()
         )
 
@@ -353,7 +361,9 @@ class EndpointRBACPermissionTests(TestCase):
         fast_food_cashier_permission_codes = set(DEFAULT_ROLE_MAP["fast_food_cashier"]["permissions"])
 
         self.assertNotIn("pos_payment_order_items.create", cashier_permission_codes)
+        self.assertNotIn("pos_payment_order_items.delete", cashier_permission_codes)
         self.assertIn("pos_payment_order_items.create", fast_food_cashier_permission_codes)
+        self.assertIn("pos_payment_order_items.delete", fast_food_cashier_permission_codes)
 
     def test_owner_role_is_removed_from_default_role_map(self):
         self.assertNotIn("owner", DEFAULT_ROLE_MAP)
