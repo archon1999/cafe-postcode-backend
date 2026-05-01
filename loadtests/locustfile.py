@@ -2,6 +2,7 @@ import os
 import random
 import uuid
 
+import urllib3
 from locust import HttpUser, between, task
 
 
@@ -10,7 +11,15 @@ RESTAURANT_CODE = os.getenv('LOCUST_RESTAURANT_CODE', '').strip()
 RESTAURANT_ID = os.getenv('LOCUST_RESTAURANT_ID', '').strip()
 PIN = os.getenv('LOCUST_PIN', '').strip()
 TOKEN = os.getenv('LOCUST_TOKEN', '').strip()
+TOKEN_POOL = [
+    tuple(item.split(':', 1))
+    for item in os.getenv('LOCUST_TOKEN_POOL', '').split(',')
+    if ':' in item
+]
 ENABLE_PAYMENTS = os.getenv('LOCUST_ENABLE_PAYMENTS', '0').strip().lower() in {'1', 'true', 'yes', 'on'}
+VERIFY_TLS = os.getenv('LOCUST_VERIFY_TLS', '1').strip().lower() not in {'0', 'false', 'no', 'off'}
+if not VERIFY_TLS:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def first_payload_rows(payload):
@@ -41,9 +50,18 @@ class PosApiUser(HttpUser):
     wait_time = between(0.2, 1.2)
 
     def on_start(self):
+        self.client.verify = VERIFY_TLS
         self.restaurant_id = RESTAURANT_ID
         self.catalog_item_ids = []
         self.table_ids = []
+        self.floor_available = True
+
+        if TOKEN_POOL:
+            self.restaurant_id, token = random.choice(TOKEN_POOL)
+            self.client.headers.update({'Authorization': f'Token {token}'})
+            self.refresh_menu()
+            self.refresh_halls()
+            return
 
         if TOKEN:
             self.client.headers.update({'Authorization': f'Token {TOKEN}'})
@@ -88,9 +106,14 @@ class PosApiUser(HttpUser):
 
     @task(12)
     def refresh_halls(self):
-        response = self.client.get(f'{API_PREFIX}/pos/floor/halls/', name='pos floor: halls')
-        if response.ok:
-            self.table_ids = find_nested_ids(first_payload_rows(response.json()), 'id')
+        if not self.floor_available:
+            return
+        with self.client.get(f'{API_PREFIX}/pos/floor/halls/', name='pos floor: halls', catch_response=True) as response:
+            if response.ok:
+                self.table_ids = find_nested_ids(first_payload_rows(response.json()), 'id')
+            elif response.status_code == 400:
+                self.floor_available = False
+                response.success()
 
     @task(10)
     def open_checks(self):
@@ -145,4 +168,6 @@ class PosApiUser(HttpUser):
 
     @task(2)
     def table_sessions_read(self):
+        if not self.floor_available:
+            return
         self.client.get(f'{API_PREFIX}/pos/floor/table-sessions/?status=open', name='pos floor: table sessions')
