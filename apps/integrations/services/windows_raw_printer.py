@@ -1,5 +1,6 @@
 import ctypes
 import os
+import socket
 from ctypes import wintypes
 
 from django.utils import timezone
@@ -171,18 +172,37 @@ class WindowsRawPrinterIntegrationService:
         finally:
             close_printer(printer_handle)
 
-    def print_prebill(self, order, payload):
-        printer_name = (self.settings.get('printer_name') or '').strip()
-        if not printer_name:
-            raise ValueError('Printer name is not configured for the live printer integration.')
+    def _write_socket(self, host: str, port: int, payload: bytes) -> None:
+        if not host:
+            raise ValueError('LAN printer host is not configured.')
+        if port <= 0:
+            raise ValueError('LAN printer port is not configured.')
 
+        with socket.create_connection((host, port), timeout=8) as connection:
+            connection.settimeout(8)
+            connection.sendall(payload)
+
+    def print_prebill(self, order, payload):
+        connection_type = (self.settings.get('connection_type') or self.settings.get('connectionType') or 'system_printer').strip()
         raw_payload = self._build_bytes(payload)
-        self._write_raw(printer_name, raw_payload)
+        printer_name = (self.settings.get('printer_name') or '').strip()
+        host = (self.settings.get('host') or '').strip()
+        port = int(self.settings.get('port') or 9100)
+
+        if connection_type == 'socket':
+            self._write_socket(host, port, raw_payload)
+        else:
+            if not printer_name:
+                raise ValueError('Printer name is not configured for the live printer integration.')
+            self._write_raw(printer_name, raw_payload)
+
         return {
             'ok': True,
             'provider': self.config.provider,
-            'mode': self.config.mode,
+            'connection_type': connection_type,
             'printer_name': printer_name,
+            'host': host,
+            'port': port if connection_type == 'socket' else None,
             'printed_at': timezone.now().isoformat(),
             'order_id': str(order.id),
             'order_number': order.order_number,

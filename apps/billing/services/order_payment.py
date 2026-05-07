@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -36,6 +37,8 @@ class OrderPaymentService:
 
         serializer = PaymentSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
+        manual_card_override = bool(serializer.validated_data.pop('manual_card_override', False))
+        manual_card_reason = str(serializer.validated_data.pop('manual_card_reason', '') or '')
         cash_desk = (
             cash_shift.cash_desk
             if cash_shift is not None
@@ -55,7 +58,12 @@ class OrderPaymentService:
 
         payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
 
-        payment_result = charge_payment(order=order, payment=payment)
+        payment_result = charge_payment(
+            order=order,
+            payment=payment,
+            manual_card_override=manual_card_override,
+            manual_card_reason=manual_card_reason,
+        )
         payment.status = Payment.Status.SUCCEEDED if payment_result.get('ok') else Payment.Status.FAILED
         payment.external_ref = payment_result.get('reference', '')
         payment.provider_payload = payment_result
@@ -71,6 +79,7 @@ class OrderPaymentService:
                 'payment': payment,
                 'receipt': None,
                 'order': order,
+                'detail': payment_result.get('detail') or payment_result.get('message') or _('Payment charge failed.'),
             }
 
         paid_total = order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0
@@ -100,3 +109,38 @@ class OrderPaymentService:
             'receipt': receipt,
             'order': order,
         }
+
+
+class PaymentFiscalRetryService:
+    @transaction.atomic
+    def retry(self, *, payment: Payment):
+        if payment.status != Payment.Status.SUCCEEDED:
+            raise ValidationError({'detail': _('Only successful payments can be sent to fiscal integration.')})
+
+        receipt = (
+            payment.receipts.filter(kind=Receipt.Kind.FISCAL)
+            .exclude(status=Receipt.Status.SENT)
+            .order_by('-created_at')
+            .first()
+        )
+        if receipt is None:
+            receipt = payment.receipts.filter(kind=Receipt.Kind.FISCAL, status=Receipt.Status.SENT).order_by('-created_at').first()
+        if receipt is not None and receipt.status == Receipt.Status.SENT:
+            return {'payment': payment, 'receipt': receipt, 'result': receipt.payload or {}}
+
+        receipt_result = issue_fiscal_receipt(order=payment.order, payment=payment)
+        if receipt is None:
+            receipt = Receipt.objects.create(
+                order=payment.order,
+                payment=payment,
+                kind=Receipt.Kind.FISCAL,
+                status=Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED,
+                provider=receipt_result.get('provider', ''),
+                payload=receipt_result,
+            )
+        else:
+            receipt.status = Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED
+            receipt.provider = receipt_result.get('provider', receipt.provider)
+            receipt.payload = receipt_result
+            receipt.save(update_fields=['status', 'provider', 'payload', 'updated_at'])
+        return {'payment': payment, 'receipt': receipt, 'result': receipt_result}

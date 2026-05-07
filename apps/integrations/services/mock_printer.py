@@ -23,7 +23,6 @@ class MockPrinterIntegrationService:
             'ok': True,
             'provider': config.provider if config else 'mock-printer',
             'ticket_id': str(ticket.id),
-            'mode': config.mode if config else IntegrationConfig.Mode.MOCK,
             'printed_at': timezone.now().isoformat(),
         }
 
@@ -32,7 +31,6 @@ class MockPrinterIntegrationService:
         return {
             'ok': True,
             'provider': config.provider if config else 'mock-printer',
-            'mode': config.mode if config else IntegrationConfig.Mode.MOCK,
             'printed_at': timezone.now().isoformat(),
             'order_id': str(order.id),
             'order_number': order.order_number,

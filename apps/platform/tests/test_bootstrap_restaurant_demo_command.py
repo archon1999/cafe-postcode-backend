@@ -58,24 +58,22 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         restaurant_printer = IntegrationConfig.objects.get(
             restaurant=restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
-            provider='qz-tray',
-        )
-        fast_food_printer = IntegrationConfig.objects.get(
-            restaurant=fast_food,
-            kind=IntegrationConfig.Kind.PRINTER,
-            provider='mock-printer',
+            provider='windows-raw',
         )
 
         self.assertEqual(restaurant.entitlement.tariff.name, 'Restaurant tarifi')
         self.assertEqual(fast_food.entitlement.tariff.name, 'Fast food tarifi')
         self.assertIn('dashboard.view', restaurant.entitlement.get_effective_permission_codes())
         self.assertIn('dashboard.view', fast_food.entitlement.get_effective_permission_codes())
-        self.assertEqual(restaurant_printer.mode, IntegrationConfig.Mode.LIVE)
         self.assertTrue(restaurant_printer.is_enabled)
-        self.assertEqual(restaurant_printer.settings.get('connection_type'), 'system_printer')
         self.assertEqual(restaurant_printer.settings.get('printer_name'), 'POS-80 USB')
-        self.assertEqual(fast_food_printer.mode, IntegrationConfig.Mode.MOCK)
-        self.assertTrue(fast_food_printer.is_enabled)
+        self.assertFalse(
+            IntegrationConfig.objects.filter(
+                restaurant=fast_food,
+                kind=IntegrationConfig.Kind.PRINTER,
+                provider__in=('mock-printer', 'qz-tray'),
+            ).exists()
+        )
         self.assertEqual(partner.company_name, 'ABSOLYUT POWER SYSTEM MCHJ')
         self.assertEqual(partner.director_name, 'Jurayev Akmaljon Ruzibayevich')
         self.assertEqual(restaurant.tax_number, '311926992')

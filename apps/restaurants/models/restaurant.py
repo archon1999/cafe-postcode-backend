@@ -30,6 +30,8 @@ class Restaurant(BaseModel):
     currency = models.CharField(max_length=10, default='UZS')
     auth_code = models.CharField(max_length=6, unique=True, default=generate_restaurant_auth_code)
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    vat_enabled = models.BooleanField(default=False)
+    vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=12)
     last_order_number = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     activated_at = models.DateTimeField(null=True, blank=True)

@@ -1,10 +1,12 @@
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+from unittest.mock import patch
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.billing.models import CashShift, Payment
+from apps.integrations.models import IntegrationConfig
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import CashDesk, DistributionPoint, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -118,7 +120,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(self.order.cashier_id, self.user.id)
         self.assertEqual(response.data['payment']['method'], Payment.Method.CASH)
-        self.assertEqual(response.data['receipt']['status'], 'sent')
+        self.assertEqual(response.data['receipt']['status'], 'failed')
 
     def test_closed_order_cannot_be_paid_twice(self):
         first_response = self.client.post(
@@ -136,4 +138,63 @@ class PaymentCreateApiTests(APITestCase):
 
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', second_response.data)
+
+    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
+    def test_card_payment_uses_marta_and_closes_order_on_success(self, service_class):
+        IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        service_class.return_value.charge_payment.return_value = {
+            'ok': True,
+            'provider': 'marta-softpos',
+            'reference': 'trx-1',
+            'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
+        }
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': 30000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        payment = Payment.objects.get(order=self.order)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
+        self.assertEqual(payment.external_ref, 'trx-1')
+        self.assertEqual(payment.provider_payload['params']['trxId'], 'trx-1')
+
+    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
+    def test_card_payment_returns_detail_on_marta_not_ready(self, service_class):
+        IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        service_class.return_value.charge_payment.return_value = {
+            'ok': False,
+            'provider': 'marta-softpos',
+            'status': 'NOT_READY',
+            'detail': 'SoftPOS is not ready. Open standby screen and keep the app in foreground',
+        }
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': 30000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('standby screen', response.data['detail'])
+        self.order.refresh_from_db()
+        payment = Payment.objects.get(order=self.order)
+        self.assertNotEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(payment.status, Payment.Status.FAILED)
 

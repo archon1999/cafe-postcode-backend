@@ -164,6 +164,8 @@ class OpenCheckListView(generics.ListAPIView):
                 'id',
                 'restaurant_id',
                 'restaurant__service_fee_percent',
+                'restaurant__vat_enabled',
+                'restaurant__vat_percent',
                 'table_session_id',
                 'table_session__hall_id',
                 'table_session__hall__name',

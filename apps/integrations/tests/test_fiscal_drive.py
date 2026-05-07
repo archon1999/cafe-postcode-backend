@@ -49,8 +49,7 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.FISCAL,
-            provider='soliq-ofd',
-            mode=IntegrationConfig.Mode.LIVE,
+            provider='fiscal-drive-service',
             settings={
                 'endpoint_url': 'http://127.0.0.1:3459',
                 'terminal_id': 'TERM-1',
@@ -121,10 +120,12 @@ class FiscalDriveIntegrationTests(PosTestCase):
         result = service.issue_receipt(order=self.order, payment=self.payment)
 
         self.assertTrue(result['ok'])
-        self.assertEqual(result['provider'], 'soliq-ofd')
+        self.assertEqual(result['provider'], 'fiscal-drive-service')
         self.assertEqual(result['terminal_id'], 'TERM-1')
         self.assertEqual(result['cashbox_id'], 'CASHBOX-1')
         self.assertEqual(result['receipt_number'], '71')
+        self.assertEqual(result['restaurant_legal_name'], self.restaurant.legal_name or self.restaurant.name)
+        self.assertEqual(result['restaurant_address'], self.restaurant.address)
         self.assertTrue(assertions.get('z_report_open_called'))
         self.assertEqual(assertions['register_form']['TXID'], '41')
 
@@ -134,7 +135,63 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(len(payload['Items']), 2)
         self.assertEqual(payload['Items'][0]['Price'], 3000000)
         self.assertEqual(payload['Items'][0]['SPIC'], self.catalog_item.mxik_code)
-        self.assertEqual(payload['Items'][1], {'Name': 'Service fee', 'Amount': 1000, 'Price': 300000})
+        self.assertEqual(payload['Items'][1], {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': 300000})
+
+    def test_issue_receipt_includes_vat_without_changing_total(self):
+        self.restaurant.vat_enabled = True
+        self.restaurant.vat_percent = 12
+        self.restaurant.save(update_fields=['vat_enabled', 'vat_percent', 'updated_at'])
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        payload = result['request']['receipt']
+        self.assertEqual(payload['ReceivedCash'], 3300000)
+        self.assertEqual(payload['Items'][0]['Price'], 3000000)
+        self.assertEqual(payload['Items'][0]['VATPercent'], 12)
+        self.assertEqual(payload['Items'][0]['VAT'], 321429)
+        self.assertEqual(payload['Items'][1]['VATPercent'], 12)
+        self.assertEqual(payload['Items'][1]['VAT'], 32143)
+
+    def test_issue_receipt_uses_units_and_barcode_from_mxik_payload(self):
+        self.catalog_item.mxik_payload = {
+            'commonUnitCode': 715,
+            'internationalCode': '6297000747705',
+        }
+        self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        item = result['request']['receipt']['Items'][0]
+        self.assertEqual(item['Units'], 715)
+        self.assertEqual(item['Barcode'], '6297000747705')
+
+    def test_issue_receipt_defaults_units_when_mxik_payload_has_no_unit_code(self):
+        self.catalog_item.mxik_payload = {
+            'unitCode': None,
+            'commonUnitCode': None,
+            'units': None,
+            'internationalCode': '6297000747705',
+        }
+        self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        self.assertEqual(result['request']['receipt']['Items'][0]['Units'], 796)
 
     def test_issue_receipt_falls_back_to_category_mxik_code(self):
         self.catalog_item.mxik_code = ''
@@ -159,7 +216,7 @@ class FiscalDriveIntegrationTests(PosTestCase):
             payment=self.payment,
             kind=Receipt.Kind.FISCAL,
             status=Receipt.Status.SENT,
-            provider='soliq-ofd',
+            provider='fiscal-drive-service',
             payload={
                 'request': {
                     'receipt': {
@@ -239,7 +296,7 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(assertions['refund_payload']['RefundInfo']['DateTime'], '20260420180010')
 
     def test_issue_receipt_syncs_state_and_retries_after_datetime_sync_error(self):
-        assertions = {'get_txid_calls': 0, 'state_sync_calls': 0}
+        assertions = {'get_txid_calls': 0, 'state_sync_calls': 0, 'request_times': []}
 
         def handler(request: httpx.Request):
             path = request.url.path
@@ -251,9 +308,14 @@ class FiscalDriveIntegrationTests(PosTestCase):
                     json={'TerminalID': 'TERM-1', 'Locked': False, 'POSLocked': False, 'POSAuth': False},
                 )
             if path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
+                last_operation_time = (
+                    '2099-01-01 10:00:00'
+                    if assertions['state_sync_calls']
+                    else '2026-04-20 18:10:00'
+                )
                 return httpx.Response(
                     200,
-                    json={'LastOperationTime': '2026-04-20 18:10:00', 'ZReportsCount': 1},
+                    json={'LastOperationTime': last_operation_time, 'ZReportsCount': 1},
                 )
             if path == '/FiscalDrive/ZReport/Info/FACTORY-1':
                 return httpx.Response(200, json={'OpenTime': '2026-04-20 18:00:00'})
@@ -262,6 +324,7 @@ class FiscalDriveIntegrationTests(PosTestCase):
                 return httpx.Response(200, text='OK')
             if path == '/FiscalDrive/Receipt/GetTXID/FACTORY-1':
                 assertions['get_txid_calls'] += 1
+                assertions['request_times'].append(json.loads(request.content.decode())['Time'])
                 if assertions['get_txid_calls'] == 1:
                     return httpx.Response(400, json={'Reason': '9091 - DATETIME_SYNC_WITH_SERVER'})
                 return httpx.Response(200, json=88)
@@ -290,10 +353,64 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(result['receipt_number'], '89')
         self.assertEqual(assertions['state_sync_calls'], 1)
         self.assertEqual(assertions['get_txid_calls'], 2)
+        self.assertNotEqual(assertions['request_times'][0], assertions['request_times'][1])
+        self.assertEqual(assertions['request_times'][1], '2099-01-01 10:00:01')
+
+    def test_issue_receipt_retries_when_fiscal_reports_receipt_time_in_past(self):
+        assertions = {'get_txid_calls': 0, 'state_sync_calls': 0}
+
+        def handler(request: httpx.Request):
+            path = request.url.path
+            if path == '/FiscalDrive/List':
+                return httpx.Response(200, json=[{'FactoryID': 'FACTORY-1'}])
+            if path == '/FiscalDrive/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={'TerminalID': 'TERM-1', 'Locked': False, 'POSLocked': False, 'POSAuth': False},
+                )
+            if path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={'LastOperationTime': '2026-04-20 18:10:00', 'ZReportsCount': 1},
+                )
+            if path == '/FiscalDrive/ZReport/Info/FACTORY-1':
+                return httpx.Response(200, json={'OpenTime': '2026-04-20 18:00:00'})
+            if path == '/FiscalDrive/State/Sync/FACTORY-1':
+                assertions['state_sync_calls'] += 1
+                return httpx.Response(200, text='OK')
+            if path == '/FiscalDrive/Receipt/GetTXID/FACTORY-1':
+                assertions['get_txid_calls'] += 1
+                if assertions['get_txid_calls'] == 1:
+                    return httpx.Response(400, json={'detail': 'receipt time is in the past'})
+                return httpx.Response(200, json=90)
+            if path == '/FiscalDrive/Receipt/RegisterTXID/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={
+                        'TerminalID': 'TERM-1',
+                        'ReceiptSeq': 91,
+                        'DateTime': '2026-05-07 10:00:05',
+                        'FiscalSign': '666666666666',
+                        'QRCodeURL': 'https://ofd.soliq.uz/check?t=TERM-1&r=91&c=20260507100005&s=666666666666',
+                    },
+                )
+            if path == '/DataBase/Files/Sync/FullReceipts/FACTORY-1':
+                return httpx.Response(200, json={'SuccessfulsCount': 1})
+            return httpx.Response(404, json={'message': f'Unexpected path: {path}'})
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=httpx.MockTransport(handler), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['receipt_number'], '91')
+        self.assertEqual(assertions['state_sync_calls'], 1)
+        self.assertEqual(assertions['get_txid_calls'], 2)
 
     def test_service_selector_uses_live_provider_integration(self):
         result = issue_fiscal_receipt(self.order, self.payment)
 
         self.assertFalse(result['ok'])
-        self.assertEqual(result['provider'], 'soliq-ofd')
-        self.assertEqual(result['mode'], 'live')
+        self.assertEqual(result['provider'], 'fiscal-drive-service')

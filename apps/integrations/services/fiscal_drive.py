@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from types import SimpleNamespace
 
 import httpx
@@ -12,7 +13,7 @@ from apps.billing.models import Receipt
 from apps.sales.models import OrderItem
 
 
-SUPPORTED_FISCAL_PROVIDERS = frozenset({'soliq-ofd', 'fiscal-drive-service'})
+SUPPORTED_FISCAL_PROVIDERS = frozenset({'fiscal-drive-service'})
 
 
 class FiscalDriveError(Exception):
@@ -44,6 +45,7 @@ class FiscalDriveIntegrationService:
                 target=target,
                 receipt_payload=receipt_payload,
                 cashbox_id=self._cashbox_id(payment=payment),
+                order=order,
             )
 
     def reprint_receipt(self, *, receipt):
@@ -52,7 +54,6 @@ class FiscalDriveIntegrationService:
         return {
             'ok': True,
             'provider': receipt.provider or self.config.provider,
-            'mode': self.config.mode,
             'receipt_number': str(receipt_number or ''),
             'reprinted_at': timezone.now().isoformat(),
             'response': response_payload,
@@ -93,6 +94,7 @@ class FiscalDriveIntegrationService:
                 target=target,
                 receipt_payload=refund_receipt_payload,
                 cashbox_id=self._cashbox_id(payment=payment),
+                order=order,
             )
             response['refund_id'] = str(refund.id)
             response['payment_id'] = str(payment.id)
@@ -312,6 +314,7 @@ class FiscalDriveIntegrationService:
 
     def _build_sale_items(self, *, order) -> list[dict]:
         items = []
+        vat_percent = self._vat_percent(order=order)
         order_items = (
             order.items.exclude(status=OrderItem.Status.CANCELLED)
             .select_related('catalog_item', 'catalog_item__category')
@@ -323,6 +326,7 @@ class FiscalDriveIntegrationService:
                 'Amount': int(item.quantity or 0) * 1000,
                 'Price': self._money_to_fiscal(item.line_total),
             }
+            self._apply_vat(item_payload, amount=item.line_total, percent=vat_percent)
             spic = str(
                 getattr(item.catalog_item, 'mxik_code', '')
                 or getattr(getattr(item.catalog_item, 'category', None), 'mxik_code', '')
@@ -330,15 +334,132 @@ class FiscalDriveIntegrationService:
             ).strip()
             if spic:
                 item_payload['SPIC'] = spic
+            barcode = self._extract_barcode(item=item)
+            if barcode:
+                item_payload['Barcode'] = barcode
+            units = self._extract_units(item=item)
+            if units is not None:
+                item_payload['Units'] = units
+            labels = self._extract_labels(item=item)
+            if labels:
+                item_payload['Labels'] = labels
             items.append(item_payload)
 
         service_fee = max(int(order.total or 0) - int(order.subtotal or 0), 0)
         if service_fee:
-            items.append({'Name': 'Service fee', 'Amount': 1000, 'Price': self._money_to_fiscal(service_fee)})
+            service_payload = {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': self._money_to_fiscal(service_fee)}
+            self._apply_vat(service_payload, amount=service_fee, percent=vat_percent)
+            items.append(service_payload)
 
         if not items:
             raise FiscalDriveError('Order has no active items for fiscal receipt registration.')
         return items
+
+    def _vat_percent(self, *, order) -> Decimal:
+        if not bool(getattr(order.restaurant, 'vat_enabled', False)):
+            return Decimal('0')
+        try:
+            percent = Decimal(str(getattr(order.restaurant, 'vat_percent', 0) or 0))
+        except Exception:
+            return Decimal('0')
+        return max(percent, Decimal('0'))
+
+    def _apply_vat(self, item_payload: dict, *, amount, percent: Decimal):
+        if percent <= 0:
+            return
+        fiscal_amount = self._money_to_fiscal(amount)
+        item_payload['VATPercent'] = int(percent.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+        item_payload['VAT'] = int(
+            (Decimal(fiscal_amount) * percent / (Decimal('100') + percent)).quantize(
+                Decimal('1'),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+
+    def _extract_units(self, *, item) -> int | None:
+        for payload in [
+            getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
+            getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
+        ]:
+            value = self._find_first(
+                payload,
+                {
+                    'unit_code',
+                    'unitCode',
+                    'common_unit_code',
+                    'commonUnitCode',
+                    'units',
+                    'Units',
+                    'unit',
+                    'Unit',
+                    'package_code',
+                    'packageCode',
+                    'package_code_id',
+                    'packageCodeId',
+                },
+            )
+            if value in (None, ''):
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        return self._default_unit_code()
+
+    def _default_unit_code(self) -> int | None:
+        value = self.settings.get('default_unit_code') or self.settings.get('defaultUnitCode') or 796
+        try:
+            unit_code = int(value)
+        except (TypeError, ValueError):
+            return None
+        return unit_code if unit_code > 0 else None
+
+    def _extract_barcode(self, *, item) -> str:
+        for payload in [
+            getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
+            getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
+        ]:
+            value = self._find_first(
+                payload,
+                {'barcode', 'Barcode', 'bar_code', 'barCode', 'international_code', 'internationalCode', 'gtin', 'GTIN'},
+            )
+            barcode = ''.join(ch for ch in str(value or '') if ch.isdigit())
+            if barcode:
+                return barcode[:64]
+        return ''
+
+    def _extract_labels(self, *, item) -> list[str]:
+        labels: list[str] = []
+        for payload in [
+            getattr(item, 'metadata', None),
+            getattr(item, 'payload', None),
+            getattr(item, 'extra', None),
+            getattr(item, 'note', None),
+        ]:
+            value = self._find_first(
+                payload,
+                {'labels', 'Labels', 'marking_codes', 'markingCodes', 'marking_code', 'markingCode', 'label', 'Label'},
+            )
+            if isinstance(value, list):
+                labels.extend(str(entry).strip() for entry in value if str(entry or '').strip())
+            elif value:
+                labels.append(str(value).strip())
+        return list(dict.fromkeys(labels))[:300]
+
+    def _find_first(self, payload, keys: set[str]):
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if key in keys:
+                    return value
+                nested = self._find_first(value, keys)
+                if nested not in (None, ''):
+                    return nested
+        if isinstance(payload, list):
+            for item in payload:
+                nested = self._find_first(item, keys)
+                if nested not in (None, ''):
+                    return nested
+        return None
 
     def _received_amounts(self, *, payment) -> tuple[int, int]:
         amount = self._money_to_fiscal(payment.amount)
@@ -389,26 +510,30 @@ class FiscalDriveIntegrationService:
             'FiscalSign': fiscal_sign,
         }
 
-    def _register_receipt(self, *, client, target: FiscalDriveTarget, receipt_payload: dict, cashbox_id: str):
+    def _register_receipt(self, *, client, target: FiscalDriveTarget, receipt_payload: dict, cashbox_id: str, order):
         try:
             return self._register_receipt_once(
                 client=client,
                 target=target,
                 receipt_payload=receipt_payload,
                 cashbox_id=cashbox_id,
+                order=order,
             )
         except FiscalDriveError as error:
             if not self._is_datetime_sync_error(error):
                 raise
             self._sync_state(client=client, factory_id=target.factory_id)
+            memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            receipt_payload['Time'] = self._format_operation_time(self._next_operation_datetime(memory_info))
             return self._register_receipt_once(
                 client=client,
                 target=target,
                 receipt_payload=receipt_payload,
                 cashbox_id=cashbox_id,
+                order=order,
             )
 
-    def _register_receipt_once(self, *, client, target: FiscalDriveTarget, receipt_payload: dict, cashbox_id: str):
+    def _register_receipt_once(self, *, client, target: FiscalDriveTarget, receipt_payload: dict, cashbox_id: str, order):
         memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
         if self._should_open_z_report(client=client, factory_id=target.factory_id, memory_info=memory_info):
             open_time = self._format_operation_time(self._next_operation_datetime(memory_info))
@@ -435,7 +560,9 @@ class FiscalDriveIntegrationService:
         return {
             'ok': True,
             'provider': self.config.provider,
-            'mode': self.config.mode,
+            'restaurant_name': order.restaurant.name,
+            'restaurant_legal_name': order.restaurant.legal_name or order.restaurant.name,
+            'restaurant_address': order.restaurant.address,
             'endpoint_url': self._endpoint_url(),
             'factory_id': target.factory_id,
             'terminal_id': terminal_id,
@@ -455,8 +582,12 @@ class FiscalDriveIntegrationService:
 
     @staticmethod
     def _is_datetime_sync_error(error: FiscalDriveError) -> bool:
-        detail = str(error)
-        return 'DATETIME_SYNC_WITH_SERVER' in detail or '9091' in detail
+        detail = str(error).lower()
+        return (
+            'datetime_sync_with_server' in detail
+            or '9091' in detail
+            or 'receipt time is in the past' in detail
+        )
 
     def _sync_full_receipts(self, *, client, factory_id: str) -> dict:
         try:
@@ -475,7 +606,7 @@ def discover_fiscal_devices(*, endpoint_url: str | None = None, timeout_seconds:
     if timeout_seconds is not None:
         settings['timeout_seconds'] = timeout_seconds
 
-    config = SimpleNamespace(provider='soliq-ofd', mode='live', settings=settings)
+    config = SimpleNamespace(provider='fiscal-drive-service', settings=settings)
     service = FiscalDriveIntegrationService(config)
 
     with service._client() as client:

@@ -237,6 +237,9 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(payload['receipts'][0]['payload']['receiptNumber'], 'R-1')
 
     def test_hall_order_applies_restaurant_service_fee_percent(self):
+        self.restaurant.vat_enabled = True
+        self.restaurant.vat_percent = 12
+        self.restaurant.save(update_fields=['vat_enabled', 'vat_percent'])
         order = self.create_order(status=Order.Status.SUBMITTED)
 
         response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
@@ -246,4 +249,7 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(payload['subtotal'], 30000)
         self.assertEqual(payload['service_fee'], 3000)
         self.assertEqual(payload['service_fee_percent'], 10)
+        self.assertTrue(payload['vat_enabled'])
+        self.assertEqual(payload['vat_percent'], 12)
+        self.assertEqual(payload['vat_amount'], 3536)
         self.assertEqual(payload['total'], 33000)

@@ -16,7 +16,6 @@ from apps.platform.selectors.business_partners import (
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
-from apps.integrations.services import ensure_mock_configs
 from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
 from apps.platform.services import add_billing_period
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
@@ -267,42 +266,28 @@ def configure_entitlement(restaurant: Restaurant, tariff: Tariff) -> RestaurantE
     entitlement.save()
     entitlement.permissions.clear()
     entitlement.allowed_roles.clear()
-    ensure_mock_configs(restaurant)
     return entitlement
 
 
 def configure_demo_printer_integration(restaurant: Restaurant, *, use_live_windows_printer: bool) -> None:
-    if use_live_windows_printer:
-        IntegrationConfig.objects.filter(
-            restaurant=restaurant,
-            kind=IntegrationConfig.Kind.PRINTER,
-        ).exclude(provider='qz-tray').update(is_enabled=False)
-        IntegrationConfig.objects.update_or_create(
-            restaurant=restaurant,
-            kind=IntegrationConfig.Kind.PRINTER,
-            provider='qz-tray',
-            defaults={
-                'mode': IntegrationConfig.Mode.LIVE,
-                'is_enabled': True,
-                'settings': {
-                    'connection_type': 'system_printer',
-                    'printer_name': 'POS-80 USB',
-                    'paper_width_mm': 80,
-                    'cut_after_print': True,
-                    'encoding': 'cp437',
-                },
-            },
-        )
+    if not use_live_windows_printer:
         return
-
+    IntegrationConfig.objects.filter(
+        restaurant=restaurant,
+        kind=IntegrationConfig.Kind.PRINTER,
+    ).exclude(provider='windows-raw').update(is_enabled=False)
     IntegrationConfig.objects.update_or_create(
         restaurant=restaurant,
         kind=IntegrationConfig.Kind.PRINTER,
-        provider='mock-printer',
+        provider='windows-raw',
         defaults={
-            'mode': IntegrationConfig.Mode.MOCK,
             'is_enabled': True,
-            'settings': {},
+            'settings': {
+                'printer_name': 'POS-80 USB',
+                'paper_width_mm': 80,
+                'cut_after_print': True,
+                'encoding': 'cp437',
+            },
         },
     )
 

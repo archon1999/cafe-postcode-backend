@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from rest_framework import serializers
 
 from apps.billing.helpers import get_payment_model, get_receipt_model
@@ -75,6 +77,9 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True)
     service_fee = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
+    vat_enabled = serializers.SerializerMethodField()
+    vat_percent = serializers.SerializerMethodField()
+    vat_amount = serializers.SerializerMethodField()
 
     def include_billing(self) -> bool:
         return bool(self.context.get('include_billing'))
@@ -101,6 +106,31 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             return 0
         return getattr(obj.restaurant, 'service_fee_percent', 10) or 0
 
+    @staticmethod
+    def _included_vat_amount(*, amount: int, percent) -> int:
+        try:
+            rate = Decimal(str(percent or 0))
+        except Exception:
+            return 0
+        if amount <= 0 or rate <= 0:
+            return 0
+        included_vat = Decimal(amount) * rate / (Decimal('100') + rate)
+        return int(included_vat.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    @staticmethod
+    def get_vat_enabled(obj):
+        return bool(getattr(obj.restaurant, 'vat_enabled', False))
+
+    def get_vat_percent(self, obj):
+        if not self.get_vat_enabled(obj):
+            return 0
+        return getattr(obj.restaurant, 'vat_percent', 0) or 0
+
+    def get_vat_amount(self, obj):
+        if not self.get_vat_enabled(obj):
+            return 0
+        return self._included_vat_amount(amount=int(obj.total or 0), percent=self.get_vat_percent(obj))
+
     class Meta:
         model = Order
         fields = (
@@ -123,6 +153,9 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             'subtotal',
             'service_fee',
             'service_fee_percent',
+            'vat_enabled',
+            'vat_percent',
+            'vat_amount',
             'total',
             'closed_at',
             'items',

@@ -4,8 +4,6 @@ from apps.billing.api.pos.views.context import CashierContextView, CashShiftClos
 from apps.billing.api.pos.views.payments import PaymentCreateView, PaymentRefundView
 from apps.billing.api.pos.views.receipts import (
     OrderPrebillPrintView,
-    QzTrayCertificateView,
-    QzTraySignView,
     ReceiptPrintResultView,
     ReceiptReprintView,
 )
@@ -17,8 +15,6 @@ urlpatterns = [
     path('open-checks/', OpenCheckListView.as_view()),
     path('orders/<uuid:pk>/prebill/print/', OrderPrebillPrintView.as_view()),
     path('orders/<uuid:pk>/pay/', PaymentCreateView.as_view()),
-    path('qz/certificate/', QzTrayCertificateView.as_view()),
-    path('qz/sign/', QzTraySignView.as_view()),
     path('<uuid:pk>/refund/', PaymentRefundView.as_view()),
     path('receipts/<uuid:pk>/print-result/', ReceiptPrintResultView.as_view()),
     path('receipts/<uuid:pk>/reprint/', ReceiptReprintView.as_view()),

@@ -1,43 +1,95 @@
 from .config_resolver import IntegrationConfigResolverService
 from .fiscal_drive import FiscalDriveIntegrationService, SUPPORTED_FISCAL_PROVIDERS
-from .mock_fiscal import MockFiscalIntegrationService
+from .marta_softpos import MartaSoftPOSPaymentService, SUPPORTED_MARTA_PAYMENT_PROVIDERS
 from .mock_payment import MockPaymentIntegrationService
-from .mock_printer import MockPrinterIntegrationService
-from .qz_tray_printer import QzTrayPrinterIntegrationService
 from .windows_raw_printer import WindowsRawPrinterIntegrationService
 
 
-def ensure_mock_configs(restaurant):
-    resolver_service = IntegrationConfigResolverService()
-    resolver_service.ensure_mock_configs(restaurant=restaurant)
+PRINTER_NOT_CONFIGURED = 'PRINTER_NOT_CONFIGURED'
+PRINTER_UNAVAILABLE = 'PRINTER_UNAVAILABLE'
 
 
-def charge_payment(order, payment):
-    return MockPaymentIntegrationService().charge_payment(order=order, payment=payment)
+def charge_payment(order, payment, *, manual_card_override=False, manual_card_reason=''):
+    if payment.method == payment.Method.CASH:
+        return {
+            'ok': True,
+            'provider': 'cash',
+            'method': payment.method,
+            'reference': '',
+        }
+    if payment.method == payment.Method.CARD and manual_card_override:
+        return {
+            'ok': True,
+            'provider': 'manual-card',
+            'method': payment.method,
+            'reference': '',
+            'manual': True,
+            'reason': manual_card_reason or 'Cashier completed card payment manually after terminal failure.',
+        }
+    if payment.method == payment.Method.QR:
+        return {
+            'ok': True,
+            'provider': 'manual-qr',
+            'method': payment.method,
+            'reference': '',
+            'manual': True,
+            'detail': 'QR integration is not automated yet.',
+        }
+
+    try:
+        service, _config = _get_payment_service(order=order, payment=payment)
+        return service.charge_payment(order=order, payment=payment)
+    except Exception as error:
+        return {
+            'ok': False,
+            'provider': 'marta-softpos' if payment.method == payment.Method.CARD else 'mock-payment',
+            'method': payment.method,
+            'detail': str(error),
+        }
 
 
 def refund_payment(payment, reason=''):
     return MockPaymentIntegrationService().refund_payment(payment=payment, reason=reason)
 
 
+def _get_enabled_integration_config(*, restaurant, kind, provider=None):
+    queryset = IntegrationConfigResolverService().get_queryset(kind=kind, restaurant=restaurant)
+    if provider is not None:
+        queryset = queryset.filter(provider=provider)
+    return queryset.order_by('-created_at').first()
+
+
+def _get_payment_service(*, order, payment):
+    marta_config = _get_enabled_integration_config(
+        restaurant=order.restaurant,
+        kind='payment',
+        provider='marta-softpos',
+    )
+    if (
+        payment.method == payment.Method.CARD
+        and marta_config is not None
+        and str(marta_config.provider or '').strip() in SUPPORTED_MARTA_PAYMENT_PROVIDERS
+    ):
+        return MartaSoftPOSPaymentService(marta_config), marta_config
+
+    raise ValueError('MARTA SoftPOS payment integration is not configured.')
+
+
 def _get_fiscal_service(*, restaurant):
     config = IntegrationConfigResolverService().get_config(kind='fiscal', restaurant=restaurant)
-    if config is None or config.mode != 'live':
-        return MockFiscalIntegrationService(), config
+    if config is None:
+        raise ValueError('Fiscal integration is not configured.')
 
     provider = str(config.provider or '').strip()
     if provider in SUPPORTED_FISCAL_PROVIDERS:
         return FiscalDriveIntegrationService(config), config
-    if provider in {'mock', 'mock-fiscal'}:
-        return MockFiscalIntegrationService(), config
     raise ValueError(f"Unsupported fiscal provider '{provider}'.")
 
 
 def _serialize_fiscal_error(*, config, error):
     return {
         'ok': False,
-        'provider': getattr(config, 'provider', 'mock-fiscal') if config is not None else 'mock-fiscal',
-        'mode': getattr(config, 'mode', 'mock') if config is not None else 'mock',
+        'provider': getattr(config, 'provider', '') if config is not None else '',
         'detail': str(error),
     }
 
@@ -67,31 +119,40 @@ def issue_refund_receipt(order, payment, refund):
 
 
 def print_kitchen_ticket(ticket):
-    return MockPrinterIntegrationService().print_ticket(ticket=ticket)
+    return {'ok': False, 'detail': 'Kitchen ticket printer integration is not configured.'}
 
 
 def print_prebill(order, payload):
     config = IntegrationConfigResolverService().get_config(kind='printer', restaurant=order.restaurant)
-    if config is None or config.mode != 'live':
-        raise ValueError('Live printer integration is not configured.')
+    if config is None:
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail='Printer integration is not configured.',
+            provider='',
+        )
 
-    if config.provider == 'qz-tray':
-        service = QzTrayPrinterIntegrationService(config)
-    elif config.provider == 'windows-raw':
+    if config.provider == 'windows-raw':
         service = WindowsRawPrinterIntegrationService(config)
-    elif config.provider == 'mock-printer':
-        service = MockPrinterIntegrationService(config=config)
     else:
-        raise ValueError(f"Unsupported printer provider '{config.provider}'.")
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail=f"Unsupported printer provider '{config.provider}'.",
+            provider=config.provider,
+        )
 
     try:
         return service.print_prebill(order=order, payload=payload)
-    except ValueError:
-        raise
+    except ValueError as error:
+        return _client_print_fallback(code=PRINTER_NOT_CONFIGURED, detail=str(error), provider=config.provider)
     except Exception as error:
-        return {
-            'ok': False,
-            'provider': config.provider,
-            'mode': config.mode,
-            'detail': str(error),
-        }
+        return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
+
+
+def _client_print_fallback(*, code, detail, provider):
+    return {
+        'ok': False,
+        'provider': provider,
+        'code': code,
+        'detail': detail,
+        'requires_client_print': True,
+    }

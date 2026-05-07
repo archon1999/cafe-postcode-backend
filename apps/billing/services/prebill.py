@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from decimal import Decimal, ROUND_HALF_UP
 
 from apps.billing.helpers import get_receipt_model
 from apps.integrations.services import print_prebill
@@ -16,6 +17,17 @@ class OrderPrebillService:
     def _money(value) -> int:
         return int(value or 0)
 
+    @staticmethod
+    def _vat_amount(*, amount: int, percent) -> int:
+        try:
+            rate = Decimal(str(percent or 0))
+        except Exception:
+            return 0
+        if amount <= 0 or rate <= 0:
+            return 0
+        included_vat = Decimal(amount) * rate / (Decimal('100') + rate)
+        return int(included_vat.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
     def ensure_printable(self, *, order: Order):
         if order.status in {Order.Status.CLOSED, Order.Status.CANCELLED}:
             raise ValidationError({'detail': 'Closed or cancelled orders cannot be printed as prebill.'})
@@ -29,8 +41,15 @@ class OrderPrebillService:
         if order.table_session_id and order.table_session and order.table_session.table:
             table_label = f"Stol: {order.table_session.table.name}"
 
+        vat_enabled = bool(getattr(order.restaurant, 'vat_enabled', False))
+        vat_percent = getattr(order.restaurant, 'vat_percent', 0) or 0
+        total = self._money(order.total)
+
         return {
             'restaurant_name': order.restaurant.name,
+            'restaurant_legal_name': order.restaurant.legal_name,
+            'restaurant_address': order.restaurant.address,
+            'tax_number': order.restaurant.tax_number,
             'order_id': str(order.id),
             'order_number': order.order_number,
             'channel': order.channel,
@@ -48,8 +67,11 @@ class OrderPrebillService:
                 for item in active_items
             ],
             'subtotal': self._money(order.subtotal),
-            'service_fee': max(self._money(order.total) - self._money(order.subtotal), 0),
-            'total': self._money(order.total),
+            'service_fee': max(total - self._money(order.subtotal), 0),
+            'vat_enabled': vat_enabled,
+            'vat_percent': str(vat_percent),
+            'vat_amount': self._vat_amount(amount=total, percent=vat_percent) if vat_enabled else 0,
+            'total': total,
             'order_note': order.note or '',
         }
 

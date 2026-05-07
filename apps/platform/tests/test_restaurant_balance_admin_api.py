@@ -53,8 +53,7 @@ class RestaurantBalanceAdminApiTests(APITestCase):
         IntegrationConfig.objects.create(
             restaurant=cls.restaurant,
             kind=IntegrationConfig.Kind.FISCAL,
-            provider='soliq-ofd',
-            mode=IntegrationConfig.Mode.LIVE,
+            provider='fiscal-drive-service',
             is_enabled=True,
             settings={
                 'terminal_id': 'TERM-1',
@@ -111,7 +110,7 @@ class RestaurantBalanceAdminApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data['name'], self.restaurant.name)
         self.assertEqual({item['username'] for item in response.data['active_users']}, {'balance-admin', 'balance-waiter'})
-        self.assertEqual(response.data['soliq_integration']['provider'], 'soliq-ofd')
+        self.assertEqual(response.data['soliq_integration']['provider'], 'fiscal-drive-service')
         self.assertEqual(response.data['soliq_integration']['terminal_id'], 'TERM-1')
         self.assertEqual(response.data['balance']['current_balance'], '5000.00')
         self.assertEqual(response.data['balance']['next_charge_amount'], '1200.00')

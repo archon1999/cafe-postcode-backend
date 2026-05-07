@@ -6,4 +6,4 @@ from apps.integrations.models import IntegrationConfig
 class IntegrationConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = IntegrationConfig
-        fields = ('id', 'kind', 'provider', 'mode', 'is_enabled', 'settings')
+        fields = ('id', 'kind', 'provider', 'is_enabled', 'settings')

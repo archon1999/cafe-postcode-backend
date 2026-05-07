@@ -6,7 +6,6 @@ from rest_framework.views import APIView
 from apps.billing.helpers import get_receipt_model
 from apps.billing.serializers import ReceiptSerializer
 from apps.billing.services import CashShiftService, OrderPrebillService, PaymentRefundService
-from apps.integrations.services.qz_tray_security import QzTraySecurityService
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
 from common.api.permissions import (
@@ -83,34 +82,6 @@ class ReceiptPrintResultView(APIView):
         )
 
 
-class QzTrayCertificateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
-    service_class = QzTraySecurityService
-
-    def get(self, request):
-        try:
-            certificate = self.service_class().certificate()
-        except ValueError as error:
-            raise ValidationError({'detail': str(error)}) from error
-        return Response({'certificate': certificate})
-
-
-class QzTraySignView(APIView):
-    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
-    service_class = QzTraySecurityService
-
-    def post(self, request):
-        payload = request.data.get('request') or request.data.get('payload') or request.data.get('to_sign') or ''
-        if not isinstance(payload, str) or not payload:
-            raise ValidationError({'detail': 'QZ Tray signature payload is required.'})
-
-        try:
-            signature = self.service_class().sign(payload)
-        except ValueError as error:
-            raise ValidationError({'detail': str(error)}) from error
-        return Response({'signature': signature})
-
-
 class ReceiptReprintView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
@@ -128,8 +99,6 @@ class ReceiptReprintView(APIView):
 
 __all__ = [
     'OrderPrebillPrintView',
-    'QzTrayCertificateView',
-    'QzTraySignView',
     'ReceiptPrintResultView',
     'ReceiptReprintView',
 ]

@@ -17,7 +17,6 @@ class MockFiscalIntegrationService:
             'ok': True,
             'provider': config.provider if config else 'mock-fiscal',
             'receipt_number': f'RCPT-{order.order_number}',
-            'mode': config.mode if config else IntegrationConfig.Mode.MOCK,
             'issued_at': timezone.now().isoformat(),
         }
 

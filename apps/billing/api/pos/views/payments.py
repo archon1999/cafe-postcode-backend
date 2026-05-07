@@ -27,7 +27,7 @@ class PaymentCreateView(APIView):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         order = generics.get_object_or_404(
-            Order.objects.select_related('table_session__table'),
+            Order.objects.select_related('restaurant', 'table_session__table'),
             pk=pk,
             restaurant=restaurant,
         )
@@ -40,7 +40,13 @@ class PaymentCreateView(APIView):
         )
         payment = result['payment']
         if payment.status == Payment.Status.FAILED:
-            return Response({'payment': PaymentSerializer(payment).data}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {
+                    'detail': result.get('detail') or 'Payment charge failed.',
+                    'payment': PaymentSerializer(payment).data,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         return Response(
             {

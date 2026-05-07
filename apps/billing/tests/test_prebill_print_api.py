@@ -30,7 +30,6 @@ class PrebillPrintApiTests(PosAPITestCase):
             kind=IntegrationConfig.Kind.PRINTER,
             provider='windows-raw',
             defaults={
-                'mode': IntegrationConfig.Mode.LIVE,
                 'is_enabled': True,
                 'settings': {
                     'printer_name': printer_name,
@@ -38,29 +37,6 @@ class PrebillPrintApiTests(PosAPITestCase):
                     'cut_after_print': True,
                     'encoding': 'cp437',
                 },
-            },
-        )
-
-    def configure_qz_printer(self, *, connection_type='system_printer', printer_name='POS-80 USB', host=''):
-        settings = {
-            'connection_type': connection_type,
-            'paper_width_mm': 80,
-            'cut_after_print': True,
-            'encoding': 'cp437',
-        }
-        if connection_type == 'socket':
-            settings.update({'host': host, 'port': 9100})
-        else:
-            settings['printer_name'] = printer_name
-
-        IntegrationConfig.objects.update_or_create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PRINTER,
-            provider='qz-tray',
-            defaults={
-                'mode': IntegrationConfig.Mode.LIVE,
-                'is_enabled': True,
-                'settings': settings,
             },
         )
 
@@ -72,7 +48,6 @@ class PrebillPrintApiTests(PosAPITestCase):
             return_value={
                 'ok': True,
                 'provider': 'windows-raw',
-                'mode': 'live',
                 'printed_at': '2026-04-08T16:00:00+05:00',
             },
         ) as print_mock:
@@ -88,32 +63,29 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(receipt.status, Receipt.Status.SENT)
         self.assertEqual(receipt.payload['snapshot']['order_note'], 'Mehmonlar kutmoqda')
 
-    def test_qz_tray_prebill_returns_client_print_job(self):
-        self.configure_qz_printer()
+    def test_missing_printer_config_returns_client_print_fallback(self):
+        IntegrationConfig.objects.filter(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PRINTER).delete()
 
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data['receipt']['kind'], Receipt.Kind.PREBILL)
         self.assertEqual(response.data['receipt']['status'], Receipt.Status.CREATED)
-        self.assertEqual(response.data['result']['provider'], 'qz-tray')
+        self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')
         self.assertTrue(response.data['result']['requires_client_print'])
-        self.assertEqual(response.data['result']['print_job']['config']['printer_name'], 'POS-80 USB')
-        self.assertEqual(response.data['result']['print_job']['flavor'], 'hex')
-        self.assertIn('data', response.data['result']['print_job'])
 
         receipt = Receipt.objects.get(pk=response.data['receipt']['id'])
         self.assertEqual(receipt.status, Receipt.Status.CREATED)
-        self.assertEqual(receipt.payload['snapshot']['order_number'], response.data['result']['order_number'])
+        self.assertEqual(receipt.payload['snapshot']['order_number'], self.order_data['order_number'])
 
-    def test_qz_tray_print_result_callback_marks_receipt_sent(self):
-        self.configure_qz_printer()
+    def test_client_print_result_callback_marks_receipt_sent(self):
+        IntegrationConfig.objects.filter(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PRINTER).delete()
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
         receipt_id = response.data['receipt']['id']
 
         callback = self.client.post(
             f'/api/v1/pos/billing/receipts/{receipt_id}/print-result/',
-            {'result': {'ok': True, 'provider': 'qz-tray', 'detail': 'printed by QZ Tray'}},
+            {'result': {'ok': True, 'provider': 'browser-print', 'detail': 'printed by browser'}},
             format='json',
         )
 
@@ -121,7 +93,7 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(callback.data['receipt']['status'], Receipt.Status.SENT)
         receipt = Receipt.objects.get(pk=receipt_id)
         self.assertEqual(receipt.status, Receipt.Status.SENT)
-        self.assertEqual(receipt.payload['client_result']['detail'], 'printed by QZ Tray')
+        self.assertEqual(receipt.payload['client_result']['detail'], 'printed by browser')
 
     def test_rejects_order_without_items(self):
         self.configure_live_printer()
@@ -151,26 +123,19 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', response.data)
 
-    def test_requires_live_printer_configuration(self):
+    def test_requires_live_printer_configuration_falls_back_to_client_print(self):
         IntegrationConfig.objects.filter(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PRINTER).delete()
 
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], 'Live printer integration is not configured.')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')
+        self.assertTrue(response.data['result']['requires_client_print'])
 
-    def test_requires_printer_name_in_live_configuration(self):
+    def test_requires_printer_name_in_live_configuration_falls_back_to_client_print(self):
         self.configure_live_printer(printer_name='')
 
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], 'Printer name is not configured for the live printer integration.')
-
-    def test_qz_tray_requires_printer_name_for_system_printer(self):
-        self.configure_qz_printer(printer_name='')
-
-        response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], 'QZ Tray printer name is not configured.')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')

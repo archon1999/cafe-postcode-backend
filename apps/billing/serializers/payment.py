@@ -10,6 +10,8 @@ Payment = get_payment_model()
 
 class PaymentSerializer(serializers.ModelSerializer):
     refunds = PaymentRefundSerializer(many=True, read_only=True)
+    manual_card_override = serializers.BooleanField(required=False, write_only=True, default=False)
+    manual_card_reason = serializers.CharField(required=False, write_only=True, allow_blank=True, default='')
 
     def validate_method(self, value):
         if value not in {Payment.Method.CASH, Payment.Method.CARD, Payment.Method.QR}:
@@ -36,6 +38,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             'provider_payload',
             'paid_at',
             'refunds',
+            'manual_card_override',
+            'manual_card_reason',
             'created_at',
         )
         read_only_fields = ('order', 'cash_desk', 'cash_shift', 'received_by', 'status', 'external_ref', 'provider_payload', 'paid_at')

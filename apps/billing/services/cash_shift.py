@@ -31,7 +31,8 @@ class CashShiftService:
             'restaurant_fiscal_profile': {
                 'legal_name': restaurant.legal_name,
                 'tax_number': restaurant.tax_number,
-                'vat_enabled': False,
+                'vat_enabled': bool(getattr(restaurant, 'vat_enabled', False)),
+                'vat_percent': getattr(restaurant, 'vat_percent', 0) or 0,
             },
             'available_cash_desks': self.get_available_cash_desks(restaurant=restaurant),
             'current_shift': active_shift,

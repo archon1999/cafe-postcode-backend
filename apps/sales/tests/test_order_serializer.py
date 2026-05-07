@@ -6,6 +6,9 @@ from apps.sales.tests.support.pos_api import PosTestCase
 
 class OrderSerializerTests(PosTestCase):
     def test_serializer_includes_service_fee_percent_payments_and_receipts(self):
+        self.restaurant.vat_enabled = True
+        self.restaurant.vat_percent = 12
+        self.restaurant.save(update_fields=['vat_enabled', 'vat_percent'])
         order = Order.objects.create(
             restaurant=self.restaurant,
             branch=self.branch,
@@ -48,6 +51,9 @@ class OrderSerializerTests(PosTestCase):
 
         self.assertEqual(data['service_fee'], 3000)
         self.assertEqual(data['service_fee_percent'], 10)
+        self.assertTrue(data['vat_enabled'])
+        self.assertEqual(data['vat_percent'], 12)
+        self.assertEqual(data['vat_amount'], 3536)
         self.assertEqual(data['display_name'], 'VIP stol')
         self.assertEqual(data['channel'], Order.Channel.HALL)
         self.assertEqual(len(data['payments']), 1)

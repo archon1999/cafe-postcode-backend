@@ -9,10 +9,6 @@ class IntegrationConfig(BaseModel):
         PAYMENT = 'payment', 'Payment'
         PRINTER = 'printer', 'Printer'
 
-    class Mode(models.TextChoices):
-        MOCK = 'mock', 'Mock'
-        LIVE = 'live', 'Live'
-
     restaurant = models.ForeignKey(
         'restaurants.Restaurant',
         on_delete=models.CASCADE,
@@ -20,7 +16,6 @@ class IntegrationConfig(BaseModel):
     )
     kind = models.CharField(max_length=20, choices=Kind.choices)
     provider = models.CharField(max_length=120)
-    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.MOCK)
     is_enabled = models.BooleanField(default=True)
     settings = models.JSONField(default=dict, blank=True)
 

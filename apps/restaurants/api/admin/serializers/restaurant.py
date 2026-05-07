@@ -68,6 +68,8 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'faktura_payload',
             'currency',
             'auth_code',
+            'vat_enabled',
+            'vat_percent',
             'is_active',
             'activated_at',
             'deactivated_at',
@@ -196,7 +198,6 @@ class RestaurantActiveUserSerializer(serializers.ModelSerializer):
 class RestaurantSoliqIntegrationSerializer(serializers.Serializer):
     configured = serializers.BooleanField()
     is_enabled = serializers.BooleanField()
-    mode = serializers.CharField()
     provider = serializers.CharField()
     terminal_id = serializers.CharField(allow_null=True)
     cashbox_id = serializers.CharField(allow_null=True)
@@ -242,7 +243,7 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             IntegrationConfig.objects.filter(
                 restaurant=instance,
                 kind=IntegrationConfig.Kind.FISCAL,
-                provider__in=('soliq-ofd', 'fiscal-drive-service'),
+                provider='fiscal-drive-service',
             )
             .order_by('-created_at')
             .first()
@@ -253,7 +254,6 @@ class RestaurantDetailSerializer(RestaurantSerializer):
         payload = {
             'configured': True,
             'is_enabled': config.is_enabled,
-            'mode': config.mode,
             'provider': config.provider,
             'terminal_id': _read_setting(config.settings, 'terminal_id', 'terminalId'),
             'cashbox_id': _read_setting(config.settings, 'cashbox_id', 'cashboxId'),

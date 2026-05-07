@@ -827,7 +827,6 @@ class AdminApiTests(APITestCase):
             {
                 'kind': IntegrationConfig.Kind.FISCAL,
                 'provider': 'soliq-service',
-                'mode': IntegrationConfig.Mode.MOCK,
                 'is_enabled': True,
                 'settings': {'terminalId': 'T-1'},
             },

@@ -28,6 +28,7 @@ class RestaurantFiscalProfileSerializer(serializers.Serializer):
     legal_name = serializers.CharField()
     tax_number = serializers.CharField()
     vat_enabled = serializers.BooleanField()
+    vat_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
 
 
 class CashierContextSerializer(serializers.Serializer):
