@@ -2,10 +2,12 @@ from rest_framework import serializers
 
 from apps.catalog.models import CatalogItem
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
+from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
 
 class PosCatalogItemSerializer(serializers.ModelSerializer):
-    prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
+    prep_station = serializers.SerializerMethodField()
+    prep_station_name = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     requires_marking = serializers.SerializerMethodField()
     marking_gtin = serializers.SerializerMethodField()
@@ -24,6 +26,16 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_marking_gtin(obj):
         return item_marking_gtin(obj)
+
+    @staticmethod
+    def get_prep_station(obj):
+        station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
+        return str(station.id) if station is not None else None
+
+    @staticmethod
+    def get_prep_station_name(obj):
+        station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
+        return station.name if station is not None else ''
 
     class Meta:
         model = CatalogItem

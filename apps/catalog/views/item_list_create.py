@@ -12,7 +12,7 @@ class ItemListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
-        queryset = CatalogItem.objects.all().select_related('category', 'prep_station')
+        queryset = CatalogItem.objects.all().select_related('category__prep_station', 'prep_station')
         queryset = filter_catalog_queryset_by_scope(queryset, self.request)
         return ItemListFilters.from_request(self.request).apply(queryset)
 

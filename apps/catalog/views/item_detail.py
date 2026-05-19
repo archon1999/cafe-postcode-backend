@@ -12,6 +12,6 @@ class ItemDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         return filter_catalog_queryset_by_scope(CatalogItem.objects.all(), self.request).select_related(
-            'category',
+            'category__prep_station',
             'prep_station',
         )

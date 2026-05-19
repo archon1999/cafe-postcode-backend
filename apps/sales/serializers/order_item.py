@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.catalog.utils.marking import item_requires_marking
 from apps.sales.helpers import get_order_item_model
+from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
 OrderItem = get_order_item_model()
 
@@ -69,6 +70,13 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         catalog_item = validated_data['catalog_item']
+        catalog_item = type(catalog_item).objects.select_related('category__prep_station', 'prep_station').get(
+            pk=catalog_item.pk
+        )
         validated_data['unit_price'] = int(catalog_item.price or 0)
-        validated_data['prep_station'] = catalog_item.prep_station
+        order = validated_data.get('order')
+        validated_data['prep_station'] = resolve_order_item_prep_station(
+            catalog_item=catalog_item,
+            restaurant=getattr(order, 'restaurant', None),
+        )
         return super().create(validated_data)

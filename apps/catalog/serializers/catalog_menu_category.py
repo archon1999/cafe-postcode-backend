@@ -9,10 +9,11 @@ from .pos_catalog_item import PosCatalogItemSerializer
 class CatalogMenuCategorySerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
     cash_payment_forbidden = serializers.SerializerMethodField()
+    prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
 
     class Meta:
         model = CatalogCategory
-        fields = ('id', 'name', 'cash_payment_forbidden', 'sort_order', 'items')
+        fields = ('id', 'name', 'prep_station', 'prep_station_name', 'cash_payment_forbidden', 'sort_order', 'items')
 
     def get_cash_payment_forbidden(self, obj):
         return is_catalog_category_cash_sale_forbidden(obj)
@@ -22,5 +23,8 @@ class CatalogMenuCategorySerializer(serializers.ModelSerializer):
         if prefetched_items is not None:
             return PosCatalogItemSerializer(prefetched_items, many=True).data
 
-        item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related('prep_station')
+        item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related(
+            'category__prep_station',
+            'prep_station',
+        )
         return PosCatalogItemSerializer(item_queryset, many=True).data

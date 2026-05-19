@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from apps.integrations.services import print_kitchen_ticket
 from apps.sales.helpers import get_order_item_model, get_order_model
+from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
 from ..models import KitchenTicket
 
@@ -29,6 +30,16 @@ class OrderTicketSyncService:
                 logger.info('Kitchen tickets cleared for order', extra={'order_id': str(order.pk), 'deleted_count': deleted_count})
             return
 
+        item_queryset = order.items.exclude(status=OrderItem.Status.CANCELLED).select_related('prep_station')
+        for item in item_queryset.filter(prep_station__isnull=True).select_related(
+            'catalog_item__category__prep_station',
+            'catalog_item__prep_station',
+        ):
+            station = resolve_order_item_prep_station(catalog_item=item.catalog_item, restaurant=order.restaurant)
+            if station is None:
+                continue
+            item.prep_station = station
+            item.save(update_fields=['prep_station', 'updated_at'])
         item_queryset = order.items.exclude(status=OrderItem.Status.CANCELLED).select_related('prep_station')
         station_ids = {item.prep_station_id for item in item_queryset if item.prep_station_id}
 

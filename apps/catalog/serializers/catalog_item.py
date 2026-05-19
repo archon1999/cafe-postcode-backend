@@ -4,8 +4,9 @@ from django.utils.translation import gettext_lazy as _
 from apps.catalog.models import CatalogItem
 from apps.catalog.models import CatalogCategory
 from apps.catalog.serializers.mxik import CatalogImageSerializerMixin, MxikCodeValidationMixin
-from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
+from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking, payload_requires_marking
 from apps.restaurants.helpers import get_prep_station_model
+from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
 PrepStation = get_prep_station_model()
@@ -13,7 +14,7 @@ PrepStation = get_prep_station_model()
 
 class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
-    prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
+    prep_station_name = serializers.SerializerMethodField()
     requires_marking = serializers.BooleanField(required=False)
     marking_gtin = serializers.CharField(required=False, allow_blank=True)
 
@@ -89,8 +90,7 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
         payload = attrs.get('mxik_payload')
         if payload is None and self.instance is not None:
             payload = getattr(self.instance, 'mxik_payload', None)
-        if 'requires_marking' not in attrs and payload is not None:
-            attrs['requires_marking'] = item_requires_marking(type('PayloadItem', (), {'mxik_payload': payload, 'requires_marking': False})())
+        attrs['requires_marking'] = payload_requires_marking(payload)
         if not attrs.get('marking_gtin'):
             payload_item = type(
                 'PayloadItem',
@@ -110,3 +110,7 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
         data['requires_marking'] = item_requires_marking(instance)
         data['marking_gtin'] = item_marking_gtin(instance)
         return data
+
+    def get_prep_station_name(self, obj):
+        station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
+        return station.name if station is not None else ''

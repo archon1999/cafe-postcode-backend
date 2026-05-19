@@ -11,4 +11,4 @@ class CategoryDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
-        return filter_catalog_queryset_by_scope(CatalogCategory.objects.all(), self.request)
+        return filter_catalog_queryset_by_scope(CatalogCategory.objects.select_related('prep_station'), self.request)

@@ -10,6 +10,7 @@ from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import PosCatalogItemSerializer
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.sales.helpers import get_order_item_marking_model, get_order_item_model
+from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
 OrderItem = get_order_item_model()
 OrderItemMarking = get_order_item_marking_model()
@@ -118,7 +119,11 @@ class OrderMarkingScanService:
             raise ValidationError({'detail': _('This order cannot be changed.')})
 
         parsed = parse_marking_code(raw_code)
-        catalog_item = find_catalog_item_by_marking(restaurant=order.restaurant, parsed=parsed)
+        catalog_item = (
+            CatalogItem.objects.select_related('category__prep_station', 'prep_station')
+            .filter(pk=find_catalog_item_by_marking(restaurant=order.restaurant, parsed=parsed).pk)
+            .get()
+        )
         normalized_mode = str(mode or 'add').strip().lower()
 
         if normalized_mode == 'remove':
@@ -144,7 +149,7 @@ class OrderMarkingScanService:
                 quantity=1,
                 unit_price=int(catalog_item.price or 0),
                 line_total=int(catalog_item.price or 0),
-                prep_station=catalog_item.prep_station,
+                prep_station=resolve_order_item_prep_station(catalog_item=catalog_item, restaurant=order.restaurant),
             )
 
         marking = None

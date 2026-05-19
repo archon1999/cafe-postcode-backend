@@ -35,6 +35,13 @@ class CatalogCategory(BaseModel):
         storage=CatalogCategoryImageStorage,
         upload_to=catalog_category_image_upload_to,
     )
+    prep_station = models.ForeignKey(
+        'restaurants.PrepStation',
+        on_delete=models.SET_NULL,
+        related_name='catalog_categories',
+        null=True,
+        blank=True,
+    )
     cash_payment_forbidden = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)

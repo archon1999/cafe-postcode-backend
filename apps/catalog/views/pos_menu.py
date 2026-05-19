@@ -13,7 +13,10 @@ class PosMenuView(generics.ListAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        item_queryset = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related('prep_station')
-        return CatalogCategory.objects.filter(restaurant=restaurant, is_active=True).prefetch_related(
+        item_queryset = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related(
+            'category__prep_station',
+            'prep_station',
+        )
+        return CatalogCategory.objects.filter(restaurant=restaurant, is_active=True).select_related('prep_station').prefetch_related(
             Prefetch('items', queryset=item_queryset, to_attr='active_menu_items')
         )

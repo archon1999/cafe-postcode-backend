@@ -35,6 +35,21 @@ class OrderTicketSyncServiceTests(PosTestCase):
         ticket = KitchenTicket.objects.get(order=self.order, prep_station=self.prep_station)
         self.assertEqual(ticket.status, KitchenTicket.Status.NEW)
 
+    def test_sync_uses_category_prep_station_for_items_without_product_station(self):
+        self.category.prep_station = self.prep_station
+        self.category.save(update_fields=['prep_station', 'updated_at'])
+        self.catalog_item.prep_station = None
+        self.catalog_item.save(update_fields=['prep_station', 'updated_at'])
+        self.order_item.prep_station = None
+        self.order_item.save(update_fields=['prep_station', 'updated_at'])
+
+        self.service.sync(order=self.order)
+
+        self.order_item.refresh_from_db()
+        ticket = KitchenTicket.objects.get(order=self.order, prep_station=self.prep_station)
+        self.assertEqual(self.order_item.prep_station, self.prep_station)
+        self.assertEqual(ticket.status, KitchenTicket.Status.NEW)
+
     def test_sync_marks_order_ready_when_all_active_items_done(self):
         self.order_item.status = OrderItem.Status.DONE
         self.order_item.save(update_fields=['status', 'updated_at'])
