@@ -1,5 +1,6 @@
 from django.db import transaction
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import ValidationError
 
 from apps.billing.helpers import get_payment_model, get_payment_refund_model, get_receipt_model
@@ -43,6 +44,11 @@ class PaymentRefundService:
             status=Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED,
             provider=receipt_result.get('provider', 'mock'),
             payload=receipt_result,
+            fiscal_requested_at=self._parse_payload_datetime(receipt_result.get('fiscal_requested_at')) or timezone.now(),
+            fiscal_registered_at=self._parse_payload_datetime(receipt_result.get('fiscal_registered_at')) if receipt_result.get('ok') else None,
+            original_paid_at=payment.paid_at,
+            fiscal_error_code=str(receipt_result.get('code') or receipt_result.get('error_code') or ''),
+            fiscal_error_message='' if receipt_result.get('ok') else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         )
         return {'refund': refund, 'receipt': receipt}
 
@@ -60,3 +66,14 @@ class PaymentRefundService:
             receipt.payload = {**receipt.payload, 'last_reprint': result}
             receipt.save(update_fields=['reprint_count', 'last_reprinted_at', 'payload', 'updated_at'])
         return result
+
+    @staticmethod
+    def _parse_payload_datetime(value):
+        if not value:
+            return None
+        parsed = parse_datetime(str(value))
+        if parsed is None:
+            return None
+        if timezone.is_naive(parsed):
+            parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+        return parsed

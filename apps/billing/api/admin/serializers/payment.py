@@ -33,6 +33,7 @@ class AdminPaymentSerializer(serializers.ModelSerializer):
             'method',
             'amount',
             'status',
+            'register_fiscal',
             'external_ref',
             'provider_payload',
             'paid_at',

@@ -17,6 +17,9 @@ POS_OPEN_CHECKS_VIEW_PERMISSION = 'pos_open_checks.view'
 POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION = 'pos_payment_order_items.create'
 POS_PAYMENT_ORDER_ITEMS_DELETE_PERMISSION = 'pos_payment_order_items.delete'
 POS_PAYMENTS_CREATE_PERMISSION = 'pos_payments.create'
+POS_CASH_SHIFT_MANAGE_PERMISSION = 'pos_cash_shift.manage'
+POS_FISCAL_RECEIPTS_SKIP_PERMISSION = 'pos_fiscal_receipts.skip'
+POS_FISCAL_SHIFT_MANAGE_PERMISSION = 'pos_fiscal_shift.manage'
 POS_TABLE_RESERVATIONS_MANAGE_PERMISSION = 'pos_table_reservations.manage'
 
 

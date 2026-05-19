@@ -10,7 +10,7 @@ class CatalogMenuCategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CatalogCategory
-        fields = ('id', 'name', 'sort_order', 'items')
+        fields = ('id', 'name', 'cash_payment_forbidden', 'sort_order', 'items')
 
     def get_items(self, obj):
         prefetched_items = getattr(obj, 'active_menu_items', None)

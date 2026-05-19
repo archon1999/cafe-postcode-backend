@@ -586,7 +586,7 @@ class OwnerDashboardBaseService:
                 'reprint_count': self.get_safe_number(row.get('reprint_count')),
                 'cash_desk_id': row.get('cash_desk_id'),
                 'cash_desk_name': row.get('cash_desk_name'),
-                'cashier_id': row.get('cashier_id'),
+                'cashier_id': row.get('cashier_id') or row.get('opened_by_id'),
                 'cashier_name': row.get('cashier_name'),
                 'gross_total': cash_total + card_total + qr_total,
                 'is_difference': bool(self.get_safe_number(row.get('cash_difference_amount'))),

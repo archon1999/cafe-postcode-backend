@@ -141,13 +141,15 @@ class PaymentCreateApiTests(APITestCase):
 
     @patch('apps.integrations.services.MartaSoftPOSPaymentService')
     def test_card_payment_uses_marta_and_closes_order_on_success(self, service_class):
-        IntegrationConfig.objects.create(
+        marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
             provider='marta-softpos',
             is_enabled=True,
             settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
         )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
         service_class.return_value.charge_payment.return_value = {
             'ok': True,
             'provider': 'marta-softpos',
@@ -170,7 +172,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(payment.provider_payload['params']['trxId'], 'trx-1')
 
     @patch('apps.integrations.services.MartaSoftPOSPaymentService')
-    def test_card_payment_returns_detail_on_marta_not_ready(self, service_class):
+    def test_card_payment_requires_marta_config_on_active_cash_desk(self, service_class):
         IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -178,6 +180,28 @@ class PaymentCreateApiTests(APITestCase):
             is_enabled=True,
             settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
         )
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': 30000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('active cash desk', response.data['detail'])
+        service_class.assert_not_called()
+
+    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
+    def test_card_payment_returns_detail_on_marta_not_ready(self, service_class):
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
         service_class.return_value.charge_payment.return_value = {
             'ok': False,
             'provider': 'marta-softpos',

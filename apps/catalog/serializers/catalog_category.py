@@ -23,6 +23,7 @@ class CatalogCategorySerializer(CatalogCategorySerializerMixin, MxikCodeValidati
             'image_file',
             'clear_image',
             'restore_mxik_image',
+            'cash_payment_forbidden',
             'sort_order',
             'is_active',
         )

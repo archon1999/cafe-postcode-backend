@@ -22,6 +22,7 @@ class PosTestDataMixin:
         'pos_payment_order_items.create',
         'pos_payment_order_items.delete',
         'pos_payments.create',
+        'pos_cash_shift.manage',
         'pos_table_reservations.manage',
         'reports.view',
     )

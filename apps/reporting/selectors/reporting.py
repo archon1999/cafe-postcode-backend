@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import date as date_cls, datetime
 
 from django.db.models import Count, F, QuerySet, Sum
+from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 
 from apps.billing.helpers import get_cash_shift_model, get_payment_model
@@ -217,8 +218,9 @@ def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         'receipt_count',
         'reprint_count',
         'cash_desk_id',
-        cashier_id=F('opened_by__id'),
-        cashier_name=F('opened_by__full_name'),
+        'cashier_id',
+        'opened_by_id',
+        cashier_name=Coalesce(F('cashier__full_name'), F('opened_by__full_name')),
         cash_desk_name=F('cash_desk__name'),
     )
 

@@ -20,6 +20,11 @@ class Receipt(BaseModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED)
     provider = models.CharField(max_length=120, blank=True)
     payload = models.JSONField(default=dict, blank=True)
+    fiscal_requested_at = models.DateTimeField(null=True, blank=True)
+    fiscal_registered_at = models.DateTimeField(null=True, blank=True)
+    original_paid_at = models.DateTimeField(null=True, blank=True)
+    fiscal_error_code = models.CharField(max_length=32, blank=True)
+    fiscal_error_message = models.TextField(blank=True)
     reprint_count = models.PositiveIntegerField(default=0)
     last_reprinted_at = models.DateTimeField(null=True, blank=True)
 

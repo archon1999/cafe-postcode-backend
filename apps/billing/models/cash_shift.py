@@ -11,6 +11,13 @@ class CashShift(BaseModel):
         CLOSED = 'closed', 'Closed'
 
     cash_desk = models.ForeignKey('restaurants.CashDesk', on_delete=models.CASCADE, related_name='cash_shifts')
+    cashier = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='cashier_cash_shifts',
+        null=True,
+        blank=True,
+    )
     opened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

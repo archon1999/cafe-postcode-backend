@@ -28,6 +28,7 @@ class MartaSoftPOSPaymentService:
             'pid': pid,
             'method': payment.method,
             'processed_at': timezone.now().isoformat(),
+            'debug': {},
         }
         if not endpoint_url:
             return self._failure(
@@ -37,8 +38,13 @@ class MartaSoftPOSPaymentService:
             )
 
         with self._client() as client:
+            health_request = self._request_snapshot(endpoint_url=endpoint_url, path='/health')
             health = self._get(client=client, path='/health')
             provider_payload['health'] = health
+            provider_payload['debug']['health'] = {
+                'request': health_request,
+                'response': self._response_snapshot(health),
+            }
             if not self._is_ready(health):
                 return self._failure(
                     payload=provider_payload,
@@ -49,16 +55,25 @@ class MartaSoftPOSPaymentService:
                     ),
                 )
 
+            transaction_params = {
+                'type': 'PURCHASE',
+                'amount': int(payment.amount or 0) * amount_multiplier,
+                'pid': pid,
+                'tin': self._tax_number(order=order),
+            }
+            provider_payload['debug']['transaction'] = {
+                'request': self._request_snapshot(
+                    endpoint_url=endpoint_url,
+                    path='/transaction',
+                    params=transaction_params,
+                ),
+            }
             transaction = self._get(
                 client=client,
                 path='/transaction',
-                params={
-                    'type': 'PAYMENT',
-                    'amount': int(payment.amount or 0) * amount_multiplier,
-                    'pid': pid,
-                    'tin': self._tax_number(order=order),
-                },
+                params=transaction_params,
             )
+            provider_payload['debug']['transaction']['response'] = self._response_snapshot(transaction)
 
         params = dict(transaction.get('params') or {})
         status = str(transaction.get('status') or '').strip().upper()
@@ -135,10 +150,11 @@ class MartaSoftPOSPaymentService:
         return pid or 1
 
     def _get(self, *, client, path: str, params: dict | None = None):
+        cleaned_params = {key: value for key, value in (params or {}).items() if value not in (None, '')}
         try:
             response = client.get(
                 path,
-                params={key: value for key, value in (params or {}).items() if value not in (None, '')},
+                params=cleaned_params,
             )
         except httpx.TimeoutException as error:
             raise MartaSoftPOSRequestError('MARTA SoftPOS request timed out.') from error
@@ -154,6 +170,25 @@ class MartaSoftPOSPaymentService:
             payload.setdefault('http_status', response.status_code)
             return payload
         raise MartaSoftPOSRequestError('MARTA SoftPOS returned an invalid response payload.')
+
+    def _request_snapshot(self, *, endpoint_url: str, path: str, params: dict | None = None) -> dict:
+        cleaned_params = {key: value for key, value in (params or {}).items() if value not in (None, '')}
+        query = ''
+        if cleaned_params:
+            query = '?' + '&'.join(f'{key}={value}' for key, value in cleaned_params.items())
+        return {
+            'method': 'GET',
+            'url': f'{endpoint_url}{path}{query}',
+            'path': path,
+            'params': cleaned_params,
+        }
+
+    @staticmethod
+    def _response_snapshot(payload: dict) -> dict:
+        return {
+            'http_status': payload.get('http_status'),
+            'body': payload,
+        }
 
     def _is_ready(self, health: dict) -> bool:
         return (

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -39,11 +41,16 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         cls.archived_user.employee_profile.save(update_fields=['employment_status'])
 
     def test_pos_pin_login_accepts_four_digit_pin_for_active_employee(self):
-        response = self.client.post(
-            '/api/v1/pos/auth/pin-login/',
-            {'restaurant_id': str(self.restaurant.id), 'pin': '1111'},
-            format='json',
-        )
+        self.restaurant.pos_auth_background_image = 'restaurants/auth-backgrounds/test/login.png'
+        self.restaurant.save(update_fields=['pos_auth_background_image'])
+        storage = self.restaurant.pos_auth_background_image.storage
+
+        with patch.object(storage, 'url', return_value='https://cdn.example.com/login.png'):
+            response = self.client.post(
+                '/api/v1/pos/auth/pin-login/',
+                {'restaurant_id': str(self.restaurant.id), 'pin': '1111'},
+                format='json',
+            )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['user']['username'], self.user.username)
@@ -51,6 +58,37 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         self.assertIn(self.role.code, response.data['role_codes'])
         self.assertEqual(response.data['tariff']['id'], str(self.tariff.id))
         self.assertIn('pos_halls.view', response.data['user']['permission_codes'])
+        self.assertEqual(
+            response.data['restaurant_context']['pos_auth_background_image_url'],
+            'https://cdn.example.com/login.png',
+        )
+
+    def test_pos_restaurant_code_returns_background_image_url(self):
+        self.restaurant.pos_auth_background_image = 'restaurants/auth-backgrounds/test/login.png'
+        self.restaurant.save(update_fields=['pos_auth_background_image'])
+        storage = self.restaurant.pos_auth_background_image.storage
+
+        with patch.object(storage, 'url', return_value='https://cdn.example.com/login.png'):
+            response = self.client.post(
+                '/api/v1/pos/auth/restaurant-code/',
+                {'code': self.restaurant.auth_code},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['restaurant_id'], str(self.restaurant.id))
+        self.assertEqual(response.data['restaurant_name'], self.restaurant.name)
+        self.assertEqual(response.data['pos_auth_background_image_url'], 'https://cdn.example.com/login.png')
+
+    def test_pos_restaurant_code_returns_null_background_image_url_without_image(self):
+        response = self.client.post(
+            '/api/v1/pos/auth/restaurant-code/',
+            {'code': self.restaurant.auth_code},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data['pos_auth_background_image_url'])
 
     def test_pos_pin_login_rejects_inactive_employee_with_explicit_message(self):
         response = self.client.post(

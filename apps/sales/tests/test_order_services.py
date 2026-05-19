@@ -199,6 +199,7 @@ class CashShiftServiceTests(PosTestCase):
             method=Payment.Method.CASH,
             amount=40000,
             status=Payment.Status.SUCCEEDED,
+            register_fiscal=False,
         )
 
         self.service.close_shift(

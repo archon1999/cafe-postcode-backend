@@ -1,6 +1,9 @@
+from unittest.mock import patch
+
+from django.utils import timezone
 from rest_framework import status
 
-from apps.billing.models import CashShift, PaymentRefund, Receipt
+from apps.billing.models import CashShift, FiscalShiftSession, Payment, PaymentRefund, Receipt
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
@@ -22,13 +25,75 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertIsNotNone(current_shift)
         self.assertEqual(str(current_shift['cash_desk']), str(self.cash_desk.id))
         self.assertEqual(current_shift['opening_cash_amount'], 150000)
+        self.assertEqual(current_shift['expected_closing_cash_amount'], 150000)
 
-        close_response = self.close_shift_via_api(actual_closing_cash_amount=145000, notes_close='Cash mismatch')
+        shift = CashShift.objects.get(pk=current_shift['id'])
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=77,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=40000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_shift=shift,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=40000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=False,
+            paid_at=timezone.now(),
+        )
+
+        context_response = self.client.get('/api/v1/pos/billing/context/')
+        self.assertEqual(context_response.status_code, status.HTTP_200_OK, context_response.data)
+        self.assertEqual(context_response.data['current_shift']['cash_total'], 40000)
+        self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 190000)
+
+        close_response = self.close_shift_via_api(actual_closing_cash_amount=185000, notes_close='Cash mismatch')
 
         self.assertIsNone(close_response['current_shift'])
-        shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
+        shift.refresh_from_db()
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
         self.assertEqual(shift.cash_difference_amount, -5000)
+
+    def test_close_last_cash_shift_can_close_fiscal_shift(self):
+        self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider='unikassa',
+            terminal_id='LG420',
+            opened_at=timezone.now(),
+        )
+
+        with patch('apps.billing.services.cash_shift.close_fiscal_shift') as close_fiscal:
+            close_fiscal.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
+            response = self.client.post(
+                '/api/v1/pos/billing/shifts/current/close/',
+                {
+                    'actual_closing_cash_amount': 150000,
+                    'notes_close': '',
+                    'close_fiscal_shift': True,
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn('fiscal_shift', response.data)
+        shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
+        self.assertEqual(shift.status, CashShift.Status.CLOSED)
+        session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
+        self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
 
     def test_refund_and_reprint_endpoints_work_for_closed_paid_order(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)

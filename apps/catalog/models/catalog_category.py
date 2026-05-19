@@ -35,6 +35,7 @@ class CatalogCategory(BaseModel):
         storage=CatalogCategoryImageStorage,
         upload_to=catalog_category_image_upload_to,
     )
+    cash_payment_forbidden = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

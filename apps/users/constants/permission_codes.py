@@ -10,6 +10,8 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_payment_order_items.create',
         'pos_payment_order_items.delete',
         'pos_payments.create',
+        'pos_fiscal_receipts.skip',
+        'pos_fiscal_shift.manage',
         'pos_table_reservations.manage',
     }
 )

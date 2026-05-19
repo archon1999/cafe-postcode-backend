@@ -1,3 +1,5 @@
+import json
+
 from django.db.models import Q
 from rest_framework import serializers
 
@@ -55,6 +57,9 @@ class RestaurantSerializer(serializers.ModelSerializer):
     billing_period = serializers.SerializerMethodField()
     activation_type = serializers.SerializerMethodField()
     faktura_payload = serializers.JSONField(required=False)
+    pos_auth_background_image = serializers.ImageField(required=False, allow_null=True, write_only=True)
+    pos_auth_background_image_url = serializers.SerializerMethodField()
+    clear_pos_auth_background_image = serializers.BooleanField(required=False, default=False, write_only=True)
 
     class Meta:
         model = Restaurant
@@ -70,6 +75,9 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'auth_code',
             'vat_enabled',
             'vat_percent',
+            'pos_auth_background_image',
+            'pos_auth_background_image_url',
+            'clear_pos_auth_background_image',
             'is_active',
             'activated_at',
             'deactivated_at',
@@ -135,6 +143,40 @@ class RestaurantSerializer(serializers.ModelSerializer):
             return None
         return 'custom' if entitlement.is_custom else 'tariff'
 
+    def get_pos_auth_background_image_url(self, instance):
+        image = getattr(instance, 'pos_auth_background_image', None)
+        if image and getattr(image, 'name', ''):
+            return image.url
+        return None
+
+    def validate_faktura_payload(self, value):
+        if isinstance(value, str):
+            if not value.strip():
+                return {}
+            try:
+                parsed_value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                raise serializers.ValidationError('Faktura payload must be valid JSON.') from exc
+            if not isinstance(parsed_value, dict):
+                raise serializers.ValidationError('Faktura payload must be an object.')
+            return parsed_value
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        clear_image = attrs.get('clear_pos_auth_background_image', False)
+        image = attrs.get('pos_auth_background_image')
+
+        if clear_image and image is not None:
+            raise serializers.ValidationError(
+                {'pos_auth_background_image': 'Image upload cannot be combined with image removal.'}
+            )
+
+        if clear_image:
+            attrs['pos_auth_background_image'] = None
+
+        return attrs
+
     def _sync_entitlement(self, restaurant, tariff=serializers.empty):
         if tariff is serializers.empty:
             return
@@ -150,6 +192,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         tariff = validated_data.pop('tariff', serializers.empty)
+        validated_data.pop('clear_pos_auth_background_image', False)
         faktura_payload = _restore_faktura_payload(validated_data.pop('faktura_payload', {}))
         validated_data['currency'] = 'UZS'
         restaurant = super().create({**validated_data, 'faktura_payload': faktura_payload})
@@ -158,12 +201,20 @@ class RestaurantSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         tariff = validated_data.pop('tariff', serializers.empty)
+        validated_data.pop('clear_pos_auth_background_image', False)
         faktura_payload = validated_data.pop('faktura_payload', serializers.empty)
         if faktura_payload is not serializers.empty:
             validated_data['faktura_payload'] = _restore_faktura_payload(faktura_payload)
         validated_data['currency'] = 'UZS'
+        old_image = instance.pos_auth_background_image
+        old_image_name = old_image.name if old_image and getattr(old_image, 'name', '') else ''
+        old_image_storage = old_image.storage if old_image_name else None
         restaurant = super().update(instance, validated_data)
         self._sync_entitlement(restaurant, tariff)
+        new_image = restaurant.pos_auth_background_image
+        new_image_name = new_image.name if new_image and getattr(new_image, 'name', '') else ''
+        if old_image_name and old_image_name != new_image_name and old_image_storage is not None:
+            old_image_storage.delete(old_image_name)
         return restaurant
 
 
@@ -243,7 +294,7 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             IntegrationConfig.objects.filter(
                 restaurant=instance,
                 kind=IntegrationConfig.Kind.FISCAL,
-                provider='fiscal-drive-service',
+                provider='unikassa',
             )
             .order_by('-created_at')
             .first()

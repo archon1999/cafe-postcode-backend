@@ -5,6 +5,10 @@ def get_cash_shift_model():
     return apps.get_model('billing', 'CashShift')
 
 
+def get_fiscal_shift_session_model():
+    return apps.get_model('billing', 'FiscalShiftSession')
+
+
 def get_payment_model():
     return apps.get_model('billing', 'Payment')
 

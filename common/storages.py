@@ -27,3 +27,7 @@ class CatalogCategoryImageStorage(CatalogImageStorage):
 
 class CatalogItemImageStorage(CatalogImageStorage):
     location = build_storage_location('catalog/items')
+
+
+class RestaurantAuthBackgroundStorage(CatalogImageStorage):
+    location = build_storage_location('restaurants/auth-backgrounds')

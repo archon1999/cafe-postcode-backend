@@ -79,6 +79,9 @@ POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_f
 POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_DELETE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_CASH_SHIFT_MANAGE_ROLES = ('manager', 'fast_food_manager')
+POS_FISCAL_RECEIPT_SKIP_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_FISCAL_SHIFT_MANAGE_ROLES = ('manager', 'fast_food_manager')
 POS_TABLE_RESERVATION_ROLES = ('manager',)
 CASHIER_ROLES = POS_OPEN_CHECKS_VIEW_ROLES
 PAYMENT_OPERATION_ROLES = POS_PAYMENT_OPERATION_ROLES
@@ -445,8 +448,6 @@ PERMISSION_DEFINITIONS = [
         group_key='payments',
         name='To‘lov amallarini bajarish',
         endpoints=endpoint_specs(
-            ('POST', 'api/v1/pos/billing/shifts/open/'),
-            ('POST', 'api/v1/pos/billing/shifts/current/close/'),
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
@@ -626,9 +627,8 @@ PERMISSION_DEFINITIONS = [
         name="POS to'lov amallarini bajarish",
         endpoints=endpoint_specs(
             ('GET', 'api/v1/pos/billing/context/'),
-            ('POST', 'api/v1/pos/billing/shifts/open/'),
-            ('POST', 'api/v1/pos/billing/shifts/current/close/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/pay/'),
+            ('POST', 'api/v1/pos/billing/payments/<uuid:pk>/retry-fiscal/'),
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
@@ -636,6 +636,45 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/reprint/'),
         ),
         default_roles=POS_PAYMENT_OPERATION_ROLES,
+    ),
+    permission_definition(
+        'pos_cash_shift.manage',
+        surface='pos',
+        resource='pos_cash_shift',
+        action='manage',
+        ui_visible=True,
+        group_key='payments',
+        name='POS kassa smenasini boshqarish',
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/billing/shifts/open/'),
+            ('POST', 'api/v1/pos/billing/shifts/current/close/'),
+        ),
+        default_roles=POS_CASH_SHIFT_MANAGE_ROLES,
+    ),
+    permission_definition(
+        'pos_fiscal_receipts.skip',
+        surface='pos',
+        resource='pos_fiscal_receipts',
+        action='skip',
+        ui_visible=True,
+        group_key='payments',
+        name="POS fiscal chek yuborishni o'chirish",
+        endpoints=endpoint_specs(('POST', 'api/v1/pos/billing/orders/<uuid:pk>/pay/')),
+        default_roles=POS_FISCAL_RECEIPT_SKIP_ROLES,
+    ),
+    permission_definition(
+        'pos_fiscal_shift.manage',
+        surface='pos',
+        resource='pos_fiscal_shift',
+        action='manage',
+        ui_visible=True,
+        group_key='payments',
+        name='POS fiscal smenani boshqarish',
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/billing/fiscal-shifts/open/'),
+            ('POST', 'api/v1/pos/billing/fiscal-shifts/close/'),
+        ),
+        default_roles=POS_FISCAL_SHIFT_MANAGE_ROLES,
     ),
     permission_definition(
         'pos_table_reservations.manage',
@@ -1175,6 +1214,9 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_payment_order_items.create',
         'pos_payment_order_items.delete',
         'pos_payments.create',
+        'pos_cash_shift.manage',
+        'pos_fiscal_receipts.skip',
+        'pos_fiscal_shift.manage',
         'pos_table_reservations.manage',
     }
 )

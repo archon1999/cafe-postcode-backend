@@ -32,7 +32,11 @@ class FakeClient:
         self.calls.append(
             {'path': path, 'params': params or {}, 'base_url': self.base_url, 'timeout': self.timeout}
         )
-        return FakeResponse(self.responses.pop(0))
+        response = self.responses.pop(0)
+        if isinstance(response, tuple):
+            payload, status_code = response
+            return FakeResponse(payload, status_code=status_code)
+        return FakeResponse(response)
 
 
 class MartaSoftPOSTests(SimpleTestCase):
@@ -68,6 +72,8 @@ class MartaSoftPOSTests(SimpleTestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(result['reference'], 'trx-1')
         self.assertEqual(result['params']['rrn'], 'rrn-1')
+        self.assertEqual(result['debug']['transaction']['request']['params']['amount'], 3000000)
+        self.assertEqual(result['debug']['transaction']['response']['http_status'], 200)
         self.assertEqual(calls[1]['path'], '/transaction')
         self.assertEqual(calls[1]['params']['amount'], 3000000)
         self.assertEqual(calls[1]['params']['tin'], '307678400')
@@ -133,6 +139,44 @@ class MartaSoftPOSTests(SimpleTestCase):
         self.assertEqual(result['status'], 'DECLINED')
         self.assertEqual(result['reference'], 'rrn-2')
         self.assertEqual(result['params']['ac'], 5)
+
+    def test_non_2xx_transaction_failure_keeps_request_and_response_debug_payload(self):
+        calls = []
+        responses = [
+            {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+            (
+                {
+                    'ok': False,
+                    'status': 'ERROR',
+                    'requestId': 'request-500',
+                    'message': 'Terminal error',
+                    'params': {},
+                },
+                500,
+            ),
+        ]
+        config = SimpleNamespace(
+            provider='marta-softpos',
+            mode='live',
+            settings={'endpoint_url': 'http://terminal.local:8090', 'tax_number': '307678400'},
+        )
+        service = MartaSoftPOSPaymentService(
+            config,
+            client_factory=lambda **kwargs: FakeClient(responses, calls, **kwargs),
+        )
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='111111111'))
+        payment = SimpleNamespace(id=uuid4(), amount=10000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['status'], 'ERROR')
+        debug = result['debug']['transaction']
+        self.assertEqual(debug['request']['path'], '/transaction')
+        self.assertEqual(debug['request']['params']['type'], 'PURCHASE')
+        self.assertEqual(debug['request']['params']['amount'], 1000000)
+        self.assertEqual(debug['response']['http_status'], 500)
+        self.assertEqual(debug['response']['body']['message'], 'Terminal error')
 
     def test_missing_endpoint_returns_configuration_failure_without_request(self):
         calls = []

@@ -42,6 +42,7 @@ class Payment(BaseModel):
     method = models.CharField(max_length=20, choices=Method.choices, default=Method.CASH)
     amount = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    register_fiscal = models.BooleanField(default=True)
     external_ref = models.CharField(max_length=120, blank=True)
     provider_payload = models.JSONField(default=dict, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
