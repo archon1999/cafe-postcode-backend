@@ -95,6 +95,93 @@ class CashierShiftApiTests(PosAPITestCase):
         session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
 
+    def test_close_fiscal_shift_with_unresolved_receipt_returns_clean_error(self):
+        self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider='unikassa',
+            terminal_id='LG420',
+            opened_at=timezone.now(),
+        )
+        shift = CashShift.objects.get(cash_desk=self.cash_desk, status=CashShift.Status.OPEN)
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=78,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=40000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_shift=shift,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=40000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=True,
+            paid_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            '/api/v1/pos/billing/shifts/current/close/',
+            {'close_fiscal_shift': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Fiscalga yuborilmagan', response.data['detail'])
+        self.assertIn('Yopilmagan hisoblar', response.data['detail'])
+        self.assertEqual(int(response.data['unresolved_fiscal_count']), 1)
+
+    def test_retry_fiscal_failure_returns_bad_request(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=79,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=40000,
+            closed_at=timezone.now(),
+        )
+        payment = Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=40000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=True,
+            paid_at=timezone.now(),
+        )
+
+        with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal:
+            issue_fiscal.return_value = [
+                {
+                    'ok': False,
+                    'provider': 'unikassa',
+                    'detail': 'Unikassa request failed: illegal request line',
+                    'split_reason': 'none',
+                }
+            ]
+            response = self.client.post(f'/api/v1/pos/billing/payments/{payment.id}/retry-fiscal/')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['detail'], 'Unikassa request failed: illegal request line')
+        self.assertFalse(response.data['results'][0]['ok'])
+
     def test_refund_and_reprint_endpoints_work_for_closed_paid_order(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         order_payload = self.create_order_via_api({'channel': 'takeaway'})

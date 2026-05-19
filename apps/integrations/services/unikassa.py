@@ -135,8 +135,28 @@ class UnikassaFiscalIntegrationService:
 
     def close_shift(self, *, cash_desk=None):
         with self._client() as client:
-            payload = self._post_json_with_sync_retry(client, '/fiscal/close', {'Fiscal': self._fiscal(cash_desk=cash_desk)})
-        return {'ok': True, 'provider': self.config.provider, 'response': payload}
+            fiscal = self._fiscal(cash_desk=cash_desk)
+            z_info = self._post_json_with_sync_retry(client, '/get/z-info', {'Fiscal': fiscal, 'Number': 0})
+            payload = self._post_json_with_sync_retry(client, '/fiscal/close', {'Fiscal': fiscal})
+            fiscal_memory = None
+            fiscal_memory_error = ''
+            try:
+                fiscal_memory = self._post_json_with_sync_retry(client, '/get/fiscal-memory', {'Fiscal': fiscal, 'Number': None})
+            except UnikassaFiscalError as error:
+                fiscal_memory_error = str(error)
+        provider_report = {
+            'z_info': z_info if isinstance(z_info, dict) else {'value': z_info},
+            'fiscal_memory': fiscal_memory if isinstance(fiscal_memory, dict) else None,
+        }
+        if fiscal_memory_error:
+            provider_report['fiscal_memory_error'] = fiscal_memory_error
+        return {
+            'ok': True,
+            'provider': self.config.provider,
+            'response': payload,
+            'provider_report': provider_report,
+            'terminal_id': str((provider_report['z_info'] or {}).get('TerminalID') or fiscal),
+        }
 
     def _client(self):
         return self.client_factory(base_url=self._endpoint_url(), timeout=self._timeout())

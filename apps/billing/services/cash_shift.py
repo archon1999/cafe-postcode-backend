@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.utils import timezone
@@ -191,8 +193,8 @@ class CashShiftService:
                 'order_id': str(payment.order_id),
                 'order_number': payment.order.order_number if payment.order_id else None,
                 'method': payment.method,
-                'amount': payment.amount,
-                'paid_at': payment.paid_at,
+                'amount': int(payment.amount or 0),
+                'paid_at': payment.paid_at.isoformat() if payment.paid_at else None,
                 'cashier_name': payment.received_by.full_name if payment.received_by_id else '',
                 'fiscal_receipt_count': len(sent_receipts),
             }
@@ -206,7 +208,136 @@ class CashShiftService:
                 totals[row['method']] = totals.get(row['method'], 0) + int(row['amount'] or 0)
             return {'count': len(rows), 'total': sum(totals.values()), 'totals_by_method': totals, 'rows': rows}
 
-        return {'all': summary(all_rows), 'fiscal_sent': summary(fiscal_rows)}
+        payment_ids = [payment.id for payment in payments]
+        fiscal_payment_ids = [row['payment_id'] for row in fiscal_rows]
+        refunds = list(
+            PaymentRefund.objects.filter(payment_id__in=payment_ids, status=PaymentRefund.Status.SUCCEEDED)
+            .select_related('payment')
+            .order_by('refunded_at', 'created_at')
+        )
+        fiscal_refunds = [refund for refund in refunds if str(refund.payment_id) in set(fiscal_payment_ids)]
+        terminal_id = self._report_terminal_id(cash_desk=cash_desk, payments=payments)
+        opened_at = paid_at_from or (shift.opened_at if shift is not None else None)
+        closed_at = paid_at_to or timezone.now()
+        all_report = self._build_unikassa_like_report(
+            source='pos',
+            title='POS smena hisoboti',
+            rows=all_rows,
+            refunds=refunds,
+            opened_at=opened_at,
+            closed_at=closed_at,
+            terminal_id=terminal_id,
+            restaurant=restaurant or getattr(getattr(shift, 'cash_desk', None), 'restaurant', None),
+        )
+        fiscal_sent_report = self._build_unikassa_like_report(
+            source='pos_fiscal_sent',
+            title='Fiscalga yuborilgan POS hisoboti',
+            rows=fiscal_rows,
+            refunds=fiscal_refunds,
+            opened_at=opened_at,
+            closed_at=closed_at,
+            terminal_id=terminal_id,
+            restaurant=restaurant or getattr(getattr(shift, 'cash_desk', None), 'restaurant', None),
+        )
+
+        return {
+            'all': summary(all_rows),
+            'fiscal_sent': summary(fiscal_rows),
+            'pos_report': all_report,
+            'fiscal_sent_report': fiscal_sent_report,
+        }
+
+    def _build_unikassa_like_report(
+        self,
+        *,
+        source: str,
+        title: str,
+        rows: list[dict],
+        refunds: list,
+        opened_at,
+        closed_at,
+        terminal_id: str,
+        restaurant=None,
+    ) -> dict:
+        sale_totals = self._totals_by_method(rows)
+        refund_totals = self._refund_totals_by_method(refunds)
+        sale_total = sum(sale_totals.values())
+        refund_total = sum(refund_totals.values())
+        fiscal_receipt_count = sum(int(row.get('fiscal_receipt_count') or 0) for row in rows)
+        return {
+            'ReportSource': source,
+            'ReportTitle': title,
+            'TerminalID': terminal_id,
+            'OpenTime': self._format_report_datetime(opened_at),
+            'CloseTime': self._format_report_datetime(closed_at),
+            'TotalSaleCount': len(rows),
+            'TotalRefundCount': len(refunds),
+            'TotalCash': {
+                'Sale': sale_totals.get(Payment.Method.CASH, 0),
+                'Refund': refund_totals.get(Payment.Method.CASH, 0),
+            },
+            'TotalCard': {
+                'Sale': sale_totals.get(Payment.Method.CARD, 0),
+                'Refund': refund_totals.get(Payment.Method.CARD, 0),
+            },
+            'TotalQR': {
+                'Sale': sale_totals.get(Payment.Method.QR, 0),
+                'Refund': refund_totals.get(Payment.Method.QR, 0),
+            },
+            'TotalVAT': {'Sale': self._estimate_vat(sale_total, restaurant=restaurant), 'Refund': self._estimate_vat(refund_total, restaurant=restaurant)},
+            'TotalSaleAmount': sale_total,
+            'TotalRefundAmount': refund_total,
+            'NetTotal': sale_total - refund_total,
+            'OrdersCount': len({row.get('order_id') for row in rows if row.get('order_id')}),
+            'PaymentsCount': len(rows),
+            'FiscalReceiptCount': fiscal_receipt_count,
+            'Payments': rows,
+        }
+
+    @staticmethod
+    def _totals_by_method(rows: list[dict]) -> dict:
+        totals = {}
+        for row in rows:
+            method = row.get('method') or ''
+            totals[method] = totals.get(method, 0) + int(row.get('amount') or 0)
+        return totals
+
+    @staticmethod
+    def _refund_totals_by_method(refunds: list) -> dict:
+        totals = {}
+        for refund in refunds:
+            method = getattr(getattr(refund, 'payment', None), 'method', '') or ''
+            totals[method] = totals.get(method, 0) + int(refund.amount or 0)
+        return totals
+
+    @staticmethod
+    def _format_report_datetime(value) -> str | None:
+        if value is None:
+            return None
+        return timezone.localtime(value).replace(microsecond=0).strftime('%Y-%m-%d %H:%M:%S')
+
+    @staticmethod
+    def _estimate_vat(amount: int, *, restaurant=None) -> int:
+        if not restaurant or not getattr(restaurant, 'vat_enabled', False):
+            return 0
+        try:
+            percent = Decimal(str(getattr(restaurant, 'vat_percent', 0) or 0))
+        except Exception:
+            return 0
+        if percent <= 0:
+            return 0
+        return int((Decimal(amount) * percent / (Decimal('100') + percent)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    @staticmethod
+    def _report_terminal_id(*, cash_desk=None, payments=None) -> str:
+        if cash_desk is not None and getattr(cash_desk, 'terminal_id', ''):
+            return str(cash_desk.terminal_id).strip()
+        payments = list(payments or [])
+        for payment in payments:
+            payment_cash_desk = getattr(payment, 'cash_desk', None)
+            if payment_cash_desk is not None and getattr(payment_cash_desk, 'terminal_id', ''):
+                return str(payment_cash_desk.terminal_id).strip()
+        return ''
 
     def open_fiscal_shift(self, *, restaurant, cash_desk=None, opened_by=None):
         existing = FiscalShiftSession.objects.filter(
@@ -260,10 +391,15 @@ class CashShiftService:
         )
         result = close_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk)
         if session is not None:
+            close_payload = {
+                'provider_result': result,
+                'reports': report,
+                'closed_at': timezone.now().isoformat(),
+            }
             session.status = FiscalShiftSession.Status.CLOSED
             session.closed_by = closed_by
             session.closed_at = timezone.now()
-            session.close_payload = result
+            session.close_payload = close_payload
             if not session.provider:
                 session.provider = str(result.get('provider') or '')
             if not session.terminal_id:
@@ -279,7 +415,12 @@ class CashShiftService:
                     'updated_at',
                 ]
             )
-        return {'result': result, 'report': report}
+        return {
+            'result': result,
+            'provider_report': result.get('provider_report') if isinstance(result, dict) else None,
+            'report': report,
+            'reports': report,
+        }
 
     def _get_active_fiscal_session(self, *, restaurant, cash_desk=None):
         return (
@@ -297,7 +438,11 @@ class CashShiftService:
         response = result.get('response') if isinstance(result, dict) else {}
         if not isinstance(response, dict):
             response = {}
-        return str(response.get('TerminalID') or response.get('Fiscal') or result.get('terminal_id') or '').strip()
+        provider_report = result.get('provider_report') if isinstance(result, dict) else {}
+        z_info = provider_report.get('z_info') if isinstance(provider_report, dict) else {}
+        if not isinstance(z_info, dict):
+            z_info = {}
+        return str(response.get('TerminalID') or response.get('Fiscal') or result.get('terminal_id') or z_info.get('TerminalID') or '').strip()
 
     @transaction.atomic
     def open_shift(self, *, restaurant=None, branch=None, cash_desk, opened_by, cashier=None, opening_cash_amount=0, notes_open=''):
@@ -391,6 +536,11 @@ class CashShiftService:
         shift.receipt_count = snapshot['receipt_count']
         shift.reprint_count = snapshot['reprint_count']
         shift.notes_close = notes_close or ''
+        shift.close_report_payload = {
+            'snapshot': snapshot,
+            'report': self.build_fiscal_shift_report(shift=shift),
+            'closed_at': shift.closed_at.isoformat() if shift.closed_at else None,
+        }
         shift.save(
             update_fields=[
                 'status',
@@ -405,6 +555,7 @@ class CashShiftService:
                 'refund_total',
                 'receipt_count',
                 'reprint_count',
+                'close_report_payload',
                 'notes_close',
                 'updated_at',
             ]

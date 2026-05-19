@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import call, patch
 
+import httpx
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -233,6 +234,44 @@ class FiscalBusinessFlowTests(PosTestCase):
             ],
         )
 
+    def test_unikassa_close_shift_collects_z_report_before_close(self):
+        calls = []
+
+        def handler(request: httpx.Request):
+            path = request.url.path.removeprefix('/api/v1')
+            calls.append(path)
+            if path == '/get/z-info':
+                return httpx.Response(
+                    200,
+                    json={
+                        'TerminalID': 'LG420',
+                        'OpenTime': '2026-05-20 09:00:00',
+                        'TotalSaleCount': 2,
+                        'TotalCash': {'Sale': 30000, 'Refund': 0},
+                        'TotalCard': {'Sale': 0, 'Refund': 0},
+                    },
+                )
+            if path == '/fiscal/close':
+                return httpx.Response(200, text='OK')
+            if path == '/get/fiscal-memory':
+                return httpx.Response(200, json={'TerminalID': 'LG420', 'ZReportsCount': 4})
+            return httpx.Response(404, json={'message': 'unexpected'})
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=httpx.MockTransport(handler), base_url=kwargs['base_url'])
+
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(provider='unikassa', settings={'terminal_id': 'LG420'}),
+            client_factory=client_factory,
+        )
+
+        result = service.close_shift()
+
+        self.assertEqual(calls, ['/get/z-info', '/fiscal/close', '/get/fiscal-memory'])
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['provider_report']['z_info']['TotalSaleCount'], 2)
+        self.assertEqual(result['provider_report']['fiscal_memory']['ZReportsCount'], 4)
+
     def test_cash_shift_close_blocks_unresolved_fiscal_payment(self):
         shift = self.create_cash_shift()
         order = self.create_closed_order()
@@ -259,6 +298,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         )
         shift.refresh_from_db()
         self.assertEqual(shift.status, shift.Status.CLOSED)
+        self.assertEqual(shift.close_report_payload['report']['pos_report']['TotalSaleCount'], 1)
 
     def test_fiscal_shift_close_report_uses_session_period_across_shifts(self):
         first_shift = self.create_cash_shift()
@@ -301,8 +341,13 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(payload['report']['all']['count'], 2)
         self.assertEqual(payload['report']['all']['total'], 30000)
         self.assertEqual(payload['report']['fiscal_sent']['count'], 1)
+        self.assertEqual(payload['report']['pos_report']['TotalSaleCount'], 2)
+        self.assertEqual(payload['report']['pos_report']['TotalCash']['Sale'], 30000)
+        self.assertEqual(payload['report']['fiscal_sent_report']['FiscalReceiptCount'], 1)
         session.refresh_from_db()
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
+        self.assertEqual(session.close_payload['reports']['pos_report']['TotalSaleCount'], 2)
+        self.assertEqual(session.close_payload['provider_result']['response']['TerminalID'], 'LG420')
 
     def test_cash_shift_open_ensures_restaurant_fiscal_shift_open(self):
         with patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift:

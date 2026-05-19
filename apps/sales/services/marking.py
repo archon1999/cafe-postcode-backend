@@ -119,11 +119,21 @@ class OrderMarkingScanService:
 
         parsed = parse_marking_code(raw_code)
         catalog_item = find_catalog_item_by_marking(restaurant=order.restaurant, parsed=parsed)
+        normalized_mode = str(mode or 'add').strip().lower()
+
+        if normalized_mode == 'remove':
+            order_item = self._remove_matching_order_item(order=order, catalog_item=catalog_item, raw_code=parsed.raw_code)
+            order.recalculate_totals()
+
+            from apps.kitchen.services import sync_order_tickets
+
+            sync_order_tickets(order)
+            return {'order_item': order_item, 'marking': None, 'status': marking_status(order)}
 
         if OrderItemMarking.objects.filter(order_item__order__restaurant=order.restaurant, raw_code=parsed.raw_code).exists():
             raise ValidationError({'rawCode': _('This marking code has already been scanned.')})
 
-        if mode == 'attach':
+        if normalized_mode == 'attach':
             order_item = self._find_missing_order_item(order=order, catalog_item=catalog_item)
             if order_item is None:
                 raise ValidationError({'rawCode': _('This marked product is not present in the order or is already fully scanned.')})
@@ -161,3 +171,33 @@ class OrderMarkingScanService:
             if item.markings.count() < item.quantity:
                 return item
         return None
+
+    @staticmethod
+    def _remove_matching_order_item(*, order, catalog_item, raw_code: str):
+        matching_marking = (
+            OrderItemMarking.objects.filter(order_item__order=order, catalog_item=catalog_item, raw_code=raw_code)
+            .select_related('order_item')
+            .first()
+        )
+        if matching_marking is not None:
+            order_item = matching_marking.order_item
+            matching_marking.delete()
+        else:
+            order_item = (
+                order.items.filter(catalog_item=catalog_item)
+                .exclude(status=OrderItem.Status.CANCELLED)
+                .order_by('-created_at')
+                .first()
+            )
+
+        if order_item is None:
+            raise ValidationError({'rawCode': _('This marked product is not present in the order.')})
+
+        if order_item.quantity > 1:
+            order_item.quantity -= 1
+            order_item.line_total = int(order_item.quantity) * int(order_item.unit_price or 0)
+            order_item.save(update_fields=['quantity', 'line_total', 'updated_at'])
+            return order_item
+
+        order_item.delete()
+        return order_item

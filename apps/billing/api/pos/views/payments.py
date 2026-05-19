@@ -181,14 +181,20 @@ class PaymentFiscalRetryView(APIView):
             order__restaurant=restaurant,
         )
         result = self.service_class().retry(payment=payment)
+        retry_results = result.get('results') or []
+        successful = any(item.get('ok') for item in retry_results if isinstance(item, dict))
+        response_status = status.HTTP_200_OK if successful else status.HTTP_400_BAD_REQUEST
+        failed_result = next((item for item in retry_results if isinstance(item, dict) and not item.get('ok')), {})
         return Response(
             {
+                'detail': '' if successful else (failed_result.get('detail') or failed_result.get('message') or 'Fiscal retry failed.'),
                 'payment': PaymentSerializer(result['payment']).data,
                 'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
                 'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
                 'result': result['result'],
-                'results': result.get('results') or [],
-            }
+                'results': retry_results,
+            },
+            status=response_status,
         )
 
 

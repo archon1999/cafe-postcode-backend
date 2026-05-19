@@ -114,6 +114,8 @@ class CashShiftCloseView(APIView):
                 raise ValidationError({'closeFiscalShift': 'Fiscal smena faqat oxirgi kassa smenasi yopilgandan keyin yopiladi.'})
             try:
                 fiscal_shift_payload = shift_service.close_fiscal_shift(restaurant=restaurant, closed_by=request.user)
+            except ValidationError:
+                raise
             except Exception as error:
                 detail = str(error)
                 if '9032' in detail or 'CANNOT_CLOSE_EMPTY_ZREPORT' in detail:
