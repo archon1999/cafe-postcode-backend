@@ -35,6 +35,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         ).prefetch_related(
             'items__catalog_item',
             'items__prep_station',
+            'items__markings',
             'payments',
             'receipts',
         )
@@ -76,6 +77,7 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
         ).prefetch_related(
             'items__catalog_item',
             'items__prep_station',
+            'items__markings',
             'payments',
             'receipts',
         )

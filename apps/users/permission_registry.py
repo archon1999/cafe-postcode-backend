@@ -52,6 +52,7 @@ ROLE_DEFINITIONS = {
     'cashier': {'name': t('Kassir')},
     'waiter': {'name': t('Ofitsiant')},
     'chef': {'name': t('Oshpaz')},
+    'head_chef': {'name': t('Shef oshpaz')},
     'barman': {'name': t('Barmen')},
     'fast_food_manager': {'name': t('Fast food menejeri')},
     'fast_food_cashier': {'name': t('Fast food kassiri')},
@@ -73,8 +74,10 @@ POS_HALL_VIEW_ROLES = ('waiter', 'manager')
 POS_TABLE_MANAGE_ROLES = ('waiter', 'manager')
 POS_TABLE_MENU_VIEW_ROLES = ('waiter', 'manager')
 POS_TAKEAWAY_MENU_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
-POS_KITCHEN_VIEW_ROLES = ('chef', 'barman')
-POS_KITCHEN_UPDATE_ROLES = ('chef', 'barman')
+POS_KITCHEN_VIEW_ROLES = ('chef', 'barman', 'head_chef')
+POS_KITCHEN_VIEW_ALL_ROLES = ('head_chef',)
+POS_KITCHEN_UPDATE_ROLES = ('chef', 'barman', 'head_chef')
+POS_KITCHEN_CANCEL_ROLES = ('head_chef',)
 POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_DELETE_ROLES = ('fast_food_cashier', 'fast_food_manager')
@@ -502,10 +505,13 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/'),
+            ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/scan-marking/'),
+            ('GET', 'api/v1/pos/sales/orders/<uuid:order_id>/marking-status/'),
             ('PUT', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('PATCH', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
+            ('POST', 'api/v1/pos/catalog/scan/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
@@ -582,6 +588,33 @@ PERMISSION_DEFINITIONS = [
         default_roles=POS_KITCHEN_UPDATE_ROLES,
     ),
     permission_definition(
+        'pos_kitchen_orders.view_all',
+        surface='pos',
+        resource='pos_kitchen_orders',
+        action='view_all',
+        ui_visible=True,
+        group_key='kitchen',
+        name="POS oshxona barcha buyurtmalarini ko'rish",
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/kitchen/queue/'),
+            ('GET', 'api/v1/pos/kitchen/tickets/<uuid:pk>/'),
+        ),
+        default_roles=POS_KITCHEN_VIEW_ALL_ROLES,
+    ),
+    permission_definition(
+        'pos_kitchen_orders.cancel',
+        surface='pos',
+        resource='pos_kitchen_orders',
+        action='cancel',
+        ui_visible=True,
+        group_key='kitchen',
+        name='POS oshxona buyurtmasini bekor qilish',
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/kitchen/items/<uuid:pk>/status/'),
+        ),
+        default_roles=POS_KITCHEN_CANCEL_ROLES,
+    ),
+    permission_definition(
         'pos_open_checks.view',
         surface='pos',
         resource='pos_open_checks',
@@ -628,6 +661,8 @@ PERMISSION_DEFINITIONS = [
         endpoints=endpoint_specs(
             ('GET', 'api/v1/pos/billing/context/'),
             ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/pay/'),
+            ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/card-payments/initiate/'),
+            ('POST', 'api/v1/pos/billing/payments/<uuid:pk>/terminal-result/'),
             ('POST', 'api/v1/pos/billing/payments/<uuid:pk>/retry-fiscal/'),
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
@@ -1013,6 +1048,11 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/billing/payments/',
         detail_url='api/v1/admin/billing/payments/<uuid:pk>/',
         default_roles=PAYMENT_ADMIN_ROLES,
+        view_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/billing/payments/'),
+            ('GET', 'api/v1/admin/billing/payments/<uuid:pk>/'),
+            ('POST', 'api/v1/admin/billing/payments/<uuid:pk>/retry-fiscal/'),
+        ),
         include_create=False,
         include_update=False,
         include_delete=False,
@@ -1209,7 +1249,9 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_table_menu.view',
         'pos_takeaway_menu.view',
         'pos_kitchen_orders.view',
+        'pos_kitchen_orders.view_all',
         'pos_kitchen_orders.update',
+        'pos_kitchen_orders.cancel',
         'pos_open_checks.view',
         'pos_payment_order_items.create',
         'pos_payment_order_items.delete',

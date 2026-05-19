@@ -90,7 +90,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         restricted_category = CatalogCategory.objects.create(
             restaurant=self.restaurant,
             name='Restricted',
-            cash_payment_forbidden=True,
+            mxik_payload={'cashSale': 0},
         )
         restricted_item = CatalogItem.objects.create(
             restaurant=self.restaurant,
@@ -142,6 +142,39 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertTrue(results[0]['ok'])
         self.assertFalse(results[1]['ok'])
         self.assertEqual(results[1]['code'], 'X1')
+
+    def test_unikassa_cash_sale_payload_restriction_prefers_item_payload(self):
+        order = self.create_closed_order()
+        category = CatalogCategory.objects.create(
+            restaurant=self.restaurant,
+            name='Restricted by category payload',
+            mxik_payload={'cashSale': 0},
+        )
+        allowed_item = CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=category,
+            name='Allowed item override',
+            price=30000,
+            mxik_payload={'cashSale': 2},
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=allowed_item,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+        )
+        order.recalculate_totals()
+        payment = self.create_success_payment(order=order)
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(provider='unikassa', settings={'terminal_id': 'LG420'})
+        )
+
+        parts = service._build_receipt_parts(order=order, payment=payment)
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(parts[0].pay_type, 'cash')
+        self.assertEqual(parts[0].split_reason, 'none')
 
     def test_unikassa_sale_items_always_include_barcode_field(self):
         order = self.create_closed_order()

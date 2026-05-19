@@ -24,6 +24,11 @@ class PaymentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(_('Payment amount must be greater than zero.'))
         return value
 
+    def create(self, validated_data):
+        validated_data.pop('manual_card_override', None)
+        validated_data.pop('manual_card_reason', None)
+        return super().create(validated_data)
+
     class Meta:
         model = Payment
         fields = (
@@ -45,3 +50,18 @@ class PaymentSerializer(serializers.ModelSerializer):
             'created_at',
         )
         read_only_fields = ('order', 'cash_desk', 'cash_shift', 'received_by', 'status', 'external_ref', 'provider_payload', 'paid_at')
+
+
+class MartaTerminalResultSerializer(serializers.Serializer):
+    ok = serializers.BooleanField(required=False, default=False)
+    status = serializers.CharField(required=False, allow_blank=True, default='')
+    request_id = serializers.CharField(required=False, allow_blank=True, default='')
+    requestId = serializers.CharField(required=False, allow_blank=True, default='')
+    pid = serializers.IntegerField(required=False)
+    message = serializers.CharField(required=False, allow_blank=True, default='')
+    params = serializers.JSONField(required=False, default=dict)
+    ac = serializers.JSONField(required=False, allow_null=True)
+    debug = serializers.JSONField(required=False, default=dict)
+    response = serializers.JSONField(required=False, default=dict)
+    browser_error = serializers.JSONField(required=False, default=dict)
+    browserError = serializers.JSONField(required=False, default=dict)

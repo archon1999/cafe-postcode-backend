@@ -8,7 +8,13 @@ from apps.billing.api.pos.views.context import (
     FiscalShiftOpenView,
     OpenCheckListView,
 )
-from apps.billing.api.pos.views.payments import PaymentCreateView, PaymentFiscalRetryView, PaymentRefundView
+from apps.billing.api.pos.views.payments import (
+    MartaCardPaymentInitiateView,
+    MartaTerminalResultView,
+    PaymentCreateView,
+    PaymentFiscalRetryView,
+    PaymentRefundView,
+)
 from apps.billing.api.pos.views.receipts import (
     OrderPrebillPrintView,
     ReceiptPrintResultView,
@@ -24,6 +30,8 @@ urlpatterns = [
     path('open-checks/', OpenCheckListView.as_view()),
     path('orders/<uuid:pk>/prebill/print/', OrderPrebillPrintView.as_view()),
     path('orders/<uuid:pk>/pay/', PaymentCreateView.as_view()),
+    path('orders/<uuid:pk>/card-payments/initiate/', MartaCardPaymentInitiateView.as_view()),
+    path('payments/<uuid:pk>/terminal-result/', MartaTerminalResultView.as_view()),
     path('payments/<uuid:pk>/retry-fiscal/', PaymentFiscalRetryView.as_view()),
     path('<uuid:pk>/refund/', PaymentRefundView.as_view()),
     path('receipts/<uuid:pk>/print-result/', ReceiptPrintResultView.as_view()),

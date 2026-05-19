@@ -37,6 +37,8 @@ class CatalogItem(BaseModel):
     mxik_code = models.CharField(max_length=17, blank=True, db_index=True)
     mxik_name = models.CharField(max_length=512, blank=True)
     mxik_payload = models.JSONField(default=dict, blank=True)
+    requires_marking = models.BooleanField(default=False)
+    marking_gtin = models.CharField(max_length=32, blank=True, db_index=True)
     image_url = models.URLField(blank=True, null=True)
     image_source = models.CharField(max_length=32, blank=True, choices=ImageSource.choices)
     image_file = models.ImageField(

@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from apps.billing.models import Receipt
+from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.sales.models import OrderItem
 
 
@@ -244,7 +245,7 @@ class UnikassaFiscalIntegrationService:
         restricted = [
             item
             for item in order_items
-            if bool(getattr(getattr(item.catalog_item, 'category', None), 'cash_payment_forbidden', False))
+            if is_catalog_item_cash_sale_forbidden(item)
         ]
         normal = [item for item in order_items if item not in restricted]
         if not restricted:
@@ -305,6 +306,28 @@ class UnikassaFiscalIntegrationService:
         payload_items = []
         vat_percent = self._vat_percent(order=order)
         for item in items:
+            labels = self._extract_labels(item=item)
+            if labels:
+                unit_price = int((Decimal(item.line_total or 0) / Decimal(max(int(item.quantity or 1), 1))).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+                for label in labels:
+                    item_payload = {
+                        'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],
+                        'Amount': 1000,
+                        'Price': self._money_to_fiscal(unit_price),
+                        'Discount': 0,
+                        'Other': 0,
+                        'OwnerType': 0,
+                        'PackageCode': self._extract_package_code(item=item),
+                        'Barcode': self._extract_barcode(item=item),
+                        'Labels': [label],
+                        'VAT': 0,
+                        'VATPercent': 0,
+                    }
+                    self._apply_vat(item_payload, amount=unit_price, percent=vat_percent)
+                    self._apply_item_classification(item_payload, item=item)
+                    payload_items.append(item_payload)
+                continue
+
             item_payload = {
                 'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],
                 'Amount': int(item.quantity or 0) * 1000,
@@ -319,15 +342,7 @@ class UnikassaFiscalIntegrationService:
                 'VATPercent': 0,
             }
             self._apply_vat(item_payload, amount=item.line_total, percent=vat_percent)
-            spic = str(
-                getattr(item.catalog_item, 'mxik_code', '')
-                or getattr(getattr(item.catalog_item, 'category', None), 'mxik_code', '')
-                or ''
-            ).strip()
-            item_payload['SPIC'] = spic
-            units = self._extract_units(item=item)
-            if units is not None:
-                item_payload['Units'] = units
+            self._apply_item_classification(item_payload, item=item)
             payload_items.append(item_payload)
 
         if service_fee:
@@ -351,6 +366,17 @@ class UnikassaFiscalIntegrationService:
             self._apply_vat(service_payload, amount=service_fee, percent=vat_percent)
             payload_items.append(service_payload)
         return payload_items
+
+    def _apply_item_classification(self, item_payload: dict, *, item):
+        spic = str(
+            getattr(item.catalog_item, 'mxik_code', '')
+            or getattr(getattr(item.catalog_item, 'category', None), 'mxik_code', '')
+            or ''
+        ).strip()
+        item_payload['SPIC'] = spic
+        units = self._extract_units(item=item)
+        if units is not None:
+            item_payload['Units'] = units
 
     def _send_receipt(self, *, client, method: str, payment, pay_type: str, receipt_payload: dict, split_reason: str, order):
         requested_at = timezone.now()
@@ -501,6 +527,11 @@ class UnikassaFiscalIntegrationService:
 
     def _extract_labels(self, *, item) -> list[str]:
         labels = []
+        markings = getattr(item, '_prefetched_objects_cache', {}).get('markings')
+        if markings is None and getattr(item, 'pk', None):
+            markings = item.markings.all()
+        if markings is not None:
+            labels.extend(str(marking.raw_code).strip() for marking in markings if str(marking.raw_code or '').strip())
         for payload in [getattr(item, 'metadata', None), getattr(item, 'payload', None), getattr(item, 'extra', None), getattr(item, 'note', None)]:
             value = self._find_first(payload, {'labels', 'Labels', 'marking_codes', 'markingCodes', 'marking_code', 'markingCode', 'label', 'Label'})
             if isinstance(value, list):

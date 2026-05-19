@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
 from apps.platform.services import FeatureGateService
-from common.api.permissions import EndpointRBACPermission
+from common.api.permissions import EndpointRBACPermission, POS_KITCHEN_ORDERS_VIEW_ALL_PERMISSION, has_permission_code
 from common.api.scopes import get_request_restaurant
 
 
@@ -28,4 +28,6 @@ class KitchenQueueView(generics.ListAPIView):
         status_value = self.request.query_params.get('status')
         if status_value:
             queryset = queryset.filter(status=status_value)
-        return queryset
+        if not has_permission_code(self.request.user, POS_KITCHEN_ORDERS_VIEW_ALL_PERMISSION):
+            queryset = queryset.filter(prep_station__cooks=self.request.user)
+        return queryset.distinct()

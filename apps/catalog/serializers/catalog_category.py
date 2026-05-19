@@ -2,10 +2,15 @@ from rest_framework import serializers
 
 from apps.catalog.models import CatalogCategory
 from apps.catalog.serializers.mxik import CatalogCategorySerializerMixin, MxikCodeValidationMixin
+from apps.catalog.utils.cash_sale import is_catalog_category_cash_sale_forbidden
 
 
 class CatalogCategorySerializer(CatalogCategorySerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer):
     mxik_required = True
+    cash_payment_forbidden = serializers.SerializerMethodField()
+
+    def get_cash_payment_forbidden(self, obj):
+        return is_catalog_category_cash_sale_forbidden(obj)
 
     class Meta:
         model = CatalogCategory

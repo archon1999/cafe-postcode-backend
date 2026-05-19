@@ -14,7 +14,10 @@ class PrepStationListCreateView(AdminPermissionRequiredMixin, generics.ListCreat
     serializer_class = PrepStationSerializer
 
     def get_queryset(self):
-        queryset = filter_queryset_by_optional_restaurant(PrepStation.objects.all(), self.request)
+        queryset = filter_queryset_by_optional_restaurant(
+            PrepStation.objects.select_related('printer_integration').prefetch_related('cooks'),
+            self.request,
+        )
         return PrepStationListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
@@ -25,6 +28,9 @@ class PrepStationDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdat
     serializer_class = PrepStationSerializer
 
     def get_queryset(self):
-        return filter_queryset_by_optional_restaurant(PrepStation.objects.all(), self.request)
+        return filter_queryset_by_optional_restaurant(
+            PrepStation.objects.select_related('printer_integration').prefetch_related('cooks'),
+            self.request,
+        )
 
 __all__ = ['PrepStationDetailView', 'PrepStationListCreateView']

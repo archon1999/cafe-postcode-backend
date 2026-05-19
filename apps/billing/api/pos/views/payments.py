@@ -4,7 +4,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.billing.helpers import get_payment_model
-from apps.billing.serializers import PaymentRefundCreateSerializer, PaymentRefundSerializer, PaymentSerializer, ReceiptSerializer
+from apps.billing.serializers import (
+    MartaTerminalResultSerializer,
+    PaymentRefundCreateSerializer,
+    PaymentRefundSerializer,
+    PaymentSerializer,
+    ReceiptSerializer,
+)
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService, PaymentRefundService
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
@@ -52,6 +58,80 @@ class PaymentCreateView(APIView):
             {
                 'order': OrderSerializer(result['order']).data,
                 'payment': PaymentSerializer(payment).data,
+                'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
+                'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MartaCardPaymentInitiateView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    order_payment_service_class = OrderPaymentService
+    shift_service_class = CashShiftService
+    feature_gate_service_class = FeatureGateService
+
+    @transaction.atomic
+    def post(self, request, pk):
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_related('restaurant', 'table_session__table'),
+            pk=pk,
+            restaurant=restaurant,
+        )
+        cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
+        result = self.order_payment_service_class().initiate_marta_card_payment(
+            order=order,
+            amount=request.data.get('amount'),
+            register_fiscal=bool(request.data.get('register_fiscal', True)),
+            received_by=request.user,
+            cash_shift=cash_shift,
+        )
+        return Response(
+            {
+                'payment': PaymentSerializer(result['payment']).data,
+                'marta': result['marta'],
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MartaTerminalResultView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    service_class = OrderPaymentService
+    feature_gate_service_class = FeatureGateService
+
+    @transaction.atomic
+    def post(self, request, pk):
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        serializer = MartaTerminalResultSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        terminal_result = dict(request.data)
+        payment = generics.get_object_or_404(
+            Payment.objects.select_related('order', 'order__restaurant', 'cash_desk', 'cash_shift'),
+            pk=pk,
+            order__restaurant=restaurant,
+        )
+        result = self.service_class().complete_marta_terminal_payment(
+            payment=payment,
+            terminal_result=terminal_result,
+            received_by=request.user,
+        )
+        if result['payment'].status == Payment.Status.FAILED:
+            return Response(
+                {
+                    'detail': result.get('detail') or 'Payment charge failed.',
+                    'payment': PaymentSerializer(result['payment']).data,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                'order': OrderSerializer(result['order']).data,
+                'payment': PaymentSerializer(result['payment']).data,
                 'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
                 'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
             },
@@ -112,4 +192,10 @@ class PaymentFiscalRetryView(APIView):
         )
 
 
-__all__ = ['PaymentCreateView', 'PaymentFiscalRetryView', 'PaymentRefundView']
+__all__ = [
+    'MartaCardPaymentInitiateView',
+    'MartaTerminalResultView',
+    'PaymentCreateView',
+    'PaymentFiscalRetryView',
+    'PaymentRefundView',
+]

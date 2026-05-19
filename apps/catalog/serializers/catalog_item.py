@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.catalog.models import CatalogItem
 from apps.catalog.models import CatalogCategory
 from apps.catalog.serializers.mxik import CatalogImageSerializerMixin, MxikCodeValidationMixin
+from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.restaurants.helpers import get_prep_station_model
 from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
@@ -13,6 +14,8 @@ PrepStation = get_prep_station_model()
 class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
+    requires_marking = serializers.BooleanField(required=False)
+    marking_gtin = serializers.CharField(required=False, allow_blank=True)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -26,26 +29,6 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
 
         self.fields['category'].queryset = CatalogCategory.objects.filter(restaurant=restaurant)
         self.fields['prep_station'].queryset = PrepStation.objects.filter(restaurant=restaurant)
-
-    def validate(self, attrs):
-        attrs = super().validate(attrs)
-        request = self.context.get('request')
-        if request is None:
-            return attrs
-
-        restaurant = get_request_restaurant(request)
-        category = attrs.get('category')
-        prep_station = attrs.get('prep_station')
-
-        if category is not None and category.restaurant_id != restaurant.id:
-            raise serializers.ValidationError({'category': _('Selected category does not belong to the current restaurant.')})
-
-        if prep_station is not None and prep_station.restaurant_id != restaurant.id:
-            raise serializers.ValidationError(
-                {'prep_station': _('Selected prep station does not belong to the current restaurant.')}
-            )
-
-        return attrs
 
     class Meta:
         model = CatalogItem
@@ -62,6 +45,8 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
             'mxik_code',
             'mxik_name',
             'mxik_payload',
+            'requires_marking',
+            'marking_gtin',
             'image_url',
             'image_source',
             'image_file',
@@ -84,3 +69,44 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
             'image_file': {'required': False, 'allow_null': True},
         }
         validators = []
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get('request')
+        if request is not None:
+            restaurant = get_request_restaurant(request)
+            category = attrs.get('category')
+            prep_station = attrs.get('prep_station')
+
+            if category is not None and category.restaurant_id != restaurant.id:
+                raise serializers.ValidationError({'category': _('Selected category does not belong to the current restaurant.')})
+
+            if prep_station is not None and prep_station.restaurant_id != restaurant.id:
+                raise serializers.ValidationError(
+                    {'prep_station': _('Selected prep station does not belong to the current restaurant.')}
+                )
+
+        payload = attrs.get('mxik_payload')
+        if payload is None and self.instance is not None:
+            payload = getattr(self.instance, 'mxik_payload', None)
+        if 'requires_marking' not in attrs and payload is not None:
+            attrs['requires_marking'] = item_requires_marking(type('PayloadItem', (), {'mxik_payload': payload, 'requires_marking': False})())
+        if not attrs.get('marking_gtin'):
+            payload_item = type(
+                'PayloadItem',
+                (),
+                {
+                    'mxik_payload': payload,
+                    'marking_gtin': getattr(self.instance, 'marking_gtin', '') if self.instance is not None else '',
+                },
+            )()
+            derived_gtin = item_marking_gtin(payload_item)
+            if derived_gtin:
+                attrs['marking_gtin'] = derived_gtin
+        return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['requires_marking'] = item_requires_marking(instance)
+        data['marking_gtin'] = item_marking_gtin(instance)
+        return data

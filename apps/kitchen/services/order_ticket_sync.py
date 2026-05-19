@@ -16,6 +16,12 @@ OrderItem = get_order_item_model()
 class OrderTicketSyncService:
     route_mode = KitchenTicket.RouteMode.DISPLAY
 
+    @staticmethod
+    def _route_mode_for_station(station):
+        if getattr(station, 'printer_integration_id', None):
+            return KitchenTicket.RouteMode.BOTH
+        return KitchenTicket.RouteMode.DISPLAY
+
     def sync(self, order: Order):
         if order.status == Order.Status.OPEN:
             deleted_count, _ = KitchenTicket.objects.filter(order=order).delete()
@@ -35,6 +41,8 @@ class OrderTicketSyncService:
 
         for station_id in station_ids:
             station_items = item_queryset.filter(prep_station_id=station_id)
+            station = station_items[0].prep_station
+            route_mode = self._route_mode_for_station(station)
             if station_items.filter(status=OrderItem.Status.COOKING).exists():
                 ticket_status = KitchenTicket.Status.COOKING
             elif station_items.exists() and not station_items.exclude(status=OrderItem.Status.DONE).exists():
@@ -48,15 +56,15 @@ class OrderTicketSyncService:
                 defaults={
                     'restaurant': order.restaurant,
                     'status': ticket_status,
-                    'routed_via': self.route_mode,
+                    'routed_via': route_mode,
                 },
             )
             updates = []
             if not created and ticket.status != ticket_status:
                 ticket.status = ticket_status
                 updates.append('status')
-            if ticket.routed_via != self.route_mode:
-                ticket.routed_via = self.route_mode
+            if ticket.routed_via != route_mode:
+                ticket.routed_via = route_mode
                 updates.append('routed_via')
             if ticket_status == KitchenTicket.Status.DONE and not ticket.completed_at:
                 ticket.completed_at = timezone.now()
@@ -71,7 +79,7 @@ class OrderTicketSyncService:
                     extra={'ticket_id': str(ticket.pk), 'order_id': str(order.pk), 'status': ticket.status},
                 )
 
-            if created and self.route_mode in [KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH]:
+            if created and route_mode in [KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH]:
                 print_result = print_kitchen_ticket(ticket)
                 ticket.is_printed = bool(print_result.get('ok'))
                 ticket.printed_payload = print_result

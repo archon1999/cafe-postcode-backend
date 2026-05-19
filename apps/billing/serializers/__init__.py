@@ -7,7 +7,7 @@ from .cashier_context import (
     FiscalShiftSerializer,
     PaymentRefundCreateSerializer,
 )
-from .payment import PaymentSerializer
+from .payment import MartaTerminalResultSerializer, PaymentSerializer
 from .payment_refund import PaymentRefundSerializer
 from .receipt import ReceiptSerializer
 
@@ -18,6 +18,7 @@ __all__ = [
     'CashShiftOpenSerializer',
     'CashShiftSerializer',
     'FiscalShiftSerializer',
+    'MartaTerminalResultSerializer',
     'PaymentRefundCreateSerializer',
     'PaymentRefundSerializer',
     'PaymentSerializer',

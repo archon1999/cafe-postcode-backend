@@ -8,6 +8,11 @@ from apps.kitchen.models import KitchenTicket
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer, OrderItemSerializer
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_item_model
+from common.api.permissions import (
+    POS_KITCHEN_ORDERS_CANCEL_PERMISSION,
+    POS_KITCHEN_ORDERS_VIEW_ALL_PERMISSION,
+    has_permission_code,
+)
 
 OrderItem = get_order_item_model()
 
@@ -17,13 +22,24 @@ logger = logging.getLogger(__name__)
 class KitchenStatusService:
     feature_gate_service_class = FeatureGateService
 
-    def update_ticket_status(self, *, ticket: KitchenTicket, status: str):
+    def _ensure_station_access(self, *, user, prep_station):
+        if user is None:
+            return
+        if has_permission_code(user, POS_KITCHEN_ORDERS_VIEW_ALL_PERMISSION):
+            return
+        if not prep_station.cooks.exists():
+            return
+        if not prep_station.cooks.filter(pk=user.pk).exists():
+            raise ValidationError({'detail': _('You do not have access to this preparation station.')})
+
+    def update_ticket_status(self, *, ticket: KitchenTicket, status: str, user=None):
         from apps.kitchen.services import sync_order_tickets
 
         self.feature_gate_service_class().ensure_kitchen_access(
             restaurant=ticket.order.restaurant,
             interactive=True,
         )
+        self._ensure_station_access(user=user, prep_station=ticket.prep_station)
 
         if status not in KitchenTicket.Status.values:
             raise ValidationError({'status': _('Invalid status.')})
@@ -48,13 +64,14 @@ class KitchenStatusService:
         )
         return KitchenTicketSerializer(ticket).data
 
-    def update_item_status(self, *, item: OrderItem, status: str):
+    def update_item_status(self, *, item: OrderItem, status: str, user=None):
         from apps.kitchen.services import sync_order_tickets
 
         self.feature_gate_service_class().ensure_kitchen_access(
             restaurant=item.order.restaurant,
             interactive=True,
         )
+        self._ensure_station_access(user=user, prep_station=item.prep_station)
 
         if status not in {
             OrderItem.Status.NEW,
@@ -63,6 +80,12 @@ class KitchenStatusService:
             OrderItem.Status.CANCELLED,
         }:
             raise ValidationError({'status': _('Invalid status.')})
+        if (
+            user is not None
+            and status == OrderItem.Status.CANCELLED
+            and not has_permission_code(user, POS_KITCHEN_ORDERS_CANCEL_PERMISSION)
+        ):
+            raise ValidationError({'status': _('Only head chef can cancel kitchen order items.')})
 
         item.status = status
         item.save(update_fields=['status', 'updated_at'])

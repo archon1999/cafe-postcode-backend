@@ -1,7 +1,6 @@
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
-from unittest.mock import patch
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
@@ -139,8 +138,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', second_response.data)
 
-    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
-    def test_card_payment_uses_marta_and_closes_order_on_success(self, service_class):
+    def test_card_pay_endpoint_requires_frontend_direct_flow(self):
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -150,16 +148,94 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.cash_desk.payment_integration = marta_config
         self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-        service_class.return_value.charge_payment.return_value = {
-            'ok': True,
-            'provider': 'marta-softpos',
-            'reference': 'trx-1',
-            'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
-        }
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CARD, 'amount': 30000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('initiate flow', response.data['detail'])
+        payment = Payment.objects.get(order=self.order)
+        self.assertEqual(payment.status, Payment.Status.FAILED)
+
+    def test_initiate_card_payment_requires_marta_config_on_active_cash_desk(self):
+        IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
+            {'amount': 30000, 'register_fiscal': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('active cash desk', response.data['detail'])
+        self.assertFalse(Payment.objects.filter(order=self.order).exists())
+
+    def test_initiate_card_payment_creates_pending_payment_and_returns_marta_config(self):
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={
+                'endpoint_url': 'http://192.168.88.125:8090',
+                'amount_multiplier': 100,
+                'tax_number': '307678400',
+                'timeout_seconds': 180,
+                'hmac_secret': 'secret',
+            },
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
+            {'amount': 30000, 'register_fiscal': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        payment = Payment.objects.get(order=self.order)
+        self.assertEqual(payment.status, Payment.Status.PENDING)
+        self.assertEqual(payment.method, Payment.Method.CARD)
+        self.assertEqual(response.data['marta']['endpointUrl'], 'http://192.168.88.125:8090')
+        self.assertEqual(response.data['marta']['amount'], 3000000)
+        self.assertEqual(response.data['marta']['taxNumber'], '307678400')
+        self.assertNotIn('hmac_secret', response.data['marta'])
+
+    def test_terminal_success_completes_payment_and_closes_order(self):
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+        initiate_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
+            {'amount': 30000, 'register_fiscal': True},
+            format='json',
+        )
+
+        response = self.client.post(
+            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
+            {
+                'ok': True,
+                'status': 'SUCCESS',
+                'requestId': 'request-1',
+                'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
+                'debug': {'transaction': {'response': {'httpStatus': 200}}},
+            },
             format='json',
         )
 
@@ -171,28 +247,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(payment.external_ref, 'trx-1')
         self.assertEqual(payment.provider_payload['params']['trxId'], 'trx-1')
 
-    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
-    def test_card_payment_requires_marta_config_on_active_cash_desk(self, service_class):
-        IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CARD, 'amount': 30000},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('active cash desk', response.data['detail'])
-        service_class.assert_not_called()
-
-    @patch('apps.integrations.services.MartaSoftPOSPaymentService')
-    def test_card_payment_returns_detail_on_marta_not_ready(self, service_class):
+    def test_terminal_failure_marks_payment_failed_and_keeps_order_open(self):
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -202,23 +257,29 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.cash_desk.payment_integration = marta_config
         self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-        service_class.return_value.charge_payment.return_value = {
-            'ok': False,
-            'provider': 'marta-softpos',
-            'status': 'NOT_READY',
-            'detail': 'SoftPOS is not ready. Open standby screen and keep the app in foreground',
-        }
+        initiate_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
+            {'amount': 30000, 'register_fiscal': True},
+            format='json',
+        )
 
         response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CARD, 'amount': 30000},
+            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
+            {
+                'ok': False,
+                'status': 'CANCELED',
+                'requestId': 'request-2',
+                'message': 'Прекращено',
+                'debug': {'transaction': {'response': {'httpStatus': 200}}},
+            },
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('standby screen', response.data['detail'])
+        self.assertEqual(response.data['detail'], 'Прекращено')
         self.order.refresh_from_db()
         payment = Payment.objects.get(order=self.order)
         self.assertNotEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.FAILED)
+        self.assertEqual(payment.provider_payload['debug']['transaction']['response']['httpStatus'], 200)
 

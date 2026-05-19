@@ -19,5 +19,9 @@ class KitchenTicketStatusUpdateView(APIView):
             pk=pk,
             restaurant=restaurant,
         )
-        serializer_data = self.kitchen_status_service_class().update_ticket_status(ticket=ticket, status=request.data.get('status'))
+        serializer_data = self.kitchen_status_service_class().update_ticket_status(
+            ticket=ticket,
+            status=request.data.get('status'),
+            user=request.user,
+        )
         return Response(serializer_data)

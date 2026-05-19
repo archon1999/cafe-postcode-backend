@@ -376,8 +376,8 @@ class CashShiftService:
 
         self.ensure_no_unresolved_fiscal_payments(shift=shift)
         snapshot = self.build_shift_snapshot(shift=shift)
-        actual = max(0, actual_closing_cash_amount or 0)
         expected = snapshot['expected_closing_cash_amount']
+        actual = expected if actual_closing_cash_amount is None else max(0, actual_closing_cash_amount or 0)
         shift.status = CashShift.Status.CLOSED
         shift.closed_by = closed_by
         shift.closed_at = timezone.now()

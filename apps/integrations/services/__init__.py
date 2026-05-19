@@ -1,3 +1,5 @@
+from django.utils import timezone
+
 from .config_resolver import IntegrationConfigResolverService
 from .marta_softpos import MartaSoftPOSPaymentService, SUPPORTED_MARTA_PAYMENT_PROVIDERS
 from .mock_payment import MockPaymentIntegrationService
@@ -34,6 +36,13 @@ def charge_payment(order, payment, *, manual_card_override=False, manual_card_re
             'reference': '',
             'manual': True,
             'detail': 'QR integration is not automated yet.',
+        }
+    if payment.method == payment.Method.CARD:
+        return {
+            'ok': False,
+            'provider': 'marta-softpos',
+            'method': payment.method,
+            'detail': 'Use card payment initiate flow.',
         }
 
     try:
@@ -165,8 +174,63 @@ def close_fiscal_shift(*, restaurant, cash_desk=None):
     return service.close_shift(cash_desk=cash_desk)
 
 
+def _build_kitchen_ticket_payload(ticket):
+    from apps.sales.helpers import get_order_item_model
+
+    order = ticket.order
+    OrderItem = get_order_item_model()
+    items = (
+        order.items.filter(prep_station=ticket.prep_station)
+        .exclude(status=OrderItem.Status.CANCELLED)
+        .select_related('catalog_item')
+    )
+    return {
+        'restaurant_name': order.restaurant.name,
+        'order_number': order.order_number,
+        'channel_label': order.get_channel_display(),
+        'table_label': getattr(getattr(order.table_session, 'table', None), 'name', '') if order.table_session_id else '',
+        'waiter_name': getattr(order.opened_by, 'full_name', '') if order.opened_by_id else '',
+        'printed_at_label': timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M'),
+        'items': [
+            {
+                'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
+                'quantity': item.quantity,
+                'line_total': item.line_total,
+                'note': item.note,
+            }
+            for item in items
+        ],
+        'subtotal': sum(int(item.line_total or 0) for item in items),
+        'service_fee': 0,
+        'total': sum(int(item.line_total or 0) for item in items),
+        'order_note': order.note,
+    }
+
+
 def print_kitchen_ticket(ticket):
-    return {'ok': False, 'detail': 'Kitchen ticket printer integration is not configured.'}
+    config = getattr(ticket.prep_station, 'printer_integration', None)
+    if config is None:
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail='Kitchen ticket printer integration is not configured.',
+            provider='',
+        )
+
+    if config.provider == 'windows-raw':
+        service = WindowsRawPrinterIntegrationService(config)
+    else:
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail=f"Unsupported printer provider '{config.provider}'.",
+            provider=config.provider,
+        )
+
+    try:
+        return service.print_prebill(order=ticket.order, payload=_build_kitchen_ticket_payload(ticket))
+    except ValueError as error:
+        return _client_print_fallback(code=PRINTER_NOT_CONFIGURED, detail=str(error), provider=config.provider)
+    except Exception as error:
+        return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
 
 
 def print_prebill(order, payload):

@@ -9,5 +9,9 @@ def get_order_item_model():
     return apps.get_model('sales', 'OrderItem')
 
 
+def get_order_item_marking_model():
+    return apps.get_model('sales', 'OrderItemMarking')
+
+
 def get_order_item_note_model():
     return apps.get_model('sales', 'OrderItemNote')

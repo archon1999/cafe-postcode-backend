@@ -122,7 +122,7 @@ class CashShiftCloseView(APIView):
 
         shift_service.close_shift(
             shift=shift,
-            actual_closing_cash_amount=serializer.validated_data['actual_closing_cash_amount'],
+            actual_closing_cash_amount=serializer.validated_data.get('actual_closing_cash_amount'),
             closed_by=request.user,
             notes_close=serializer.validated_data.get('notes_close', ''),
         )

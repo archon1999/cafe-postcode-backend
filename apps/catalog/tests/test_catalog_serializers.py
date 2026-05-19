@@ -86,7 +86,7 @@ class CatalogCategorySerializerTests(SimpleTestCase):
             data={
                 'name': 'Sabzavotlar',
                 'mxik_code': '00709001906000000',
-                'mxik_payload': '{"mxikCode":"00709001906000000","mxikName":"Salat barg"}',
+                'mxik_payload': '{"mxikCode":"00709001906000000","mxikName":"Salat barg","cashSale":0}',
                 'sort_order': 1,
                 'is_active': True,
             }
@@ -95,8 +95,20 @@ class CatalogCategorySerializerTests(SimpleTestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(
             serializer.validated_data['mxik_payload'],
-            {'mxikCode': '00709001906000000', 'mxikName': 'Salat barg'},
+            {'mxikCode': '00709001906000000', 'mxikName': 'Salat barg', 'cashSale': 0},
         )
+
+    def test_representation_derives_cash_payment_forbidden_from_cash_sale_payload(self):
+        instance = CatalogCategory(
+            name='Sabzavotlar',
+            mxik_code='00709001906000000',
+            mxik_name='Salat barg',
+            mxik_payload={'mxikCode': '00709001906000000', 'cashSale': '0'},
+            sort_order=1,
+            is_active=True,
+        )
+
+        self.assertTrue(CatalogCategorySerializer(instance).data['cash_payment_forbidden'])
 
     def test_update_keeps_manual_source_when_mxik_code_removed(self):
         instance = CatalogCategory(

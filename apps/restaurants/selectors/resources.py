@@ -21,7 +21,6 @@ PrepStation = get_prep_station_model()
 
 PREP_STATION_ORDERING_FIELDS = {
     'name': 'name',
-    'code': 'code',
     'kind': 'kind',
     'isActive': 'is_active',
 }
@@ -58,7 +57,7 @@ class PrepStationListFilters:
 
     def apply(self, queryset: QuerySet) -> QuerySet:
         if self.search:
-            queryset = queryset.filter(Q(name__icontains=self.search) | Q(code__icontains=self.search))
+            queryset = queryset.filter(Q(name__icontains=self.search))
         if self.kinds:
             queryset = queryset.filter(kind__in=self.kinds)
         if self.is_active is not None:
