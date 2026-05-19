@@ -20,6 +20,24 @@ class PrepStationSerializer(serializers.ModelSerializer):
     )
     cooks = serializers.SerializerMethodField()
 
+    def _allowed_cook_queryset(self):
+        request = self.context.get('request')
+        restaurant = get_optional_request_restaurant(request) if request is not None else None
+        if restaurant is None:
+            return User.objects.none()
+        return User.objects.filter(
+            restaurant_profile__restaurant=restaurant,
+            role__code__in=('chef', 'barman', 'head_chef'),
+            is_active=True,
+        ).select_related('role')
+
+    def _set_cook_queryset(self, queryset):
+        field = self.fields['cook_ids']
+        if hasattr(field, 'child_relation'):
+            field.child_relation.queryset = queryset
+            return
+        field.queryset = queryset
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
@@ -31,11 +49,23 @@ class PrepStationSerializer(serializers.ModelSerializer):
             kind=IntegrationConfig.Kind.PRINTER,
             is_enabled=True,
         )
-        self.fields['cook_ids'].queryset = User.objects.filter(
-            restaurant_profile__restaurant=restaurant,
-            role__code__in=('chef', 'barman', 'head_chef'),
-            is_active=True,
-        ).select_related('role')
+        self._set_cook_queryset(self._allowed_cook_queryset())
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            mutable_data = data.copy()
+            cook_ids = mutable_data.get('cook_ids', mutable_data.get('cookIds'))
+            if isinstance(cook_ids, list):
+                allowed_ids = {
+                    str(user_id)
+                    for user_id in self._allowed_cook_queryset()
+                    .filter(id__in=[str(cook_id) for cook_id in cook_ids])
+                    .values_list('id', flat=True)
+                }
+                mutable_data['cook_ids'] = [str(cook_id) for cook_id in cook_ids if str(cook_id) in allowed_ids]
+                mutable_data.pop('cookIds', None)
+                data = mutable_data
+        return super().to_internal_value(data)
 
     def get_cooks(self, obj):
         return [

@@ -18,17 +18,21 @@ class KitchenStatusApiTests(APITestCase):
             code='pos_kitchen_orders.update',
             defaults={'name': 'POS kitchen orders update', 'description': 'POS kitchen orders update permission'},
         )[0]
+        cls.view_permission = Permission.objects.get_or_create(
+            code='pos_kitchen_orders.view',
+            defaults={'name': 'POS kitchen orders view', 'description': 'POS kitchen orders view permission'},
+        )[0]
         cls.role = Role.objects.get_or_create(
             code='kitchen-chef',
             defaults={'name': 'Kitchen chef', 'description': 'Kitchen chef role', 'is_system': False},
         )[0]
-        cls.role.permissions.set([cls.permission])
+        cls.role.permissions.set([cls.permission, cls.view_permission])
         cls.entitlement = RestaurantEntitlement.objects.create(
             restaurant=cls.restaurant,
             is_active=True,
             is_custom=True,
         )
-        cls.entitlement.permissions.set([cls.permission])
+        cls.entitlement.permissions.set([cls.permission, cls.view_permission])
         cls.entitlement.allowed_roles.set([cls.role])
         cls.user = User.objects.create_user(
             username='kitchen-chef',
@@ -111,4 +115,11 @@ class KitchenStatusApiTests(APITestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
         self.assertEqual(self.order.status, Order.Status.READY)
+
+    def test_queue_includes_station_without_assigned_cooks(self):
+        response = self.client.get('/api/v1/pos/kitchen/queue/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['data']), 1)
+        self.assertEqual(str(response.data['data'][0]['id']), str(self.ticket.id))
 
