@@ -212,6 +212,8 @@ services:
     command:
       - "-H"
       - "unix:///var/run/docker.sock"
+      - "--hide-label"
+      - "com.docker.compose.project=kep"
     ports:
       - "127.0.0.1:${PORTAINER_PORT:-9444}:9443"
     volumes:
