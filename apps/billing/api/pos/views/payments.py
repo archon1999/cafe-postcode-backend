@@ -1,4 +1,3 @@
-from django.db import transaction
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -28,7 +27,6 @@ class PaymentCreateView(APIView):
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 
-    @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
@@ -71,7 +69,6 @@ class MartaCardPaymentInitiateView(APIView):
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 
-    @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
@@ -102,7 +99,6 @@ class MartaTerminalResultView(APIView):
     service_class = OrderPaymentService
     feature_gate_service_class = FeatureGateService
 
-    @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
