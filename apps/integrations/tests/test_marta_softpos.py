@@ -3,7 +3,9 @@ from uuid import uuid4
 
 from django.test import SimpleTestCase
 
+from apps.integrations.services.agent_marta import MartaSoftPOSAgentPaymentService
 from apps.integrations.services.marta_softpos import MartaSoftPOSPaymentService
+from apps.local_agents.services import LocalAgentCommandError
 
 
 class FakeResponse:
@@ -37,6 +39,65 @@ class FakeClient:
             payload, status_code = response
             return FakeResponse(payload, status_code=status_code)
         return FakeResponse(response)
+
+
+class FakeAgentCommandService:
+    def __init__(self, *, fail_first_health=False):
+        self.calls = []
+        self.fail_first_health = fail_first_health
+        self.health_failures = 0
+
+    def execute(self, *, restaurant, command_type, payload, timeout_seconds=30):
+        self.calls.append({'command_type': command_type, 'payload': payload, 'timeout_seconds': timeout_seconds})
+        if command_type == 'marta.discover':
+            return {
+                'ok': True,
+                'devices': [
+                    {
+                        'endpointUrl': 'http://192.168.88.125:8090',
+                        'status': 'READY',
+                        'busy': False,
+                        'standbyVisible': True,
+                    }
+                ],
+                'scannedCount': 254,
+                'port': 8090,
+            }
+        raise AssertionError(f'Unexpected command type: {command_type}')
+
+    def local_http_request(self, *, restaurant, method, url, query=None, json_body=None, timeout_seconds=30):
+        self.calls.append(
+            {
+                'command_type': 'local_http.request',
+                'method': method,
+                'url': url,
+                'query': query or {},
+                'timeout_seconds': timeout_seconds,
+            }
+        )
+        if url.endswith('/health'):
+            if self.fail_first_health and self.health_failures == 0:
+                self.health_failures += 1
+                raise LocalAgentCommandError('Connection refused.', code='LOCAL_HTTP_ERROR')
+            return {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+                'durationMs': 10,
+            }
+        if url.endswith('/transaction'):
+            return {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {
+                    'ok': True,
+                    'status': 'SUCCESS',
+                    'requestId': 'request-agent-1',
+                    'params': {'trxId': 'trx-agent-1', 'rrn': 'rrn-agent-1'},
+                },
+                'durationMs': 20,
+            }
+        raise AssertionError(f'Unexpected local HTTP URL: {url}')
 
 
 class MartaSoftPOSTests(SimpleTestCase):
@@ -194,3 +255,43 @@ class MartaSoftPOSTests(SimpleTestCase):
         self.assertEqual(result['status'], 'CONFIG_ERROR')
         self.assertIn('endpoint URL', result['detail'])
         self.assertEqual(calls, [])
+
+
+class MartaSoftPOSAgentTests(SimpleTestCase):
+    def test_missing_endpoint_discovers_terminal_and_uses_it_for_payment(self):
+        command_service = FakeAgentCommandService()
+        config = SimpleNamespace(provider='marta-softpos', settings={'amount_multiplier': 100})
+        service = MartaSoftPOSAgentPaymentService(config, command_service=command_service)
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='307678400'))
+        payment = SimpleNamespace(id=uuid4(), amount=10000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['reference'], 'trx-agent-1')
+        self.assertEqual(result['endpoint_url'], 'http://192.168.88.125:8090')
+        self.assertEqual(config.settings['endpoint_url'], 'http://192.168.88.125:8090')
+        self.assertEqual(command_service.calls[0]['command_type'], 'marta.discover')
+        self.assertEqual(command_service.calls[1]['url'], 'http://192.168.88.125:8090/health')
+        self.assertEqual(command_service.calls[2]['url'], 'http://192.168.88.125:8090/transaction')
+        self.assertEqual(command_service.calls[2]['query']['amount'], 1000000)
+        self.assertEqual(command_service.calls[2]['query']['tin'], '307678400')
+
+    def test_stale_endpoint_rediscovery_retries_health_with_discovered_terminal(self):
+        command_service = FakeAgentCommandService(fail_first_health=True)
+        config = SimpleNamespace(
+            provider='marta-softpos',
+            settings={'endpoint_url': 'http://192.168.88.99:8090', 'amount_multiplier': 100},
+        )
+        service = MartaSoftPOSAgentPaymentService(config, command_service=command_service)
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='307678400'))
+        payment = SimpleNamespace(id=uuid4(), amount=10000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['endpoint_url'], 'http://192.168.88.125:8090')
+        self.assertEqual(command_service.calls[0]['url'], 'http://192.168.88.99:8090/health')
+        self.assertEqual(command_service.calls[1]['command_type'], 'marta.discover')
+        self.assertEqual(command_service.calls[2]['url'], 'http://192.168.88.125:8090/health')
+        self.assertEqual(command_service.calls[3]['url'], 'http://192.168.88.125:8090/transaction')

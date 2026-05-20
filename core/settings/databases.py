@@ -38,5 +38,8 @@ else:
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': Path(os.getenv('SQLITE_PATH') or (LOCAL_DATA_DIR / 'db.sqlite3')),
+            'OPTIONS': {
+                'timeout': float(os.getenv('SQLITE_TIMEOUT_SECONDS', '20')),
+            },
         }
     }

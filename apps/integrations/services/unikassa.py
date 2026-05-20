@@ -11,6 +11,7 @@ from django.utils.dateparse import parse_datetime
 
 from apps.billing.models import Receipt
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
+from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.sales.models import OrderItem
 
 
@@ -177,6 +178,9 @@ class UnikassaFiscalIntegrationService:
             return 15.0
 
     def _post_json(self, client, path: str, payload: dict):
+        if self._use_local_agent():
+            return self._post_json_via_agent(path=path, payload=payload)
+
         try:
             response = client.post(path, json=payload)
             response.raise_for_status()
@@ -208,6 +212,53 @@ class UnikassaFiscalIntegrationService:
         if isinstance(payload, dict):
             return UnikassaFiscalError(str(payload.get('message') or payload.get('detail') or payload))
         return UnikassaFiscalError(str(payload))
+
+    def _use_local_agent(self) -> bool:
+        transport = str(self.settings.get('transport') or self.settings.get('transportType') or '').strip()
+        if transport:
+            return transport == 'local-agent'
+        return bool(self.settings.get('use_local_agent') or self.settings.get('useLocalAgent'))
+
+    def _post_json_via_agent(self, *, path: str, payload: dict):
+        restaurant = getattr(self.config, 'restaurant', None)
+        if restaurant is None:
+            restaurant_id = getattr(self.config, 'restaurant_id', None)
+            if restaurant_id is not None:
+                from apps.restaurants.helpers import get_restaurant_model
+
+                restaurant = get_restaurant_model().objects.get(pk=restaurant_id)
+        if restaurant is None:
+            raise UnikassaFiscalError('Local agent fiscal request requires a restaurant-bound integration config.')
+
+        try:
+            result = LocalAgentCommandService().local_http_request(
+                restaurant=restaurant,
+                method='POST',
+                url=f'{self._endpoint_url()}{path}',
+                json_body=payload,
+                timeout_seconds=int(self._timeout()),
+            )
+        except LocalAgentUnavailableError as error:
+            raise UnikassaFiscalError(str(error), code=error.code) from error
+        except LocalAgentCommandError as error:
+            raise UnikassaFiscalError(str(error), code=error.code) from error
+
+        status_code = int(result.get('httpStatus') or 0)
+        body = result.get('body') if isinstance(result.get('body'), dict) else None
+        raw_body = str(result.get('rawBody') or '').strip()
+        if status_code and not 200 <= status_code < 300:
+            if body:
+                if isinstance(body.get('error'), dict):
+                    error = body['error']
+                    raise UnikassaFiscalError(str(error.get('message') or body), code=str(error.get('code') or ''))
+                raise UnikassaFiscalError(str(body.get('message') or body.get('detail') or body))
+            raise UnikassaFiscalError(raw_body or f'Unikassa returned HTTP {status_code}.')
+        if body is not None:
+            if body.get('error'):
+                error = body['error'] if isinstance(body['error'], dict) else {}
+                raise UnikassaFiscalError(str(error.get('message') or body['error']), code=str(error.get('code') or ''))
+            return body
+        return raw_body or None
 
     def _post_json_with_sync_retry(self, client, path: str, payload: dict):
         try:

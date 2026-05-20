@@ -4,7 +4,8 @@
 
 Production is prepared for Docker Compose with:
 
-- `web`: Django + Gunicorn on `0.0.0.0:8888`
+- `web`: Django + Gunicorn on `0.0.0.0:8000`
+- `ws`: Django Channels + Daphne on `0.0.0.0:8888`; Nginx proxies only `/ws/` here
 - `qcluster`: Django Q worker
 - `postgres`: PostgreSQL
 - `redis`: cache, channel layer, and Django Q broker
@@ -18,7 +19,12 @@ cp .env.production.example .env.production
 docker compose --env-file .env.production up -d --build
 ```
 
-The `web` service runs migrations and `collectstatic` before Gunicorn starts. Prometheus scrapes Django metrics directly on the internal Docker network at `web:8888/metrics`.
+The `web` service runs migrations and `collectstatic` before Gunicorn starts. Prometheus scrapes Django metrics directly on the internal Docker network at `web:8000/metrics`.
+
+Docker Nginx routes normal HTTP/API traffic to Gunicorn and WebSocket traffic to Daphne:
+
+- `/ws/` -> `ws:8888`
+- everything else -> `web:8000`
 
 By default Docker Nginx binds to `127.0.0.1:8880` so it can run behind the host Certbot/TLS Nginx. The host-level `cafe-postcode` Nginx config is stored at `nginx/cafe-postcode.uz.conf` and included by the host Nginx service.
 
