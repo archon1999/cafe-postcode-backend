@@ -234,6 +234,67 @@ class FiscalBusinessFlowTests(PosTestCase):
             ],
         )
 
+    @patch('apps.integrations.services.unikassa.LocalAgentCommandService.local_http_request')
+    def test_unikassa_default_transport_always_uses_local_agent(self, local_http_request):
+        local_http_request.return_value = {
+            'ok': True,
+            'httpStatus': 200,
+            'body': {'TerminalID': 'LG420'},
+        }
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(
+                provider='unikassa',
+                restaurant=self.restaurant,
+                settings={
+                    'endpoint_url': 'http://127.0.0.1:8181/api/v1',
+                    'terminal_id': 'LG420',
+                    'transport': 'direct',
+                },
+            )
+        )
+
+        result = service._post_json(object(), '/get/info', {'Fiscal': 'LG420', 'Number': None})
+
+        self.assertEqual(result['TerminalID'], 'LG420')
+        local_http_request.assert_called_once()
+        self.assertEqual(local_http_request.call_args.kwargs['restaurant'], self.restaurant)
+        self.assertEqual(local_http_request.call_args.kwargs['url'], 'http://127.0.0.1:8181/api/v1/get/info')
+
+    @patch('apps.integrations.services.unikassa.LocalAgentCommandService.local_http_request')
+    @patch('apps.integrations.services.unikassa.LocalAgentCommandService.execute')
+    def test_unikassa_missing_endpoint_discovers_lan_endpoint(self, execute, local_http_request):
+        execute.return_value = {
+            'ok': True,
+            'devices': [{'endpointUrl': 'http://192.168.0.177:8181/api/v1'}],
+        }
+        local_http_request.return_value = {
+            'ok': True,
+            'httpStatus': 200,
+            'body': {'TerminalID': 'LG420'},
+        }
+        config = SimpleNamespace(provider='unikassa', restaurant=self.restaurant, settings={'terminal_id': 'LG420'})
+        service = UnikassaFiscalIntegrationService(config)
+
+        result = service._post_json(object(), '/get/info', {'Fiscal': 'LG420', 'Number': None})
+
+        self.assertEqual(result['TerminalID'], 'LG420')
+        execute.assert_called_once()
+        self.assertEqual(execute.call_args.kwargs['command_type'], 'unikassa.discover')
+        self.assertEqual(execute.call_args.kwargs['payload']['fiscal'], 'LG420')
+        self.assertEqual(local_http_request.call_args.kwargs['url'], 'http://192.168.0.177:8181/api/v1/get/info')
+        self.assertEqual(config.settings['endpoint_url'], 'http://192.168.0.177:8181/api/v1')
+
+    def test_unikassa_injected_client_factory_keeps_unit_tests_direct(self):
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json={'ok': True})))
+
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(provider='unikassa', settings={'terminal_id': 'LG420'}),
+            client_factory=client_factory,
+        )
+
+        self.assertFalse(service._use_local_agent())
+
     def test_unikassa_close_shift_collects_z_report_before_close(self):
         calls = []
 
