@@ -444,7 +444,6 @@ class CashShiftService:
             z_info = {}
         return str(response.get('TerminalID') or response.get('Fiscal') or result.get('terminal_id') or z_info.get('TerminalID') or '').strip()
 
-    @transaction.atomic
     def open_shift(self, *, restaurant=None, branch=None, cash_desk, opened_by, cashier=None, opening_cash_amount=0, notes_open=''):
         restaurant = restaurant or branch
         if restaurant is None:
@@ -463,15 +462,26 @@ class CashShiftService:
         if CashShift.objects.filter(cash_desk=cash_desk, status=CashShift.Status.OPEN).exists():
             raise ValidationError({'cashDeskId': 'Selected cash desk already has an active shift.'})
 
-        shift = CashShift.objects.create(
-            cash_desk=cash_desk,
-            cashier=cashier,
-            opened_by=opened_by,
-            opened_at=timezone.now(),
-            opening_cash_amount=max(0, opening_cash_amount or 0),
-            notes_open=notes_open or '',
-        )
         self.ensure_fiscal_shift_open(restaurant=restaurant, opened_by=opened_by)
+
+        with transaction.atomic():
+            if cashier is not None and CashShift.objects.filter(
+                cash_desk__restaurant=restaurant,
+                cashier=cashier,
+                status=CashShift.Status.OPEN,
+            ).exists():
+                raise ValidationError({'cashierId': 'Selected cashier already has an active shift.'})
+            if CashShift.objects.filter(cash_desk=cash_desk, status=CashShift.Status.OPEN).exists():
+                raise ValidationError({'cashDeskId': 'Selected cash desk already has an active shift.'})
+
+            shift = CashShift.objects.create(
+                cash_desk=cash_desk,
+                cashier=cashier,
+                opened_by=opened_by,
+                opened_at=timezone.now(),
+                opening_cash_amount=max(0, opening_cash_amount or 0),
+                notes_open=notes_open or '',
+            )
         return shift
 
     def _is_valid_cashier(self, *, restaurant, cashier):
