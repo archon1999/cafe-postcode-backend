@@ -328,7 +328,6 @@ class OrderPaymentService:
 
 
 class PaymentFiscalRetryService:
-    @transaction.atomic
     def retry(self, *, payment: Payment):
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError({'detail': _('Only successful payments can be sent to fiscal integration.')})
