@@ -42,9 +42,10 @@ class FakeClient:
 
 
 class FakeAgentCommandService:
-    def __init__(self, *, fail_first_health=False):
+    def __init__(self, *, fail_first_health=False, invalid_first_health=False):
         self.calls = []
         self.fail_first_health = fail_first_health
+        self.invalid_first_health = invalid_first_health
         self.health_failures = 0
 
     def execute(self, *, restaurant, command_type, payload, timeout_seconds=30):
@@ -79,6 +80,14 @@ class FakeAgentCommandService:
             if self.fail_first_health and self.health_failures == 0:
                 self.health_failures += 1
                 raise LocalAgentCommandError('Connection refused.', code='LOCAL_HTTP_ERROR')
+            if self.invalid_first_health and self.health_failures == 0:
+                self.health_failures += 1
+                return {
+                    'ok': False,
+                    'httpStatus': 404,
+                    'body': {'message': 'Not found'},
+                    'durationMs': 10,
+                }
             return {
                 'ok': True,
                 'httpStatus': 200,
@@ -279,6 +288,25 @@ class MartaSoftPOSAgentTests(SimpleTestCase):
 
     def test_stale_endpoint_rediscovery_retries_health_with_discovered_terminal(self):
         command_service = FakeAgentCommandService(fail_first_health=True)
+        config = SimpleNamespace(
+            provider='marta-softpos',
+            settings={'endpoint_url': 'http://192.168.88.99:8090', 'amount_multiplier': 100},
+        )
+        service = MartaSoftPOSAgentPaymentService(config, command_service=command_service)
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='307678400'))
+        payment = SimpleNamespace(id=uuid4(), amount=10000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['endpoint_url'], 'http://192.168.88.125:8090')
+        self.assertEqual(command_service.calls[0]['url'], 'http://192.168.88.99:8090/health')
+        self.assertEqual(command_service.calls[1]['command_type'], 'marta.discover')
+        self.assertEqual(command_service.calls[2]['url'], 'http://192.168.88.125:8090/health')
+        self.assertEqual(command_service.calls[3]['url'], 'http://192.168.88.125:8090/transaction')
+
+    def test_stale_endpoint_with_non_marta_health_rediscovery_retries_discovered_terminal(self):
+        command_service = FakeAgentCommandService(invalid_first_health=True)
         config = SimpleNamespace(
             provider='marta-softpos',
             settings={'endpoint_url': 'http://192.168.88.99:8090', 'amount_multiplier': 100},

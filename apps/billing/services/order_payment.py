@@ -61,12 +61,18 @@ class OrderPaymentService:
             raise ValidationError({'detail': _('MARTA SoftPOS payment integration is not configured for the active cash desk.')})
 
         self._validate_payment_amount(order=order, amount=amount)
-        payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
-
         settings = dict(config.settings or {})
+        if str(settings.get('transport') or '').strip() == 'local-agent':
+            raise ValidationError({
+                'detail': _(
+                    'MARTA browser-direct payment flow is disabled. Refresh POS and use the card payment flow through the local agent.'
+                )
+            })
         endpoint_url = str(settings.get('endpoint_url') or settings.get('endpointUrl') or '').rstrip('/')
         if not endpoint_url:
             raise ValidationError({'detail': _('MARTA SoftPOS endpoint URL is not configured.')})
+
+        payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
 
         amount_multiplier = self._positive_int(
             settings.get('amount_multiplier') or settings.get('amountMultiplier'),

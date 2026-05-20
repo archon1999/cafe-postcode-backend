@@ -228,8 +228,8 @@ class UnikassaFiscalIntegrationService:
         if restaurant is None:
             raise UnikassaFiscalError('Local agent fiscal request requires a restaurant-bound integration config.')
 
-        endpoint_url = self._endpoint_url()
-        if not self._configured_endpoint_url():
+        endpoint_url = self._configured_endpoint_url()
+        if not endpoint_url:
             discovered_url = self._discover_endpoint_url(
                 restaurant=restaurant,
                 fiscal=str(payload.get('Fiscal') or ''),
@@ -237,6 +237,11 @@ class UnikassaFiscalIntegrationService:
             )
             if discovered_url:
                 endpoint_url = discovered_url
+            else:
+                raise UnikassaFiscalError(
+                    'Unikassa terminal was not found on the local network.',
+                    code='UNIKASSA_NOT_FOUND',
+                )
 
         try:
             return self._post_json_via_agent_endpoint(

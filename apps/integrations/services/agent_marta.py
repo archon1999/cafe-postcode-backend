@@ -50,6 +50,14 @@ class MartaSoftPOSAgentPaymentService:
 
             health = self._body(health_result)
             provider_payload['health'] = health
+            if not self._looks_like_marta_health(health):
+                rediscovered_url = self._discover_endpoint_url(order=order, payload=provider_payload, reason='invalid_health')
+                if rediscovered_url and rediscovered_url != endpoint_url:
+                    endpoint_url = rediscovered_url
+                    provider_payload['endpoint_url'] = endpoint_url
+                    health_result = self._request_health(order=order, endpoint_url=endpoint_url, payload=provider_payload)
+                    health = self._body(health_result)
+                    provider_payload['health'] = health
             if not self._is_ready(health):
                 return self._failure(
                     payload=provider_payload,
@@ -277,6 +285,23 @@ class MartaSoftPOSAgentPaymentService:
             and health.get('busy') is False
             and health.get('standbyVisible') is True
         )
+
+    @staticmethod
+    def _looks_like_marta_health(health: dict) -> bool:
+        if not health:
+            return False
+        if health.get('httpStatus') is not None:
+            try:
+                http_status = int(health.get('httpStatus') or 0)
+            except (TypeError, ValueError):
+                return False
+            if not 200 <= http_status < 300:
+                return False
+        if 'standbyVisible' in health or 'flowGuardBusy' in health:
+            return True
+        if str(health.get('status') or '').strip().upper() in {'READY', 'NOT_READY', 'BUSY', 'IDLE', 'ACTIVE'}:
+            return True
+        return all(key in health for key in ('ok', 'port', 'phase'))
 
     @staticmethod
     def _failure(*, payload: dict, status: str, detail: str, reference: str = '', code: str = '', response=None):
