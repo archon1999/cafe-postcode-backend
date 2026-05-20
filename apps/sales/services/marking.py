@@ -8,7 +8,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.catalog.models import CatalogItem
 from apps.catalog.serializers import PosCatalogItemSerializer
-from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
+from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking, normalized_gtin_candidates
 from apps.sales.helpers import get_order_item_marking_model, get_order_item_model
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
@@ -39,11 +39,11 @@ def parse_marking_code(raw_code: str) -> ParsedMarkingCode:
 def find_catalog_item_by_marking(*, restaurant, parsed: ParsedMarkingCode):
     if not parsed.raw_code:
         raise ValidationError({'rawCode': _('Scanner code is empty.')})
-    gtin = parsed.gtin
-    if not gtin:
+    gtin_candidates = normalized_gtin_candidates(parsed.gtin)
+    if not gtin_candidates:
         raise ValidationError({'rawCode': _('Scanner code does not contain GTIN.')})
 
-    direct = CatalogItem.objects.filter(restaurant=restaurant, is_active=True, marking_gtin=gtin).first()
+    direct = CatalogItem.objects.filter(restaurant=restaurant, is_active=True, marking_gtin__in=gtin_candidates).first()
     if direct:
         return direct
 
@@ -54,7 +54,7 @@ def find_catalog_item_by_marking(*, restaurant, parsed: ParsedMarkingCode):
         'mxik_payload',
         'requires_marking',
     ):
-        if item_marking_gtin(item) == gtin:
+        if normalized_gtin_candidates(item_marking_gtin(item)) & gtin_candidates:
             return item
     raise ValidationError({'rawCode': _('No catalog item matches this marking code.')})
 

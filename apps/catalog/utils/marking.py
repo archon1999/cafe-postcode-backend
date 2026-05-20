@@ -18,6 +18,22 @@ def payload_gtin(payload) -> str:
     return ''
 
 
+def normalized_gtin_candidates(value) -> set[str]:
+    digits = ''.join(ch for ch in str(value or '') if ch.isdigit())
+    if not digits:
+        return set()
+
+    candidates = {digits}
+    stripped = digits.lstrip('0')
+    if stripped:
+        candidates.add(stripped)
+        if len(stripped) == 13:
+            candidates.add(stripped.zfill(14))
+    if len(digits) == 13:
+        candidates.add(digits.zfill(14))
+    return candidates
+
+
 def item_requires_marking(item) -> bool:
     return bool(getattr(item, 'requires_marking', False) or payload_requires_marking(getattr(item, 'mxik_payload', None)))
 

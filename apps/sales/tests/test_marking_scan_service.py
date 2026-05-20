@@ -41,6 +41,18 @@ class OrderMarkingScanServiceTests(PosTestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.order.total, 12000)
 
+    def test_scan_matches_tasnif_international_code_without_leading_zero(self):
+        self.marked_item.marking_gtin = ''
+        self.marked_item.mxik_payload = {'label': 1, 'internationalCode': '4780012960214'}
+        self.marked_item.save(update_fields=['marking_gtin', 'mxik_payload', 'updated_at'])
+
+        self.service.scan(order=self.order, raw_code=self.raw_code, scanned_by=self.user, mode='add')
+
+        order_item = OrderItem.objects.get(order=self.order, catalog_item=self.marked_item)
+        marking = OrderItemMarking.objects.get(order_item=order_item)
+        self.assertEqual(marking.gtin, '04780012960214')
+        self.assertEqual(order_item.quantity, 1)
+
     def test_scan_remove_deletes_matching_order_item(self):
         OrderItem.objects.create(
             order=self.order,
