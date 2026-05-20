@@ -21,6 +21,7 @@ LOCAL_APPS = [
     'apps.kitchen',
     'apps.reporting',
     'apps.integrations',
+    'apps.local_agents',
 ]
 
 THIRD_PARTY_APPS = [

@@ -1,9 +1,12 @@
+import base64
 import ctypes
 import os
 import socket
 from ctypes import wintypes
 
 from django.utils import timezone
+
+from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 
 
 class DOCINFO(ctypes.Structure):
@@ -189,7 +192,25 @@ class WindowsRawPrinterIntegrationService:
         host = (self.settings.get('host') or '').strip()
         port = int(self.settings.get('port') or 9100)
 
-        if connection_type == 'socket':
+        if self._use_local_agent():
+            try:
+                LocalAgentCommandService().printer_raw(
+                    restaurant=order.restaurant,
+                    payload={
+                        'connectionType': connection_type,
+                        'printerName': printer_name,
+                        'host': host,
+                        'port': port,
+                        'payloadBase64': base64.b64encode(raw_payload).decode('ascii'),
+                        'jobName': f'Cafe Postcode A{int(order.order_number):05d}',
+                    },
+                    timeout_seconds=15,
+                )
+            except LocalAgentUnavailableError as error:
+                raise RuntimeError(str(error)) from error
+            except LocalAgentCommandError as error:
+                raise RuntimeError(str(error)) from error
+        elif connection_type == 'socket':
             self._write_socket(host, port, raw_payload)
         else:
             if not printer_name:
@@ -207,3 +228,9 @@ class WindowsRawPrinterIntegrationService:
             'order_id': str(order.id),
             'order_number': order.order_number,
         }
+
+    def _use_local_agent(self) -> bool:
+        transport = str(self.settings.get('transport') or self.settings.get('transportType') or '').strip()
+        if transport:
+            return transport == 'local-agent'
+        return bool(self.settings.get('use_local_agent') or self.settings.get('useLocalAgent'))

@@ -29,6 +29,6 @@ RUN addgroup --system app \
 
 USER app
 
-EXPOSE 8888
+EXPOSE 8000
 
-CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8888"]
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8000"]

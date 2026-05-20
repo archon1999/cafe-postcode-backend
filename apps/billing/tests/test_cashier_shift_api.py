@@ -186,12 +186,36 @@ class CashierShiftApiTests(PosAPITestCase):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         order_payload = self.create_order_via_api({'channel': 'takeaway'})
         self.add_item_via_api(order_payload['id'], quantity=1)
-        payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=30000)
 
-        reprint_response = self.reprint_receipt_via_api(payment_response['receipt']['id'])
-        self.assertIn('receipt', reprint_response)
+        with (
+            patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal,
+            patch('apps.billing.services.payment_refund.reprint_fiscal_receipt') as reprint_fiscal,
+            patch('apps.billing.services.payment_refund.issue_refund_receipt') as refund_fiscal,
+        ):
+            issue_fiscal.return_value = [
+                {
+                    'ok': True,
+                    'provider': 'unikassa',
+                    'receipt_number': '1001',
+                    'response': {'ReceiptSeq': 1001},
+                    'split_reason': 'none',
+                }
+            ]
+            reprint_fiscal.return_value = {
+                'ok': True,
+                'provider': 'unikassa',
+                'receipt_number': '1001',
+            }
+            refund_fiscal.return_value = {
+                'ok': True,
+                'provider': 'unikassa',
+                'receipt_number': '1002',
+            }
+            payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=30000)
+            reprint_response = self.reprint_receipt_via_api(payment_response['receipt']['id'])
+            self.assertIn('receipt', reprint_response)
 
-        refund_response = self.refund_payment_via_api(payment_response['payment']['id'], reason='Customer returned order')
+            refund_response = self.refund_payment_via_api(payment_response['payment']['id'], reason='Customer returned order')
 
         order = Order.objects.get(pk=order_payload['id'])
         receipt = Receipt.objects.get(pk=payment_response['receipt']['id'])

@@ -26,6 +26,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/kitchen/', include('apps.kitchen.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/reporting/', include('apps.reporting.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/integrations/', include('apps.integrations.api.admin.urls')),
+    path(f'{API_V1_PREFIX}local-agent/', include('apps.local_agents.urls')),
     path(f'{API_V1_PREFIX}pos/auth/', include('apps.users.api.pos.urls.auth')),
     path(f'{API_V1_PREFIX}pos/catalog/', include('apps.catalog.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/floor/', include('apps.floor.api.pos.urls')),

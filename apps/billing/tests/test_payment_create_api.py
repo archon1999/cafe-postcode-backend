@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -138,7 +140,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', second_response.data)
 
-    def test_card_pay_endpoint_requires_frontend_direct_flow(self):
+    def test_card_pay_endpoint_requires_online_local_agent(self):
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -156,9 +158,53 @@ class PaymentCreateApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('initiate flow', response.data['detail'])
+        self.assertIn('Local agent is offline', response.data['detail'])
         payment = Payment.objects.get(order=self.order)
         self.assertEqual(payment.status, Payment.Status.FAILED)
+
+    @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
+    def test_card_payment_uses_local_agent_and_closes_order_on_success(self, local_http_request):
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+        local_http_request.side_effect = [
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+            },
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {
+                    'ok': True,
+                    'status': 'SUCCESS',
+                    'requestId': 'request-1',
+                    'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
+                },
+            },
+        ]
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': 30000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        payment = Payment.objects.get(order=self.order)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
+        self.assertEqual(payment.external_ref, 'trx-1')
+        self.assertEqual(payment.provider_payload['transport'], 'local-agent')
+        self.assertEqual(local_http_request.call_count, 2)
 
     def test_initiate_card_payment_requires_marta_config_on_active_cash_desk(self):
         IntegrationConfig.objects.create(

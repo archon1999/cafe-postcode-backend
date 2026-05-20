@@ -1021,6 +1021,7 @@ PERMISSION_DEFINITIONS.extend(
         list_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/integrations/configs/'),
             ('GET', 'api/v1/admin/integrations/fiscal-devices/'),
+            ('GET', 'api/v1/local-agent/status/'),
         ),
     )
 )

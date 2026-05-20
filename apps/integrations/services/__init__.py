@@ -1,5 +1,6 @@
 from django.utils import timezone
 
+from .agent_marta import MartaSoftPOSAgentPaymentService
 from .config_resolver import IntegrationConfigResolverService
 from .marta_softpos import MartaSoftPOSPaymentService, SUPPORTED_MARTA_PAYMENT_PROVIDERS
 from .mock_payment import MockPaymentIntegrationService
@@ -37,14 +38,6 @@ def charge_payment(order, payment, *, manual_card_override=False, manual_card_re
             'manual': True,
             'detail': 'QR integration is not automated yet.',
         }
-    if payment.method == payment.Method.CARD:
-        return {
-            'ok': False,
-            'provider': 'marta-softpos',
-            'method': payment.method,
-            'detail': 'Use card payment initiate flow.',
-        }
-
     try:
         service, _config = _get_payment_service(order=order, payment=payment)
         return service.charge_payment(order=order, payment=payment)
@@ -84,12 +77,17 @@ def _get_payment_service(*, order, payment):
         and marta_config is not None
         and str(marta_config.provider or '').strip() in SUPPORTED_MARTA_PAYMENT_PROVIDERS
     ):
-        return MartaSoftPOSPaymentService(marta_config), marta_config
+        return MartaSoftPOSAgentPaymentService(marta_config), marta_config
 
     raise ValueError('MARTA SoftPOS payment integration is not configured for the active cash desk.')
 
 
 def _get_fiscal_service(*, restaurant, cash_desk=None):
+    config = _get_fiscal_config(restaurant=restaurant, cash_desk=cash_desk)
+    return _build_fiscal_service(config), config
+
+
+def _get_fiscal_config(*, restaurant, cash_desk=None):
     config = None
     if cash_desk is not None:
         config = getattr(cash_desk, 'fiscal_integration', None)
@@ -99,10 +97,13 @@ def _get_fiscal_service(*, restaurant, cash_desk=None):
         config = IntegrationConfigResolverService().get_config(kind='fiscal', restaurant=restaurant)
     if config is None:
         raise ValueError('Fiscal integration is not configured.')
+    return config
 
+
+def _build_fiscal_service(config):
     provider = str(config.provider or '').strip()
     if provider in SUPPORTED_UNIKASSA_FISCAL_PROVIDERS:
-        return UnikassaFiscalIntegrationService(config), config
+        return UnikassaFiscalIntegrationService(config)
     raise ValueError(f"Unsupported fiscal provider '{provider}'.")
 
 
@@ -119,45 +120,53 @@ def _serialize_fiscal_error(*, config, error, split_reason=''):
 
 
 def issue_fiscal_receipt(order, payment):
+    config = None
     try:
-        service, config = _get_fiscal_service(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        config = _get_fiscal_config(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        service = _build_fiscal_service(config)
         return service.issue_receipt(order=order, payment=payment)
     except Exception as error:
-        return _serialize_fiscal_error(config=locals().get('config'), error=error)
+        return _serialize_fiscal_error(config=config, error=error)
 
 
 def issue_fiscal_receipts(order, payment, *, split_reasons=None):
+    config = None
     try:
-        service, config = _get_fiscal_service(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        config = _get_fiscal_config(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        service = _build_fiscal_service(config)
         if hasattr(service, 'issue_receipts'):
             return service.issue_receipts(order=order, payment=payment, split_reasons=split_reasons)
         return [service.issue_receipt(order=order, payment=payment)]
     except Exception as error:
         if split_reasons:
             return [
-                _serialize_fiscal_error(config=locals().get('config'), error=error, split_reason=split_reason)
+                _serialize_fiscal_error(config=config, error=error, split_reason=split_reason)
                 for split_reason in split_reasons
             ]
-        return [_serialize_fiscal_error(config=locals().get('config'), error=error)]
+        return [_serialize_fiscal_error(config=config, error=error)]
 
 
 def reprint_fiscal_receipt(receipt):
+    config = None
     try:
-        service, config = _get_fiscal_service(
+        config = _get_fiscal_config(
             restaurant=receipt.order.restaurant,
             cash_desk=getattr(getattr(receipt, 'payment', None), 'cash_desk', None),
         )
+        service = _build_fiscal_service(config)
         return service.reprint_receipt(receipt=receipt)
     except Exception as error:
-        return _serialize_fiscal_error(config=locals().get('config'), error=error)
+        return _serialize_fiscal_error(config=config, error=error)
 
 
 def issue_refund_receipt(order, payment, refund):
+    config = None
     try:
-        service, config = _get_fiscal_service(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        config = _get_fiscal_config(restaurant=order.restaurant, cash_desk=getattr(payment, 'cash_desk', None))
+        service = _build_fiscal_service(config)
         return service.issue_refund_receipt(order=order, payment=payment, refund=refund)
     except Exception as error:
-        return _serialize_fiscal_error(config=locals().get('config'), error=error)
+        return _serialize_fiscal_error(config=config, error=error)
 
 
 def open_fiscal_shift(*, restaurant, cash_desk=None):
