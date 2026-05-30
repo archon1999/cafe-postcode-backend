@@ -31,6 +31,8 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
 class RestaurantFiscalProfileSerializer(serializers.Serializer):
     legal_name = serializers.CharField()
     tax_number = serializers.CharField()
+    service_fee_enabled = serializers.BooleanField()
+    service_fee_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
     vat_enabled = serializers.BooleanField()
     vat_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
 
@@ -48,6 +50,7 @@ class CashierContextSerializer(serializers.Serializer):
     available_cashiers = CashierOptionSerializer(many=True)
     current_shift = CashShiftSerializer(allow_null=True)
     active_shifts = CashShiftSerializer(many=True)
+    fiscal_shift_open = serializers.BooleanField()
 
 
 class CashShiftOpenSerializer(serializers.Serializer):

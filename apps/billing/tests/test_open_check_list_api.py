@@ -18,6 +18,7 @@ class OpenCheckListApiTests(APITestCase):
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(
             name='Test restaurant',
+            service_fee_enabled=True,
             service_fee_percent=10,
         )
         cls.branch = cls.restaurant

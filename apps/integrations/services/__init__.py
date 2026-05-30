@@ -242,8 +242,16 @@ def print_kitchen_ticket(ticket):
         return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
 
 
-def print_prebill(order, payload):
-    config = IntegrationConfigResolverService().get_config(kind='printer', restaurant=order.restaurant)
+def _get_prebill_printer_config(*, order, cash_desk=None):
+    if cash_desk is not None:
+        config = getattr(cash_desk, 'printer_integration', None)
+        if config is not None and config.kind == 'printer' and config.is_enabled:
+            return config
+    return IntegrationConfigResolverService().get_config(kind='printer', restaurant=order.restaurant)
+
+
+def print_prebill(order, payload, *, cash_desk=None):
+    config = _get_prebill_printer_config(order=order, cash_desk=cash_desk)
     if config is None:
         return _client_print_fallback(
             code=PRINTER_NOT_CONFIGURED,

@@ -23,6 +23,7 @@ Order = get_order_model()
 class OrderPrebillPrintView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     service_class = OrderPrebillService
+    shift_service_class = CashShiftService
 
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
@@ -42,7 +43,8 @@ class OrderPrebillPrintView(APIView):
             else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         )
         require_any_permission_code(request.user, required_permission)
-        outcome = self.service_class().print(order=order)
+        cash_desk = self.shift_service_class().get_prebill_print_cash_desk(restaurant=restaurant, user=request.user)
+        outcome = self.service_class().print(order=order, cash_desk=cash_desk)
         return Response(
             {
                 'receipt': ReceiptSerializer(outcome['receipt']).data,

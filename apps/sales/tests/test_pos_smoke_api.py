@@ -62,10 +62,18 @@ class PosSmokeApiTests(PosAPITestCase):
 
         open_checks_response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
         self.assertEqual(open_checks_response.status_code, status.HTTP_200_OK)
-        self.assertTrue(any(item['id'] == str(order_id) and item['service_fee_percent'] == 10 for item in open_checks_response.data))
+        self.assertTrue(
+            any(
+                item['id'] == str(order_id)
+                and item['service_fee_enabled']
+                and item['service_fee_percent'] == 10
+                for item in open_checks_response.data
+            )
+        )
 
         payment_data = self.pay_order_via_api(order_id, amount=33000)
         self.assertEqual(payment_data['order']['service_fee'], 3000)
+        self.assertTrue(payment_data['order']['service_fee_enabled'])
         self.assertEqual(payment_data['order']['service_fee_percent'], 10)
 
         order.refresh_from_db()
@@ -102,7 +110,7 @@ class PosSmokeApiTests(PosAPITestCase):
         order = Order.objects.get(pk=order_id)
         self.assertIsNone(order.table_session_id)
         self.assertEqual(order.subtotal, 60000)
-        self.assertEqual(order.total, 60000)
+        self.assertEqual(order.total, 66000)
 
         submitted = self.submit_order_via_api(order_id)
         self.assertEqual(submitted['status'], Order.Status.SUBMITTED)
@@ -114,16 +122,18 @@ class PosSmokeApiTests(PosAPITestCase):
             any(
                 item['id'] == str(order_id)
                 and item['channel'] == Order.Channel.TAKEAWAY
-                and item['service_fee'] == 0
-                and item['service_fee_percent'] == 0
+                and item['service_fee_enabled']
+                and item['service_fee'] == 6000
+                and item['service_fee_percent'] == 10
                 for item in open_checks_response.data
             )
         )
 
-        payment_data = self.pay_order_via_api(order_id, amount=60000)
+        payment_data = self.pay_order_via_api(order_id, amount=66000)
         self.assertEqual(payment_data['order']['channel'], Order.Channel.TAKEAWAY)
-        self.assertEqual(payment_data['order']['service_fee'], 0)
-        self.assertEqual(payment_data['order']['service_fee_percent'], 0)
+        self.assertTrue(payment_data['order']['service_fee_enabled'])
+        self.assertEqual(payment_data['order']['service_fee'], 6000)
+        self.assertEqual(payment_data['order']['service_fee_percent'], 10)
 
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CLOSED)
@@ -135,7 +145,7 @@ class PosSmokeApiTests(PosAPITestCase):
             any(
                 item['id'] == str(order_id)
                 and item['channel'] == Order.Channel.TAKEAWAY
-                and item['service_fee'] == 0
+                and item['service_fee'] == 6000
                 and item['receipts']
                 for item in closed_checks_response.data
             )

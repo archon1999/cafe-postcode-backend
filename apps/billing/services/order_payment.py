@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.billing.helpers import get_payment_model, get_receipt_model
+from apps.billing.services.cash_shift import CashShiftService
 from apps.integrations.services import charge_payment, issue_fiscal_receipts
 from apps.integrations.services.marta_softpos import DEFAULT_AMOUNT_MULTIPLIER, DEFAULT_TIMEOUT_SECONDS, JAVA_LONG_MAX
 from apps.sales.helpers import get_order_model
@@ -24,13 +25,14 @@ Receipt = get_receipt_model()
 class OrderPaymentService:
     order_submission_service_class = OrderSubmissionService
     state_service_class = OrderStateService
+    shift_service_class = CashShiftService
 
     def initiate_marta_card_payment(self, *, order: Order, amount, register_fiscal=True, received_by, cash_shift=None):
         from apps.billing.serializers import PaymentSerializer
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
-        if order.status == Order.Status.OPEN:
+        if self._should_submit_before_payment(order=order):
             self.order_submission_service_class().submit(order)
 
         self._validate_shift(order=order, cash_shift=cash_shift)
@@ -173,7 +175,7 @@ class OrderPaymentService:
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
-        if order.status == Order.Status.OPEN:
+        if self._should_submit_before_payment(order=order):
             self.order_submission_service_class().submit(order)
 
         if cash_shift is None:
@@ -254,13 +256,16 @@ class OrderPaymentService:
             raise ValidationError({'amount': _('Payment amount must cover the full remaining total.')})
 
     def _complete_successful_payment(self, *, order, payment, received_by):
+        if order.channel == Order.Channel.DELIVERY and order.status == Order.Status.OPEN:
+            self.order_submission_service_class().submit(order)
+
         paid_total = order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0
         if paid_total >= order.total:
             self.state_service_class().close_order_after_payment(order=order, received_by=received_by)
 
         receipts = []
         if payment.register_fiscal:
-            for receipt_result in issue_fiscal_receipts(order=order, payment=payment):
+            for receipt_result in self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by):
                 receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
         logger.info(
             'Payment processed',
@@ -277,6 +282,38 @@ class OrderPaymentService:
             'receipts': receipts,
             'order': order,
         }
+
+    def _issue_fiscal_receipts(self, *, order, payment, opened_by, split_reasons=None):
+        try:
+            self.shift_service_class().ensure_fiscal_shift_open(
+                restaurant=order.restaurant,
+                opened_by=opened_by,
+            )
+        except Exception as error:
+            return self._fiscal_shift_open_error_results(error=error, split_reasons=split_reasons)
+        return issue_fiscal_receipts(order=order, payment=payment, split_reasons=split_reasons)
+
+    @staticmethod
+    def _fiscal_shift_open_error_results(*, error, split_reasons=None):
+        def payload(split_reason=''):
+            result = {
+                'ok': False,
+                'provider': '',
+                'code': 'FISCAL_SHIFT_OPEN_FAILED',
+                'detail': str(error),
+                'fiscal_requested_at': timezone.now().isoformat(),
+            }
+            if split_reason:
+                result['split_reason'] = split_reason
+            return result
+
+        if split_reasons:
+            return [payload(str(split_reason or '')) for split_reason in split_reasons]
+        return [payload()]
+
+    @staticmethod
+    def _should_submit_before_payment(*, order):
+        return order.status == Order.Status.OPEN and order.channel != Order.Channel.DELIVERY
 
     @staticmethod
     def _positive_int(value, fallback):
@@ -360,7 +397,12 @@ class PaymentFiscalRetryService:
 
         split_reasons = self._retry_split_reasons(sent_receipts=sent_receipts, pending_receipts=pending_receipts)
         receipts = []
-        results = issue_fiscal_receipts(order=payment.order, payment=payment, split_reasons=split_reasons)
+        results = OrderPaymentService()._issue_fiscal_receipts(
+            order=payment.order,
+            payment=payment,
+            opened_by=payment.received_by,
+            split_reasons=split_reasons,
+        )
         for index, receipt_result in enumerate(results):
             receipt = self._pick_existing_receipt(
                 pending_receipts=pending_receipts,

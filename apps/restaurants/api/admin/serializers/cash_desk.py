@@ -11,6 +11,7 @@ CashDesk = get_cash_desk_model()
 class CashDeskSerializer(serializers.ModelSerializer):
     fiscal_integration_name = serializers.SerializerMethodField()
     payment_integration_name = serializers.SerializerMethodField()
+    printer_integration_name = serializers.SerializerMethodField()
 
     def get_fields(self):
         fields = super().get_fields()
@@ -27,6 +28,12 @@ class CashDeskSerializer(serializers.ModelSerializer):
                 restaurant=restaurant,
                 kind=IntegrationConfig.Kind.PAYMENT,
                 provider='marta-softpos',
+                is_enabled=True,
+            ).order_by('provider', 'created_at')
+        if restaurant is not None and 'printer_integration' in fields:
+            fields['printer_integration'].queryset = IntegrationConfig.objects.filter(
+                restaurant=restaurant,
+                kind=IntegrationConfig.Kind.PRINTER,
                 is_enabled=True,
             ).order_by('provider', 'created_at')
         return fields
@@ -68,6 +75,19 @@ class CashDeskSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(_('Selected payment integration is disabled.'))
         return value
 
+    def validate_printer_integration(self, value):
+        if value is None:
+            return value
+        request = self.context.get('request')
+        restaurant = get_request_restaurant(request) if request is not None else None
+        if restaurant is not None and value.restaurant_id != restaurant.id:
+            raise serializers.ValidationError(_('Selected printer integration belongs to another restaurant.'))
+        if value.kind != IntegrationConfig.Kind.PRINTER:
+            raise serializers.ValidationError(_('Selected integration is not a printer integration.'))
+        if not value.is_enabled:
+            raise serializers.ValidationError(_('Selected printer integration is disabled.'))
+        return value
+
     def get_fiscal_integration_name(self, obj):
         integration = getattr(obj, 'fiscal_integration', None)
         if integration is None:
@@ -84,6 +104,16 @@ class CashDeskSerializer(serializers.ModelSerializer):
         endpoint_url = settings.get('endpoint_url') or settings.get('endpointUrl')
         return f'{integration.provider} ({endpoint_url})' if endpoint_url else integration.provider
 
+    def get_printer_integration_name(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        if integration is None:
+            return ''
+        settings = integration.settings or {}
+        printer_name = settings.get('printer_name') or settings.get('printerName')
+        host = settings.get('host')
+        suffix = printer_name or host
+        return f'{integration.provider} ({suffix})' if suffix else integration.provider
+
     class Meta:
         model = CashDesk
         fields = (
@@ -92,6 +122,8 @@ class CashDeskSerializer(serializers.ModelSerializer):
             'fiscal_integration_name',
             'payment_integration',
             'payment_integration_name',
+            'printer_integration',
+            'printer_integration_name',
             'name',
             'location',
             'enabled_payment_methods',
@@ -101,4 +133,4 @@ class CashDeskSerializer(serializers.ModelSerializer):
             'external_cashbox_id',
             'is_active',
         )
-        read_only_fields = ('fiscal_integration_name', 'payment_integration_name')
+        read_only_fields = ('fiscal_integration_name', 'payment_integration_name', 'printer_integration_name')

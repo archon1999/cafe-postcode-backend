@@ -138,11 +138,15 @@ class OrderMarkingScanService:
         if OrderItemMarking.objects.filter(order_item__order__restaurant=order.restaurant, raw_code=parsed.raw_code).exists():
             raise ValidationError({'rawCode': _('This marking code has already been scanned.')})
 
-        if normalized_mode == 'attach':
+        order_item = None
+        if normalized_mode in {'add', 'attach'}:
             order_item = self._find_missing_order_item(order=order, catalog_item=catalog_item)
+
+        if normalized_mode == 'attach':
             if order_item is None:
                 raise ValidationError({'rawCode': _('This marked product is not present in the order or is already fully scanned.')})
-        else:
+
+        if order_item is None:
             order_item = OrderItem.objects.create(
                 order=order,
                 catalog_item=catalog_item,

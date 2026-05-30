@@ -26,6 +26,13 @@ class CashDesk(BaseModel):
         blank=True,
         null=True,
     )
+    printer_integration = models.ForeignKey(
+        'integrations.IntegrationConfig',
+        on_delete=models.SET_NULL,
+        related_name='printer_cash_desks',
+        blank=True,
+        null=True,
+    )
     name = models.CharField(max_length=255)
     location = models.CharField(max_length=255, blank=True)
     enabled_payment_methods = models.JSONField(default=default_enabled_payment_methods, blank=True)

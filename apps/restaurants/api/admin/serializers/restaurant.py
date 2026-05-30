@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 
 from django.db.models import Q
 from rest_framework import serializers
@@ -60,6 +61,12 @@ class RestaurantSerializer(serializers.ModelSerializer):
     pos_auth_background_image = serializers.ImageField(required=False, allow_null=True, write_only=True)
     pos_auth_background_image_url = serializers.SerializerMethodField()
     clear_pos_auth_background_image = serializers.BooleanField(required=False, default=False, write_only=True)
+    service_fee_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal('0'),
+        max_value=Decimal('99'),
+    )
 
     class Meta:
         model = Restaurant
@@ -73,6 +80,8 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'faktura_payload',
             'currency',
             'auth_code',
+            'service_fee_enabled',
+            'service_fee_percent',
             'vat_enabled',
             'vat_percent',
             'pos_auth_background_image',

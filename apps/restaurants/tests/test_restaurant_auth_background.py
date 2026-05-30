@@ -53,6 +53,8 @@ class RestaurantAuthBackgroundSerializerTests(TestCase):
             'tax_number': self.restaurant.tax_number,
             'phone': self.restaurant.phone,
             'address': self.restaurant.address,
+            'service_fee_enabled': True,
+            'service_fee_percent': '10',
             'vat_enabled': False,
             'vat_percent': '12',
             'is_active': True,
@@ -62,6 +64,17 @@ class RestaurantAuthBackgroundSerializerTests(TestCase):
         data = RestaurantSerializer(self.restaurant).data
 
         self.assertIsNone(data['pos_auth_background_image_url'])
+        self.assertFalse(data['service_fee_enabled'])
+        self.assertEqual(data['service_fee_percent'], '0.00')
+
+    def test_update_persists_service_fee_percent(self):
+        serializer = RestaurantSerializer(self.restaurant, data={**self.base_payload(), 'service_fee_percent': '7.5'})
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        restaurant = serializer.save()
+
+        self.assertEqual(str(restaurant.service_fee_percent), '7.50')
+        self.assertEqual(RestaurantSerializer(restaurant).data['service_fee_percent'], '7.50')
 
     def test_update_uploads_and_replaces_background_image(self):
         serializer = RestaurantSerializer(

@@ -25,7 +25,15 @@ class PosRestaurantContextSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Restaurant
-        fields = ('restaurant_id', 'restaurant_name', 'pos_auth_background_image_url')
+        fields = (
+            'restaurant_id',
+            'restaurant_name',
+            'pos_auth_background_image_url',
+            'service_fee_enabled',
+            'service_fee_percent',
+            'vat_enabled',
+            'vat_percent',
+        )
 
     def get_pos_auth_background_image_url(self, instance):
         image = getattr(instance, 'pos_auth_background_image', None)

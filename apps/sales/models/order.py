@@ -97,7 +97,7 @@ class Order(BaseModel):
         subtotal = active_items.aggregate(total=models.Sum('line_total')).get('total') or 0
         service_fee = 0
 
-        if self.channel == self.Channel.HALL:
+        if getattr(self.restaurant, 'service_fee_enabled', False):
             percent = getattr(self.restaurant, 'service_fee_percent', self.DEFAULT_HALL_SERVICE_FEE_PERCENT) or 0
             service_fee = round(subtotal * percent / 100)
 

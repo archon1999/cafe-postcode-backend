@@ -90,6 +90,8 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         )
 
     def test_pos_menu_is_available_for_both_table_and_takeaway_menu_permissions(self):
+        self.category.image_url = 'https://cdn.example.com/categories/plov.png'
+        self.category.save(update_fields=['image_url', 'updated_at'])
         self.catalog_item.image_url = 'https://cdn.example.com/osh.png'
         self.catalog_item.save(update_fields=['image_url', 'updated_at'])
 
@@ -97,12 +99,14 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         table_menu_response = self.client.get('/api/v1/pos/catalog/menu/')
         self.assertEqual(table_menu_response.status_code, status.HTTP_200_OK)
         table_menu_payload = table_menu_response.data.get('data', table_menu_response.data)
+        self.assertEqual(table_menu_payload[0]['image_url'], 'https://cdn.example.com/categories/plov.png')
         self.assertEqual(table_menu_payload[0]['items'][0]['image_url'], 'https://cdn.example.com/osh.png')
 
         self.client.force_authenticate(self.takeaway_user)
         takeaway_menu_response = self.client.get('/api/v1/pos/catalog/menu/')
         self.assertEqual(takeaway_menu_response.status_code, status.HTTP_200_OK)
         takeaway_menu_payload = takeaway_menu_response.data.get('data', takeaway_menu_response.data)
+        self.assertEqual(takeaway_menu_payload[0]['image_url'], 'https://cdn.example.com/categories/plov.png')
         self.assertEqual(takeaway_menu_payload[0]['items'][0]['image_url'], 'https://cdn.example.com/osh.png')
 
     def test_order_create_requires_channel_specific_pos_permission(self):

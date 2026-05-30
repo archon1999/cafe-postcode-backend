@@ -107,7 +107,7 @@ class CashShiftCloseView(APIView):
 
         shift_service = self.shift_service_class()
         fiscal_shift_payload = None
-        if serializer.validated_data.get('close_fiscal_shift'):
+        if serializer.validated_data.get('close_fiscal_shift') and shift_service.has_open_fiscal_shift(restaurant=restaurant):
             active_manager_shifts = shift_service.get_active_shifts_for_manager(restaurant=restaurant, user=request.user)
             has_other_open_shifts = any(item.pk != shift.pk for item in active_manager_shifts)
             if has_other_open_shifts:
@@ -281,6 +281,7 @@ class OpenCheckListView(generics.ListAPIView):
             .only(
                 'id',
                 'restaurant_id',
+                'restaurant__service_fee_enabled',
                 'restaurant__service_fee_percent',
                 'restaurant__vat_enabled',
                 'restaurant__vat_percent',

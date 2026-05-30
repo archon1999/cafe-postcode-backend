@@ -15,8 +15,11 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['restaurant_fiscal_profile']['legal_name'], self.branch.legal_name)
         self.assertEqual(response.data['restaurant_fiscal_profile']['tax_number'], self.branch.tax_number)
+        self.assertTrue(response.data['restaurant_fiscal_profile']['service_fee_enabled'])
+        self.assertEqual(response.data['restaurant_fiscal_profile']['service_fee_percent'], '10.00')
         self.assertEqual(len(response.data['available_cash_desks']), 1)
         self.assertIsNone(response.data['current_shift'])
+        self.assertFalse(response.data['fiscal_shift_open'])
 
     def test_open_and_close_shift_flow_returns_current_shift_summary(self):
         open_response = self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
@@ -94,6 +97,26 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
         session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
+
+    def test_close_cash_shift_skips_fiscal_close_when_fiscal_shift_was_not_opened(self):
+        self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
+
+        with patch('apps.billing.services.cash_shift.close_fiscal_shift') as close_fiscal:
+            response = self.client.post(
+                '/api/v1/pos/billing/shifts/current/close/',
+                {
+                    'actual_closing_cash_amount': 150000,
+                    'notes_close': '',
+                    'close_fiscal_shift': True,
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        close_fiscal.assert_not_called()
+        self.assertNotIn('fiscal_shift', response.data)
+        shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
+        self.assertEqual(shift.status, CashShift.Status.CLOSED)
 
     def test_close_fiscal_shift_with_unresolved_receipt_returns_clean_error(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)

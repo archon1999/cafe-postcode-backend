@@ -50,6 +50,7 @@ class OrderSerializerTests(PosTestCase):
         data = OrderSerializer(order).data
 
         self.assertEqual(data['service_fee'], 3000)
+        self.assertTrue(data['service_fee_enabled'])
         self.assertEqual(data['service_fee_percent'], 10)
         self.assertTrue(data['vat_enabled'])
         self.assertEqual(data['vat_percent'], 12)

@@ -8,8 +8,9 @@ from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.billing.models import CashShift, Payment
 from apps.integrations.models import IntegrationConfig
+from apps.kitchen.models import KitchenTicket
 from apps.sales.models import Order, OrderItem
-from apps.restaurants.models import CashDesk, DistributionPoint, Restaurant
+from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
 
 
@@ -18,6 +19,7 @@ class PaymentCreateApiTests(APITestCase):
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(
             name='Test restaurant',
+            service_fee_enabled=True,
             service_fee_percent=10,
         )
         cls.branch = cls.restaurant
@@ -50,15 +52,26 @@ class PaymentCreateApiTests(APITestCase):
             mxik_code='10000000000000001',
             mxik_name='Asosiy',
         )
+        cls.prep_station = PrepStation.objects.create(
+            restaurant=cls.restaurant,
+            name='Kitchen',
+            kind=PrepStation.Kind.KITCHEN,
+        )
         cls.item = CatalogItem.objects.create(
             restaurant=cls.restaurant,
             category=cls.category,
             name='Osh',
+            prep_station=cls.prep_station,
         )
         cls.distribution_point = DistributionPoint.objects.create(
             restaurant=cls.restaurant,
             name='Takeaway',
             kind=DistributionPoint.Kind.TAKEAWAY,
+        )
+        cls.delivery_distribution_point = DistributionPoint.objects.create(
+            restaurant=cls.restaurant,
+            name='Delivery',
+            kind=DistributionPoint.Kind.DELIVERY,
         )
         cls.cash_desk = CashDesk.objects.create(
             restaurant=cls.restaurant,
@@ -87,22 +100,44 @@ class PaymentCreateApiTests(APITestCase):
         OrderItem.objects.create(
             order=self.order,
             catalog_item=self.item,
+            prep_station=self.prep_station,
             created_by=self.user,
             quantity=1,
             unit_price=30000,
         )
         self.order.recalculate_totals()
 
-    def test_takeaway_order_keeps_service_fee_zero(self):
+    def create_delivery_order(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.delivery_distribution_point,
+            opened_by=self.user,
+            order_number=1002,
+            channel=Order.Channel.DELIVERY,
+            status=Order.Status.OPEN,
+            guest_count=1,
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+        )
+        order.recalculate_totals()
+        return order
+
+    def test_takeaway_order_applies_service_fee_when_enabled(self):
         self.order.refresh_from_db()
 
         self.assertEqual(self.order.subtotal, 30000)
-        self.assertEqual(self.order.total, 30000)
+        self.assertEqual(self.order.total, 33000)
 
     def test_rejects_mixed_payment_method(self):
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.MIXED, 'amount': 30000},
+            {'method': Payment.Method.MIXED, 'amount': self.order.total},
             format='json',
         )
 
@@ -112,7 +147,7 @@ class PaymentCreateApiTests(APITestCase):
     def test_cash_payment_auto_submits_and_closes_order(self):
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CASH, 'amount': 30000},
+            {'method': Payment.Method.CASH, 'amount': self.order.total},
             format='json',
         )
 
@@ -126,14 +161,14 @@ class PaymentCreateApiTests(APITestCase):
     def test_closed_order_cannot_be_paid_twice(self):
         first_response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CASH, 'amount': 30000},
+            {'method': Payment.Method.CASH, 'amount': self.order.total},
             format='json',
         )
         self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
 
         second_response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CASH, 'amount': 30000},
+            {'method': Payment.Method.CASH, 'amount': self.order.total},
             format='json',
         )
 
@@ -153,7 +188,7 @@ class PaymentCreateApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CARD, 'amount': 30000},
+            {'method': Payment.Method.CARD, 'amount': self.order.total},
             format='json',
         )
 
@@ -193,7 +228,7 @@ class PaymentCreateApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CARD, 'amount': 30000},
+            {'method': Payment.Method.CARD, 'amount': self.order.total},
             format='json',
         )
 
@@ -217,7 +252,7 @@ class PaymentCreateApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': 30000, 'register_fiscal': True},
+            {'amount': self.order.total, 'register_fiscal': True},
             format='json',
         )
 
@@ -244,7 +279,7 @@ class PaymentCreateApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': 30000, 'register_fiscal': True},
+            {'amount': self.order.total, 'register_fiscal': True},
             format='json',
         )
 
@@ -253,7 +288,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(payment.status, Payment.Status.PENDING)
         self.assertEqual(payment.method, Payment.Method.CARD)
         self.assertEqual(response.data['marta']['endpointUrl'], 'http://192.168.88.125:8090')
-        self.assertEqual(response.data['marta']['amount'], 3000000)
+        self.assertEqual(response.data['marta']['amount'], 3300000)
         self.assertEqual(response.data['marta']['taxNumber'], '307678400')
         self.assertNotIn('hmac_secret', response.data['marta'])
 
@@ -269,7 +304,7 @@ class PaymentCreateApiTests(APITestCase):
         self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
         initiate_response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': 30000, 'register_fiscal': True},
+            {'amount': self.order.total, 'register_fiscal': True},
             format='json',
         )
 
@@ -305,7 +340,7 @@ class PaymentCreateApiTests(APITestCase):
         self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
         initiate_response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': 30000, 'register_fiscal': True},
+            {'amount': self.order.total, 'register_fiscal': True},
             format='json',
         )
 
@@ -328,4 +363,106 @@ class PaymentCreateApiTests(APITestCase):
         self.assertNotEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.FAILED)
         self.assertEqual(payment.provider_payload['debug']['transaction']['response']['httpStatus'], 200)
+
+    def test_delivery_card_payment_initiate_does_not_route_to_kitchen(self):
+        order = self.create_delivery_order()
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/card-payments/initiate/',
+            {'amount': self.order.total, 'register_fiscal': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    def test_delivery_terminal_failure_keeps_order_open_without_kitchen_ticket(self):
+        order = self.create_delivery_order()
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+        initiate_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/card-payments/initiate/',
+            {'amount': order.total, 'register_fiscal': True},
+            format='json',
+        )
+
+        response = self.client.post(
+            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
+            {
+                'ok': False,
+                'status': 'CANCELED',
+                'requestId': 'request-delivery',
+                'message': 'Canceled',
+                'debug': {'transaction': {'response': {'httpStatus': 200}}},
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        payment = Payment.objects.get(order=order)
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertEqual(payment.status, Payment.Status.FAILED)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
+    def test_delivery_card_payment_success_routes_to_kitchen_after_payment(self, local_http_request):
+        order = self.create_delivery_order()
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+        local_http_request.side_effect = [
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+            },
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {
+                    'ok': True,
+                    'status': 'SUCCESS',
+                    'requestId': 'request-delivery-success',
+                    'params': {'trxId': 'trx-delivery', 'rrn': 'rrn-delivery'},
+                },
+            },
+        ]
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': order.total},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        order.refresh_from_db()
+        payment = Payment.objects.get(order=order)
+        self.assertEqual(order.status, Order.Status.CLOSED)
+        self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
+        self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
 

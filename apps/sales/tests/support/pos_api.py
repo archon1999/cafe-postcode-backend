@@ -32,6 +32,7 @@ class PosTestDataMixin:
         super().setUpTestData()
         cls.restaurant = Restaurant.objects.create(
             name='Test restaurant',
+            service_fee_enabled=True,
             service_fee_percent=10,
             legal_name='Test Restaurant LLC',
             tax_number='123456789',

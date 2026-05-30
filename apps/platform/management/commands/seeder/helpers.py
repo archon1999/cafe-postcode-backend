@@ -235,6 +235,7 @@ def upsert_restaurant(partner: BusinessPartner, spec) -> Restaurant:
             tax_number=spec.tax_number,
             phone=spec.phone,
             address=spec.address,
+            service_fee_enabled=spec.service_fee_percent > 0,
             service_fee_percent=spec.service_fee_percent,
             is_active=True,
         )
@@ -245,6 +246,7 @@ def upsert_restaurant(partner: BusinessPartner, spec) -> Restaurant:
     restaurant.tax_number = spec.tax_number
     restaurant.phone = spec.phone
     restaurant.address = spec.address
+    restaurant.service_fee_enabled = spec.service_fee_percent > 0
     restaurant.service_fee_percent = spec.service_fee_percent
     restaurant.is_active = True
     restaurant.activated_at = timezone.now()

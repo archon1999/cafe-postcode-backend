@@ -14,7 +14,10 @@ class CashDeskListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAP
     serializer_class = CashDeskSerializer
 
     def get_queryset(self):
-        queryset = filter_queryset_by_optional_restaurant(CashDesk.objects.all(), self.request)
+        queryset = filter_queryset_by_optional_restaurant(
+            CashDesk.objects.select_related('fiscal_integration', 'payment_integration', 'printer_integration'),
+            self.request,
+        )
         return CashDeskListFilters.from_request(self.request).apply(queryset)
 
     def perform_create(self, serializer):
@@ -25,6 +28,9 @@ class CashDeskDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDe
     serializer_class = CashDeskSerializer
 
     def get_queryset(self):
-        return filter_queryset_by_optional_restaurant(CashDesk.objects.all(), self.request)
+        return filter_queryset_by_optional_restaurant(
+            CashDesk.objects.select_related('fiscal_integration', 'payment_integration', 'printer_integration'),
+            self.request,
+        )
 
 __all__ = ['CashDeskDetailView', 'CashDeskListCreateView']

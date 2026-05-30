@@ -82,6 +82,7 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True)
     service_fee = serializers.SerializerMethodField()
+    service_fee_enabled = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     vat_enabled = serializers.SerializerMethodField()
     vat_percent = serializers.SerializerMethodField()
@@ -108,9 +109,13 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_service_fee_percent(obj):
-        if obj.channel != Order.Channel.HALL:
+        if not OpenCheckOrderSerializer.get_service_fee_enabled(obj):
             return 0
         return getattr(obj.restaurant, 'service_fee_percent', 10) or 0
+
+    @staticmethod
+    def get_service_fee_enabled(obj):
+        return bool(getattr(obj.restaurant, 'service_fee_enabled', False))
 
     @staticmethod
     def _included_vat_amount(*, amount: int, percent) -> int:
@@ -158,6 +163,7 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             'note',
             'subtotal',
             'service_fee',
+            'service_fee_enabled',
             'service_fee_percent',
             'vat_enabled',
             'vat_percent',

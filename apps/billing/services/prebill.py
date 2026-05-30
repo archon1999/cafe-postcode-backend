@@ -76,12 +76,12 @@ class OrderPrebillService:
         }
 
     @transaction.atomic
-    def print(self, *, order: Order):
+    def print(self, *, order: Order, cash_desk=None):
         self.ensure_printable(order=order)
         snapshot = self.build_snapshot(order=order)
 
         try:
-            result = print_prebill(order=order, payload=snapshot)
+            result = print_prebill(order=order, payload=snapshot, cash_desk=cash_desk)
         except ValueError as error:
             raise ValidationError({'detail': str(error)}) from error
 

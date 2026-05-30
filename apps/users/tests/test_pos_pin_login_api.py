@@ -62,6 +62,10 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
             response.data['restaurant_context']['pos_auth_background_image_url'],
             'https://cdn.example.com/login.png',
         )
+        self.assertTrue(response.data['restaurant_context']['service_fee_enabled'])
+        self.assertEqual(response.data['restaurant_context']['service_fee_percent'], '10.00')
+        self.assertFalse(response.data['restaurant_context']['vat_enabled'])
+        self.assertEqual(response.data['restaurant_context']['vat_percent'], '12.00')
 
     def test_pos_restaurant_code_returns_background_image_url(self):
         self.restaurant.pos_auth_background_image = 'restaurants/auth-backgrounds/test/login.png'
@@ -79,6 +83,8 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(response.data['restaurant_id'], str(self.restaurant.id))
         self.assertEqual(response.data['restaurant_name'], self.restaurant.name)
         self.assertEqual(response.data['pos_auth_background_image_url'], 'https://cdn.example.com/login.png')
+        self.assertTrue(response.data['service_fee_enabled'])
+        self.assertEqual(response.data['service_fee_percent'], '10.00')
 
     def test_pos_restaurant_code_returns_null_background_image_url_without_image(self):
         response = self.client.post(
