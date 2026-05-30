@@ -16,7 +16,6 @@ from apps.reporting.services import (
     get_payment_breakdown_report_queryset,
     get_shift_report_queryset,
     get_top_items_report_queryset,
-    get_top_staff_report_queryset,
 )
 from apps.sales.helpers import get_order_model
 from common.utils.date import (
@@ -45,6 +44,12 @@ MONTH_LABELS = (
     'Noy',
     'Dek',
 )
+
+STAFF_ROLE_GROUPS = {
+    'waiter': ('waiter',),
+    'cashier': ('cashier', 'fast_food_cashier'),
+    'manager': ('manager', 'fast_food_manager'),
+}
 
 
 class OwnerDashboardBaseService:
@@ -172,24 +177,45 @@ class OwnerDashboardBaseService:
         )
 
     def get_waiter_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return get_top_staff_report_queryset(restaurant, period).order_by(
-            '-total_sales',
-            '-order_count',
-            'staff_name',
+        return self.get_staff_item_creator_queryset(restaurant, period, role='waiter').order_by(
+            '-sales_total',
+            '-orders_count',
+            'user_name',
         )
 
     def get_cashier_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return (
-            self.get_payment_queryset(restaurant, period)
-            .values(
-                user_id=F('received_by__id'),
-                user_name=F('received_by__full_name'),
-            )
-            .annotate(
-                orders_count=Count('order_id', distinct=True),
-                sales_total=Coalesce(Sum('amount'), Value(0), output_field=IntegerField()),
-            )
-            .order_by('-sales_total', '-orders_count', 'user_name')
+        return self.get_staff_item_creator_queryset(restaurant, period, role='cashier').order_by(
+            '-sales_total',
+            '-orders_count',
+            'user_name',
+        )
+
+    def get_manager_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
+        return self.get_staff_item_creator_queryset(restaurant, period, role='manager').order_by(
+            '-sales_total',
+            '-orders_count',
+            'user_name',
+        )
+
+    def get_staff_item_creator_queryset(self, restaurant, period: ReportPeriod, *, role: str | None = None) -> QuerySet:
+        from apps.sales.helpers import get_order_item_model
+
+        OrderItem = get_order_item_model()
+        queryset = OrderItem.objects.filter(
+            order__created_at__gte=period.start,
+            order__created_at__lt=period.end,
+        ).exclude(status=OrderItem.Status.CANCELLED)
+        if restaurant is not None:
+            queryset = queryset.filter(order__restaurant=restaurant)
+        if role:
+            queryset = queryset.filter(created_by__role__code__in=STAFF_ROLE_GROUPS.get(role, ()))
+        return queryset.values(
+            user_id=F('created_by__id'),
+            user_name=F('created_by__full_name'),
+        ).annotate(
+            orders_count=Count('order_id', distinct=True),
+            items_count=Coalesce(Sum('quantity'), Value(0), output_field=IntegerField()),
+            sales_total=Coalesce(Sum('line_total'), Value(0), output_field=IntegerField()),
         )
 
     def get_channel_breakdown_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
@@ -212,26 +238,22 @@ class OwnerDashboardBaseService:
     def get_role_breakdown_rows(self, restaurant, period: ReportPeriod, *, role: str) -> list[dict]:
         if role == 'cashier':
             queryset = self.get_cashier_queryset(restaurant, period)
-            name_key = 'user_name'
-            orders_key = 'orders_count'
-            sales_key = 'sales_total'
-            user_key = 'user_id'
+        elif role == 'manager':
+            queryset = self.get_manager_queryset(restaurant, period)
         else:
             queryset = self.get_waiter_queryset(restaurant, period)
-            name_key = 'staff_name'
-            orders_key = 'order_count'
-            sales_key = 'total_sales'
-            user_key = 'staff_id'
 
         rows = []
         for row in queryset:
-            orders_count = self.get_safe_number(row.get(orders_key))
-            sales_total = self.get_safe_number(row.get(sales_key))
+            orders_count = self.get_safe_number(row.get('orders_count'))
+            sales_total = self.get_safe_number(row.get('sales_total'))
+            items_count = self.get_safe_number(row.get('items_count'))
             rows.append(
                 {
-                    'user_id': row.get(user_key),
-                    'user_name': row.get(name_key),
+                    'user_id': row.get('user_id'),
+                    'user_name': row.get('user_name'),
                     'orders_count': orders_count,
+                    'items_count': items_count,
                     'sales_total': sales_total,
                     'average_check': round(sales_total / orders_count) if orders_count else 0,
                 }
@@ -610,6 +632,7 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
         top_items = self.build_top_items(restaurant, period, limit=self.overview_top_item_limit)
         waiters = self.get_role_breakdown_rows(restaurant, period, role='waiter')[: self.overview_staff_limit]
         cashiers = self.get_role_breakdown_rows(restaurant, period, role='cashier')[: self.overview_staff_limit]
+        managers = self.get_role_breakdown_rows(restaurant, period, role='manager')[: self.overview_staff_limit]
         payment_method_breakdown = self.build_choice_breakdown(
             list(get_payment_breakdown_report_queryset(restaurant, period)),
             Payment.Method.choices,
@@ -649,6 +672,7 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
                 'top_item': top_items[0] if top_items else None,
                 'top_waiter': waiters[0] if waiters else None,
                 'top_cashier': cashiers[0] if cashiers else None,
+                'top_manager': managers[0] if managers else None,
                 'top_channel': max(
                     channel_breakdown,
                     key=lambda row: (row['sales_total'], row['orders_count']),
@@ -669,6 +693,7 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
             'staff_breakdown': {
                 'waiters': waiters,
                 'cashiers': cashiers,
+                'managers': managers,
             },
             'payment_method_breakdown': payment_method_breakdown,
             'channel_breakdown': channel_breakdown,
@@ -698,6 +723,8 @@ class OwnerDashboardDetailService(OwnerDashboardBaseService):
         return self.get_top_items_queryset(restaurant, period)
 
     def build_staff_queryset(self, *, restaurant, period: ReportPeriod, role: str) -> QuerySet:
+        if role == 'manager':
+            return self.get_manager_queryset(restaurant, period)
         return self.get_cashier_queryset(restaurant, period) if role == 'cashier' else self.get_waiter_queryset(restaurant, period)
 
     def build_shift_queryset(self, *, restaurant, period: ReportPeriod) -> QuerySet:

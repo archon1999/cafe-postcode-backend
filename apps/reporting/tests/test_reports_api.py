@@ -12,9 +12,11 @@ from apps.billing.services import CashShiftService
 from apps.reporting.services.export_localization import (
     REPORT_TITLE_SALES,
     REPORT_TITLE_SHIFTS,
+    REPORT_TITLE_TOP_STAFF,
     get_report_title,
     get_sales_columns,
     get_shift_columns,
+    get_top_staff_columns,
 )
 from apps.sales.tests.support.pos_api import PosAPITestCase
 from common.utils.date import TASHKENT_TIMEZONE
@@ -65,6 +67,15 @@ class ReportsApiTests(PosAPITestCase):
             status=OrderItem.Status.NEW,
         )
         self.open_order.recalculate_totals()
+        OrderItem.objects.create(
+            order=self.open_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=3,
+            unit_price=10000,
+            status=OrderItem.Status.CANCELLED,
+        )
 
         second_restaurant = self.restaurant.__class__.objects.create(
             name='Other restaurant',
@@ -187,6 +198,42 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['cash_total'], self.closed_order.total)
         self.assertEqual(rows[0]['reprint_count'], 1)
 
+    def test_top_staff_report_uses_order_item_creator_totals(self):
+        response = self.client.get('/api/v1/admin/reporting/top-staff/', self.current_range_params())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data['data']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['staff_name'], self.user.full_name)
+        self.assertEqual(rows[0]['order_count'], 2)
+        self.assertEqual(rows[0]['items_count'], 2)
+        self.assertEqual(rows[0]['total_sales'], self.closed_order.subtotal + self.open_order.subtotal)
+
+    def test_top_staff_report_labels_unknown_item_creator(self):
+        unknown_order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            order_number=3,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.SUBMITTED,
+            guest_count=1,
+        )
+        OrderItem.objects.create(
+            order=unknown_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            quantity=1,
+            unit_price=15000,
+            status=OrderItem.Status.NEW,
+        )
+
+        response = self.client.get('/api/v1/admin/reporting/top-staff/', self.current_range_params())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        unknown_row = next(row for row in response.data['data'] if row['staff_id'] is None)
+        self.assertEqual(unknown_row['staff_name'], "Noma'lum")
+        self.assertEqual(unknown_row['items_count'], 1)
+
     def test_admin_shift_report_export_returns_expected_columns(self):
         range_params = self.current_range_params()
         response = self.client.get('/api/v1/admin/reporting/shifts/export/', range_params)
@@ -203,4 +250,16 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(sheet['A1'].value, str(get_report_title(REPORT_TITLE_SHIFTS)))
         self.assertEqual(sheet['A4'].value, _('Period'))
         self.assertEqual([sheet.cell(row=7, column=index + 1).value for index in range(len(shift_columns))], shift_columns)
+
+    def test_top_staff_report_export_returns_items_column(self):
+        range_params = self.current_range_params()
+        response = self.client.get('/api/v1/admin/reporting/top-staff/export/', range_params)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        workbook = load_workbook(filename=BytesIO(response.content))
+        sheet = workbook.active
+        top_staff_columns = [str(label) for _key, label in get_top_staff_columns()]
+
+        self.assertEqual(sheet['A1'].value, str(get_report_title(REPORT_TITLE_TOP_STAFF)))
+        self.assertEqual([sheet.cell(row=7, column=index + 1).value for index in range(len(top_staff_columns))], top_staff_columns)
 

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime
 
-from django.db.models import Count, F, QuerySet, Sum
+from django.db.models import Count, F, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 
@@ -185,13 +185,20 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
 
 
 def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
-    queryset = Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end)
+    queryset = OrderItem.objects.filter(
+        order__created_at__gte=period.start,
+        order__created_at__lt=period.end,
+    ).exclude(status=OrderItem.Status.CANCELLED)
     if restaurant is not None:
-        queryset = queryset.filter(restaurant=restaurant)
+        queryset = queryset.filter(order__restaurant=restaurant)
     return queryset.values(
-        staff_id=F('opened_by__id'),
-        staff_name=F('opened_by__full_name'),
-    ).annotate(order_count=Count('id'), total_sales=Sum('total'))
+        staff_id=F('created_by__id'),
+        staff_name=Coalesce(F('created_by__full_name'), Value("Noma'lum")),
+    ).annotate(
+        order_count=Count('order_id', distinct=True),
+        items_count=Sum('quantity'),
+        total_sales=Sum('line_total'),
+    )
 
 
 def get_payment_breakdown_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:

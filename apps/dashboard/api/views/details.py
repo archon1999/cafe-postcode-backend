@@ -72,7 +72,7 @@ class DashboardTopItemsView(DashboardPaginatedView):
 class DashboardStaffView(DashboardPaginatedView):
     def get(self, request):
         role = request.query_params.get('role') or request.query_params.get('staff_role') or 'waiter'
-        if role not in {'waiter', 'cashier'}:
+        if role not in {'waiter', 'cashier', 'manager'}:
             role = 'waiter'
 
         rows = self.get_service().get_role_breakdown_rows(

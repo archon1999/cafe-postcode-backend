@@ -85,6 +85,7 @@ def get_top_staff_columns() -> list[tuple[str, str]]:
     return [
         ('staff_name', _('Staff')),
         ('order_count', _('Orders')),
+        ('items_count', _('Items')),
         ('total_sales', _('Total Sales')),
     ]
 

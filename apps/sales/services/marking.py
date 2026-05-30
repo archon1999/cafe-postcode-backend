@@ -150,6 +150,7 @@ class OrderMarkingScanService:
             order_item = OrderItem.objects.create(
                 order=order,
                 catalog_item=catalog_item,
+                created_by=scanned_by,
                 quantity=1,
                 unit_price=int(catalog_item.price or 0),
                 line_total=int(catalog_item.price or 0),

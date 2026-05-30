@@ -37,6 +37,7 @@ class OrderMarkingScanServiceTests(PosTestCase):
         order_item = OrderItem.objects.get(order=self.order, catalog_item=self.marked_item)
         marking = OrderItemMarking.objects.get(order_item=order_item)
         self.assertEqual(order_item.quantity, 1)
+        self.assertEqual(order_item.created_by_id, self.user.id)
         self.assertEqual(marking.raw_code, self.raw_code)
         self.assertEqual(marking.gtin, '04780012960214')
         self.order.refresh_from_db()
@@ -73,6 +74,7 @@ class OrderMarkingScanServiceTests(PosTestCase):
         self.assertEqual(order_item.quantity, 1)
         self.assertEqual(order_item.markings.count(), 1)
         self.assertEqual(order_item.markings.get().raw_code, self.raw_code)
+        self.assertEqual(order_item.created_by_id, self.user.id)
 
     def test_scan_add_creates_new_item_when_existing_item_is_fully_marked(self):
         order_item = OrderItem.objects.create(

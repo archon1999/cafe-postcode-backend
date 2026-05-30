@@ -84,10 +84,11 @@ class DashboardAuthApiTests(APITestCase):
         return cls.stamp_created_at(order, created_at)
 
     @classmethod
-    def create_order_item(cls, *, order, catalog_item, quantity, unit_price):
+    def create_order_item(cls, *, order, catalog_item, quantity, unit_price, created_by=None):
         return OrderItem.objects.create(
             order=order,
             catalog_item=catalog_item,
+            created_by=created_by or order.opened_by,
             quantity=quantity,
             unit_price=unit_price,
         )
@@ -182,7 +183,20 @@ class DashboardAuthApiTests(APITestCase):
         )
         cls.staff_role.permissions.set([cls.hall_permission])
 
-        cls.entitlement.allowed_roles.set([cls.owner_role, cls.staff_role])
+        cls.waiter_role, _ = Role.objects.get_or_create(
+            code='waiter',
+            defaults={'name': 'Waiter', 'description': 'Waiter', 'is_system': True},
+        )
+        cls.cashier_role, _ = Role.objects.get_or_create(
+            code='cashier',
+            defaults={'name': 'Cashier', 'description': 'Cashier', 'is_system': True},
+        )
+        cls.manager_role, _ = Role.objects.get_or_create(
+            code='manager',
+            defaults={'name': 'Manager', 'description': 'Manager', 'is_system': True},
+        )
+
+        cls.entitlement.allowed_roles.set([cls.owner_role, cls.staff_role, cls.waiter_role, cls.cashier_role, cls.manager_role])
 
         cls.owner_user = User.objects.create_user(
             username='owner-user',
@@ -198,7 +212,7 @@ class DashboardAuthApiTests(APITestCase):
             password='secret123',
             full_name='Waiter User',
             restaurant=cls.restaurant,
-            role=cls.owner_role,
+            role=cls.waiter_role,
             is_staff=True,
             is_active=True,
         )
@@ -207,7 +221,16 @@ class DashboardAuthApiTests(APITestCase):
             password='secret123',
             full_name='Cashier User',
             restaurant=cls.restaurant,
-            role=cls.owner_role,
+            role=cls.cashier_role,
+            is_staff=True,
+            is_active=True,
+        )
+        cls.manager_user = User.objects.create_user(
+            username='manager-user',
+            password='secret123',
+            full_name='Manager User',
+            restaurant=cls.restaurant,
+            role=cls.manager_role,
             is_staff=True,
             is_active=True,
         )
@@ -356,8 +379,8 @@ class DashboardAuthApiTests(APITestCase):
             table_session=cls.current_session,
             closed_at=cls.dt(2026, 4, 7, 12, 45),
         )
-        cls.create_order_item(order=cls.order_today, catalog_item=cls.burger, quantity=1, unit_price=18000)
-        cls.create_order_item(order=cls.order_today, catalog_item=cls.fries, quantity=1, unit_price=14000)
+        cls.create_order_item(order=cls.order_today, catalog_item=cls.burger, quantity=1, unit_price=18000, created_by=cls.cashier_user)
+        cls.create_order_item(order=cls.order_today, catalog_item=cls.fries, quantity=1, unit_price=14000, created_by=cls.cashier_user)
         cls.create_payment(
             order=cls.order_today,
             cash_desk=cls.cash_desk,
@@ -379,7 +402,7 @@ class DashboardAuthApiTests(APITestCase):
             cashier=cls.cashier_user,
             closed_at=cls.dt(2026, 4, 3, 13, 35),
         )
-        cls.create_order_item(order=cls.order_month, catalog_item=cls.pizza, quantity=1, unit_price=54000)
+        cls.create_order_item(order=cls.order_month, catalog_item=cls.pizza, quantity=1, unit_price=54000, created_by=cls.cashier_user)
         cls.create_payment(
             order=cls.order_month,
             cash_desk=cls.cash_desk,
@@ -401,7 +424,7 @@ class DashboardAuthApiTests(APITestCase):
             cashier=cls.cashier_user,
             closed_at=cls.dt(2026, 4, 6, 18, 20),
         )
-        cls.create_order_item(order=cls.order_previous_day, catalog_item=cls.salad, quantity=1, unit_price=28000)
+        cls.create_order_item(order=cls.order_previous_day, catalog_item=cls.salad, quantity=1, unit_price=28000, created_by=cls.cashier_user)
         cls.create_payment(
             order=cls.order_previous_day,
             cash_desk=cls.cash_desk,
@@ -546,6 +569,8 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(len(response.data['previous_revenue_series']), 24)
         self.assertEqual(response.data['spotlight']['top_item']['item_name'], 'Burger')
         self.assertEqual(response.data['spotlight']['top_payment_method']['code'], 'cash')
+        self.assertEqual(response.data['spotlight']['top_cashier']['items_count'], 2)
+        self.assertIn('managers', response.data['staff_breakdown'])
         self.assertEqual(response.data['open_checks_snapshot']['count'], 1)
         self.assertEqual(response.data['cash_shift_snapshot']['open_count'], 1)
         self.assertEqual(response.data['cash_shift_snapshot']['rows'][0]['cash_total'], 32000)
@@ -612,6 +637,7 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(top_items_response.data['data'][0]['item_name'], 'Pizza')
         self.assertEqual(staff_response.data['data'][0]['user_name'], 'Cashier User')
         self.assertEqual(staff_response.data['data'][0]['sales_total'], 32000)
+        self.assertEqual(staff_response.data['data'][0]['items_count'], 2)
         self.assertEqual(shifts_response.data['total'], 2)
         self.assertEqual(shifts_response.data['data'][0]['cash_desk_name'], 'Front cash desk')
 
@@ -641,6 +667,7 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(top_items_response.data['data'][0]['item_name'], 'Pizza')
         self.assertEqual(staff_response.data['data'][0]['user_name'], 'Cashier User')
         self.assertEqual(staff_response.data['data'][0]['sales_total'], 114000)
+        self.assertEqual(staff_response.data['data'][0]['items_count'], 4)
         self.assertEqual(shifts_response.data['total'], 2)
 
     def test_dashboard_detail_endpoints_require_dashboard_permission(self):

@@ -50,6 +50,7 @@ class DashboardStaffSerializer(serializers.Serializer):
     user_id = serializers.UUIDField(allow_null=True)
     user_name = serializers.CharField(allow_null=True)
     orders_count = serializers.IntegerField()
+    items_count = serializers.IntegerField()
     sales_total = serializers.IntegerField()
     average_check = serializers.IntegerField(required=False)
 
@@ -81,6 +82,7 @@ class DashboardSpotlightSerializer(serializers.Serializer):
     top_item = DashboardTopItemSerializer(allow_null=True)
     top_waiter = DashboardStaffSerializer(allow_null=True)
     top_cashier = DashboardStaffSerializer(allow_null=True)
+    top_manager = DashboardStaffSerializer(allow_null=True)
     top_channel = DashboardBreakdownSerializer(allow_null=True)
     top_payment_method = DashboardBreakdownSerializer(allow_null=True)
     peak_time_bucket = DashboardPeakTimeBucketSerializer()
@@ -89,6 +91,7 @@ class DashboardSpotlightSerializer(serializers.Serializer):
 class DashboardStaffBreakdownGroupSerializer(serializers.Serializer):
     waiters = DashboardStaffSerializer(many=True)
     cashiers = DashboardStaffSerializer(many=True)
+    managers = DashboardStaffSerializer(many=True)
 
 
 class DashboardOpenCheckSerializer(serializers.Serializer):
