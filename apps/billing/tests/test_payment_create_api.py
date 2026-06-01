@@ -107,7 +107,7 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.order.recalculate_totals()
 
-    def create_delivery_order(self):
+    def create_delivery_order(self, *, delivery_details=True):
         order = Order.objects.create(
             restaurant=self.restaurant,
             distribution_point=self.delivery_distribution_point,
@@ -116,6 +116,8 @@ class PaymentCreateApiTests(APITestCase):
             channel=Order.Channel.DELIVERY,
             status=Order.Status.OPEN,
             guest_count=1,
+            delivery_phone='90-123-45-67' if delivery_details else '',
+            delivery_address='Chilonzor 12' if delivery_details else '',
         )
         OrderItem.objects.create(
             order=order,
@@ -364,8 +366,8 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(payment.status, Payment.Status.FAILED)
         self.assertEqual(payment.provider_payload['debug']['transaction']['response']['httpStatus'], 200)
 
-    def test_delivery_card_payment_initiate_does_not_route_to_kitchen(self):
-        order = self.create_delivery_order()
+    def test_takeaway_card_payment_initiate_does_not_route_to_kitchen(self):
+        order = self.order
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -378,7 +380,7 @@ class PaymentCreateApiTests(APITestCase):
 
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{order.id}/card-payments/initiate/',
-            {'amount': self.order.total, 'register_fiscal': True},
+            {'amount': order.total, 'register_fiscal': True},
             format='json',
         )
 
@@ -387,8 +389,8 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.status, Order.Status.OPEN)
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
 
-    def test_delivery_terminal_failure_keeps_order_open_without_kitchen_ticket(self):
-        order = self.create_delivery_order()
+    def test_takeaway_terminal_failure_keeps_order_open_without_kitchen_ticket(self):
+        order = self.order
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -409,7 +411,7 @@ class PaymentCreateApiTests(APITestCase):
             {
                 'ok': False,
                 'status': 'CANCELED',
-                'requestId': 'request-delivery',
+                'requestId': 'request-takeaway',
                 'message': 'Canceled',
                 'debug': {'transaction': {'response': {'httpStatus': 200}}},
             },
@@ -424,8 +426,8 @@ class PaymentCreateApiTests(APITestCase):
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
 
     @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
-    def test_delivery_card_payment_success_routes_to_kitchen_after_payment(self, local_http_request):
-        order = self.create_delivery_order()
+    def test_takeaway_card_payment_success_routes_to_kitchen_after_payment(self, local_http_request):
+        order = self.order
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -447,8 +449,8 @@ class PaymentCreateApiTests(APITestCase):
                 'body': {
                     'ok': True,
                     'status': 'SUCCESS',
-                    'requestId': 'request-delivery-success',
-                    'params': {'trxId': 'trx-delivery', 'rrn': 'rrn-delivery'},
+                    'requestId': 'request-takeaway-success',
+                    'params': {'trxId': 'trx-takeaway', 'rrn': 'rrn-takeaway'},
                 },
             },
         ]
@@ -465,4 +467,34 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
         self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
+
+    def test_delivery_payment_rejects_missing_delivery_details(self):
+        order = self.create_delivery_order(delivery_details=False)
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': order.total},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    def test_delivery_payment_rejects_invalid_delivery_phone(self):
+        order = self.create_delivery_order()
+        order.delivery_phone = '901234567'
+        order.save(update_fields=['delivery_phone', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': order.total},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
 

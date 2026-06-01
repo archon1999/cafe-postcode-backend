@@ -1,4 +1,5 @@
 import logging
+import re
 
 from django.db import transaction
 from django.utils import timezone
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 Order = get_order_model()
 Restaurant = get_restaurant_model()
+DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
 
 
 class OrderStateService:
@@ -62,10 +64,27 @@ class OrderStateService:
             logger.warning('Rejected payment for closed order', extra={'order_id': str(order.pk)})
             raise ValidationError({'detail': _('Closed orders cannot be paid again.')})
 
+    def ensure_delivery_details(self, *, order: Order):
+        if order.channel != Order.Channel.DELIVERY:
+            return
+
+        phone = (order.delivery_phone or '').strip()
+        address = (order.delivery_address or '').strip()
+        errors = {}
+        if not phone:
+            errors['delivery_phone'] = _('Delivery phone is required.')
+        elif not DELIVERY_PHONE_RE.match(phone):
+            errors['delivery_phone'] = _('Delivery phone must match DD-DDD-DD-DD.')
+        if not address:
+            errors['delivery_address'] = _('Delivery address is required.')
+        if errors:
+            raise ValidationError(errors)
+
     def submit_order(self, *, order: Order):
         from apps.kitchen.services import sync_order_tickets
 
         self.ensure_order_mutable(order=order)
+        self.ensure_delivery_details(order=order)
         if order.status == Order.Status.OPEN:
             order.status = Order.Status.SUBMITTED
             order.save(update_fields=['status', 'updated_at'])

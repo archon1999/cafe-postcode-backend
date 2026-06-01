@@ -8,7 +8,7 @@ from apps.sales.models import Order, OrderItem
 from apps.billing.models import Payment, PaymentRefund, Receipt
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentRefundService
 from apps.restaurants.models import DistributionPoint
-from apps.sales.services import OrderStateService
+from apps.sales.services import OrderStateService, OrderSubmissionService
 from apps.sales.tests.support.pos_api import PosTestCase
 
 
@@ -79,7 +79,7 @@ class OrderPaymentServiceTests(PosTestCase):
             kind=DistributionPoint.Kind.DELIVERY,
         )
 
-    def _create_order_with_item(self, *, channel, quantity=1, table_session=None):
+    def _create_order_with_item(self, *, channel, quantity=1, table_session=None, delivery_details=True):
         distribution_point = self.takeaway_distribution
         if channel == Order.Channel.HALL:
             distribution_point = self.hall_distribution
@@ -96,6 +96,8 @@ class OrderPaymentServiceTests(PosTestCase):
             channel=channel,
             status=Order.Status.OPEN,
             guest_count=table_session.guest_count if table_session else 1,
+            delivery_phone='90-123-45-67' if channel == Order.Channel.DELIVERY and delivery_details else '',
+            delivery_address='Chilonzor 12' if channel == Order.Channel.DELIVERY and delivery_details else '',
         )
         OrderItem.objects.create(
             order=order,
@@ -164,21 +166,8 @@ class OrderPaymentServiceTests(PosTestCase):
                 cash_shift=self.create_cash_shift(),
             )
 
-    def test_process_auto_submits_open_order_and_creates_ticket(self):
+    def test_process_takeaway_payment_routes_to_kitchen_only_after_success(self):
         order = self._create_order_with_item(channel=Order.Channel.TAKEAWAY)
-
-        result = self.service.process(
-            order=order,
-            payload={'method': Payment.Method.CASH, 'amount': order.total},
-            received_by=self.user,
-            cash_shift=self.create_cash_shift(),
-        )
-
-        self.assertEqual(result['payment'].status, Payment.Status.SUCCEEDED)
-        self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
-
-    def test_process_delivery_payment_routes_to_kitchen_only_after_success(self):
-        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
 
         result = self.service.process(
@@ -193,8 +182,8 @@ class OrderPaymentServiceTests(PosTestCase):
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
 
-    def test_process_delivery_failed_payment_keeps_order_open_without_kitchen_ticket(self):
-        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
+    def test_process_takeaway_failed_payment_keeps_order_open_without_kitchen_ticket(self):
+        order = self._create_order_with_item(channel=Order.Channel.TAKEAWAY)
 
         with patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': False, 'detail': 'declined'}):
             result = self.service.process(
@@ -208,6 +197,66 @@ class OrderPaymentServiceTests(PosTestCase):
         self.assertEqual(result['payment'].status, Payment.Status.FAILED)
         self.assertEqual(order.status, Order.Status.OPEN)
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    def test_process_delivery_payment_submits_before_payment(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+        with patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': False, 'detail': 'declined'}):
+            result = self.service.process(
+                order=order,
+                payload={'method': Payment.Method.CASH, 'amount': order.total},
+                received_by=self.user,
+                cash_shift=self.create_cash_shift(),
+            )
+
+        order.refresh_from_db()
+        self.assertEqual(result['payment'].status, Payment.Status.FAILED)
+        self.assertEqual(order.status, Order.Status.SUBMITTED)
+        self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
+
+    def test_delivery_submit_rejects_missing_delivery_details(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY, delivery_details=False)
+
+        with self.assertRaises(ValidationError):
+            OrderSubmissionService().submit(order)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    def test_delivery_submit_rejects_invalid_delivery_phone(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
+        order.delivery_phone = '901234567'
+        order.save(update_fields=['delivery_phone', 'updated_at'])
+
+        with self.assertRaises(ValidationError):
+            OrderSubmissionService().submit(order)
+
+    def test_delivery_submit_succeeds_with_delivery_details(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
+
+        OrderSubmissionService().submit(order)
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.SUBMITTED)
+        self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
+
+    def test_process_delivery_payment_rejects_missing_delivery_details(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY, delivery_details=False)
+
+        with self.assertRaises(ValidationError):
+            self.service.process(
+                order=order,
+                payload={'method': Payment.Method.CASH, 'amount': order.total},
+                received_by=self.user,
+                cash_shift=self.create_cash_shift(),
+            )
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+        self.assertFalse(Payment.objects.filter(order=order).exists())
 
 
 class CashShiftServiceTests(PosTestCase):

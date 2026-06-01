@@ -56,6 +56,8 @@ class Order(BaseModel):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     guest_count = models.PositiveIntegerField(default=1)
     note = models.TextField(blank=True)
+    delivery_phone = models.CharField(max_length=20, blank=True, default='')
+    delivery_address = models.TextField(blank=True, default='')
     subtotal = models.PositiveIntegerField(default=0)
     total = models.PositiveIntegerField(default=0)
     closed_at = models.DateTimeField(null=True, blank=True)

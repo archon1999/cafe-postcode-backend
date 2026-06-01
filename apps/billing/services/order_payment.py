@@ -32,6 +32,7 @@ class OrderPaymentService:
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
+        state_service.ensure_delivery_details(order=order)
         if self._should_submit_before_payment(order=order):
             self.order_submission_service_class().submit(order)
 
@@ -175,6 +176,7 @@ class OrderPaymentService:
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
+        state_service.ensure_delivery_details(order=order)
         if self._should_submit_before_payment(order=order):
             self.order_submission_service_class().submit(order)
 
@@ -256,7 +258,7 @@ class OrderPaymentService:
             raise ValidationError({'amount': _('Payment amount must cover the full remaining total.')})
 
     def _complete_successful_payment(self, *, order, payment, received_by):
-        if order.channel == Order.Channel.DELIVERY and order.status == Order.Status.OPEN:
+        if order.channel == Order.Channel.TAKEAWAY and order.status == Order.Status.OPEN:
             self.order_submission_service_class().submit(order)
 
         paid_total = order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0
@@ -313,7 +315,7 @@ class OrderPaymentService:
 
     @staticmethod
     def _should_submit_before_payment(*, order):
-        return order.status == Order.Status.OPEN and order.channel != Order.Channel.DELIVERY
+        return order.status == Order.Status.OPEN and order.channel != Order.Channel.TAKEAWAY
 
     @staticmethod
     def _positive_int(value, fallback):

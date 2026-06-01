@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+import re
 
 from rest_framework import serializers
 
@@ -8,6 +9,7 @@ from apps.sales.helpers import get_order_model
 from .order_item import OrderItemSerializer
 
 Order = get_order_model()
+DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -28,6 +30,15 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def validate_display_name(self, value: str) -> str:
         return value.strip()
+
+    def validate_delivery_phone(self, value: str) -> str:
+        value = (value or '').strip()
+        if value and not DELIVERY_PHONE_RE.match(value):
+            raise serializers.ValidationError('Delivery phone must match DD-DDD-DD-DD.')
+        return value
+
+    def validate_delivery_address(self, value: str) -> str:
+        return (value or '').strip()
 
     def get_service_fee(self, obj):
         subtotal = obj.subtotal or 0
@@ -93,6 +104,8 @@ class OrderSerializer(serializers.ModelSerializer):
             'status',
             'guest_count',
             'note',
+            'delivery_phone',
+            'delivery_address',
             'subtotal',
             'service_fee',
             'service_fee_enabled',
