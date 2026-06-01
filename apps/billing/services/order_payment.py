@@ -346,19 +346,28 @@ class OrderPaymentService:
 
     def _create_fiscal_receipt(self, *, order, payment, receipt_result: dict):
         status = Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED
+        payload = self._receipt_payload_with_order_context(order=order, receipt_result=receipt_result)
         return Receipt.objects.create(
             order=order,
             payment=payment,
             kind=Receipt.Kind.FISCAL,
             status=status,
             provider=receipt_result.get('provider', ''),
-            payload=receipt_result,
+            payload=payload,
             fiscal_requested_at=self._parse_payload_datetime(receipt_result.get('fiscal_requested_at')) or timezone.now(),
             fiscal_registered_at=self._parse_payload_datetime(receipt_result.get('fiscal_registered_at')) if status == Receipt.Status.SENT else None,
             original_paid_at=payment.paid_at,
             fiscal_error_code=str(receipt_result.get('code') or receipt_result.get('error_code') or ''),
             fiscal_error_message='' if status == Receipt.Status.SENT else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         )
+
+    @staticmethod
+    def _receipt_payload_with_order_context(*, order, receipt_result: dict):
+        payload = dict(receipt_result or {})
+        if order.channel == Order.Channel.DELIVERY:
+            payload['delivery_phone'] = order.delivery_phone or ''
+            payload['delivery_address'] = order.delivery_address or ''
+        return payload
 
     @staticmethod
     def _parse_payload_datetime(value):
@@ -452,10 +461,14 @@ class PaymentFiscalRetryService:
 
     def _persist_result(self, *, payment: Payment, receipt, receipt_result: dict):
         status = Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED
+        payload = OrderPaymentService._receipt_payload_with_order_context(
+            order=payment.order,
+            receipt_result=receipt_result,
+        )
         values = {
             'status': status,
             'provider': receipt_result.get('provider', ''),
-            'payload': receipt_result,
+            'payload': payload,
             'fiscal_requested_at': OrderPaymentService._parse_payload_datetime(receipt_result.get('fiscal_requested_at')) or timezone.now(),
             'fiscal_registered_at': OrderPaymentService._parse_payload_datetime(receipt_result.get('fiscal_registered_at')) if status == Receipt.Status.SENT else None,
             'original_paid_at': payment.paid_at,

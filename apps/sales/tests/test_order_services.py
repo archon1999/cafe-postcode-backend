@@ -215,6 +215,22 @@ class OrderPaymentServiceTests(PosTestCase):
         self.assertEqual(order.status, Order.Status.SUBMITTED)
         self.assertTrue(KitchenTicket.objects.filter(order=order, prep_station=self.prep_station).exists())
 
+    def test_process_delivery_payment_receipt_payload_includes_delivery_details(self):
+        order = self._create_order_with_item(channel=Order.Channel.DELIVERY)
+
+        with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal:
+            issue_fiscal.return_value = [{'ok': True, 'provider': 'unikassa', 'receipt_number': 'R-1'}]
+            result = self.service.process(
+                order=order,
+                payload={'method': Payment.Method.CASH, 'amount': order.total},
+                received_by=self.user,
+                cash_shift=self.create_cash_shift(),
+            )
+
+        payload = result['receipt'].payload
+        self.assertEqual(payload['delivery_phone'], '90-123-45-67')
+        self.assertEqual(payload['delivery_address'], 'Chilonzor 12')
+
     def test_delivery_submit_rejects_missing_delivery_details(self):
         order = self._create_order_with_item(channel=Order.Channel.DELIVERY, delivery_details=False)
 
