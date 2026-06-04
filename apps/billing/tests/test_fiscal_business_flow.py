@@ -168,6 +168,96 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertFalse(results[1]['ok'])
         self.assertEqual(results[1]['code'], 'X1')
 
+    def test_unikassa_mixed_payment_without_restricted_items_uses_single_breakdown_receipt(self):
+        order = self.create_closed_order()
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.catalog_item,
+            created_by=self.user,
+            quantity=1,
+            unit_price=10000,
+        )
+        order.recalculate_totals()
+        payment = Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.MIXED,
+            amount=order.total,
+            cash_amount=6000,
+            card_amount=5000,
+            fiscal_cash_amount=6000,
+            fiscal_card_amount=5000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(provider='unikassa', settings={'terminal_id': 'LG420'})
+        )
+
+        parts = service._build_receipt_parts(order=order, payment=payment)
+        receipt = service._build_sale_receipt(order=order, payment=payment, part=parts[0], memory_info=None)
+
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(receipt['ReceivedCash'], 600000)
+        self.assertEqual(receipt['ReceivedCard'], 500000)
+
+    def test_unikassa_restricted_items_move_fiscal_cash_to_card(self):
+        order = self.create_closed_order()
+        restricted_category = CatalogCategory.objects.create(
+            restaurant=self.restaurant,
+            name='Cash forbidden',
+            mxik_payload={'cashSale': 0},
+        )
+        restricted_item = CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=restricted_category,
+            name='Restricted item',
+            price=5000,
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.catalog_item,
+            created_by=self.user,
+            quantity=1,
+            unit_price=5000,
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=restricted_item,
+            created_by=self.user,
+            quantity=1,
+            unit_price=5000,
+        )
+        order.recalculate_totals()
+        payment = Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.MIXED,
+            amount=order.total,
+            cash_amount=6000,
+            card_amount=5000,
+            fiscal_cash_amount=5500,
+            fiscal_card_amount=5500,
+            fiscal_adjustment_reason='cash_forbidden_category',
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+        service = UnikassaFiscalIntegrationService(
+            SimpleNamespace(provider='unikassa', settings={'terminal_id': 'LG420'})
+        )
+
+        parts = service._build_receipt_parts(order=order, payment=payment)
+        normal_receipt = service._build_sale_receipt(order=order, payment=payment, part=parts[0], memory_info=None)
+        restricted_receipt = service._build_sale_receipt(order=order, payment=payment, part=parts[1], memory_info=None)
+
+        self.assertEqual([part.split_reason for part in parts], ['mixed_cash_allowed_items', 'cash_forbidden_category'])
+        self.assertEqual(normal_receipt['ReceivedCash'], 550000)
+        self.assertEqual(normal_receipt['ReceivedCard'], 0)
+        self.assertEqual(restricted_receipt['ReceivedCash'], 0)
+        self.assertEqual(restricted_receipt['ReceivedCard'], 550000)
+
     def test_unikassa_cash_sale_payload_restriction_prefers_item_payload(self):
         order = self.create_closed_order()
         category = CatalogCategory.objects.create(
@@ -467,7 +557,7 @@ class FiscalBusinessFlowTests(PosTestCase):
             ]
             result = OrderPaymentService().process(
                 order=order,
-                payload={'method': Payment.Method.CASH, 'amount': 30000, 'register_fiscal': True},
+                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
                 received_by=self.user,
                 cash_shift=shift,
             )
@@ -497,7 +587,7 @@ class FiscalBusinessFlowTests(PosTestCase):
             issue.return_value = [{'ok': True, 'provider': 'unikassa'}]
             OrderPaymentService().process(
                 order=order,
-                payload={'method': Payment.Method.CASH, 'amount': 30000, 'register_fiscal': True},
+                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
                 received_by=self.user,
                 cash_shift=shift,
             )
@@ -520,7 +610,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         ):
             OrderPaymentService().process(
                 order=order,
-                payload={'method': Payment.Method.CASH, 'amount': 30000, 'register_fiscal': False},
+                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': False},
                 received_by=self.user,
                 cash_shift=shift,
             )

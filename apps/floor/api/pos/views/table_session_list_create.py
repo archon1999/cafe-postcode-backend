@@ -2,6 +2,7 @@ from rest_framework import generics, permissions
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.api.admin.serializers import TableSessionSerializer
+from apps.floor.services import sync_table_status
 from apps.platform.services import FeatureGateService
 from common.api.permissions import (
     EndpointRBACPermission,
@@ -49,3 +50,4 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
         )
         table.status = DiningTable.Status.OCCUPIED
         table.save(update_fields=['status', 'updated_at'])
+        sync_table_status(table)

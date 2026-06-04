@@ -7,6 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.floor.models import DiningTable, TableSession
+from apps.floor.services import sync_table_status
 from apps.restaurants.helpers import get_restaurant_model
 from apps.sales.helpers import get_order_model
 
@@ -113,8 +114,7 @@ class OrderStateService:
             session.status = TableSession.Status.CLOSED
             session.closed_at = now
             session.save(update_fields=['status', 'closed_at', 'updated_at'])
-            session.table.status = DiningTable.Status.AVAILABLE
-            session.table.save(update_fields=['status', 'updated_at'])
+            sync_table_status(session.table)
 
         logger.info(
             'Order closed after successful payment',

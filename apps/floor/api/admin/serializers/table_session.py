@@ -1,7 +1,8 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.floor.models import TableSession
+from apps.floor.models import DiningTable, TableSession
+from apps.floor.services import available_seat_count
 
 
 def get_supported_seat_count(seat_count: int) -> int:
@@ -43,21 +44,25 @@ class TableSessionSerializer(serializers.ModelSerializer):
         if table is None:
             return attrs
 
-        current_queryset = table.table_sessions.filter(
-            status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT]
-        )
-        if self.instance:
-            current_queryset = current_queryset.exclude(pk=self.instance.pk)
-        if current_queryset.exists():
-            raise serializers.ValidationError({'table': _('This table already has an active session.')})
+        if table.status == DiningTable.Status.BLOCKED:
+            raise serializers.ValidationError({'table': _('This table is blocked.')})
 
-        if guest_count is not None and guest_count > get_supported_seat_count(table.seat_count):
+        if guest_count is not None and guest_count > int(table.seat_count or 0):
             raise serializers.ValidationError(
                 {
                     'guest_count': _(
                         'Guest count cannot exceed this table limit (%(limit)s).'
                     )
-                    % {'limit': get_supported_seat_count(table.seat_count)}
+                    % {'limit': int(table.seat_count or 0)}
+                }
+            )
+        if guest_count is not None and guest_count > available_seat_count(table, exclude_session=self.instance):
+            raise serializers.ValidationError(
+                {
+                    'guest_count': _(
+                        'Guest count cannot exceed available seats on this table (%(limit)s).'
+                    )
+                    % {'limit': available_seat_count(table, exclude_session=self.instance)}
                 }
             )
         return attrs

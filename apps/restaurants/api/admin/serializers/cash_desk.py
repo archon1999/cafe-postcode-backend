@@ -39,12 +39,14 @@ class CashDeskSerializer(serializers.ModelSerializer):
         return fields
 
     def validate_enabled_payment_methods(self, value):
-        allowed_values = {'cash', 'card', 'qr'}
+        allowed_values = {'cash', 'card', 'mixed'}
         values = list(dict.fromkeys(value or []))
         if not values:
             raise serializers.ValidationError(_('At least one payment method must be enabled.'))
         if any(item not in allowed_values for item in values):
             raise serializers.ValidationError(_('Unsupported payment method selected.'))
+        if 'mixed' in values and not {'cash', 'card'}.issubset(set(values)):
+            raise serializers.ValidationError(_('Mixed payment requires cash and card payment methods.'))
         return values
 
     def validate_fiscal_integration(self, value):

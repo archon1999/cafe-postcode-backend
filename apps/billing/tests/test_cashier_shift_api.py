@@ -68,6 +68,43 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
         self.assertEqual(shift.cash_difference_amount, -5000)
 
+    def test_current_shift_summary_uses_mixed_payment_cash_breakdown(self):
+        open_response = self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
+        shift = CashShift.objects.get(pk=open_response['current_shift']['id'])
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=78,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=33000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_shift=shift,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.MIXED,
+            amount=33000,
+            cash_amount=20000,
+            card_amount=13000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=False,
+            paid_at=timezone.now(),
+        )
+
+        context_response = self.client.get('/api/v1/pos/billing/context/')
+
+        self.assertEqual(context_response.status_code, status.HTTP_200_OK, context_response.data)
+        self.assertEqual(context_response.data['current_shift']['cash_total'], 20000)
+        self.assertEqual(context_response.data['current_shift']['card_total'], 13000)
+        self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 170000)
+
     def test_close_last_cash_shift_can_close_fiscal_shift(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
         FiscalShiftSession.objects.create(
@@ -234,7 +271,8 @@ class CashierShiftApiTests(PosAPITestCase):
                 'provider': 'unikassa',
                 'receipt_number': '1002',
             }
-            payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=30000)
+            order = Order.objects.get(pk=order_payload['id'])
+            payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=order.total)
             reprint_response = self.reprint_receipt_via_api(payment_response['receipt']['id'])
             self.assertIn('receipt', reprint_response)
 

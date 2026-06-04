@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 
 from apps.billing.helpers import get_cash_shift_model, get_payment_model, get_payment_refund_model, get_receipt_model
 
@@ -93,16 +93,19 @@ class CashShiftSerializer(serializers.ModelSerializer):
 
         payments = Payment.objects.filter(cash_shift=obj, status=Payment.Status.SUCCEEDED)
         refunds = PaymentRefund.objects.filter(payment__cash_shift=obj, status=PaymentRefund.Status.SUCCEEDED)
-        payment_totals = payments.values('method').annotate(total=Sum('amount'))
-        totals = {item['method']: item['total'] or 0 for item in payment_totals}
+        totals = payments.aggregate(
+            cash_total=Sum('cash_amount'),
+            card_total=Sum('card_amount'),
+            qr_total=Sum('amount', filter=Q(method=Payment.Method.QR)),
+        )
         refund_total = refunds.aggregate(total=Sum('amount')).get('total') or 0
         cash_refund_total = (
-            refunds.filter(payment__method=Payment.Method.CASH).aggregate(total=Sum('amount')).get('total') or 0
+            refunds.exclude(payment__method=Payment.Method.QR).aggregate(total=Sum('payment__cash_amount')).get('total') or 0
         )
         cached = {
-            'cash_total': totals.get(Payment.Method.CASH, 0),
-            'card_total': totals.get(Payment.Method.CARD, 0),
-            'qr_total': totals.get(Payment.Method.QR, 0),
+            'cash_total': totals.get('cash_total') or 0,
+            'card_total': totals.get('card_total') or 0,
+            'qr_total': totals.get('qr_total') or 0,
             'refund_total': refund_total,
             'receipt_count': Receipt.objects.filter(
                 payment__cash_shift=obj,
@@ -111,7 +114,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'reprint_count': Receipt.objects.filter(payment__cash_shift=obj).aggregate(total=Sum('reprint_count')).get('total')
             or 0,
             'expected_closing_cash_amount': (obj.opening_cash_amount or 0)
-            + totals.get(Payment.Method.CASH, 0)
+            + (totals.get('cash_total') or 0)
             - cash_refund_total,
         }
         setattr(obj, '_live_snapshot', cached)

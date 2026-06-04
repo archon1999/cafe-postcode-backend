@@ -31,6 +31,8 @@ class FiscalReceiptPart:
     service_fee: int
     pay_type: str
     split_reason: str
+    received_cash: int | None = None
+    received_card: int | None = None
 
 
 class UnikassaFiscalIntegrationService:
@@ -425,8 +427,18 @@ class UnikassaFiscalIntegrationService:
         if not order_items:
             raise UnikassaFiscalError('Order has no active items for fiscal receipt registration.')
 
-        if payment.method != payment.Method.CASH:
-            return [FiscalReceiptPart(order_items, self._service_fee(order=order), self._pay_type(payment), 'none')]
+        fiscal_cash, fiscal_card = self._fiscal_payment_amounts(payment=payment)
+        if payment.method in {payment.Method.CARD, payment.Method.QR} and fiscal_cash <= 0:
+            return [
+                FiscalReceiptPart(
+                    order_items,
+                    self._service_fee(order=order),
+                    self._pay_type_for_amounts(cash_amount=fiscal_cash, card_amount=fiscal_card),
+                    'none',
+                    fiscal_cash,
+                    fiscal_card,
+                )
+            ]
 
         restricted = [
             item
@@ -435,14 +447,44 @@ class UnikassaFiscalIntegrationService:
         ]
         normal = [item for item in order_items if item not in restricted]
         if not restricted:
-            return [FiscalReceiptPart(normal, self._service_fee(order=order), 'cash', 'none')]
+            return [
+                FiscalReceiptPart(
+                    normal,
+                    self._service_fee(order=order),
+                    self._pay_type_for_amounts(cash_amount=fiscal_cash, card_amount=fiscal_card),
+                    'none',
+                    fiscal_cash,
+                    fiscal_card,
+                )
+            ]
         if not normal:
-            return [FiscalReceiptPart(restricted, self._service_fee(order=order), 'card', 'cash_forbidden_category')]
+            restricted_total = sum(int(item.line_total or 0) for item in restricted) + self._service_fee(order=order)
+            return [
+                FiscalReceiptPart(
+                    restricted,
+                    self._service_fee(order=order),
+                    'card',
+                    'cash_forbidden_category',
+                    0,
+                    restricted_total,
+                )
+            ]
 
         normal_fee, restricted_fee = self._split_service_fee(order=order, normal_items=normal, restricted_items=restricted)
+        normal_total = sum(int(item.line_total or 0) for item in normal) + normal_fee
+        restricted_total = sum(int(item.line_total or 0) for item in restricted) + restricted_fee
+        normal_cash = min(fiscal_cash, normal_total)
+        normal_card = max(normal_total - normal_cash, 0)
         return [
-            FiscalReceiptPart(normal, normal_fee, 'cash', 'mixed_cash_allowed_items'),
-            FiscalReceiptPart(restricted, restricted_fee, 'card', 'cash_forbidden_category'),
+            FiscalReceiptPart(
+                normal,
+                normal_fee,
+                self._pay_type_for_amounts(cash_amount=normal_cash, card_amount=normal_card),
+                'mixed_cash_allowed_items',
+                normal_cash,
+                normal_card,
+            ),
+            FiscalReceiptPart(restricted, restricted_fee, 'card', 'cash_forbidden_category', 0, restricted_total),
         ]
 
     def _pay_type(self, payment) -> str:
@@ -451,6 +493,23 @@ class UnikassaFiscalIntegrationService:
         if payment.method in {payment.Method.CARD, payment.Method.QR}:
             return 'card'
         return 'card'
+
+    def _fiscal_payment_amounts(self, *, payment) -> tuple[int, int]:
+        fiscal_cash = int(getattr(payment, 'fiscal_cash_amount', 0) or 0)
+        fiscal_card = int(getattr(payment, 'fiscal_card_amount', 0) or 0)
+        if fiscal_cash or fiscal_card:
+            return fiscal_cash, fiscal_card
+        if payment.method == payment.Method.CASH:
+            return int(payment.amount or 0), 0
+        if payment.method in {payment.Method.CARD, payment.Method.QR}:
+            return 0, int(payment.amount or 0)
+        if payment.method == payment.Method.MIXED:
+            return int(getattr(payment, 'cash_amount', 0) or 0), int(getattr(payment, 'card_amount', 0) or 0)
+        return 0, int(payment.amount or 0)
+
+    @staticmethod
+    def _pay_type_for_amounts(*, cash_amount: int, card_amount: int) -> str:
+        return 'card' if int(card_amount or 0) > 0 else 'cash'
 
     @staticmethod
     def _service_fee(*, order) -> int:
@@ -471,12 +530,14 @@ class UnikassaFiscalIntegrationService:
     def _build_sale_receipt(self, *, order, payment, part: FiscalReceiptPart, memory_info: dict | None) -> dict:
         items = self._build_sale_items(order=order, items=part.items, service_fee=part.service_fee)
         total = sum(int(item['Price'] or 0) for item in items)
+        received_cash = self._money_to_fiscal(part.received_cash) if part.received_cash is not None else total if part.pay_type == 'cash' else 0
+        received_card = self._money_to_fiscal(part.received_card) if part.received_card is not None else 0 if part.pay_type == 'cash' else total
         receipt_payload = {
             'Time': self._format_operation_time(self._next_operation_datetime(memory_info)),
             'Type': 0,
             'Operation': 0,
-            'ReceivedCash': total if part.pay_type == 'cash' else 0,
-            'ReceivedCard': 0 if part.pay_type == 'cash' else total,
+            'ReceivedCash': received_cash,
+            'ReceivedCard': received_card,
             'RefundInfo': None,
             'Items': items,
         }

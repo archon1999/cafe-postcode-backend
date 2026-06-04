@@ -249,6 +249,9 @@ class CashShiftService:
                 'order_number': payment.order.order_number if payment.order_id else None,
                 'method': payment.method,
                 'amount': int(payment.amount or 0),
+                'cash_amount': int(getattr(payment, 'cash_amount', 0) or 0),
+                'card_amount': int(getattr(payment, 'card_amount', 0) or 0),
+                'qr_amount': int(payment.amount or 0) if payment.method == Payment.Method.QR else 0,
                 'paid_at': payment.paid_at.isoformat() if payment.paid_at else None,
                 'cashier_name': payment.received_by.full_name if payment.received_by_id else '',
                 'fiscal_receipt_count': len(sent_receipts),
@@ -315,7 +318,8 @@ class CashShiftService:
         restaurant=None,
     ) -> dict:
         sale_totals = self._totals_by_method(rows)
-        refund_totals = self._refund_totals_by_method(refunds)
+        sale_tender_totals = self._tender_totals(rows)
+        refund_totals = self._refund_tender_totals(refunds)
         sale_total = sum(sale_totals.values())
         refund_total = sum(refund_totals.values())
         fiscal_receipt_count = sum(int(row.get('fiscal_receipt_count') or 0) for row in rows)
@@ -328,15 +332,15 @@ class CashShiftService:
             'TotalSaleCount': len(rows),
             'TotalRefundCount': len(refunds),
             'TotalCash': {
-                'Sale': sale_totals.get(Payment.Method.CASH, 0),
+                'Sale': sale_tender_totals.get(Payment.Method.CASH, 0),
                 'Refund': refund_totals.get(Payment.Method.CASH, 0),
             },
             'TotalCard': {
-                'Sale': sale_totals.get(Payment.Method.CARD, 0),
+                'Sale': sale_tender_totals.get(Payment.Method.CARD, 0),
                 'Refund': refund_totals.get(Payment.Method.CARD, 0),
             },
             'TotalQR': {
-                'Sale': sale_totals.get(Payment.Method.QR, 0),
+                'Sale': sale_tender_totals.get(Payment.Method.QR, 0),
                 'Refund': refund_totals.get(Payment.Method.QR, 0),
             },
             'TotalVAT': {'Sale': self._estimate_vat(sale_total, restaurant=restaurant), 'Refund': self._estimate_vat(refund_total, restaurant=restaurant)},
@@ -364,6 +368,55 @@ class CashShiftService:
             method = getattr(getattr(refund, 'payment', None), 'method', '') or ''
             totals[method] = totals.get(method, 0) + int(refund.amount or 0)
         return totals
+
+    @staticmethod
+    def _tender_totals(rows: list[dict]) -> dict:
+        totals = {}
+        for row in rows:
+            totals[Payment.Method.CASH] = totals.get(Payment.Method.CASH, 0) + int(row.get('cash_amount') or 0)
+            totals[Payment.Method.CARD] = totals.get(Payment.Method.CARD, 0) + int(row.get('card_amount') or 0)
+            totals[Payment.Method.QR] = totals.get(Payment.Method.QR, 0) + int(row.get('qr_amount') or 0)
+        return totals
+
+    @staticmethod
+    def _refund_tender_totals(refunds: list) -> dict:
+        totals = {}
+        for refund in refunds:
+            for method, amount in CashShiftService._refund_tender_amounts(refund).items():
+                totals[method] = totals.get(method, 0) + amount
+        return totals
+
+    @staticmethod
+    def _refund_tender_amounts(refund) -> dict:
+        payment = getattr(refund, 'payment', None)
+        refund_amount = int(getattr(refund, 'amount', 0) or 0)
+        if payment is None or refund_amount <= 0:
+            return {}
+        if payment.method == Payment.Method.QR:
+            return {Payment.Method.QR: refund_amount}
+
+        payment_amount = int(getattr(payment, 'amount', 0) or 0)
+        cash_amount = int(getattr(payment, 'cash_amount', 0) or 0)
+        card_amount = int(getattr(payment, 'card_amount', 0) or 0)
+        if cash_amount > 0 and card_amount > 0 and payment_amount > 0:
+            cash_refund = int(
+                (Decimal(refund_amount) * Decimal(cash_amount) / Decimal(payment_amount)).quantize(
+                    Decimal('1'),
+                    rounding=ROUND_HALF_UP,
+                )
+            )
+            cash_refund = min(max(cash_refund, 0), refund_amount)
+            return {
+                Payment.Method.CASH: cash_refund,
+                Payment.Method.CARD: refund_amount - cash_refund,
+            }
+        if cash_amount > 0:
+            return {Payment.Method.CASH: refund_amount}
+        if card_amount > 0:
+            return {Payment.Method.CARD: refund_amount}
+        if payment.method == Payment.Method.CASH:
+            return {Payment.Method.CASH: refund_amount}
+        return {Payment.Method.CARD: refund_amount}
 
     @staticmethod
     def _format_report_datetime(value) -> str | None:
@@ -566,23 +619,27 @@ class CashShiftService:
         refunds = PaymentRefund.objects.filter(payment__cash_shift=shift, status=PaymentRefund.Status.SUCCEEDED)
         receipts = Receipt.objects.filter(payment__cash_shift=shift)
 
-        payment_totals = payments.values('method').annotate(total=Sum('amount'))
-        totals = {item['method']: item['total'] or 0 for item in payment_totals}
+        totals = payments.aggregate(
+            cash_total=Sum('cash_amount'),
+            card_total=Sum('card_amount'),
+            qr_total=Sum('amount', filter=Q(method=Payment.Method.QR)),
+        )
 
         refund_total = refunds.aggregate(total=Sum('amount')).get('total') or 0
-        cash_refund_total = (
-            refunds.filter(payment__method=Payment.Method.CASH).aggregate(total=Sum('amount')).get('total') or 0
+        cash_refund_total = sum(
+            self._refund_tender_amounts(refund).get(Payment.Method.CASH, 0)
+            for refund in refunds.select_related('payment')
         )
 
         return {
-            'cash_total': totals.get(Payment.Method.CASH, 0),
-            'card_total': totals.get(Payment.Method.CARD, 0),
-            'qr_total': totals.get(Payment.Method.QR, 0),
+            'cash_total': totals.get('cash_total') or 0,
+            'card_total': totals.get('card_total') or 0,
+            'qr_total': totals.get('qr_total') or 0,
             'refund_total': refund_total,
             'receipt_count': receipts.filter(kind=Receipt.Kind.FISCAL).aggregate(total=Count('id')).get('total') or 0,
             'reprint_count': receipts.aggregate(total=Sum('reprint_count')).get('total') or 0,
             'expected_closing_cash_amount': (shift.opening_cash_amount or 0)
-            + totals.get(Payment.Method.CASH, 0)
+            + (totals.get('cash_total') or 0)
             - cash_refund_total,
         }
 

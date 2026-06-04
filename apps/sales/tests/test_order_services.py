@@ -155,13 +155,50 @@ class OrderPaymentServiceTests(PosTestCase):
         self.assertEqual(result['receipt'].status, Receipt.Status.SENT)
         self.assertEqual(order.receipts.count(), 1)
 
-    def test_process_rejects_partial_payment(self):
+    def test_process_allows_partial_payments_and_fiscalizes_once_when_fully_paid(self):
+        order = self._create_order_with_item(channel=Order.Channel.TAKEAWAY, quantity=2)
+        shift = self.create_cash_shift()
+
+        with (
+            patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'provider': 'test'}),
+            patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal,
+        ):
+            issue_fiscal.return_value = [{'ok': True, 'provider': 'unikassa'}]
+            first_result = self.service.process(
+                order=order,
+                payload={'method': Payment.Method.CASH, 'amount': 30000},
+                received_by=self.user,
+                cash_shift=shift,
+            )
+            second_result = self.service.process(
+                order=order,
+                payload={'method': Payment.Method.CARD, 'amount': order.total - 30000},
+                received_by=self.user,
+                cash_shift=shift,
+            )
+
+        order.refresh_from_db()
+        first_payment = first_result['payment']
+        second_payment = second_result['payment']
+        first_payment.refresh_from_db()
+        second_payment.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CLOSED)
+        self.assertFalse(first_payment.register_fiscal)
+        self.assertIsNone(first_result['receipt'])
+        self.assertEqual(second_result['receipt'].status, Receipt.Status.SENT)
+        self.assertEqual(second_payment.cash_amount, 0)
+        self.assertEqual(second_payment.card_amount, order.total - 30000)
+        self.assertEqual(second_payment.fiscal_cash_amount, 30000)
+        self.assertEqual(second_payment.fiscal_card_amount, order.total - 30000)
+        issue_fiscal.assert_called_once()
+
+    def test_process_rejects_payment_above_remaining_total(self):
         order = self._create_order_with_item(channel=Order.Channel.TAKEAWAY, quantity=2)
 
         with self.assertRaises(ValidationError):
             self.service.process(
                 order=order,
-                payload={'method': Payment.Method.CASH, 'amount': 30000},
+                payload={'method': Payment.Method.CASH, 'amount': order.total + 1},
                 received_by=self.user,
                 cash_shift=self.create_cash_shift(),
             )

@@ -41,11 +41,28 @@ class Payment(BaseModel):
     )
     method = models.CharField(max_length=20, choices=Method.choices, default=Method.CASH)
     amount = models.PositiveIntegerField(default=0)
+    cash_amount = models.PositiveIntegerField(default=0)
+    card_amount = models.PositiveIntegerField(default=0)
+    fiscal_cash_amount = models.PositiveIntegerField(default=0)
+    fiscal_card_amount = models.PositiveIntegerField(default=0)
+    fiscal_adjustment_reason = models.CharField(max_length=120, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     register_fiscal = models.BooleanField(default=True)
     external_ref = models.CharField(max_length=120, blank=True)
     provider_payload = models.JSONField(default=dict, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        amount = int(self.amount or 0)
+        if amount and not self.cash_amount and not self.card_amount:
+            if self.method == self.Method.CASH:
+                self.cash_amount = amount
+            elif self.method in {self.Method.CARD, self.Method.QR}:
+                self.card_amount = amount
+        if amount and not self.fiscal_cash_amount and not self.fiscal_card_amount:
+            self.fiscal_cash_amount = int(self.cash_amount or 0)
+            self.fiscal_card_amount = int(self.card_amount or 0)
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ('-created_at',)

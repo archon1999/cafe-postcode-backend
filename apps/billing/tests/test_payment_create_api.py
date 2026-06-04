@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
-from apps.billing.models import CashShift, Payment
+from apps.billing.models import CashShift, Payment, Receipt
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.sales.models import Order, OrderItem
@@ -77,7 +77,7 @@ class PaymentCreateApiTests(APITestCase):
             restaurant=cls.restaurant,
             name='Main cashier',
             location='Front desk',
-            enabled_payment_methods=['cash', 'card', 'qr'],
+            enabled_payment_methods=['cash', 'card', 'mixed'],
         )
 
     def setUp(self):
@@ -136,10 +136,93 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.subtotal, 30000)
         self.assertEqual(self.order.total, 33000)
 
-    def test_rejects_mixed_payment_method(self):
+    def test_rejects_qr_payment_method_for_new_pos_flow(self):
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.MIXED, 'amount': self.order.total},
+            {'method': Payment.Method.QR, 'amount': self.order.total},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('method', response.data)
+
+    @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
+    def test_mixed_payment_uses_card_amount_for_marta_and_closes_order(self, local_http_request):
+        marta_config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            is_enabled=True,
+            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
+        )
+        self.cash_desk.payment_integration = marta_config
+        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+        local_http_request.side_effect = [
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+            },
+            {
+                'ok': True,
+                'httpStatus': 200,
+                'body': {
+                    'ok': True,
+                    'status': 'SUCCESS',
+                    'requestId': 'request-mixed',
+                    'params': {'trxId': 'trx-mixed', 'rrn': 'rrn-mixed'},
+                },
+            },
+        ]
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.MIXED,
+                'amount': self.order.total,
+                'cash_amount': 20000,
+                'card_amount': self.order.total - 20000,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        payment = Payment.objects.get(order=self.order)
+        self.assertEqual(payment.method, Payment.Method.MIXED)
+        self.assertEqual(payment.cash_amount, 20000)
+        self.assertEqual(payment.card_amount, 13000)
+        self.assertEqual(payment.fiscal_cash_amount, 20000)
+        self.assertEqual(payment.fiscal_card_amount, 13000)
+        transaction_call = local_http_request.call_args_list[1]
+        self.assertEqual(transaction_call.kwargs['query']['amount'], 1300000)
+
+    def test_mixed_payment_rejects_invalid_breakdown_sum(self):
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.MIXED,
+                'amount': self.order.total,
+                'cash_amount': 20000,
+                'card_amount': 12000,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('amount', response.data)
+
+    def test_mixed_payment_requires_cash_and_card_enabled(self):
+        self.cash_desk.enabled_payment_methods = ['cash', 'mixed']
+        self.cash_desk.save(update_fields=['enabled_payment_methods', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.MIXED,
+                'amount': self.order.total,
+                'cash_amount': 20000,
+                'card_amount': self.order.total - 20000,
+            },
             format='json',
         )
 
@@ -159,6 +242,72 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.cashier_id, self.user.id)
         self.assertEqual(response.data['payment']['method'], Payment.Method.CASH)
         self.assertEqual(response.data['receipt']['status'], 'failed')
+
+    @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'split-ref'})
+    def test_split_payments_can_close_order_across_multiple_methods(self, _charge_payment):
+        first_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': 20000, 'register_fiscal': True},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        first_payment = Payment.objects.get(order=self.order)
+        self.assertEqual(first_payment.method, Payment.Method.CASH)
+        self.assertEqual(first_payment.amount, 20000)
+        self.assertEqual(first_payment.cash_amount, 20000)
+        self.assertFalse(first_payment.register_fiscal)
+        self.assertNotEqual(self.order.status, Order.Status.CLOSED)
+        self.assertIsNone(first_response.data['receipt'])
+
+        second_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': self.order.total - 20000, 'register_fiscal': True},
+            format='json',
+        )
+
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        payments = Payment.objects.filter(order=self.order, status=Payment.Status.SUCCEEDED).order_by('created_at')
+        self.assertEqual(payments.count(), 2)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(sum(payment.amount for payment in payments), self.order.total)
+        self.assertEqual(sum(payment.cash_amount for payment in payments), 20000)
+        self.assertEqual(sum(payment.card_amount for payment in payments), self.order.total - 20000)
+
+    @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'plain-split-ref'})
+    def test_plain_split_payments_can_partially_pay_order(self, _charge_payment):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+
+        first_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': 20000, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        self.assertNotEqual(self.order.status, Order.Status.CLOSED)
+        self.assertIsNone(first_response.data['receipt'])
+
+        second_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CARD, 'amount': self.order.total - 20000, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(second_response.status_code, status.HTTP_201_CREATED)
+        self.order.refresh_from_db()
+        payments = Payment.objects.filter(order=self.order, status=Payment.Status.SUCCEEDED).order_by('created_at')
+        self.assertEqual(payments.count(), 2)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertFalse(Receipt.objects.filter(order=self.order).exists())
 
     def test_closed_order_cannot_be_paid_twice(self):
         first_response = self.client.post(

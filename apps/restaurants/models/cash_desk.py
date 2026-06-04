@@ -4,7 +4,7 @@ from common.models import BaseModel
 
 
 def default_enabled_payment_methods():
-    return ['cash', 'card', 'qr']
+    return ['cash', 'card', 'mixed']
 
 
 class CashDesk(BaseModel):

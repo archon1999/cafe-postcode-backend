@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.api.admin.serializers import TableSessionSerializer
+from apps.floor.services import sync_table_status
 from apps.sales.helpers import get_order_model
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
@@ -41,6 +42,6 @@ class TableSessionMergeView(APIView):
         source_session.closed_at = timezone.now()
         source_session.save(update_fields=['status', 'merged_into', 'closed_at', 'updated_at'])
 
-        source_session.table.status = DiningTable.Status.AVAILABLE
-        source_session.table.save(update_fields=['status', 'updated_at'])
+        sync_table_status(source_session.table)
+        sync_table_status(target_session.table)
         return Response(TableSessionSerializer(target_session).data)

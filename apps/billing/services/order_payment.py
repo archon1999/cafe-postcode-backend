@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Sum
@@ -9,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.billing.helpers import get_payment_model, get_receipt_model
 from apps.billing.services.cash_shift import CashShiftService
+from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.integrations.services import charge_payment, issue_fiscal_receipts
 from apps.integrations.services.marta_softpos import DEFAULT_AMOUNT_MULTIPLIER, DEFAULT_TIMEOUT_SECONDS, JAVA_LONG_MAX
 from apps.sales.helpers import get_order_model
@@ -169,6 +171,26 @@ class OrderPaymentService:
                 'detail': detail,
             }
 
+        paid_before_current = (
+            payment.order.payments.filter(status=Payment.Status.SUCCEEDED)
+            .exclude(pk=payment.pk)
+            .aggregate(total=Sum('amount'))
+            .get('total')
+            or 0
+        )
+        remaining_amount = max(0, int(payment.order.total or 0) - int(paid_before_current or 0))
+        if int(payment.amount or 0) > remaining_amount:
+            payment.status = Payment.Status.FAILED
+            payment.provider_payload = {
+                **provider_payload,
+                'ok': False,
+                'status': 'ERROR',
+                'message': 'Payment amount exceeds remaining total.',
+            }
+            payment.paid_at = None
+            payment.save(update_fields=['status', 'provider_payload', 'paid_at', 'updated_at'])
+            raise ValidationError({'amount': _('Payment amount cannot exceed the remaining total.')})
+
         return self._complete_successful_payment(order=payment.order, payment=payment, received_by=received_by)
 
     def process(self, *, order: Order, payload: dict, received_by, cash_shift=None):
@@ -202,15 +224,17 @@ class OrderPaymentService:
         )
         if cash_desk and serializer.validated_data['method'] not in set(cash_desk.enabled_payment_methods or []):
             raise ValidationError({'method': _('Selected payment method is disabled on the active cash desk.')})
+        if cash_desk and serializer.validated_data['method'] == Payment.Method.MIXED:
+            enabled_methods = set(cash_desk.enabled_payment_methods or [])
+            if not {Payment.Method.CASH, Payment.Method.CARD}.issubset(enabled_methods):
+                raise ValidationError({'method': _('Mixed payment requires cash and card methods on the active cash desk.')})
 
-        remaining_amount = max(
-            0,
-            (order.total or 0)
-            - (order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0),
-        )
+        remaining_amount = self._remaining_amount(order=order)
         payment_amount = serializer.validated_data['amount']
-        if remaining_amount and payment_amount < remaining_amount:
-            raise ValidationError({'amount': _('Payment amount must cover the full remaining total.')})
+        if remaining_amount <= 0:
+            raise ValidationError({'amount': _('Order is already fully paid.')})
+        if payment_amount > remaining_amount:
+            raise ValidationError({'amount': _('Payment amount cannot exceed the remaining total.')})
 
         payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
 
@@ -249,24 +273,90 @@ class OrderPaymentService:
             raise ValidationError({'detail': _('Active cashier shift belongs to another restaurant.')})
 
     def _validate_payment_amount(self, *, order, amount):
-        remaining_amount = max(
-            0,
-            (order.total or 0)
-            - (order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0),
+        remaining_amount = self._remaining_amount(order=order)
+        if remaining_amount <= 0:
+            raise ValidationError({'amount': _('Order is already fully paid.')})
+        if amount > remaining_amount:
+            raise ValidationError({'amount': _('Payment amount cannot exceed the remaining total.')})
+
+    def _apply_fiscal_breakdown(self, *, order, payment, amount=None, cash_amount=None, card_amount=None):
+        amount = int(amount if amount is not None else payment.amount or 0)
+        cash_amount = int(cash_amount if cash_amount is not None else payment.cash_amount or 0)
+        card_amount = int(card_amount if card_amount is not None else payment.card_amount or 0)
+        restricted_total = self._restricted_fiscal_total(order=order)
+
+        fiscal_card_amount = max(card_amount, restricted_total)
+        fiscal_card_amount = min(fiscal_card_amount, amount)
+        fiscal_cash_amount = max(amount - fiscal_card_amount, 0)
+        adjustment_reason = 'cash_forbidden_category' if restricted_total and (
+            fiscal_cash_amount != cash_amount or fiscal_card_amount != card_amount
+        ) else ''
+
+        payment.fiscal_cash_amount = fiscal_cash_amount
+        payment.fiscal_card_amount = fiscal_card_amount
+        payment.fiscal_adjustment_reason = adjustment_reason
+        payment.save(update_fields=['fiscal_cash_amount', 'fiscal_card_amount', 'fiscal_adjustment_reason', 'updated_at'])
+
+    @staticmethod
+    def _remaining_amount(*, order) -> int:
+        paid_total = order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0
+        return max(0, int(order.total or 0) - int(paid_total or 0))
+
+    @staticmethod
+    def _succeeded_payment_totals(*, order) -> dict:
+        return order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(
+            amount=Sum('amount'),
+            cash_amount=Sum('cash_amount'),
+            card_amount=Sum('card_amount'),
         )
-        if remaining_amount and amount < remaining_amount:
-            raise ValidationError({'amount': _('Payment amount must cover the full remaining total.')})
+
+    def _restricted_fiscal_total(self, *, order) -> int:
+        order_item_model = order.items.model
+        order_items = list(
+            order.items.exclude(status=order_item_model.Status.CANCELLED)
+            .select_related('catalog_item', 'catalog_item__category')
+            .order_by('created_at', 'id')
+        )
+        restricted_items = [item for item in order_items if is_catalog_item_cash_sale_forbidden(item)]
+        if not restricted_items:
+            return 0
+        restricted_total = sum(int(item.line_total or 0) for item in restricted_items)
+        service_fee = max(int(order.total or 0) - int(order.subtotal or 0), 0)
+        if service_fee <= 0:
+            return restricted_total
+        subtotal = sum(int(item.line_total or 0) for item in order_items)
+        if subtotal <= 0:
+            return restricted_total + service_fee
+        restricted_fee = int(
+            (Decimal(service_fee) * Decimal(restricted_total) / Decimal(subtotal)).quantize(
+                Decimal('1'),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+        return restricted_total + restricted_fee
 
     def _complete_successful_payment(self, *, order, payment, received_by):
         if order.channel == Order.Channel.TAKEAWAY and order.status == Order.Status.OPEN:
             self.order_submission_service_class().submit(order)
 
-        paid_total = order.payments.filter(status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total') or 0
-        if paid_total >= order.total:
+        totals = self._succeeded_payment_totals(order=order)
+        paid_total = int(totals.get('amount') or 0)
+        is_fully_paid = paid_total >= int(order.total or 0)
+        if is_fully_paid:
+            self._apply_fiscal_breakdown(
+                order=order,
+                payment=payment,
+                amount=paid_total,
+                cash_amount=int(totals.get('cash_amount') or 0),
+                card_amount=int(totals.get('card_amount') or 0),
+            )
             self.state_service_class().close_order_after_payment(order=order, received_by=received_by)
+        elif payment.register_fiscal:
+            payment.register_fiscal = False
+            payment.save(update_fields=['register_fiscal', 'updated_at'])
 
         receipts = []
-        if payment.register_fiscal:
+        if is_fully_paid and payment.register_fiscal:
             for receipt_result in self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by):
                 receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
         logger.info(

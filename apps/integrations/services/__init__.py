@@ -44,7 +44,7 @@ def charge_payment(order, payment, *, manual_card_override=False, manual_card_re
     except Exception as error:
         return {
             'ok': False,
-            'provider': 'marta-softpos' if payment.method == payment.Method.CARD else 'mock-payment',
+            'provider': 'marta-softpos' if payment.method in {payment.Method.CARD, payment.Method.MIXED} else 'mock-payment',
             'method': payment.method,
             'detail': str(error),
         }
@@ -73,7 +73,7 @@ def _get_payment_service(*, order, payment):
         ):
             marta_config = None
     if (
-        payment.method == payment.Method.CARD
+        payment.method in {payment.Method.CARD, payment.Method.MIXED}
         and marta_config is not None
         and str(marta_config.provider or '').strip() in SUPPORTED_MARTA_PAYMENT_PROVIDERS
     ):

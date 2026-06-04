@@ -57,7 +57,7 @@ class MartaSoftPOSPaymentService:
 
             transaction_params = {
                 'type': 'PURCHASE',
-                'amount': int(payment.amount or 0) * amount_multiplier,
+                'amount': self._charge_amount(payment=payment) * amount_multiplier,
                 'pid': pid,
                 'tin': self._tax_number(order=order),
             }
@@ -144,6 +144,12 @@ class MartaSoftPOSPaymentService:
             or getattr(order.restaurant, 'tax_number', '')
             or ''
         ).strip()
+
+    @staticmethod
+    def _charge_amount(*, payment) -> int:
+        if payment.method == payment.Method.MIXED:
+            return int(getattr(payment, 'card_amount', 0) or 0)
+        return int(payment.amount or 0)
 
     def _pid(self, *, payment) -> int:
         pid = int(payment.id.int % JAVA_LONG_MAX)

@@ -462,11 +462,18 @@ class FiscalDriveIntegrationService:
         return None
 
     def _received_amounts(self, *, payment) -> tuple[int, int]:
+        fiscal_cash = int(getattr(payment, 'fiscal_cash_amount', 0) or 0)
+        fiscal_card = int(getattr(payment, 'fiscal_card_amount', 0) or 0)
+        if fiscal_cash or fiscal_card:
+            return self._money_to_fiscal(fiscal_cash), self._money_to_fiscal(fiscal_card)
+
         amount = self._money_to_fiscal(payment.amount)
         if payment.method == payment.Method.CASH:
             return amount, 0
         if payment.method in {payment.Method.CARD, payment.Method.QR}:
             return 0, amount
+        if payment.method == payment.Method.MIXED:
+            return self._money_to_fiscal(getattr(payment, 'cash_amount', 0)), self._money_to_fiscal(getattr(payment, 'card_amount', 0))
         raise FiscalDriveError(f"Payment method '{payment.method}' is not supported by the fiscal integration.")
 
     @staticmethod

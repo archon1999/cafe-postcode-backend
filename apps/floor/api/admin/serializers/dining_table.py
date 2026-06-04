@@ -2,12 +2,17 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, TableSession
+from apps.floor.services import ACTIVE_SESSION_STATUSES, available_seat_count, occupied_guest_count
 
 from .active_session_summary import ActiveSessionSummarySerializer
 
 
 class DiningTableSerializer(serializers.ModelSerializer):
     active_session = serializers.SerializerMethodField()
+    active_sessions = serializers.SerializerMethodField()
+    active_session_count = serializers.SerializerMethodField()
+    occupied_guest_count = serializers.SerializerMethodField()
+    available_seat_count = serializers.SerializerMethodField()
     zone_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -30,27 +35,41 @@ class DiningTableSerializer(serializers.ModelSerializer):
             'rotation',
             'is_active',
             'active_session',
+            'active_sessions',
+            'active_session_count',
+            'occupied_guest_count',
+            'available_seat_count',
+        )
+
+    def _active_sessions(self, obj):
+        prefetched_sessions = getattr(obj, '_prefetched_objects_cache', {}).get('table_sessions')
+        if prefetched_sessions is None:
+            return list(
+                obj.table_sessions.filter(status__in=ACTIVE_SESSION_STATUSES).order_by('-created_at')
+            )
+        return sorted(
+            [session for session in prefetched_sessions if session.status in ACTIVE_SESSION_STATUSES],
+            key=lambda item: item.created_at,
+            reverse=True,
         )
 
     def get_active_session(self, obj):
-        prefetched_sessions = getattr(obj, '_prefetched_objects_cache', {}).get('table_sessions')
-        if prefetched_sessions is None:
-            session = (
-                obj.table_sessions.filter(status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT])
-                .order_by('-created_at')
-                .first()
-            )
-        else:
-            active_sessions = [
-                session
-                for session in prefetched_sessions
-                if session.status in [TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT]
-            ]
-            session = max(active_sessions, key=lambda item: item.created_at, default=None)
-
+        session = next(iter(self._active_sessions(obj)), None)
         if session is None:
             return None
         return ActiveSessionSummarySerializer(session).data
+
+    def get_active_sessions(self, obj):
+        return ActiveSessionSummarySerializer(self._active_sessions(obj), many=True).data
+
+    def get_active_session_count(self, obj):
+        return len(self._active_sessions(obj))
+
+    def get_occupied_guest_count(self, obj):
+        return occupied_guest_count(obj)
+
+    def get_available_seat_count(self, obj):
+        return available_seat_count(obj)
 
     def get_zone_name(self, obj):
         return getattr(getattr(obj, 'zone', None), 'name', None)
