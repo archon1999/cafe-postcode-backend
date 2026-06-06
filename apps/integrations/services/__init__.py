@@ -266,6 +266,32 @@ def print_prebill(order, payload, *, cash_desk=None):
         return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
 
 
+def print_receipt_text(*, restaurant, text, cash_desk=None, job_name='Cafe Postcode Receipt'):
+    config = _get_prebill_printer_config(order=None, cash_desk=cash_desk)
+    if config is None:
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail='Printer integration is not configured.',
+            provider='',
+        )
+
+    if config.provider == 'windows-raw':
+        service = WindowsRawPrinterIntegrationService(config)
+    else:
+        return _client_print_fallback(
+            code=PRINTER_NOT_CONFIGURED,
+            detail=f"Unsupported printer provider '{config.provider}'.",
+            provider=config.provider,
+        )
+
+    try:
+        return service.print_text(restaurant=restaurant, text=text, job_name=job_name)
+    except ValueError as error:
+        return _client_print_fallback(code=PRINTER_NOT_CONFIGURED, detail=str(error), provider=config.provider)
+    except Exception as error:
+        return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
+
+
 def _client_print_fallback(*, code, detail, provider):
     return {
         'ok': False,

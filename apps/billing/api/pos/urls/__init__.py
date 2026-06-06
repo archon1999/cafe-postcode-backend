@@ -18,6 +18,7 @@ from apps.billing.api.pos.views.payments import (
 from apps.billing.api.pos.views.receipts import (
     OrderPrebillPrintView,
     ReceiptPrintResultView,
+    ReceiptRawPrintView,
     ReceiptReprintView,
 )
 
@@ -34,6 +35,8 @@ urlpatterns = [
     path('payments/<uuid:pk>/terminal-result/', MartaTerminalResultView.as_view()),
     path('payments/<uuid:pk>/retry-fiscal/', PaymentFiscalRetryView.as_view()),
     path('<uuid:pk>/refund/', PaymentRefundView.as_view()),
+    path('receipts/print/', ReceiptRawPrintView.as_view()),
+    path('receipts/<uuid:pk>/print/', ReceiptRawPrintView.as_view()),
     path('receipts/<uuid:pk>/print-result/', ReceiptPrintResultView.as_view()),
     path('receipts/<uuid:pk>/reprint/', ReceiptReprintView.as_view()),
 ]

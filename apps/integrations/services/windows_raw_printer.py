@@ -168,6 +168,26 @@ class WindowsRawPrinterIntegrationService:
             content += gs + b'V' + bytes([0])
         return content
 
+    def _build_text_bytes(self, *, text: str) -> bytes:
+        encoding = self.settings.get('encoding', 'cp1251')
+        feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 5)
+        normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
+        if not normalized_text:
+            raise ValueError('Receipt text is required.')
+
+        esc = bytes([0x1B])
+        gs = bytes([0x1D])
+        content = b''.join(
+            [
+                esc + b'@',
+                self._escpos_code_page_command(encoding, self.settings.get('code_page')),
+                (normalized_text + ('\n' * max(feed_lines_before_cut, 0))).encode(encoding, errors='replace'),
+            ]
+        )
+        if self.settings.get('cut_after_print', True):
+            content += gs + b'V' + bytes([0])
+        return content
+
     def _write_raw(self, printer_name: str, payload: bytes) -> None:
         if os.name != 'nt':
             raise RuntimeError('Windows raw printing is only available on Windows hosts.')
@@ -248,6 +268,24 @@ class WindowsRawPrinterIntegrationService:
     def print_prebill(self, order, payload):
         connection_type = (self.settings.get('connection_type') or self.settings.get('connectionType') or 'system_printer').strip()
         raw_payload = self._build_bytes(payload)
+        return self._print_raw_payload(
+            restaurant=order.restaurant,
+            raw_payload=raw_payload,
+            job_name=f'Cafe Postcode A{int(order.order_number):05d}',
+            order_id=str(order.id),
+            order_number=order.order_number,
+        )
+
+    def print_text(self, *, restaurant, text: str, job_name: str = 'Cafe Postcode Receipt'):
+        raw_payload = self._build_text_bytes(text=text)
+        return self._print_raw_payload(
+            restaurant=restaurant,
+            raw_payload=raw_payload,
+            job_name=job_name,
+        )
+
+    def _print_raw_payload(self, *, restaurant, raw_payload: bytes, job_name: str, order_id: str = '', order_number=None):
+        connection_type = (self.settings.get('connection_type') or self.settings.get('connectionType') or 'system_printer').strip()
         printer_name = (self.settings.get('printer_name') or '').strip()
         host = (self.settings.get('host') or '').strip()
         port = int(self.settings.get('port') or 9100)
@@ -255,14 +293,14 @@ class WindowsRawPrinterIntegrationService:
         if self._use_local_agent():
             try:
                 LocalAgentCommandService().printer_raw(
-                    restaurant=order.restaurant,
+                    restaurant=restaurant,
                     payload={
                         'connectionType': connection_type,
                         'printerName': printer_name,
                         'host': host,
                         'port': port,
                         'payloadBase64': base64.b64encode(raw_payload).decode('ascii'),
-                        'jobName': f'Cafe Postcode A{int(order.order_number):05d}',
+                        'jobName': job_name,
                     },
                     timeout_seconds=15,
                 )
@@ -285,8 +323,8 @@ class WindowsRawPrinterIntegrationService:
             'host': host,
             'port': port if connection_type == 'socket' else None,
             'printed_at': timezone.now().isoformat(),
-            'order_id': str(order.id),
-            'order_number': order.order_number,
+            'order_id': order_id,
+            'order_number': order_number,
         }
 
     def _use_local_agent(self) -> bool:

@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from apps.billing.helpers import get_receipt_model
 from apps.billing.serializers import ReceiptSerializer
 from apps.billing.services import CashShiftService, OrderPrebillService, PaymentRefundService
+from apps.integrations.services import print_receipt_text
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
 from common.api.permissions import (
@@ -84,6 +85,64 @@ class ReceiptPrintResultView(APIView):
         )
 
 
+class ReceiptRawPrintView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    shift_service_class = CashShiftService
+
+    def post(self, request, pk=None):
+        restaurant = get_request_restaurant(request)
+        receipt = None
+        if pk is not None:
+            receipt = generics.get_object_or_404(
+                Receipt.objects.select_related('order'),
+                pk=pk,
+                order__restaurant=restaurant,
+            )
+            required_permission = (
+                POS_TABLES_MANAGE_PERMISSION
+                if receipt.order.table_session_id
+                else POS_TAKEAWAY_MENU_VIEW_PERMISSION
+            )
+            require_any_permission_code(request.user, required_permission)
+            payload = receipt.payload or {}
+            job_name = f'Cafe Postcode Receipt {receipt.id}'
+        else:
+            require_any_permission_code(request.user, POS_TAKEAWAY_MENU_VIEW_PERMISSION)
+            payload = request.data.get('payload') if isinstance(request.data, dict) else None
+            if not isinstance(payload, dict):
+                payload = {}
+            job_name = 'Cafe Postcode Receipt'
+
+        text = request.data.get('text') if isinstance(request.data, dict) else ''
+        text = str(text or '').strip()
+        if not text:
+            raise ValidationError({'text': 'Receipt text is required.'})
+
+        cash_desk = self.shift_service_class().get_prebill_print_cash_desk(restaurant=restaurant, user=request.user)
+        result = print_receipt_text(
+            restaurant=restaurant,
+            text=text,
+            cash_desk=cash_desk,
+            job_name=job_name,
+        )
+        if receipt is not None:
+            receipt_payload = dict(receipt.payload or {})
+            receipt_payload['raw_print_result'] = result
+            receipt.payload = receipt_payload
+            if result.get('ok'):
+                receipt.status = Receipt.Status.SENT
+            receipt.save(update_fields=['payload', 'status', 'updated_at'])
+            receipt.refresh_from_db()
+
+        return Response(
+            {
+                'receipt': ReceiptSerializer(receipt).data if receipt is not None else None,
+                'result': result,
+                'payload': payload,
+            }
+        )
+
+
 class ReceiptReprintView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
@@ -102,5 +161,6 @@ class ReceiptReprintView(APIView):
 __all__ = [
     'OrderPrebillPrintView',
     'ReceiptPrintResultView',
+    'ReceiptRawPrintView',
     'ReceiptReprintView',
 ]
