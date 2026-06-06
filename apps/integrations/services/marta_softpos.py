@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 import httpx
 from django.utils import timezone
 
@@ -9,6 +11,9 @@ SUPPORTED_MARTA_PAYMENT_PROVIDERS = frozenset({'marta-softpos'})
 JAVA_LONG_MAX = 9_223_372_036_854_775_807
 DEFAULT_TIMEOUT_SECONDS = 180.0
 DEFAULT_AMOUNT_MULTIPLIER = 100
+DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS = 1.0
+FINAL_TRANSACTION_STATUSES = frozenset({'SUCCESS', 'DECLINED', 'ERROR', 'FAILED', 'CANCELLED', 'CANCELED', 'TIMEOUT'})
+PENDING_TRANSACTION_STATUSES = frozenset({'', 'ACCEPTED', 'ACTIVE', 'CREATED', 'PENDING', 'PROCESSING', 'WAITING', 'IN_PROGRESS'})
 
 
 class MartaSoftPOSPaymentService:
@@ -68,10 +73,9 @@ class MartaSoftPOSPaymentService:
                     params=transaction_params,
                 ),
             }
-            transaction = self._get(
-                client=client,
-                path='/transaction',
-                params=transaction_params,
+            transaction = self._poll_transaction(
+                request_transaction=lambda: self._get(client=client, path='/transaction', params=transaction_params),
+                debug_payload=provider_payload['debug']['transaction'],
             )
             provider_payload['debug']['transaction']['response'] = self._response_snapshot(transaction)
 
@@ -136,6 +140,47 @@ class MartaSoftPOSPaymentService:
         except (TypeError, ValueError):
             return DEFAULT_AMOUNT_MULTIPLIER
         return multiplier if multiplier > 0 else DEFAULT_AMOUNT_MULTIPLIER
+
+    def _poll_interval(self) -> float:
+        try:
+            interval = float(
+                self.settings.get('transaction_poll_interval_seconds')
+                or self.settings.get('transactionPollIntervalSeconds')
+                or DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+            )
+        except (TypeError, ValueError):
+            return DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+        return interval if interval > 0 else DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+
+    def _poll_transaction(self, *, request_transaction, debug_payload: dict) -> dict:
+        timeout_seconds = max(float(self._timeout()), 1.0)
+        interval_seconds = min(max(self._poll_interval(), 0.1), 5.0)
+        deadline = time.monotonic() + timeout_seconds
+        attempts = []
+        last_transaction = {}
+
+        while True:
+            transaction = request_transaction()
+            last_transaction = transaction
+            attempts.append(self._response_snapshot(transaction))
+            if not self._is_pending_transaction(transaction):
+                break
+            if time.monotonic() + interval_seconds > deadline:
+                break
+            time.sleep(interval_seconds)
+
+        debug_payload['attempts'] = attempts
+        return last_transaction
+
+    @staticmethod
+    def _is_pending_transaction(transaction: dict) -> bool:
+        status = str(transaction.get('status') or '').strip().upper()
+        message = str(transaction.get('message') or '').strip().lower()
+        if status in FINAL_TRANSACTION_STATUSES:
+            return False
+        if status in PENDING_TRANSACTION_STATUSES:
+            return True
+        return 'waiting for payment screen' in message or 'waiting' in message or 'accepted' in message
 
     def _tax_number(self, *, order) -> str:
         return str(

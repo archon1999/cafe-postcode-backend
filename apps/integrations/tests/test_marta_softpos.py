@@ -42,11 +42,12 @@ class FakeClient:
 
 
 class FakeAgentCommandService:
-    def __init__(self, *, fail_first_health=False, invalid_first_health=False):
+    def __init__(self, *, fail_first_health=False, invalid_first_health=False, transaction_responses=None):
         self.calls = []
         self.fail_first_health = fail_first_health
         self.invalid_first_health = invalid_first_health
         self.health_failures = 0
+        self.transaction_responses = list(transaction_responses or [])
 
     def execute(self, *, restaurant, command_type, payload, timeout_seconds=30):
         self.calls.append({'command_type': command_type, 'payload': payload, 'timeout_seconds': timeout_seconds})
@@ -95,6 +96,8 @@ class FakeAgentCommandService:
                 'durationMs': 10,
             }
         if url.endswith('/transaction'):
+            if self.transaction_responses:
+                return self.transaction_responses.pop(0)
             return {
                 'ok': True,
                 'httpStatus': 200,
@@ -148,6 +151,47 @@ class MartaSoftPOSTests(SimpleTestCase):
         self.assertEqual(calls[1]['params']['amount'], 3000000)
         self.assertEqual(calls[1]['params']['tin'], '307678400')
         self.assertGreater(calls[1]['params']['pid'], 0)
+
+    def test_waiting_transaction_is_polled_until_success(self):
+        calls = []
+        responses = [
+            {'ok': True, 'status': 'READY', 'busy': False, 'standbyVisible': True},
+            {
+                'ok': True,
+                'status': 'WAITING',
+                'requestId': 'request-wait',
+                'message': 'Transaction accepted and waiting for payment screen',
+                'params': {},
+            },
+            {
+                'ok': True,
+                'status': 'SUCCESS',
+                'requestId': 'request-1',
+                'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
+            },
+        ]
+        config = SimpleNamespace(
+            provider='marta-softpos',
+            mode='live',
+            settings={
+                'endpoint_url': 'http://terminal.local:8090',
+                'transaction_poll_interval_seconds': 0.1,
+            },
+        )
+        service = MartaSoftPOSPaymentService(
+            config,
+            client_factory=lambda **kwargs: FakeClient(responses, calls, **kwargs),
+        )
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='307678400'))
+        payment = SimpleNamespace(id=uuid4(), amount=30000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['status'], 'SUCCESS')
+        self.assertEqual(result['reference'], 'trx-1')
+        self.assertEqual([call['path'] for call in calls], ['/health', '/transaction', '/transaction'])
+        self.assertEqual(len(result['debug']['transaction']['attempts']), 2)
 
     def test_not_ready_health_returns_failure_without_transaction(self):
         calls = []
@@ -285,6 +329,54 @@ class MartaSoftPOSAgentTests(SimpleTestCase):
         self.assertEqual(command_service.calls[2]['url'], 'http://192.168.88.125:8090/transaction')
         self.assertEqual(command_service.calls[2]['query']['amount'], 1000000)
         self.assertEqual(command_service.calls[2]['query']['tin'], '307678400')
+
+    def test_agent_waiting_transaction_is_polled_until_success(self):
+        command_service = FakeAgentCommandService(
+            transaction_responses=[
+                {
+                    'ok': True,
+                    'httpStatus': 200,
+                    'body': {
+                        'ok': True,
+                        'status': 'WAITING',
+                        'requestId': 'request-agent-wait',
+                        'message': 'Transaction accepted and waiting for payment screen',
+                        'params': {},
+                    },
+                    'durationMs': 20,
+                },
+                {
+                    'ok': True,
+                    'httpStatus': 200,
+                    'body': {
+                        'ok': True,
+                        'status': 'SUCCESS',
+                        'requestId': 'request-agent-1',
+                        'params': {'trxId': 'trx-agent-1', 'rrn': 'rrn-agent-1'},
+                    },
+                    'durationMs': 20,
+                },
+            ]
+        )
+        config = SimpleNamespace(
+            provider='marta-softpos',
+            settings={'amount_multiplier': 100, 'transaction_poll_interval_seconds': 0.1},
+        )
+        service = MartaSoftPOSAgentPaymentService(config, command_service=command_service)
+        order = SimpleNamespace(restaurant=SimpleNamespace(tax_number='307678400'))
+        payment = SimpleNamespace(id=uuid4(), amount=10000, method='card')
+
+        result = service.charge_payment(order=order, payment=payment)
+
+        transaction_calls = [
+            call for call in command_service.calls
+            if call.get('command_type') == 'local_http.request' and call.get('url', '').endswith('/transaction')
+        ]
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['status'], 'SUCCESS')
+        self.assertEqual(result['reference'], 'trx-agent-1')
+        self.assertEqual(len(transaction_calls), 2)
+        self.assertEqual(len(result['debug']['transaction']['attempts']), 2)
 
     def test_stale_endpoint_rediscovery_retries_health_with_discovered_terminal(self):
         command_service = FakeAgentCommandService(fail_first_health=True)

@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import time
+
 from django.utils import timezone
 
-from apps.integrations.services.marta_softpos import DEFAULT_AMOUNT_MULTIPLIER, DEFAULT_TIMEOUT_SECONDS, JAVA_LONG_MAX
+from apps.integrations.services.marta_softpos import (
+    DEFAULT_AMOUNT_MULTIPLIER,
+    DEFAULT_TIMEOUT_SECONDS,
+    DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS,
+    FINAL_TRANSACTION_STATUSES,
+    JAVA_LONG_MAX,
+    PENDING_TRANSACTION_STATUSES,
+)
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 
 
@@ -75,11 +84,17 @@ class MartaSoftPOSAgentPaymentService:
                 'pid': pid,
                 'tin': self._tax_number(order=order),
             }
-            transaction_result = self._request_transaction(
-                order=order,
-                endpoint_url=endpoint_url,
-                params=transaction_params,
-                payload=provider_payload,
+            provider_payload['debug']['transaction'] = {
+                'request': self._request_snapshot(endpoint_url=endpoint_url, path='/transaction', params=transaction_params)
+            }
+            transaction_result = self._poll_transaction(
+                request_transaction=lambda: self._request_transaction(
+                    order=order,
+                    endpoint_url=endpoint_url,
+                    params=transaction_params,
+                    payload=provider_payload,
+                ),
+                debug_payload=provider_payload['debug']['transaction'],
             )
         except LocalAgentUnavailableError as error:
             return self._failure(payload=provider_payload, status='AGENT_OFFLINE', detail=str(error), code=error.code)
@@ -170,9 +185,10 @@ class MartaSoftPOSAgentPaymentService:
         return result
 
     def _request_transaction(self, *, order, endpoint_url: str, params: dict, payload: dict) -> dict:
-        payload['debug']['transaction'] = {
-            'request': self._request_snapshot(endpoint_url=endpoint_url, path='/transaction', params=params)
-        }
+        payload['debug'].setdefault(
+            'transaction',
+            {'request': self._request_snapshot(endpoint_url=endpoint_url, path='/transaction', params=params)},
+        )
         result = self.command_service.local_http_request(
             restaurant=order.restaurant,
             method='GET',
@@ -222,6 +238,17 @@ class MartaSoftPOSAgentPaymentService:
             return DEFAULT_AMOUNT_MULTIPLIER
         return multiplier if multiplier > 0 else DEFAULT_AMOUNT_MULTIPLIER
 
+    def _poll_interval(self) -> float:
+        try:
+            interval = float(
+                self.settings.get('transaction_poll_interval_seconds')
+                or self.settings.get('transactionPollIntervalSeconds')
+                or DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+            )
+        except (TypeError, ValueError):
+            return DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+        return interval if interval > 0 else DEFAULT_TRANSACTION_POLL_INTERVAL_SECONDS
+
     def _positive_int(self, *keys: str, fallback: int) -> int:
         for key in keys:
             value = self.settings.get(key)
@@ -234,6 +261,36 @@ class MartaSoftPOSAgentPaymentService:
             if parsed > 0:
                 return parsed
         return fallback
+
+    def _poll_transaction(self, *, request_transaction, debug_payload: dict) -> dict:
+        timeout_seconds = max(float(self._timeout()), 1.0)
+        interval_seconds = min(max(self._poll_interval(), 0.1), 5.0)
+        deadline = time.monotonic() + timeout_seconds
+        attempts = []
+        last_result = {}
+
+        while True:
+            result = request_transaction()
+            last_result = result
+            attempts.append(self._response_snapshot(result))
+            if not self._is_pending_transaction(self._body(result)):
+                break
+            if time.monotonic() + interval_seconds > deadline:
+                break
+            time.sleep(interval_seconds)
+
+        debug_payload['attempts'] = attempts
+        return last_result
+
+    @staticmethod
+    def _is_pending_transaction(transaction: dict) -> bool:
+        status = str(transaction.get('status') or '').strip().upper()
+        message = str(transaction.get('message') or '').strip().lower()
+        if status in FINAL_TRANSACTION_STATUSES:
+            return False
+        if status in PENDING_TRANSACTION_STATUSES:
+            return True
+        return 'waiting for payment screen' in message or 'waiting' in message or 'accepted' in message
 
     def _tax_number(self, *, order) -> str:
         return str(
