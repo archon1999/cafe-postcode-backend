@@ -11,6 +11,9 @@ User = get_user_model()
 
 
 class CashDeskContextSerializer(serializers.ModelSerializer):
+    printer_integration_name = serializers.SerializerMethodField()
+    printer_integration_printer_name = serializers.SerializerMethodField()
+
     class Meta:
         model = CashDesk
         fields = (
@@ -19,6 +22,9 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
             'location',
             'enabled_payment_methods',
             'payment_integration',
+            'printer_integration',
+            'printer_integration_name',
+            'printer_integration_printer_name',
             'fiscal_provider',
             'receipt_printer_enabled',
             'terminal_id',
@@ -26,6 +32,17 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
             'is_active',
         )
         read_only_fields = fields
+
+    def get_printer_integration_name(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        return getattr(integration, 'provider', None) if integration is not None else None
+
+    def get_printer_integration_printer_name(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        settings = getattr(integration, 'settings', None) if integration is not None else None
+        if not isinstance(settings, dict):
+            return None
+        return settings.get('printer_name') or settings.get('printerName') or None
 
 
 class RestaurantFiscalProfileSerializer(serializers.Serializer):

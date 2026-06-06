@@ -18,6 +18,9 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertTrue(response.data['restaurant_fiscal_profile']['service_fee_enabled'])
         self.assertEqual(response.data['restaurant_fiscal_profile']['service_fee_percent'], '10.00')
         self.assertEqual(len(response.data['available_cash_desks']), 1)
+        self.assertIsNone(response.data['available_cash_desks'][0]['printer_integration'])
+        self.assertIsNone(response.data['available_cash_desks'][0]['printer_integration_name'])
+        self.assertIsNone(response.data['available_cash_desks'][0]['printer_integration_printer_name'])
         self.assertIsNone(response.data['current_shift'])
         self.assertFalse(response.data['fiscal_shift_open'])
 

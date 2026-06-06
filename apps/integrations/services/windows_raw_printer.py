@@ -95,15 +95,18 @@ class WindowsRawPrinterIntegrationService:
         if order_note:
             lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
 
-        lines.extend(['', '', ''])
+        lines.append('')
         return lines
 
     def _build_bytes(self, payload: dict) -> bytes:
         encoding = self.settings.get('encoding', 'cp437')
+        feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 6)
         body = '\n'.join(self._build_lines(payload))
         esc = bytes([0x1B])
         gs = bytes([0x1D])
         content = b''.join([esc + b'@', body.encode(encoding, errors='replace')])
+        if feed_lines_before_cut > 0:
+            content += esc + b'd' + bytes([min(feed_lines_before_cut, 10)])
         if self.settings.get('cut_after_print', True):
             content += gs + b'V' + bytes([0])
         return content
