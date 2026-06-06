@@ -59,3 +59,29 @@ class IntegrationConfigSerializerTests(TestCase):
         self.assertNotIn('transport', serializer.validated_data['settings'])
         self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
         self.assertEqual(serializer.validated_data['settings']['code_page'], 46)
+
+    def test_printer_display_name_includes_lan_endpoint(self):
+        instance = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            is_enabled=True,
+            settings={'connection_type': 'socket', 'host': '192.168.0.254', 'port': 9100},
+        )
+
+        data = IntegrationConfigSerializer(instance).data
+
+        self.assertEqual(data['display_name'], 'windows-raw (LAN TCP/IP: 192.168.0.254:9100)')
+
+    def test_printer_display_name_includes_usb_printer_name(self):
+        instance = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            is_enabled=True,
+            settings={'connection_type': 'system_printer', 'printer_name': 'POS-80 USB'},
+        )
+
+        data = IntegrationConfigSerializer(instance).data
+
+        self.assertEqual(data['display_name'], 'windows-raw (Windows/USB: POS-80 USB)')
