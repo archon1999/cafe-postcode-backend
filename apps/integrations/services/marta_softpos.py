@@ -192,7 +192,8 @@ class MartaSoftPOSPaymentService:
 
     @staticmethod
     def _charge_amount(*, payment) -> int:
-        if payment.method == payment.Method.MIXED:
+        mixed_method = getattr(getattr(payment, 'Method', None), 'MIXED', 'mixed')
+        if str(payment.method) == str(mixed_method):
             return int(getattr(payment, 'card_amount', 0) or 0)
         return int(payment.amount or 0)
 
