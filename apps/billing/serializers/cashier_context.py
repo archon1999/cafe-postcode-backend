@@ -13,6 +13,9 @@ User = get_user_model()
 class CashDeskContextSerializer(serializers.ModelSerializer):
     printer_integration_name = serializers.SerializerMethodField()
     printer_integration_printer_name = serializers.SerializerMethodField()
+    printer_integration_connection_type = serializers.SerializerMethodField()
+    printer_integration_host = serializers.SerializerMethodField()
+    printer_integration_port = serializers.SerializerMethodField()
 
     class Meta:
         model = CashDesk
@@ -25,6 +28,9 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
             'printer_integration',
             'printer_integration_name',
             'printer_integration_printer_name',
+            'printer_integration_connection_type',
+            'printer_integration_host',
+            'printer_integration_port',
             'fiscal_provider',
             'receipt_printer_enabled',
             'terminal_id',
@@ -43,6 +49,30 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
         if not isinstance(settings, dict):
             return None
         return settings.get('printer_name') or settings.get('printerName') or None
+
+    def get_printer_integration_connection_type(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        settings = getattr(integration, 'settings', None) if integration is not None else None
+        if not isinstance(settings, dict):
+            return None
+        connection_type = settings.get('connection_type') or settings.get('connectionType')
+        if connection_type:
+            return connection_type
+        return 'socket' if settings.get('host') else 'system_printer'
+
+    def get_printer_integration_host(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        settings = getattr(integration, 'settings', None) if integration is not None else None
+        if not isinstance(settings, dict):
+            return None
+        return settings.get('host') or None
+
+    def get_printer_integration_port(self, obj):
+        integration = getattr(obj, 'printer_integration', None)
+        settings = getattr(integration, 'settings', None) if integration is not None else None
+        if not isinstance(settings, dict):
+            return None
+        return settings.get('port') or None
 
 
 class RestaurantFiscalProfileSerializer(serializers.Serializer):

@@ -1,21 +1,12 @@
 from django.utils import timezone
 
-from apps.integrations.models import IntegrationConfig
-
-from .config_resolver import IntegrationConfigResolverService
-
 
 class MockPaymentIntegrationService:
-    resolver_service_class = IntegrationConfigResolverService
-
     def __init__(self, config=None):
         self.config = config
 
     def charge_payment(self, order, payment):
-        config = self.config or self.resolver_service_class().get_config(
-            kind=IntegrationConfig.Kind.PAYMENT,
-            restaurant=order.restaurant,
-        )
+        config = self.config
         if config is not None and config.provider != 'mock-payment':
             config = None
         qr_payload = {

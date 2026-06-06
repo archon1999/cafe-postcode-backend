@@ -1,7 +1,6 @@
 from django.utils import timezone
 
 from .agent_marta import MartaSoftPOSAgentPaymentService
-from .config_resolver import IntegrationConfigResolverService
 from .marta_softpos import MartaSoftPOSPaymentService, SUPPORTED_MARTA_PAYMENT_PROVIDERS
 from .mock_payment import MockPaymentIntegrationService
 from .unikassa import UnikassaFiscalIntegrationService, SUPPORTED_UNIKASSA_FISCAL_PROVIDERS, UnikassaFiscalError
@@ -54,13 +53,6 @@ def refund_payment(payment, reason=''):
     return MockPaymentIntegrationService().refund_payment(payment=payment, reason=reason)
 
 
-def _get_enabled_integration_config(*, restaurant, kind, provider=None):
-    queryset = IntegrationConfigResolverService().get_queryset(kind=kind, restaurant=restaurant)
-    if provider is not None:
-        queryset = queryset.filter(provider=provider)
-    return queryset.order_by('-created_at').first()
-
-
 def _get_payment_service(*, order, payment):
     marta_config = None
     cash_desk = getattr(payment, 'cash_desk', None)
@@ -94,9 +86,7 @@ def _get_fiscal_config(*, restaurant, cash_desk=None):
         if config is not None and (config.kind != 'fiscal' or not config.is_enabled):
             config = None
     if config is None:
-        config = IntegrationConfigResolverService().get_config(kind='fiscal', restaurant=restaurant)
-    if config is None:
-        raise ValueError('Fiscal integration is not configured.')
+        raise ValueError('Fiscal integration is not configured for the active cash desk.')
     return config
 
 
@@ -247,7 +237,7 @@ def _get_prebill_printer_config(*, order, cash_desk=None):
         config = getattr(cash_desk, 'printer_integration', None)
         if config is not None and config.kind == 'printer' and config.is_enabled:
             return config
-    return IntegrationConfigResolverService().get_config(kind='printer', restaurant=order.restaurant)
+    return None
 
 
 def print_prebill(order, payload, *, cash_desk=None):

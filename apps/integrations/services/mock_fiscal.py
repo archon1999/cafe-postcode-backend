@@ -1,21 +1,11 @@
 from django.utils import timezone
 
-from apps.integrations.models import IntegrationConfig
-
-from .config_resolver import IntegrationConfigResolverService
-
 
 class MockFiscalIntegrationService:
-    resolver_service_class = IntegrationConfigResolverService
-
     def issue_receipt(self, order, payment):
-        config = self.resolver_service_class().get_config(
-            kind=IntegrationConfig.Kind.FISCAL,
-            restaurant=order.restaurant,
-        )
         return {
             'ok': True,
-            'provider': config.provider if config else 'mock-fiscal',
+            'provider': 'mock-fiscal',
             'receipt_number': f'RCPT-{order.order_number}',
             'issued_at': timezone.now().isoformat(),
         }

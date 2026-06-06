@@ -274,24 +274,27 @@ def configure_entitlement(restaurant: Restaurant, tariff: Tariff) -> RestaurantE
 def configure_demo_printer_integration(restaurant: Restaurant, *, use_live_windows_printer: bool) -> None:
     if not use_live_windows_printer:
         return
-    IntegrationConfig.objects.filter(
-        restaurant=restaurant,
-        kind=IntegrationConfig.Kind.PRINTER,
-    ).exclude(provider='windows-raw').update(is_enabled=False)
-    IntegrationConfig.objects.update_or_create(
+    settings = {
+        'printer_name': 'POS-80 USB',
+        'paper_width_mm': 80,
+        'cut_after_print': True,
+        'encoding': 'cp1251',
+        'code_page': 46,
+    }
+    existing = IntegrationConfig.objects.filter(
         restaurant=restaurant,
         kind=IntegrationConfig.Kind.PRINTER,
         provider='windows-raw',
-        defaults={
-            'is_enabled': True,
-            'settings': {
-                'printer_name': 'POS-80 USB',
-                'paper_width_mm': 80,
-                'cut_after_print': True,
-                'encoding': 'cp437',
-            },
-        },
-    )
+        settings=settings,
+    ).first()
+    if existing is None:
+        IntegrationConfig.objects.create(
+            restaurant=restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            is_enabled=True,
+            settings=settings,
+        )
 
 
 def activate_restaurant_admin_user(restaurant: Restaurant, tariff: Tariff) -> GeneratedCredentials:

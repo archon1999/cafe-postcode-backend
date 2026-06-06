@@ -5,12 +5,14 @@ from apps.integrations.models import IntegrationConfig
 from apps.restaurants.helpers import get_prep_station_model
 from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
+from .printer_display import get_printer_integration_display
+
 PrepStation = get_prep_station_model()
 User = get_user_model()
 
 
 class PrepStationSerializer(serializers.ModelSerializer):
-    printer_integration_name = serializers.CharField(source='printer_integration.provider', read_only=True, allow_null=True)
+    printer_integration_name = serializers.SerializerMethodField()
     cook_ids = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.none(),
         source='cooks',
@@ -72,6 +74,9 @@ class PrepStationSerializer(serializers.ModelSerializer):
             {'id': str(user.id), 'full_name': user.full_name, 'username': user.username}
             for user in obj.cooks.all().order_by('full_name', 'username')
         ]
+
+    def get_printer_integration_name(self, obj):
+        return get_printer_integration_display(getattr(obj, 'printer_integration', None))
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

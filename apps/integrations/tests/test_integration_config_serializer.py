@@ -1,0 +1,61 @@
+from django.test import TestCase
+
+from apps.integrations.api.admin.serializers import IntegrationConfigSerializer
+from apps.integrations.models import IntegrationConfig
+from apps.restaurants.models import Restaurant
+
+
+class IntegrationConfigSerializerTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.restaurant = Restaurant.objects.create(name='Test restaurant')
+
+    def test_windows_raw_system_printer_uses_local_agent_transport(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.PRINTER,
+                'provider': 'windows-raw',
+                'is_enabled': True,
+                'settings': {
+                    'connection_type': 'system_printer',
+                    'printer_name': 'POS-80 USB',
+                },
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data['settings']['transport'], 'local-agent')
+        self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
+        self.assertEqual(serializer.validated_data['settings']['code_page'], 46)
+
+    def test_windows_raw_socket_removes_local_agent_transport(self):
+        instance = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            is_enabled=True,
+            settings={
+                'connection_type': 'system_printer',
+                'printer_name': 'POS-80 USB',
+                'transport': 'local-agent',
+            },
+        )
+        serializer = IntegrationConfigSerializer(
+            instance,
+            data={
+                'kind': IntegrationConfig.Kind.PRINTER,
+                'provider': 'windows-raw',
+                'is_enabled': True,
+                'settings': {
+                    'connection_type': 'socket',
+                    'host': '192.168.1.50',
+                    'port': 9100,
+                    'transport': 'local-agent',
+                },
+            },
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertNotIn('transport', serializer.validated_data['settings'])
+        self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
+        self.assertEqual(serializer.validated_data['settings']['code_page'], 46)

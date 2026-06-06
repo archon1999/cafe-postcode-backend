@@ -6,7 +6,7 @@ from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
-class IntegrationConfigDetailView(generics.RetrieveUpdateAPIView):
+class IntegrationConfigDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = IntegrationConfigSerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 

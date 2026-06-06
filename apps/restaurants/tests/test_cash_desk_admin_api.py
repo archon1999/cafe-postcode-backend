@@ -41,6 +41,12 @@ class CashDeskAdminApiTests(APITestCase):
             provider='marta-softpos',
             settings={'endpoint_url': 'http://127.0.0.1:8080'},
         )
+        cls.lan_printer = IntegrationConfig.objects.create(
+            restaurant=cls.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            settings={'host': '192.168.1.50', 'port': 9100},
+        )
 
     def setUp(self):
         super().setUp()
@@ -67,6 +73,25 @@ class CashDeskAdminApiTests(APITestCase):
         self.assertEqual(str(self._response_value(response.data, 'printer_integration', 'printerIntegration')), str(self.printer.id))
         self.assertIn(
             'windows-raw',
+            self._response_value(response.data, 'printer_integration_name', 'printerIntegrationName'),
+        )
+        self.assertIn(
+            'POS-80 USB',
+            self._response_value(response.data, 'printer_integration_name', 'printerIntegrationName'),
+        )
+
+    def test_cash_desk_printer_integration_name_includes_lan_host_and_port(self):
+        cash_desk = CashDesk.objects.create(
+            restaurant=self.restaurant,
+            name='Main cash desk',
+            printer_integration=self.lan_printer,
+        )
+
+        response = self.client.get(f'/api/v1/admin/restaurants/cash-desks/{cash_desk.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIn(
+            '192.168.1.50:9100',
             self._response_value(response.data, 'printer_integration_name', 'printerIntegrationName'),
         )
 

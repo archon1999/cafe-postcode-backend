@@ -66,7 +66,10 @@ class PrebillPrintApiTests(PosAPITestCase):
         return cash_desk
 
     def test_open_hall_order_prints_prebill_and_creates_receipt(self):
-        self.configure_live_printer()
+        printer = self.configure_live_printer()
+        self.cash_desk.printer_integration = printer
+        self.cash_desk.save(update_fields=['printer_integration', 'updated_at'])
+        self.create_cash_shift(cash_desk=self.cash_desk)
 
         with patch(
             'apps.integrations.services.WindowsRawPrinterIntegrationService.print_prebill',
@@ -167,7 +170,7 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(response.data['result']['provider'], 'windows-raw')
         self.assertTrue(print_mock.called)
 
-    def test_prebill_uses_global_printer_when_active_shift_has_no_printer(self):
+    def test_prebill_does_not_use_global_printer_when_active_shift_has_no_printer(self):
         self.configure_live_printer()
         self.create_cash_shift(cash_desk=self.cash_desk)
 
@@ -182,8 +185,9 @@ class PrebillPrintApiTests(PosAPITestCase):
             response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(response.data['result']['provider'], 'windows-raw')
-        self.assertTrue(print_mock.called)
+        self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')
+        self.assertTrue(response.data['result']['requires_client_print'])
+        self.assertFalse(print_mock.called)
 
     def test_missing_printer_config_returns_client_print_fallback(self):
         IntegrationConfig.objects.filter(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PRINTER).delete()
@@ -255,7 +259,10 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertTrue(response.data['result']['requires_client_print'])
 
     def test_requires_printer_name_in_live_configuration_falls_back_to_client_print(self):
-        self.configure_live_printer(printer_name='')
+        printer = self.configure_live_printer(printer_name='')
+        self.cash_desk.printer_integration = printer
+        self.cash_desk.save(update_fields=['printer_integration', 'updated_at'])
+        self.create_cash_shift(cash_desk=self.cash_desk)
 
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 

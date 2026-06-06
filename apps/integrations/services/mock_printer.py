@@ -1,21 +1,12 @@
 from django.utils import timezone
 
-from apps.integrations.models import IntegrationConfig
-
-from .config_resolver import IntegrationConfigResolverService
-
 
 class MockPrinterIntegrationService:
-    resolver_service_class = IntegrationConfigResolverService
-
     def __init__(self, config=None):
         self.config = config
 
     def _get_config(self, restaurant):
-        return self.config or self.resolver_service_class().get_config(
-            kind=IntegrationConfig.Kind.PRINTER,
-            restaurant=restaurant,
-        )
+        return self.config
 
     def print_ticket(self, ticket):
         config = self._get_config(ticket.restaurant)

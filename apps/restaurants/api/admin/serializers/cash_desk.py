@@ -5,6 +5,8 @@ from apps.integrations.models import IntegrationConfig
 from apps.restaurants.helpers import get_cash_desk_model
 from common.api.scopes import get_request_restaurant
 
+from .printer_display import get_printer_integration_display
+
 CashDesk = get_cash_desk_model()
 
 
@@ -107,14 +109,7 @@ class CashDeskSerializer(serializers.ModelSerializer):
         return f'{integration.provider} ({endpoint_url})' if endpoint_url else integration.provider
 
     def get_printer_integration_name(self, obj):
-        integration = getattr(obj, 'printer_integration', None)
-        if integration is None:
-            return ''
-        settings = integration.settings or {}
-        printer_name = settings.get('printer_name') or settings.get('printerName')
-        host = settings.get('host')
-        suffix = printer_name or host
-        return f'{integration.provider} ({suffix})' if suffix else integration.provider
+        return get_printer_integration_display(getattr(obj, 'printer_integration', None))
 
     class Meta:
         model = CashDesk

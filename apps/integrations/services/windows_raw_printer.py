@@ -29,7 +29,58 @@ class WindowsRawPrinterIntegrationService:
     @staticmethod
     def _safe_text(value, *, encoding: str) -> str:
         text = str(value or '').replace('\r', ' ').replace('\n', ' ').strip()
+        text = WindowsRawPrinterIntegrationService._normalize_text_for_encoding(text, encoding=encoding)
         return text.encode(encoding, errors='replace').decode(encoding, errors='replace')
+
+    @staticmethod
+    def _normalize_text_for_encoding(value: str, *, encoding: str) -> str:
+        if encoding.lower().replace('_', '-').replace('windows-', 'cp') not in {'cp1251', 'cp866'}:
+            return value
+        return value.translate(
+            str.maketrans(
+                {
+                    'Қ': 'К',
+                    'қ': 'к',
+                    'Ғ': 'Г',
+                    'ғ': 'г',
+                    'Ҳ': 'Х',
+                    'ҳ': 'х',
+                    'Ў': 'У',
+                    'ў': 'у',
+                    'ʼ': "'",
+                    '‘': "'",
+                    '’': "'",
+                    '“': '"',
+                    '”': '"',
+                    '–': '-',
+                    '—': '-',
+                }
+            )
+        )
+
+    @staticmethod
+    def _escpos_code_page_command(encoding: str, code_page) -> bytes:
+        try:
+            if code_page is not None:
+                code_page_number = int(code_page)
+                if 0 <= code_page_number <= 255:
+                    return bytes([0x1B, 0x74, code_page_number])
+        except (TypeError, ValueError):
+            pass
+
+        normalized = encoding.lower().replace('_', '-').replace('windows-', 'cp')
+        mapping = {
+            'cp437': 0,
+            'ibm437': 0,
+            'cp850': 2,
+            'ibm850': 2,
+            'cp866': 18,
+            'ibm866': 18,
+            'cp1251': 46,
+            'cp1252': 16,
+        }
+        selected = mapping.get(normalized)
+        return bytes([0x1B, 0x74, selected]) if selected is not None else b''
 
     @staticmethod
     def _chars_per_line(paper_width_mm: int) -> int:
@@ -46,7 +97,7 @@ class WindowsRawPrinterIntegrationService:
         return f'{left}{" " * spaces}{right}'
 
     def _build_lines(self, payload: dict) -> list[str]:
-        encoding = self.settings.get('encoding', 'cp437')
+        encoding = self.settings.get('encoding', 'cp1251')
         paper_width_mm = int(self.settings.get('paper_width_mm') or 80)
         width = self._chars_per_line(paper_width_mm)
         separator = '-' * width
@@ -99,12 +150,18 @@ class WindowsRawPrinterIntegrationService:
         return lines
 
     def _build_bytes(self, payload: dict) -> bytes:
-        encoding = self.settings.get('encoding', 'cp437')
+        encoding = self.settings.get('encoding', 'cp1251')
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 6)
         body = '\n'.join(self._build_lines(payload))
         esc = bytes([0x1B])
         gs = bytes([0x1D])
-        content = b''.join([esc + b'@', body.encode(encoding, errors='replace')])
+        content = b''.join(
+            [
+                esc + b'@',
+                self._escpos_code_page_command(encoding, self.settings.get('code_page')),
+                body.encode(encoding, errors='replace'),
+            ]
+        )
         if feed_lines_before_cut > 0:
             content += esc + b'd' + bytes([min(feed_lines_before_cut, 10)])
         if self.settings.get('cut_after_print', True):
