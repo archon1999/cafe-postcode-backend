@@ -1030,6 +1030,7 @@ PERMISSION_DEFINITIONS.extend(
             ('GET', 'api/v1/admin/integrations/configs/'),
             ('GET', 'api/v1/admin/integrations/fiscal-devices/'),
             ('GET', 'api/v1/local-agent/status/'),
+            ('POST', 'api/v1/local-agent/printer/check/'),
         ),
     )
 )
