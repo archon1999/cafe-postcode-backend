@@ -28,7 +28,7 @@ class IntegrationConfigSerializerTests(TestCase):
         self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
         self.assertEqual(serializer.validated_data['settings']['code_page'], 46)
 
-    def test_windows_raw_socket_removes_local_agent_transport(self):
+    def test_windows_raw_socket_uses_local_agent_transport(self):
         instance = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
@@ -56,7 +56,7 @@ class IntegrationConfigSerializerTests(TestCase):
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertNotIn('transport', serializer.validated_data['settings'])
+        self.assertEqual(serializer.validated_data['settings']['transport'], 'local-agent')
         self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
         self.assertEqual(serializer.validated_data['settings']['code_page'], 46)
 

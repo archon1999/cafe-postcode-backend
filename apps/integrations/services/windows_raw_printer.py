@@ -293,4 +293,8 @@ class WindowsRawPrinterIntegrationService:
         transport = str(self.settings.get('transport') or self.settings.get('transportType') or '').strip()
         if transport:
             return transport == 'local-agent'
-        return bool(self.settings.get('use_local_agent') or self.settings.get('useLocalAgent'))
+        if 'use_local_agent' in self.settings:
+            return bool(self.settings.get('use_local_agent'))
+        if 'useLocalAgent' in self.settings:
+            return bool(self.settings.get('useLocalAgent'))
+        return True

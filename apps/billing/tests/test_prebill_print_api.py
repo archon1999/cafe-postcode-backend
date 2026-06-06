@@ -258,7 +258,7 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')
         self.assertTrue(response.data['result']['requires_client_print'])
 
-    def test_requires_printer_name_in_live_configuration_falls_back_to_client_print(self):
+    def test_empty_printer_name_uses_agent_default_printer_and_falls_back_when_agent_unavailable(self):
         printer = self.configure_live_printer(printer_name='')
         self.cash_desk.printer_integration = printer
         self.cash_desk.save(update_fields=['printer_integration', 'updated_at'])
@@ -267,4 +267,5 @@ class PrebillPrintApiTests(PosAPITestCase):
         response = self.client.post(f'/api/v1/pos/billing/orders/{self.order_id}/prebill/print/', {}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['result']['code'], 'PRINTER_NOT_CONFIGURED')
+        self.assertEqual(response.data['result']['code'], 'PRINTER_UNAVAILABLE')
+        self.assertTrue(response.data['result']['requires_client_print'])
