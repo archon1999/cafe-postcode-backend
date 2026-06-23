@@ -25,6 +25,19 @@ class LocalAgentAuthTests(APITestCase):
         self.assertEqual(agent.name, 'Cashier PC')
         self.assertTrue(LocalAgent.authenticate_token(response.data['agentToken']))
 
+    def test_token_auth_returns_agent_metadata(self):
+        _agent, token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
+
+        response = self.client.get('/api/v1/local-agent/auth/token/', HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['agent']['restaurant_name'], 'Agent Restaurant')
+
+    def test_token_auth_rejects_invalid_token(self):
+        response = self.client.get('/api/v1/local-agent/auth/token/', HTTP_AUTHORIZATION='Bearer cpa_bad')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_restaurant_code_login_rejects_invalid_code(self):
         response = self.client.post(
             '/api/v1/local-agent/auth/restaurant-code/',

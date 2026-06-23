@@ -101,6 +101,22 @@ class WindowsRawPrinterIntegrationService:
         paper_width_mm = int(self.settings.get('paper_width_mm') or 80)
         width = self._chars_per_line(paper_width_mm)
         separator = '-' * width
+
+        if payload.get('kitchen_ticket'):
+            lines = [
+                self._safe_text(f"Buyurtma: A{int(payload['order_number']):05d}", encoding=encoding),
+                separator,
+            ]
+            for item in payload.get('items', []):
+                item_name = self._safe_text(item.get('name', ''), encoding=encoding)
+                quantity = int(item.get('quantity') or 0)
+                lines.append(f'{item_name} x{quantity}')
+                item_note = self._safe_text(item.get('note') or '', encoding=encoding)
+                if item_note:
+                    lines.append(f'  {item_note[: max(width - 2, 0)]}')
+            lines.append('')
+            return lines
+
         lines = [
             self._safe_text(payload['restaurant_name'], encoding=encoding),
             'PRECHEK',
@@ -168,7 +184,29 @@ class WindowsRawPrinterIntegrationService:
             content += gs + b'V' + bytes([0])
         return content
 
-    def _build_text_bytes(self, *, text: str) -> bytes:
+    @staticmethod
+    def _escpos_qr_code(value: str) -> bytes:
+        data = value.encode('utf-8')
+        if not data:
+            return b''
+
+        def store_command(command_data: bytes) -> bytes:
+            length = len(command_data) + 3
+            return b'\x1d(k' + bytes([length & 0xFF, (length >> 8) & 0xFF, 49]) + command_data
+
+        return b''.join(
+            [
+                b'\n',
+                store_command(b'\x41\x32\x00'),
+                store_command(b'\x43\x06'),
+                store_command(b'\x45\x31'),
+                store_command(b'\x50\x30' + data),
+                store_command(b'\x51\x30'),
+                b'\n',
+            ]
+        )
+
+    def _build_text_bytes(self, *, text: str, qr_code: str = '') -> bytes:
         encoding = self.settings.get('encoding', 'cp1251')
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 5)
         normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
@@ -184,6 +222,9 @@ class WindowsRawPrinterIntegrationService:
                 (normalized_text + ('\n' * max(feed_lines_before_cut, 0))).encode(encoding, errors='replace'),
             ]
         )
+        qr_code = str(qr_code or '').strip()
+        if qr_code:
+            content += self._escpos_qr_code(qr_code)
         if self.settings.get('cut_after_print', True):
             content += gs + b'V' + bytes([0])
         return content
@@ -276,8 +317,8 @@ class WindowsRawPrinterIntegrationService:
             order_number=order.order_number,
         )
 
-    def print_text(self, *, restaurant, text: str, job_name: str = 'Cafe Postcode Receipt'):
-        raw_payload = self._build_text_bytes(text=text)
+    def print_text(self, *, restaurant, text: str, qr_code: str = '', job_name: str = 'Cafe Postcode Receipt'):
+        raw_payload = self._build_text_bytes(text=text, qr_code=qr_code)
         return self._print_raw_payload(
             restaurant=restaurant,
             raw_payload=raw_payload,

@@ -16,6 +16,7 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
     printer_integration_connection_type = serializers.SerializerMethodField()
     printer_integration_host = serializers.SerializerMethodField()
     printer_integration_port = serializers.SerializerMethodField()
+    terminal_id = serializers.SerializerMethodField()
 
     class Meta:
         model = CashDesk
@@ -74,6 +75,22 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
             return None
         return settings.get('port') or None
 
+    def get_terminal_id(self, obj):
+        terminal_id = str(getattr(obj, 'terminal_id', '') or '').strip()
+        if terminal_id:
+            return terminal_id
+
+        integration = getattr(obj, 'fiscal_integration', None)
+        settings = getattr(integration, 'settings', None) if integration is not None else None
+        if not isinstance(settings, dict):
+            return ''
+
+        for key in ('terminal_id', 'terminalId', 'fiscal', 'Fiscal'):
+            value = str(settings.get(key) or '').strip()
+            if value:
+                return value
+        return ''
+
 
 class RestaurantFiscalProfileSerializer(serializers.Serializer):
     legal_name = serializers.CharField()
@@ -82,6 +99,14 @@ class RestaurantFiscalProfileSerializer(serializers.Serializer):
     service_fee_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
     vat_enabled = serializers.BooleanField()
     vat_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
+
+
+class FiscalDeviceStatusSerializer(serializers.Serializer):
+    online = serializers.BooleanField()
+    provider = serializers.CharField(allow_blank=True)
+    terminal_id = serializers.CharField(allow_blank=True)
+    detail = serializers.CharField(allow_blank=True)
+    checked_at = serializers.DateTimeField()
 
 
 class CashierOptionSerializer(serializers.ModelSerializer):
@@ -98,6 +123,7 @@ class CashierContextSerializer(serializers.Serializer):
     current_shift = CashShiftSerializer(allow_null=True)
     active_shifts = CashShiftSerializer(many=True)
     fiscal_shift_open = serializers.BooleanField()
+    fiscal_device_status = FiscalDeviceStatusSerializer()
 
 
 class CashShiftOpenSerializer(serializers.Serializer):

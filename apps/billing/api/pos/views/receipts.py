@@ -119,9 +119,11 @@ class ReceiptRawPrintView(APIView):
             raise ValidationError({'text': 'Receipt text is required.'})
 
         cash_desk = self.shift_service_class().get_prebill_print_cash_desk(restaurant=restaurant, user=request.user)
+        qr_code = request.data.get('qr_code') if isinstance(request.data, dict) else ''
         result = print_receipt_text(
             restaurant=restaurant,
             text=text,
+            qr_code=str(qr_code or '').strip(),
             cash_desk=cash_desk,
             job_name=job_name,
         )

@@ -173,6 +173,31 @@ def close_fiscal_shift(*, restaurant, cash_desk=None):
     return service.close_shift(cash_desk=cash_desk)
 
 
+def get_fiscal_device_status(*, restaurant, cash_desk=None):
+    config = None
+    checked_at = timezone.now().isoformat()
+    try:
+        service, config = _get_fiscal_service(restaurant=restaurant, cash_desk=cash_desk)
+        if not hasattr(service, 'get_device_status'):
+            raise ValueError('Fiscal provider does not support device status checks.')
+        payload = service.get_device_status(cash_desk=cash_desk)
+        return {
+            'online': bool(payload.get('online')),
+            'provider': str(payload.get('provider') or getattr(config, 'provider', '') or ''),
+            'terminal_id': str(payload.get('terminal_id') or '').strip(),
+            'detail': str(payload.get('detail') or ''),
+            'checked_at': checked_at,
+        }
+    except Exception as error:
+        return {
+            'online': False,
+            'provider': str(getattr(config, 'provider', '') or ''),
+            'terminal_id': '',
+            'detail': str(error),
+            'checked_at': checked_at,
+        }
+
+
 def _build_kitchen_ticket_payload(ticket):
     from apps.sales.helpers import get_order_item_model
 
@@ -184,25 +209,16 @@ def _build_kitchen_ticket_payload(ticket):
         .select_related('catalog_item')
     )
     return {
-        'restaurant_name': order.restaurant.name,
+        'kitchen_ticket': True,
         'order_number': order.order_number,
-        'channel_label': order.get_channel_display(),
-        'table_label': getattr(getattr(order.table_session, 'table', None), 'name', '') if order.table_session_id else '',
-        'waiter_name': getattr(order.opened_by, 'full_name', '') if order.opened_by_id else '',
-        'printed_at_label': timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M'),
         'items': [
             {
                 'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
                 'quantity': item.quantity,
-                'line_total': item.line_total,
                 'note': item.note,
             }
             for item in items
         ],
-        'subtotal': sum(int(item.line_total or 0) for item in items),
-        'service_fee': 0,
-        'total': sum(int(item.line_total or 0) for item in items),
-        'order_note': order.note,
     }
 
 
@@ -266,7 +282,7 @@ def print_prebill(order, payload, *, cash_desk=None):
         return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
 
 
-def print_receipt_text(*, restaurant, text, cash_desk=None, job_name='Cafe Postcode Receipt'):
+def print_receipt_text(*, restaurant, text, qr_code='', cash_desk=None, job_name='Cafe Postcode Receipt'):
     config = _get_prebill_printer_config(order=None, cash_desk=cash_desk)
     if config is None:
         return _client_print_fallback(
@@ -285,7 +301,7 @@ def print_receipt_text(*, restaurant, text, cash_desk=None, job_name='Cafe Postc
         )
 
     try:
-        return service.print_text(restaurant=restaurant, text=text, job_name=job_name)
+        return service.print_text(restaurant=restaurant, text=text, qr_code=qr_code, job_name=job_name)
     except ValueError as error:
         return _client_print_fallback(code=PRINTER_NOT_CONFIGURED, detail=str(error), provider=config.provider)
     except Exception as error:

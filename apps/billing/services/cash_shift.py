@@ -14,7 +14,7 @@ from apps.billing.helpers import (
     get_receipt_model,
 )
 from apps.integrations.models import IntegrationConfig
-from apps.integrations.services import close_fiscal_shift, open_fiscal_shift
+from apps.integrations.services import close_fiscal_shift, get_fiscal_device_status, open_fiscal_shift
 from apps.restaurants.helpers import get_cash_desk_model
 from apps.users.models import EmployeeProfile, User
 from common.api.permissions import POS_CASH_SHIFT_MANAGE_PERMISSION, has_permission_code
@@ -36,6 +36,7 @@ class CashShiftService:
                 'cash_desk',
                 'cash_desk__payment_integration',
                 'cash_desk__printer_integration',
+                'cash_desk__fiscal_integration',
                 'opened_by',
                 'cashier',
             )
@@ -80,7 +81,7 @@ class CashShiftService:
 
     def get_available_cash_desks(self, *, restaurant):
         return list(
-            CashDesk.objects.select_related('payment_integration', 'printer_integration')
+            CashDesk.objects.select_related('payment_integration', 'printer_integration', 'fiscal_integration')
             .filter(restaurant=restaurant, is_active=True)
             .order_by('name')
         )
@@ -135,6 +136,8 @@ class CashShiftService:
 
     def build_context(self, *, restaurant, user):
         active_shift = self.get_active_shift(restaurant=restaurant, user=user)
+        available_cash_desks = self.get_available_cash_desks(restaurant=restaurant)
+        status_cash_desk = active_shift.cash_desk if active_shift is not None else available_cash_desks[0] if available_cash_desks else None
         return {
             'restaurant_fiscal_profile': {
                 'legal_name': restaurant.legal_name,
@@ -144,11 +147,12 @@ class CashShiftService:
                 'vat_enabled': bool(getattr(restaurant, 'vat_enabled', False)),
                 'vat_percent': getattr(restaurant, 'vat_percent', 0) or 0,
             },
-            'available_cash_desks': self.get_available_cash_desks(restaurant=restaurant),
+            'available_cash_desks': available_cash_desks,
             'available_cashiers': self.get_available_cashiers(restaurant=restaurant),
             'current_shift': active_shift,
             'active_shifts': self.get_active_shifts_for_manager(restaurant=restaurant, user=user),
             'fiscal_shift_open': self.has_open_fiscal_shift(restaurant=restaurant),
+            'fiscal_device_status': get_fiscal_device_status(restaurant=restaurant, cash_desk=status_cash_desk),
         }
 
     def _payment_scope_queryset(self, *, shift=None, shifts=None, restaurant=None, cash_desk=None, paid_at_from=None, paid_at_to=None):

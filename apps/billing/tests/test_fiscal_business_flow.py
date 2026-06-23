@@ -8,6 +8,8 @@ from rest_framework.exceptions import ValidationError
 from apps.billing.models import FiscalShiftSession, Payment, Receipt
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService
 from apps.catalog.models import CatalogCategory, CatalogItem
+from apps.integrations.models import IntegrationConfig
+from apps.integrations.services import get_fiscal_device_status
 from apps.integrations.services.unikassa import UnikassaFiscalError, UnikassaFiscalIntegrationService
 from apps.sales.models import Order
 from apps.sales.models import OrderItem
@@ -373,6 +375,51 @@ class FiscalBusinessFlowTests(PosTestCase):
         local_http_request.assert_called_once()
         self.assertEqual(local_http_request.call_args.kwargs['restaurant'], self.restaurant)
         self.assertEqual(local_http_request.call_args.kwargs['url'], 'http://127.0.0.1:8181/api/v1/get/info')
+
+    @patch('apps.integrations.services.unikassa.LocalAgentCommandService.local_http_request')
+    def test_unikassa_device_status_uses_agent_info(self, local_http_request):
+        local_http_request.return_value = {
+            'ok': True,
+            'httpStatus': 200,
+            'body': {'TerminalID': 'LG420'},
+        }
+        config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='unikassa',
+            settings={'endpoint_url': 'http://127.0.0.1:8181/api/v1', 'terminal_id': 'LG420'},
+        )
+        self.cash_desk.fiscal_integration = config
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+
+        status = get_fiscal_device_status(restaurant=self.restaurant, cash_desk=self.cash_desk)
+
+        self.assertTrue(status['online'])
+        self.assertEqual(status['provider'], 'unikassa')
+        self.assertEqual(status['terminal_id'], 'LG420')
+        local_http_request.assert_called_once()
+
+    @patch('apps.integrations.services.unikassa.LocalAgentCommandService.local_http_request')
+    def test_unikassa_device_status_offline_when_agent_info_fails(self, local_http_request):
+        local_http_request.return_value = {
+            'ok': True,
+            'httpStatus': 503,
+            'rawBody': 'Fiscal drive is unavailable',
+        }
+        config = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='unikassa',
+            settings={'endpoint_url': 'http://127.0.0.1:8181/api/v1', 'terminal_id': 'LG420'},
+        )
+        self.cash_desk.fiscal_integration = config
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+
+        status = get_fiscal_device_status(restaurant=self.restaurant, cash_desk=self.cash_desk)
+
+        self.assertFalse(status['online'])
+        self.assertEqual(status['provider'], 'unikassa')
+        self.assertIn('Fiscal drive is unavailable', status['detail'])
 
     @patch('apps.integrations.services.unikassa.LocalAgentCommandService.local_http_request')
     @patch('apps.integrations.services.unikassa.LocalAgentCommandService.execute')

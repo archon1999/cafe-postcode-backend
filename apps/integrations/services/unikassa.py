@@ -162,6 +162,19 @@ class UnikassaFiscalIntegrationService:
             'terminal_id': str((provider_report['z_info'] or {}).get('TerminalID') or fiscal),
         }
 
+    def get_device_status(self, *, cash_desk=None):
+        fiscal = self._fiscal(cash_desk=cash_desk)
+        with self.client_factory(base_url=self._endpoint_url(), timeout=self._status_timeout()) as client:
+            payload = self._post_json(client, '/get/info', {'Fiscal': fiscal, 'Number': None})
+        payload = payload if isinstance(payload, dict) else {}
+        return {
+            'online': True,
+            'provider': self.config.provider,
+            'terminal_id': str(payload.get('TerminalID') or fiscal).strip(),
+            'detail': '',
+            'response': payload,
+        }
+
     def _client(self):
         return self.client_factory(base_url=self._endpoint_url(), timeout=self._timeout())
 
@@ -179,6 +192,13 @@ class UnikassaFiscalIntegrationService:
             return float(self.settings.get('timeout_seconds') or self.settings.get('timeoutSeconds') or 15)
         except (TypeError, ValueError):
             return 15.0
+
+    def _status_timeout(self) -> float:
+        try:
+            timeout = float(self.settings.get('status_timeout_seconds') or self.settings.get('statusTimeoutSeconds') or 3)
+        except (TypeError, ValueError):
+            timeout = 3.0
+        return max(1.0, min(timeout, self._timeout()))
 
     def _post_json(self, client, path: str, payload: dict):
         if self._use_local_agent():

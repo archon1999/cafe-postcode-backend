@@ -32,6 +32,19 @@ class LocalAgentRestaurantCodeAuthView(APIView):
         )
 
 
+class LocalAgentTokenAuthView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        token = str(request.headers.get('Authorization', '')).removeprefix('Bearer ').strip()
+        if not token:
+            token = str(request.query_params.get('token', '')).strip()
+        agent = LocalAgent.authenticate_token(token) if token else None
+        if agent is None:
+            return Response({'detail': 'Invalid local agent token.'}, status=401)
+        return Response({'agent': LocalAgentStatusSerializer(agent).data})
+
+
 class LocalAgentAdminStatusView(AdminPermissionRequiredMixin, APIView):
     def get(self, request):
         restaurant = get_request_restaurant(request)
