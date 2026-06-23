@@ -116,13 +116,11 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
 
         hall_payload = {
             'table_session': str(session.id),
-            'distribution_point': str(self.hall_distribution.id),
             'channel': Order.Channel.HALL,
             'guest_count': 2,
             'note': '',
         }
         takeaway_payload = {
-            'distribution_point': str(self.takeaway_distribution.id),
             'channel': Order.Channel.TAKEAWAY,
             'guest_count': 1,
             'note': '',
@@ -135,6 +133,7 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         self.client.force_authenticate(self.hall_user)
         hall_success = self.client.post('/api/v1/pos/sales/orders/', hall_payload, format='json')
         self.assertEqual(hall_success.status_code, status.HTTP_201_CREATED, hall_success.data)
+        self.assertEqual(str(hall_success.data['distribution_point']), str(self.hall_distribution.id))
 
         takeaway_forbidden = self.client.post('/api/v1/pos/sales/orders/', takeaway_payload, format='json')
         self.assertEqual(takeaway_forbidden.status_code, status.HTTP_403_FORBIDDEN)
@@ -142,6 +141,23 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         self.client.force_authenticate(self.takeaway_user)
         takeaway_success = self.client.post('/api/v1/pos/sales/orders/', takeaway_payload, format='json')
         self.assertEqual(takeaway_success.status_code, status.HTTP_201_CREATED, takeaway_success.data)
+        self.assertEqual(str(takeaway_success.data['distribution_point']), str(self.takeaway_distribution.id))
+
+    def test_order_create_rejects_distribution_point_channel_mismatch(self):
+        self.client.force_authenticate(self.takeaway_user)
+        response = self.client.post(
+            '/api/v1/pos/sales/orders/',
+            {
+                'distribution_point': str(self.hall_distribution.id),
+                'channel': Order.Channel.TAKEAWAY,
+                'guest_count': 1,
+                'note': '',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('distribution_point', response.data)
 
     def test_order_item_and_submit_endpoints_use_order_context_permission(self):
         hall_session = self.create_table_session()

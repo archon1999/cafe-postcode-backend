@@ -24,7 +24,6 @@ class PosSmokeApiTests(PosAPITestCase):
         order_data = self.create_order_via_api(
             {
                 'table_session': str(session.id),
-                'distribution_point': str(self.hall_distribution.id),
                 'channel': Order.Channel.HALL,
                 'guest_count': 4,
                 'note': '',

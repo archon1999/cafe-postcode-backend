@@ -8,18 +8,25 @@ from rest_framework.exceptions import ValidationError
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.services import sync_table_status
-from apps.restaurants.helpers import get_restaurant_model
+from apps.restaurants.helpers import get_distribution_point_model, get_restaurant_model
 from apps.sales.helpers import get_order_model
 
 logger = logging.getLogger(__name__)
 
 Order = get_order_model()
+DistributionPoint = get_distribution_point_model()
 Restaurant = get_restaurant_model()
 DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
 
 
 class OrderStateService:
     MUTABLE_ORDER_STATUSES = frozenset({Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY})
+    DISTRIBUTION_POINT_NAMES = {
+        Order.Channel.HALL: 'Zal buyurtmalari',
+        Order.Channel.TAKEAWAY: 'Olib ketish',
+        Order.Channel.DELIVERY: 'Yetkazib berish',
+        Order.Channel.ONLINE: 'Online',
+    }
 
     @transaction.atomic
     def next_order_number(self, *, restaurant: Restaurant | None = None, branch: Restaurant | None = None) -> int:
@@ -48,6 +55,45 @@ class OrderStateService:
                 extra={'table_session_id': str(table_session.pk)},
             )
             raise ValidationError({'table_session': _('This table session already has an active order.')})
+
+    def resolve_distribution_point(self, *, restaurant: Restaurant, channel: str, table_session=None):
+        if table_session is not None:
+            channel = Order.Channel.HALL
+
+        queryset = DistributionPoint.objects.filter(
+            restaurant=restaurant,
+            kind=channel,
+            is_active=True,
+        )
+        if channel == Order.Channel.HALL and table_session is not None:
+            hall_point = queryset.filter(assigned_hall=table_session.hall).first()
+            if hall_point is not None:
+                return hall_point
+
+        distribution_point = queryset.first()
+        if distribution_point is not None:
+            return distribution_point
+
+        defaults = {
+            'name': self.DISTRIBUTION_POINT_NAMES.get(channel, str(channel).title()),
+            'is_active': True,
+        }
+        if channel == Order.Channel.HALL and table_session is not None:
+            defaults['assigned_hall'] = table_session.hall
+        return DistributionPoint.objects.create(
+            restaurant=restaurant,
+            kind=channel,
+            **defaults,
+        )
+
+    def ensure_distribution_point_matches_order(self, *, distribution_point, restaurant: Restaurant, channel: str):
+        if distribution_point is None:
+            return
+
+        if distribution_point.restaurant_id != restaurant.id:
+            raise ValidationError({'distribution_point': _('Distribution point does not belong to this restaurant.')})
+        if distribution_point.kind != channel:
+            raise ValidationError({'distribution_point': _('Distribution point kind must match order channel.')})
 
     def ensure_order_mutable(self, *, order: Order):
         if order.status in {Order.Status.CLOSED, Order.Status.CANCELLED}:

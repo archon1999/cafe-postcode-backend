@@ -49,13 +49,27 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         restaurant = get_request_restaurant(self.request)
         state_service = self.state_service_class()
         table_session = serializer.validated_data.get('table_session')
-        channel = serializer.validated_data.get('channel', Order.Channel.HALL)
+        channel = Order.Channel.HALL if table_session else serializer.validated_data.get('channel', Order.Channel.HALL)
         required_permission = POS_TABLES_MANAGE_PERMISSION if table_session or channel == Order.Channel.HALL else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         require_any_permission_code(self.request.user, required_permission)
         state_service.ensure_session_accepts_new_order(table_session=table_session)
+        distribution_point = serializer.validated_data.get('distribution_point')
+        state_service.ensure_distribution_point_matches_order(
+            distribution_point=distribution_point,
+            restaurant=restaurant,
+            channel=channel,
+        )
+        if distribution_point is None:
+            distribution_point = state_service.resolve_distribution_point(
+                restaurant=restaurant,
+                channel=channel,
+                table_session=table_session,
+            )
         serializer.save(
             restaurant=restaurant,
             opened_by=self.request.user,
+            distribution_point=distribution_point,
+            channel=channel,
             guest_count=table_session.guest_count if table_session else serializer.validated_data.get('guest_count', 1),
             order_number=state_service.next_order_number(restaurant=restaurant),
         )
