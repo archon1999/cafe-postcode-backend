@@ -23,6 +23,10 @@ class WindowsRawPrinterIntegrationService:
         self.settings = dict(getattr(config, 'settings', {}) or {})
 
     @staticmethod
+    def _encoding_from_settings(settings: dict) -> str:
+        return str(settings.get('encoding') or settings.get('charset') or 'cp866').strip() or 'cp866'
+
+    @staticmethod
     def _format_money(value) -> str:
         return f"{int(value or 0):,}".replace(',', ' ')
 
@@ -149,7 +153,7 @@ class WindowsRawPrinterIntegrationService:
         return f"#{int(payload.get('order_number') or 0)}"
 
     def _build_lines(self, payload: dict) -> list[str]:
-        encoding = self.settings.get('encoding', 'cp1251')
+        encoding = self._encoding_from_settings(self.settings)
         paper_width_mm = int(self.settings.get('paper_width_mm') or 80)
         width = self._chars_per_line(paper_width_mm)
         separator = '-' * width
@@ -180,18 +184,9 @@ class WindowsRawPrinterIntegrationService:
             if time:
                 lines.append(f'Buyurtma vaqti: {time}')
             lines.append(f'Buyurtma turi: {channel_label}')
-            prep_station_name = self._safe_text(payload.get('prep_station_name') or '', encoding=encoding)
-            if prep_station_name:
-                lines.append(f"Oshxona: {prep_station_name[: max(width - 9, 0)]}")
             table_label = payload.get('table_label')
             if table_label:
                 lines.append(self._safe_text(table_label, encoding=encoding))
-            waiter_name = payload.get('waiter_name')
-            if waiter_name:
-                lines.append(self._safe_text(f'Ofitsiant: {waiter_name}', encoding=encoding))
-            guest_count = int(payload.get('guest_count') or 0)
-            if guest_count:
-                lines.append(self._safe_text(f'Mehmonlar: {guest_count}', encoding=encoding))
             delivery_phone = self._safe_text(payload.get('delivery_phone') or '', encoding=encoding)
             delivery_address = self._safe_text(payload.get('delivery_address') or '', encoding=encoding)
             if delivery_phone:
@@ -270,12 +265,12 @@ class WindowsRawPrinterIntegrationService:
         return lines
 
     def _build_bytes(self, payload: dict) -> bytes:
-        encoding = self.settings.get('encoding', 'cp1251')
+        encoding = self._encoding_from_settings(self.settings)
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 6)
         body = '\n'.join(self._build_lines(payload))
         esc = bytes([0x1B])
         gs = bytes([0x1D])
-        print_mode = esc + b'!' + (bytes([0x10]) if payload.get('kitchen_ticket') else bytes([0x00]))
+        print_mode = esc + b'!' + bytes([0x00])
         content = b''.join(
             [
                 esc + b'@',
@@ -314,11 +309,14 @@ class WindowsRawPrinterIntegrationService:
         )
 
     def _build_text_bytes(self, *, text: str, qr_code: str = '') -> bytes:
-        encoding = self.settings.get('encoding', 'cp1251')
+        encoding = self._encoding_from_settings(self.settings)
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 5)
         normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
         if not normalized_text:
             raise ValueError('Receipt text is required.')
+        normalized_text = '\n'.join(
+            self._normalize_text_for_encoding(line, encoding=encoding) for line in normalized_text.split('\n')
+        )
 
         esc = bytes([0x1B])
         gs = bytes([0x1D])

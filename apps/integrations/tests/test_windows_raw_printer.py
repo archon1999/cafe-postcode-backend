@@ -88,3 +88,36 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
         service = WindowsRawPrinterIntegrationService(config)
 
         self.assertFalse(service._use_local_agent())
+
+    def test_kitchen_ticket_uses_regular_print_mode_and_hides_internal_meta(self):
+        config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866'})
+        service = WindowsRawPrinterIntegrationService(config)
+        payload = {
+            **self._payload(),
+            'kitchen_ticket': True,
+            'order_label': '#42',
+            'prep_station_name': 'Kuxnya',
+            'waiter_name': 'Adham',
+            'guest_count': 3,
+            'items': [{'name': 'Shaverma', 'quantity': 1, 'line_total': 24000}],
+        }
+
+        lines = service._build_lines(payload)
+        raw_payload = service._build_bytes(payload)
+
+        self.assertIn('Buyurtma raqami: 42', '\n'.join(lines))
+        self.assertNotIn('Oshxona:', '\n'.join(lines))
+        self.assertNotIn('Ofitsiant:', '\n'.join(lines))
+        self.assertNotIn('Mehmonlar:', '\n'.join(lines))
+        self.assertIn(b'\x1b!\x00', raw_payload)
+        self.assertNotIn(b'\x1b!\x10', raw_payload)
+
+    def test_text_printing_encodes_cyrillic_without_replacement_chars(self):
+        config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866'})
+        service = WindowsRawPrinterIntegrationService(config)
+
+        raw_payload = service._build_text_bytes(text='ШАВЕРМА\nОшхона', qr_code='')
+
+        self.assertIn('ШАВЕРМА'.encode('cp866'), raw_payload)
+        self.assertIn('Ошхона'.encode('cp866'), raw_payload)
+        self.assertNotIn(b'?', raw_payload)
