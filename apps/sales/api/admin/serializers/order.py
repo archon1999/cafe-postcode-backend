@@ -52,6 +52,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             'cashier',
             'cashier_name',
             'order_number',
+            'display_name',
             'channel',
             'status',
             'guest_count',
