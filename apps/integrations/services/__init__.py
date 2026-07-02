@@ -250,10 +250,10 @@ def _order_channel_label(order) -> str:
     if order.channel == order.Channel.HALL:
         return 'Zalda'
     if order.channel == order.Channel.DELIVERY:
-        return 'Yetkazib berish'
+        return 'Dostavka'
     if order.channel == order.Channel.ONLINE:
         return 'Online'
-    return 'Olib ketish'
+    return 'Zalda'
 
 
 def _order_table_label(order) -> str:

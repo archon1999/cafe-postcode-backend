@@ -83,10 +83,10 @@ class OrderPrebillService:
         if order.channel == Order.Channel.HALL:
             return 'Zalda'
         if order.channel == Order.Channel.DELIVERY:
-            return 'Yetkazib berish'
+            return 'Dostavka'
         if order.channel == Order.Channel.ONLINE:
             return 'Online'
-        return 'Olib ketish'
+        return 'Zalda'
 
     @transaction.atomic
     def print(self, *, order: Order, cash_desk=None):
