@@ -65,13 +65,19 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
                 channel=channel,
                 table_session=table_session,
             )
+        order_number = state_service.next_order_number(restaurant=restaurant)
+        display_name = serializer.validated_data.get('display_name') or state_service.next_shift_display_name(
+            restaurant=restaurant,
+            user=self.request.user,
+        )
         serializer.save(
             restaurant=restaurant,
             opened_by=self.request.user,
             distribution_point=distribution_point,
             channel=channel,
             guest_count=table_session.guest_count if table_session else serializer.validated_data.get('guest_count', 1),
-            order_number=state_service.next_order_number(restaurant=restaurant),
+            order_number=order_number,
+            display_name=display_name or str(order_number),
         )
 
 

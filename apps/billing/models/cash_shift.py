@@ -43,6 +43,7 @@ class CashShift(BaseModel):
     refund_total = models.PositiveIntegerField(default=0)
     receipt_count = models.PositiveIntegerField(default=0)
     reprint_count = models.PositiveIntegerField(default=0)
+    next_order_number = models.PositiveIntegerField(default=0)
     close_report_payload = models.JSONField(default=dict, blank=True)
     notes_open = models.TextField(blank=True)
     notes_close = models.TextField(blank=True)

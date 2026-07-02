@@ -194,9 +194,8 @@ class CoreSettings(Settings):
     AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME', 'cpython').strip()
     AWS_S3_MEDIA_PREFIX = os.getenv('AWS_S3_MEDIA_PREFIX', 'media/cafe-postcode').strip().strip('/')
     AWS_DEFAULT_ACL = os.getenv('AWS_DEFAULT_ACL', 'public-read').strip()
-    AWS_S3_CUSTOM_DOMAIN = os.getenv(
-        'AWS_S3_CUSTOM_DOMAIN',
-        f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com',
+    AWS_S3_CUSTOM_DOMAIN = (
+        os.getenv('AWS_S3_CUSTOM_DOMAIN') or f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
     ).strip()
     AWS_S3_FILE_OVERWRITE = False
     AWS_QUERYSTRING_AUTH = False

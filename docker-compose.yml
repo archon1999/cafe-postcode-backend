@@ -24,6 +24,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
+      AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
+      AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
@@ -78,6 +83,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
+      AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
+      AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
     command:
       - daphne
       - -b
@@ -112,6 +122,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
+      AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
+      AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
       Q_CLUSTER_WORKERS: ${Q_CLUSTER_WORKERS:-8}
     command: ["python", "manage.py", "qcluster"]
     depends_on:

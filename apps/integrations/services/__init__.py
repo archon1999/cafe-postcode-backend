@@ -11,6 +11,13 @@ PRINTER_NOT_CONFIGURED = 'PRINTER_NOT_CONFIGURED'
 PRINTER_UNAVAILABLE = 'PRINTER_UNAVAILABLE'
 
 
+def build_order_label(order) -> str:
+    display_name = str(getattr(order, 'display_name', '') or '').strip()
+    if display_name:
+        return f'#{display_name}' if display_name.isdigit() else display_name
+    return f"#{int(getattr(order, 'order_number', 0) or 0)}"
+
+
 def charge_payment(order, payment, *, manual_card_override=False, manual_card_reason=''):
     if payment.method == payment.Method.CASH:
         return {
@@ -211,6 +218,18 @@ def _build_kitchen_ticket_payload(ticket):
     return {
         'kitchen_ticket': True,
         'order_number': order.order_number,
+        'order_label': build_order_label(order),
+        'restaurant_name': order.restaurant.name,
+        'prep_station_name': ticket.prep_station.name if ticket.prep_station_id else '',
+        'channel': order.channel,
+        'channel_label': _order_channel_label(order),
+        'table_label': _order_table_label(order),
+        'waiter_name': order.opened_by.full_name if order.opened_by_id and order.opened_by else '',
+        'guest_count': int(order.guest_count or 0),
+        'printed_at_label': timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S'),
+        'delivery_phone': order.delivery_phone or '',
+        'delivery_address': order.delivery_address or '',
+        'order_note': order.note or '',
         'items': [
             {
                 'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
@@ -220,6 +239,23 @@ def _build_kitchen_ticket_payload(ticket):
             for item in items
         ],
     }
+
+
+def _order_channel_label(order) -> str:
+    if order.channel == order.Channel.HALL:
+        return 'Zalda'
+    if order.channel == order.Channel.DELIVERY:
+        return 'Yetkazib berish'
+    if order.channel == order.Channel.ONLINE:
+        return 'Online'
+    return 'Olib ketish'
+
+
+def _order_table_label(order) -> str:
+    if not order.table_session_id or not order.table_session:
+        return ''
+    table = getattr(order.table_session, 'table', None)
+    return f"Stol: {table.name}" if table is not None else ''
 
 
 def print_kitchen_ticket(ticket):

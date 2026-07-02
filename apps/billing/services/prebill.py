@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 from decimal import Decimal, ROUND_HALF_UP
 
 from apps.billing.helpers import get_receipt_model
-from apps.integrations.services import print_prebill
+from apps.integrations.services import build_order_label, print_prebill
 from apps.sales.helpers import get_order_model
 from apps.sales.models import OrderItem
 
@@ -52,8 +52,9 @@ class OrderPrebillService:
             'tax_number': order.restaurant.tax_number,
             'order_id': str(order.id),
             'order_number': order.order_number,
+            'order_label': build_order_label(order),
             'channel': order.channel,
-            'channel_label': 'Zalda' if order.channel == Order.Channel.HALL else 'Olib ketish',
+            'channel_label': self._channel_label(order),
             'table_label': table_label,
             'waiter_name': order.opened_by.full_name if order.opened_by_id and order.opened_by else '',
             'printed_at_label': printed_at.strftime('%Y-%m-%d %H:%M:%S'),
@@ -74,6 +75,16 @@ class OrderPrebillService:
             'total': total,
             'order_note': order.note or '',
         }
+
+    @staticmethod
+    def _channel_label(order: Order) -> str:
+        if order.channel == Order.Channel.HALL:
+            return 'Zalda'
+        if order.channel == Order.Channel.DELIVERY:
+            return 'Yetkazib berish'
+        if order.channel == Order.Channel.ONLINE:
+            return 'Online'
+        return 'Olib ketish'
 
     @transaction.atomic
     def print(self, *, order: Order, cash_desk=None):

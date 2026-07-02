@@ -2,11 +2,13 @@ import logging
 import re
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
 from apps.floor.models import DiningTable, TableSession
+from apps.billing.helpers import get_cash_shift_model
 from apps.floor.services import sync_table_status
 from apps.restaurants.helpers import get_distribution_point_model, get_restaurant_model
 from apps.sales.helpers import get_order_model
@@ -14,6 +16,7 @@ from apps.sales.helpers import get_order_model
 logger = logging.getLogger(__name__)
 
 Order = get_order_model()
+CashShift = get_cash_shift_model()
 DistributionPoint = get_distribution_point_model()
 Restaurant = get_restaurant_model()
 DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
@@ -37,6 +40,23 @@ class OrderStateService:
         locked_restaurant.last_order_number += 1
         locked_restaurant.save(update_fields=['last_order_number', 'updated_at'])
         return locked_restaurant.last_order_number
+
+    def next_shift_display_name(self, *, restaurant: Restaurant, user=None) -> str:
+        queryset = CashShift.objects.select_for_update().filter(
+            cash_desk__restaurant=restaurant,
+            status=CashShift.Status.OPEN,
+        )
+        shift = None
+        if user is not None:
+            shift = queryset.filter(Q(cashier=user) | Q(cashier__isnull=True)).order_by('-opened_at').first()
+        if shift is None:
+            shift = queryset.order_by('-opened_at').first()
+        if shift is None:
+            return ''
+
+        shift.next_order_number += 1
+        shift.save(update_fields=['next_order_number', 'updated_at'])
+        return str(shift.next_order_number)
 
     def ensure_session_accepts_new_order(self, *, table_session):
         if table_session is None:

@@ -26,6 +26,22 @@ class OrderStateServiceTests(PosTestCase):
         self.assertEqual(second_number, 2)
         self.assertEqual(self.branch.last_order_number, 2)
 
+    def test_next_shift_display_name_resets_for_new_cash_shift(self):
+        first_shift = self.create_cash_shift()
+
+        self.assertEqual(self.service.next_shift_display_name(restaurant=self.restaurant, user=self.user), '1')
+        self.assertEqual(self.service.next_shift_display_name(restaurant=self.restaurant, user=self.user), '2')
+        first_shift.refresh_from_db()
+        self.assertEqual(first_shift.next_order_number, 2)
+
+        first_shift.status = first_shift.Status.CLOSED
+        first_shift.save(update_fields=['status', 'updated_at'])
+        second_shift = self.create_cash_shift()
+
+        self.assertEqual(self.service.next_shift_display_name(restaurant=self.restaurant, user=self.user), '1')
+        second_shift.refresh_from_db()
+        self.assertEqual(second_shift.next_order_number, 1)
+
     def test_ensure_session_accepts_new_order_rejects_existing_active_order(self):
         session = self.create_table_session()
         Order.objects.create(

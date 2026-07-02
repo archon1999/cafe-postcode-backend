@@ -96,6 +96,13 @@ class WindowsRawPrinterIntegrationService:
         spaces = max(width - len(left) - len(right), 1)
         return f'{left}{" " * spaces}{right}'
 
+    @staticmethod
+    def _order_label(payload: dict) -> str:
+        label = str(payload.get('order_label') or '').strip()
+        if label:
+            return label
+        return f"#{int(payload.get('order_number') or 0)}"
+
     def _build_lines(self, payload: dict) -> list[str]:
         encoding = self.settings.get('encoding', 'cp1251')
         paper_width_mm = int(self.settings.get('paper_width_mm') or 80)
@@ -104,9 +111,31 @@ class WindowsRawPrinterIntegrationService:
 
         if payload.get('kitchen_ticket'):
             lines = [
-                self._safe_text(f"Buyurtma: A{int(payload['order_number']):05d}", encoding=encoding),
+                self._safe_text(payload.get('restaurant_name') or '', encoding=encoding),
+                self._safe_text(f"Buyurtma: {self._order_label(payload)}", encoding=encoding),
+                self._safe_text(payload.get('prep_station_name') or '', encoding=encoding),
+                self._safe_text(payload.get('channel_label') or '', encoding=encoding),
                 separator,
             ]
+            table_label = payload.get('table_label')
+            if table_label:
+                lines.append(self._safe_text(table_label, encoding=encoding))
+            waiter_name = payload.get('waiter_name')
+            if waiter_name:
+                lines.append(self._safe_text(f'Ofitsiant: {waiter_name}', encoding=encoding))
+            guest_count = int(payload.get('guest_count') or 0)
+            if guest_count:
+                lines.append(self._safe_text(f'Mehmonlar: {guest_count}', encoding=encoding))
+            delivery_phone = self._safe_text(payload.get('delivery_phone') or '', encoding=encoding)
+            delivery_address = self._safe_text(payload.get('delivery_address') or '', encoding=encoding)
+            if delivery_phone:
+                lines.append(f'Tel: {delivery_phone}')
+            if delivery_address:
+                lines.append(f'Adres: {delivery_address[: max(width - 7, 0)]}')
+            printed_at_label = payload.get('printed_at_label')
+            if printed_at_label:
+                lines.append(self._safe_text(f"Vaqt: {printed_at_label}", encoding=encoding))
+            lines.append(separator)
             for item in payload.get('items', []):
                 item_name = self._safe_text(item.get('name', ''), encoding=encoding)
                 quantity = int(item.get('quantity') or 0)
@@ -114,6 +143,9 @@ class WindowsRawPrinterIntegrationService:
                 item_note = self._safe_text(item.get('note') or '', encoding=encoding)
                 if item_note:
                     lines.append(f'  {item_note[: max(width - 2, 0)]}')
+            order_note = self._safe_text(payload.get('order_note') or '', encoding=encoding)
+            if order_note:
+                lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
             lines.append('')
             return lines
 
@@ -121,7 +153,7 @@ class WindowsRawPrinterIntegrationService:
             self._safe_text(payload['restaurant_name'], encoding=encoding),
             'PRECHEK',
             separator,
-            self._safe_text(f"Buyurtma: A{int(payload['order_number']):05d}", encoding=encoding),
+            self._safe_text(f"Buyurtma: {self._order_label(payload)}", encoding=encoding),
             self._safe_text(payload['channel_label'], encoding=encoding),
         ]
 
@@ -171,11 +203,14 @@ class WindowsRawPrinterIntegrationService:
         body = '\n'.join(self._build_lines(payload))
         esc = bytes([0x1B])
         gs = bytes([0x1D])
+        print_mode = esc + b'!' + (bytes([0x10]) if payload.get('kitchen_ticket') else bytes([0x00]))
         content = b''.join(
             [
                 esc + b'@',
                 self._escpos_code_page_command(encoding, self.settings.get('code_page')),
+                print_mode,
                 body.encode(encoding, errors='replace'),
+                esc + b'!' + bytes([0x00]),
             ]
         )
         if feed_lines_before_cut > 0:
@@ -312,7 +347,7 @@ class WindowsRawPrinterIntegrationService:
         return self._print_raw_payload(
             restaurant=order.restaurant,
             raw_payload=raw_payload,
-            job_name=f'Cafe Postcode A{int(order.order_number):05d}',
+            job_name=f'Cafe Postcode {self._order_label(payload)}',
             order_id=str(order.id),
             order_number=order.order_number,
         )

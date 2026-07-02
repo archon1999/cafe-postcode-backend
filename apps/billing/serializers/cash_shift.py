@@ -46,6 +46,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'refund_total',
             'receipt_count',
             'reprint_count',
+            'next_order_number',
             'notes_open',
             'notes_close',
             'created_at',
