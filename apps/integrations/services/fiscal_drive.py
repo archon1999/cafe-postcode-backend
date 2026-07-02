@@ -570,6 +570,8 @@ class FiscalDriveIntegrationService:
             'restaurant_name': order.restaurant.name,
             'restaurant_legal_name': order.restaurant.legal_name or order.restaurant.name,
             'restaurant_address': order.restaurant.address,
+            'restaurant_phone': order.restaurant.phone,
+            'restaurant_social': getattr(order.restaurant, 'social', ''),
             'endpoint_url': self._endpoint_url(),
             'factory_id': target.factory_id,
             'terminal_id': terminal_id,

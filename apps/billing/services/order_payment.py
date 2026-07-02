@@ -11,7 +11,7 @@ from rest_framework.exceptions import ValidationError
 from apps.billing.helpers import get_payment_model, get_receipt_model
 from apps.billing.services.cash_shift import CashShiftService
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
-from apps.integrations.services import charge_payment, issue_fiscal_receipts
+from apps.integrations.services import build_order_label, charge_payment, issue_fiscal_receipts
 from apps.integrations.services.marta_softpos import DEFAULT_AMOUNT_MULTIPLIER, DEFAULT_TIMEOUT_SECONDS, JAVA_LONG_MAX
 from apps.sales.helpers import get_order_model
 from apps.sales.services import OrderStateService, OrderSubmissionService, validate_order_markings
@@ -454,10 +454,35 @@ class OrderPaymentService:
     @staticmethod
     def _receipt_payload_with_order_context(*, order, receipt_result: dict):
         payload = dict(receipt_result or {})
+        payload['order_number'] = order.order_number
+        payload['order_label'] = build_order_label(order)
+        payload['channel_label'] = OrderPaymentService._order_channel_label(order)
+        payload['restaurant_phone'] = order.restaurant.phone
+        payload['restaurant_social'] = getattr(order.restaurant, 'social', '')
+        payload['table_label'] = OrderPaymentService._order_table_label(order)
+        payload['waiter_name'] = order.opened_by.full_name if order.opened_by_id and order.opened_by else ''
+        payload['order_note'] = order.note or ''
         if order.channel == Order.Channel.DELIVERY:
             payload['delivery_phone'] = order.delivery_phone or ''
             payload['delivery_address'] = order.delivery_address or ''
         return payload
+
+    @staticmethod
+    def _order_channel_label(order) -> str:
+        if order.channel == Order.Channel.HALL:
+            return 'Zalda'
+        if order.channel == Order.Channel.DELIVERY:
+            return 'Yetkazib berish'
+        if order.channel == Order.Channel.ONLINE:
+            return 'Online'
+        return 'Olib ketish'
+
+    @staticmethod
+    def _order_table_label(order) -> str:
+        if not order.table_session_id or not order.table_session:
+            return ''
+        table = getattr(order.table_session, 'table', None)
+        return f"Stol: {table.name}" if table is not None else ''
 
     @staticmethod
     def _parse_payload_datetime(value):

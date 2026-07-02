@@ -33,6 +33,7 @@ class Restaurant(BaseModel):
     legal_name = models.CharField(max_length=255, blank=True)
     tax_number = models.CharField(max_length=60, blank=True)
     phone = models.CharField(max_length=30, blank=True)
+    social = models.CharField(max_length=120, blank=True, default='')
     address = models.CharField(max_length=255, blank=True)
     faktura_payload = models.JSONField(default=dict, blank=True)
     currency = models.CharField(max_length=10, default='UZS')

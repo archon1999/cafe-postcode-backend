@@ -49,6 +49,8 @@ class OrderPrebillService:
             'restaurant_name': order.restaurant.name,
             'restaurant_legal_name': order.restaurant.legal_name,
             'restaurant_address': order.restaurant.address,
+            'restaurant_phone': order.restaurant.phone,
+            'restaurant_social': order.restaurant.social,
             'tax_number': order.restaurant.tax_number,
             'order_id': str(order.id),
             'order_number': order.order_number,

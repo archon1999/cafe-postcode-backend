@@ -76,6 +76,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'legal_name',
             'tax_number',
             'phone',
+            'social',
             'address',
             'faktura_payload',
             'currency',

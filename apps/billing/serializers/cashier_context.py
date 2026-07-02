@@ -95,6 +95,9 @@ class CashDeskContextSerializer(serializers.ModelSerializer):
 class RestaurantFiscalProfileSerializer(serializers.Serializer):
     legal_name = serializers.CharField()
     tax_number = serializers.CharField()
+    phone = serializers.CharField()
+    social = serializers.CharField()
+    address = serializers.CharField()
     service_fee_enabled = serializers.BooleanField()
     service_fee_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
     vat_enabled = serializers.BooleanField()

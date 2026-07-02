@@ -220,6 +220,9 @@ def _build_kitchen_ticket_payload(ticket):
         'order_number': order.order_number,
         'order_label': build_order_label(order),
         'restaurant_name': order.restaurant.name,
+        'restaurant_address': order.restaurant.address,
+        'restaurant_phone': order.restaurant.phone,
+        'restaurant_social': getattr(order.restaurant, 'social', ''),
         'prep_station_name': ticket.prep_station.name if ticket.prep_station_id else '',
         'channel': order.channel,
         'channel_label': _order_channel_label(order),
@@ -234,10 +237,12 @@ def _build_kitchen_ticket_payload(ticket):
             {
                 'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
                 'quantity': item.quantity,
+                'line_total': int(item.line_total or 0),
                 'note': item.note,
             }
             for item in items
         ],
+        'total': sum(int(item.line_total or 0) for item in items),
     }
 
 

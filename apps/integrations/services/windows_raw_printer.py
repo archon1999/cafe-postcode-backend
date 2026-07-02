@@ -97,6 +97,51 @@ class WindowsRawPrinterIntegrationService:
         return f'{left}{" " * spaces}{right}'
 
     @staticmethod
+    def _center(value: str, *, width: int) -> str:
+        text = value.strip()
+        if len(text) >= width:
+            return text
+        return f'{" " * ((width - len(text)) // 2)}{text}'
+
+    @staticmethod
+    def _date_time_parts(value) -> tuple[str, str]:
+        text = str(value or '').strip().replace('T', ' ')
+        if not text:
+            return '', ''
+        date, _, rest = text.partition(' ')
+        if len(date) == 10 and date[4] == '-' and date[7] == '-':
+            date = f'{date[8:10]}.{date[5:7]}.{date[0:4]}'
+        return date, rest[:8]
+
+    @staticmethod
+    def _social_line(value: str) -> str:
+        text = str(value or '').strip()
+        if not text:
+            return ''
+        if ':' in text:
+            return text
+        lowered = text.lower()
+        if 'instagram' in lowered or lowered.startswith('insta') or lowered.startswith('@'):
+            return f'Instagram: {text}'
+        if 'telegram' in lowered or lowered.startswith('tg'):
+            return f'Telegram: {text}'
+        return f'Social: {text}'
+
+    def _item_line(self, name: str, quantity: int, amount, *, width: int) -> str:
+        amount_text = self._format_money(amount) if amount not in (None, '') else ''
+        quantity_text = f'x{quantity}'
+        right_start = width - len(amount_text)
+        left_limit = max(min(22, right_start - len(quantity_text) - 2), 8)
+        left = name[:left_limit]
+        middle_start = min(max(24, len(left) + 1), max(right_start - len(quantity_text) - 1, len(left) + 1))
+        chars = [' '] * width
+        chars[: len(left)] = left
+        chars[middle_start : middle_start + len(quantity_text)] = quantity_text
+        if amount_text:
+            chars[right_start : right_start + len(amount_text)] = amount_text
+        return ''.join(chars).rstrip()
+
+    @staticmethod
     def _order_label(payload: dict) -> str:
         label = str(payload.get('order_label') or '').strip()
         if label:
@@ -108,15 +153,36 @@ class WindowsRawPrinterIntegrationService:
         paper_width_mm = int(self.settings.get('paper_width_mm') or 80)
         width = self._chars_per_line(paper_width_mm)
         separator = '-' * width
+        date, time = self._date_time_parts(payload.get('printed_at_label'))
+        restaurant_name = self._safe_text(payload.get('restaurant_name') or '', encoding=encoding)
+        restaurant_address = self._safe_text(payload.get('restaurant_address') or '', encoding=encoding)
+        restaurant_phone = self._safe_text(payload.get('restaurant_phone') or '', encoding=encoding)
+        restaurant_social = self._safe_text(self._social_line(payload.get('restaurant_social') or ''), encoding=encoding)
+        order_number = str(self._order_label(payload)).lstrip('#')
+        channel_label = self._safe_text(payload.get('channel_label') or '', encoding=encoding)
 
         if payload.get('kitchen_ticket'):
             lines = [
-                self._safe_text(payload.get('restaurant_name') or '', encoding=encoding),
-                self._safe_text(f"Buyurtma: {self._order_label(payload)}", encoding=encoding),
-                self._safe_text(payload.get('prep_station_name') or '', encoding=encoding),
-                self._safe_text(payload.get('channel_label') or '', encoding=encoding),
+                self._center(restaurant_name.upper(), width=width),
+                separator,
+                self._center(self._safe_text(f'Buyurtma raqami: {order_number}', encoding=encoding), width=width),
                 separator,
             ]
+            if restaurant_address:
+                lines.append(f'Manzil: {restaurant_address[: max(width - 8, 0)]}')
+            if restaurant_phone:
+                lines.append(f'Tel: {restaurant_phone}')
+            if restaurant_social:
+                lines.append(restaurant_social[:width])
+            lines.append(separator)
+            if date:
+                lines.append(f'Sana: {date}')
+            if time:
+                lines.append(f'Buyurtma vaqti: {time}')
+            lines.append(f'Buyurtma turi: {channel_label}')
+            prep_station_name = self._safe_text(payload.get('prep_station_name') or '', encoding=encoding)
+            if prep_station_name:
+                lines.append(f"Oshxona: {prep_station_name[: max(width - 9, 0)]}")
             table_label = payload.get('table_label')
             if table_label:
                 lines.append(self._safe_text(table_label, encoding=encoding))
@@ -129,33 +195,45 @@ class WindowsRawPrinterIntegrationService:
             delivery_phone = self._safe_text(payload.get('delivery_phone') or '', encoding=encoding)
             delivery_address = self._safe_text(payload.get('delivery_address') or '', encoding=encoding)
             if delivery_phone:
-                lines.append(f'Tel: {delivery_phone}')
+                lines.append(f'Mijoz tel: {delivery_phone}')
             if delivery_address:
-                lines.append(f'Adres: {delivery_address[: max(width - 7, 0)]}')
-            printed_at_label = payload.get('printed_at_label')
-            if printed_at_label:
-                lines.append(self._safe_text(f"Vaqt: {printed_at_label}", encoding=encoding))
+                lines.append(f'Mijoz manzil: {delivery_address[: max(width - 14, 0)]}')
             lines.append(separator)
             for item in payload.get('items', []):
                 item_name = self._safe_text(item.get('name', ''), encoding=encoding)
                 quantity = int(item.get('quantity') or 0)
-                lines.append(f'{item_name} x{quantity}')
+                lines.append(self._item_line(item_name, quantity, item.get('line_total'), width=width))
                 item_note = self._safe_text(item.get('note') or '', encoding=encoding)
                 if item_note:
                     lines.append(f'  {item_note[: max(width - 2, 0)]}')
+                lines.append(separator)
+            if payload.get('total') not in (None, ''):
+                lines.append(self._pad_line('Jami:', self._format_money(payload.get('total')), width=width))
             order_note = self._safe_text(payload.get('order_note') or '', encoding=encoding)
             if order_note:
                 lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
-            lines.append('')
+            lines.extend([separator, self._center('Buyurtmangiz uchun raxmat!', width=width), self._center('Yoqimli ishtaha!', width=width), ''])
             return lines
 
         lines = [
-            self._safe_text(payload['restaurant_name'], encoding=encoding),
-            'PRECHEK',
+            self._center(restaurant_name.upper(), width=width),
             separator,
-            self._safe_text(f"Buyurtma: {self._order_label(payload)}", encoding=encoding),
-            self._safe_text(payload['channel_label'], encoding=encoding),
+            self._center(self._safe_text(f'Buyurtma raqami: {order_number}', encoding=encoding), width=width),
+            separator,
         ]
+
+        if restaurant_address:
+            lines.append(f'Manzil: {restaurant_address[: max(width - 8, 0)]}')
+        if restaurant_phone:
+            lines.append(f'Tel: {restaurant_phone}')
+        if restaurant_social:
+            lines.append(restaurant_social[:width])
+        lines.append(separator)
+        if date:
+            lines.append(f'Sana: {date}')
+        if time:
+            lines.append(f'Buyurtma vaqti: {time}')
+        lines.append(f'Buyurtma turi: {channel_label}')
 
         table_label = payload.get('table_label')
         if table_label:
@@ -165,28 +243,22 @@ class WindowsRawPrinterIntegrationService:
         if waiter_name:
             lines.append(self._safe_text(f'Ofitsiant: {waiter_name}', encoding=encoding))
 
-        lines.extend(
-            [
-                self._safe_text(f"Vaqt: {payload['printed_at_label']}", encoding=encoding),
-                separator,
-            ]
-        )
+        lines.append(separator)
 
         for item in payload.get('items', []):
             item_name = self._safe_text(item.get('name', ''), encoding=encoding)
             quantity = int(item.get('quantity') or 0)
-            line_total = self._format_money(item.get('line_total'))
-            lines.append(self._pad_line(f'{item_name} x{quantity}', line_total, width=width))
+            lines.append(self._item_line(item_name, quantity, item.get('line_total'), width=width))
             item_note = self._safe_text(item.get('note') or '', encoding=encoding)
             if item_note:
                 lines.append(f'  {item_note[: max(width - 2, 0)]}')
+            lines.append(separator)
 
         lines.extend(
             [
-                separator,
                 self._pad_line('Mahsulotlar narxi', self._format_money(payload.get('subtotal')), width=width),
                 self._pad_line('Xizmat narxi', self._format_money(payload.get('service_fee')), width=width),
-                self._pad_line('Jami', self._format_money(payload.get('total')), width=width),
+                self._pad_line('Jami:', self._format_money(payload.get('total')), width=width),
             ]
         )
 
@@ -194,7 +266,7 @@ class WindowsRawPrinterIntegrationService:
         if order_note:
             lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
 
-        lines.append('')
+        lines.extend([separator, self._center('Buyurtmangiz uchun raxmat!', width=width), self._center('Yoqimli ishtaha!', width=width), ''])
         return lines
 
     def _build_bytes(self, payload: dict) -> bytes:

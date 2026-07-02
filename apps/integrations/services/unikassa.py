@@ -660,6 +660,8 @@ class UnikassaFiscalIntegrationService:
             'restaurant_name': order.restaurant.name,
             'restaurant_legal_name': order.restaurant.legal_name or order.restaurant.name,
             'restaurant_address': order.restaurant.address,
+            'restaurant_phone': order.restaurant.phone,
+            'restaurant_social': getattr(order.restaurant, 'social', ''),
             'tax_number': order.restaurant.tax_number,
             'endpoint_url': self._endpoint_url(),
             'terminal_id': response_payload.get('TerminalID') or request_payload['Fiscal'],

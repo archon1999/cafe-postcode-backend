@@ -28,6 +28,9 @@ class PosRestaurantContextSerializer(serializers.ModelSerializer):
         fields = (
             'restaurant_id',
             'restaurant_name',
+            'phone',
+            'social',
+            'address',
             'pos_auth_background_image_url',
             'service_fee_enabled',
             'service_fee_percent',

@@ -142,6 +142,9 @@ class CashShiftService:
             'restaurant_fiscal_profile': {
                 'legal_name': restaurant.legal_name,
                 'tax_number': restaurant.tax_number,
+                'phone': restaurant.phone,
+                'social': restaurant.social,
+                'address': restaurant.address,
                 'service_fee_enabled': bool(getattr(restaurant, 'service_fee_enabled', False)),
                 'service_fee_percent': getattr(restaurant, 'service_fee_percent', 0) or 0,
                 'vat_enabled': bool(getattr(restaurant, 'vat_enabled', False)),
