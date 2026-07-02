@@ -85,6 +85,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
             'service_fee_percent',
             'vat_enabled',
             'vat_percent',
+            'marking_check_enabled',
             'pos_auth_background_image',
             'pos_auth_background_image_url',
             'clear_pos_auth_background_image',
@@ -304,9 +305,8 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             IntegrationConfig.objects.filter(
                 restaurant=instance,
                 kind=IntegrationConfig.Kind.FISCAL,
-                provider='unikassa',
             )
-            .order_by('-created_at')
+            .order_by('-is_enabled', 'provider', '-created_at')
             .first()
         )
         if config is None:

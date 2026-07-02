@@ -97,7 +97,13 @@ class CashDeskSerializer(serializers.ModelSerializer):
         if integration is None:
             return ''
         settings = integration.settings or {}
-        terminal_id = settings.get('terminal_id') or settings.get('terminalId') or settings.get('fiscal')
+        terminal_id = (
+            settings.get('factory_id')
+            or settings.get('factoryId')
+            or settings.get('terminal_id')
+            or settings.get('terminalId')
+            or settings.get('fiscal')
+        )
         return f'{integration.provider} ({terminal_id})' if terminal_id else integration.provider
 
     def get_payment_integration_name(self, obj):

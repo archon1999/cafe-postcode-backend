@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 import httpx
 
@@ -56,6 +57,8 @@ class FiscalDriveIntegrationTests(PosTestCase):
                 'tax_number': self.restaurant.tax_number,
             },
         )
+        self.cash_desk.fiscal_integration = self.config
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
 
     def _build_transport(self, assertions: dict):
         def handler(request: httpx.Request):
@@ -174,6 +177,50 @@ class FiscalDriveIntegrationTests(PosTestCase):
         item = result['request']['receipt']['Items'][0]
         self.assertEqual(item['Units'], 715)
         self.assertEqual(item['Barcode'], '6297000747705')
+
+    def test_issue_receipt_accepts_txid_object_response(self):
+        assertions = {}
+
+        def handler(request: httpx.Request):
+            path = request.url.path
+            if path == '/FiscalDrive/List':
+                return httpx.Response(200, json=[{'FactoryID': 'FACTORY-1'}])
+            if path == '/FiscalDrive/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={'TerminalID': 'TERM-1', 'Locked': False, 'POSLocked': False, 'POSAuth': False},
+                )
+            if path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
+                return httpx.Response(200, json={'LastOperationTime': '2026-04-20 18:00:00', 'ZReportsCount': 0})
+            if path == '/FiscalDrive/ZReport/Open/FACTORY-1':
+                return httpx.Response(200, text='OK')
+            if path == '/FiscalDrive/Receipt/GetTXID/FACTORY-1':
+                return httpx.Response(200, json={'TXID': 42})
+            if path == '/FiscalDrive/Receipt/RegisterTXID/FACTORY-1':
+                assertions['register_form'] = dict(httpx.QueryParams(request.content.decode()))
+                return httpx.Response(
+                    200,
+                    json={
+                        'TerminalID': 'TERM-1',
+                        'ReceiptSeq': 72,
+                        'DateTime': '2026-04-20 18:00:10',
+                        'FiscalSign': '123456789012',
+                        'QRCodeURL': 'https://ofd.soliq.uz/check?t=TERM-1&r=72',
+                    },
+                )
+            if path == '/DataBase/Files/Sync/FullReceipts/FACTORY-1':
+                return httpx.Response(200, json={'SuccessfulsCount': 1})
+            return httpx.Response(404, json={'message': f'Unexpected path: {path}'})
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=httpx.MockTransport(handler), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['txid'], 42)
+        self.assertEqual(assertions['register_form']['TXID'], '42')
 
     def test_issue_receipt_defaults_units_when_mxik_payload_has_no_unit_code(self):
         self.catalog_item.mxik_payload = {
@@ -414,3 +461,57 @@ class FiscalDriveIntegrationTests(PosTestCase):
 
         self.assertFalse(result['ok'])
         self.assertEqual(result['provider'], 'fiscal-drive-service')
+
+    @patch('apps.integrations.services.fiscal_drive.LocalAgentCommandService.local_http_request')
+    def test_default_transport_uses_local_agent_with_json_and_form_payloads(self, local_http_request):
+        assertions = {}
+
+        def handler(*_args, **kwargs):
+            url = kwargs['url']
+            if url.endswith('/FiscalDrive/List'):
+                return {'httpStatus': 200, 'body': [{'FactoryID': 'FACTORY-1'}]}
+            if url.endswith('/FiscalDrive/Info/FACTORY-1'):
+                return {
+                    'httpStatus': 200,
+                    'body': {
+                        'TerminalID': 'TERM-1',
+                        'Locked': False,
+                        'POSLocked': False,
+                        'POSAuth': False,
+                    },
+                }
+            if url.endswith('/FiscalDrive/FiscalMemory/Info/FACTORY-1'):
+                return {'httpStatus': 200, 'body': {'LastOperationTime': '2026-04-20 18:00:00', 'ZReportsCount': 0}}
+            if url.endswith('/FiscalDrive/ZReport/Open/FACTORY-1'):
+                assertions['open_form'] = kwargs['form_body']
+                return {'httpStatus': 200, 'rawBody': 'OK'}
+            if url.endswith('/FiscalDrive/Receipt/GetTXID/FACTORY-1'):
+                assertions['receipt_json'] = kwargs['json_body']
+                return {'httpStatus': 200, 'body': 41}
+            if url.endswith('/FiscalDrive/Receipt/RegisterTXID/FACTORY-1'):
+                assertions['register_form'] = kwargs['form_body']
+                return {
+                    'httpStatus': 200,
+                    'body': {
+                        'TerminalID': 'TERM-1',
+                        'ReceiptSeq': 71,
+                        'DateTime': '2026-04-20 18:00:10',
+                        'FiscalSign': '123456789012',
+                    },
+                }
+            if url.endswith('/DataBase/Files/Sync/FullReceipts/FACTORY-1'):
+                assertions['sync_form'] = kwargs['form_body']
+                return {'httpStatus': 200, 'body': {'SuccessfulsCount': 1}}
+            return {'httpStatus': 404, 'body': {'message': f'Unexpected URL: {url}'}}
+
+        local_http_request.side_effect = handler
+
+        service = FiscalDriveIntegrationService(self.config)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['provider'], 'fiscal-drive-service')
+        self.assertEqual(assertions['receipt_json']['ReceivedCash'], 3300000)
+        self.assertIn('DateTime', assertions['open_form'])
+        self.assertEqual(assertions['register_form'], {'TXID': 41})
+        self.assertEqual(assertions['sync_form'], {'ItemsCount': 32})

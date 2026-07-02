@@ -1,6 +1,7 @@
 from django.utils import timezone
 
 from .agent_marta import MartaSoftPOSAgentPaymentService
+from .fiscal_drive import FiscalDriveIntegrationService, SUPPORTED_FISCAL_PROVIDERS
 from .marta_softpos import MartaSoftPOSPaymentService, SUPPORTED_MARTA_PAYMENT_PROVIDERS
 from .mock_payment import MockPaymentIntegrationService
 from .unikassa import UnikassaFiscalIntegrationService, SUPPORTED_UNIKASSA_FISCAL_PROVIDERS, UnikassaFiscalError
@@ -99,6 +100,8 @@ def _get_fiscal_config(*, restaurant, cash_desk=None):
 
 def _build_fiscal_service(config):
     provider = str(config.provider or '').strip()
+    if provider in SUPPORTED_FISCAL_PROVIDERS:
+        return FiscalDriveIntegrationService(config)
     if provider in SUPPORTED_UNIKASSA_FISCAL_PROVIDERS:
         return UnikassaFiscalIntegrationService(config)
     raise ValueError(f"Unsupported fiscal provider '{provider}'.")
@@ -264,7 +267,7 @@ def _order_channel_label(order) -> str:
     if order.channel == order.Channel.HALL:
         return 'Zalda'
     if order.channel == order.Channel.DELIVERY:
-        return 'Dostavka'
+        return 'Yetkazib berish'
     if order.channel == order.Channel.ONLINE:
         return 'Online'
     return 'Zalda'
@@ -337,7 +340,15 @@ def print_prebill(order, payload, *, cash_desk=None):
         return _client_print_fallback(code=PRINTER_UNAVAILABLE, detail=str(error), provider=config.provider)
 
 
-def print_receipt_text(*, restaurant, text, qr_code='', cash_desk=None, job_name='Cafe Postcode Receipt'):
+def print_receipt_text(
+    *,
+    restaurant,
+    text,
+    qr_code='',
+    qr_raster_base64='',
+    cash_desk=None,
+    job_name='Cafe Postcode Receipt',
+):
     config = _get_prebill_printer_config(order=None, cash_desk=cash_desk)
     if config is None:
         return _client_print_fallback(
@@ -356,7 +367,13 @@ def print_receipt_text(*, restaurant, text, qr_code='', cash_desk=None, job_name
         )
 
     try:
-        return service.print_text(restaurant=restaurant, text=text, qr_code=qr_code, job_name=job_name)
+        return service.print_text(
+            restaurant=restaurant,
+            text=text,
+            qr_code=qr_code,
+            qr_raster_base64=qr_raster_base64,
+            job_name=job_name,
+        )
     except ValueError as error:
         return _client_print_fallback(code=PRINTER_NOT_CONFIGURED, detail=str(error), provider=config.provider)
     except Exception as error:

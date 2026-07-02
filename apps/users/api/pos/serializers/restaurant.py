@@ -36,6 +36,7 @@ class PosRestaurantContextSerializer(serializers.ModelSerializer):
             'service_fee_percent',
             'vat_enabled',
             'vat_percent',
+            'marking_check_enabled',
         )
 
     def get_pos_auth_background_image_url(self, instance):

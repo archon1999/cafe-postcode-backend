@@ -44,6 +44,7 @@ cryptography = "^45.0.5"
 django-prometheus = "^2.4.1"
 python-json-logger = "^4.1.0"
 channels-redis = "^4.3.0"
+qrcode = "^8.2"
 
 [build-system]
 requires = ["poetry-core"]

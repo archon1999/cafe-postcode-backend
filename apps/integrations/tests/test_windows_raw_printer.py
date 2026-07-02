@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
+import base64
 
 from django.test import SimpleTestCase
 
@@ -109,14 +110,16 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
         raw_payload = service._build_bytes(payload)
 
         self.assertIn('Buyurtma raqami: 42', '\n'.join(lines))
-        self.assertNotIn('Manzil:', '\n'.join(lines))
-        self.assertNotIn('Tel:', '\n'.join(lines))
-        self.assertNotIn('Instagram:', '\n'.join(lines))
+        self.assertIn('Manzil: Beruniy tumani', '\n'.join(lines))
+        self.assertIn('Tel: +998901234567', '\n'.join(lines))
+        self.assertIn('Instagram: nyu_york', '\n'.join(lines))
         self.assertNotIn('Oshxona:', '\n'.join(lines))
         self.assertNotIn('Ofitsiant:', '\n'.join(lines))
         self.assertNotIn('Mehmonlar:', '\n'.join(lines))
+        self.assertNotIn('Buyurtmangiz uchun rahmat!', '\n'.join(lines))
+        self.assertNotIn('Yoqimli ishtaha!', '\n'.join(lines))
         self.assertIn(b'\x1b!\x00', raw_payload)
-        self.assertNotIn(b'\x1b!\x10', raw_payload)
+        self.assertIn(b'\x1b!\x30', raw_payload)
 
     def test_text_printing_encodes_cyrillic_without_replacement_chars(self):
         config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866'})
@@ -128,10 +131,54 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
         self.assertIn('Ошхона'.encode('cp866'), raw_payload)
         self.assertNotIn(b'?', raw_payload)
 
-    def test_text_printing_preserves_first_line_centering_spaces(self):
+    def test_text_printing_centers_emphasized_header_lines(self):
         config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866'})
         service = WindowsRawPrinterIntegrationService(config)
 
         raw_payload = service._build_text_bytes(text='        NYU YORK\n------------------------------------------', qr_code='')
 
-        self.assertIn(b'        NYU YORK', raw_payload)
+        self.assertIn(b'\x1ba\x01\x1b!\x30NYU YORK\n', raw_payload)
+
+    def test_text_printing_places_qr_before_feed_and_cut(self):
+        config = SimpleNamespace(
+            provider='windows-raw',
+            settings={
+                'encoding': 'cp866',
+                'feed_lines_before_cut': 3,
+                'cut_after_print': True,
+                'enable_escpos_qr_command': True,
+            },
+        )
+        service = WindowsRawPrinterIntegrationService(config)
+
+        raw_payload = service._build_text_bytes(text='CHEK', qr_code='https://ofd.soliq.uz/check?r=1')
+
+        qr_index = raw_payload.index(b'\x1d(k')
+        feed_index = raw_payload.index(b'\x1bd\x03')
+        cut_index = raw_payload.index(b'\x1dV\x00')
+        self.assertLess(qr_index, feed_index)
+        self.assertLess(feed_index, cut_index)
+
+    def test_text_printing_does_not_emit_escpos_qr_command_by_default(self):
+        config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866', 'cut_after_print': False})
+        service = WindowsRawPrinterIntegrationService(config)
+
+        raw_payload = service._build_text_bytes(text='CHEK', qr_code='https://ofd.soliq.uz/check?r=1')
+
+        self.assertNotIn(b'\x1d(k', raw_payload)
+        self.assertIn(b'\x1dv0\x00', raw_payload)
+        self.assertGreater(len(raw_payload), 8000)
+
+    def test_text_printing_prefers_raster_qr_payload(self):
+        config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866', 'cut_after_print': False})
+        service = WindowsRawPrinterIntegrationService(config)
+        raster_payload = b'\x1ba\x01RASTER-QR\x1ba\x00'
+
+        raw_payload = service._build_text_bytes(
+            text='CHEK',
+            qr_code='https://ofd.soliq.uz/check?r=1',
+            qr_raster_base64=base64.b64encode(raster_payload).decode('ascii'),
+        )
+
+        self.assertIn(raster_payload, raw_payload)
+        self.assertNotIn(b'\x1d(k', raw_payload)

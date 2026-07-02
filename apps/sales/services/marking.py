@@ -106,6 +106,9 @@ def marking_status(order):
 
 
 def validate_order_markings(order):
+    if not getattr(order.restaurant, 'marking_check_enabled', False):
+        return marking_status(order)
+
     status = marking_status(order)
     if status['missing_count']:
         raise ValidationError({'markings': _('Marked products must be scanned before payment.'), 'details': status})

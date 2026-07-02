@@ -42,6 +42,7 @@ class Restaurant(BaseModel):
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     vat_enabled = models.BooleanField(default=False)
     vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=12)
+    marking_check_enabled = models.BooleanField(default=False)
     pos_auth_background_image = models.ImageField(
         blank=True,
         null=True,

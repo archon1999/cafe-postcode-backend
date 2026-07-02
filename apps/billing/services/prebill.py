@@ -83,7 +83,7 @@ class OrderPrebillService:
         if order.channel == Order.Channel.HALL:
             return 'Zalda'
         if order.channel == Order.Channel.DELIVERY:
-            return 'Dostavka'
+            return 'Yetkazib berish'
         if order.channel == Order.Channel.ONLINE:
             return 'Online'
         return 'Zalda'

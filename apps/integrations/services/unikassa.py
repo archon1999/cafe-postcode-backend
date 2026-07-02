@@ -663,6 +663,7 @@ class UnikassaFiscalIntegrationService:
             'restaurant_phone': order.restaurant.phone,
             'restaurant_social': getattr(order.restaurant, 'social', ''),
             'tax_number': order.restaurant.tax_number,
+            'service_fee_percent': str(getattr(order.restaurant, 'service_fee_percent', 0) or 0),
             'endpoint_url': self._endpoint_url(),
             'terminal_id': response_payload.get('TerminalID') or request_payload['Fiscal'],
             'receipt_number': str(response_payload.get('ReceiptSeq') or ''),

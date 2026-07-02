@@ -7,6 +7,7 @@ Payment = get_payment_model()
 
 class AdminPaymentSerializer(serializers.ModelSerializer):
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
+    order_display_name = serializers.CharField(source='order.display_name', read_only=True)
     cash_desk_name = serializers.CharField(source='cash_desk.name', read_only=True)
     received_by_name = serializers.CharField(source='received_by.full_name', read_only=True)
     cash_shift_id = serializers.UUIDField(read_only=True)
@@ -25,6 +26,7 @@ class AdminPaymentSerializer(serializers.ModelSerializer):
             'id',
             'order',
             'order_number',
+            'order_display_name',
             'cash_desk',
             'cash_desk_name',
             'cash_shift_id',

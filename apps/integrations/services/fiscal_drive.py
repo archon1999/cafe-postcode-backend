@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from apps.billing.models import Receipt
+from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.sales.models import OrderItem
 
 
@@ -17,7 +18,9 @@ SUPPORTED_FISCAL_PROVIDERS = frozenset({'fiscal-drive-service'})
 
 
 class FiscalDriveError(Exception):
-    pass
+    def __init__(self, message: str, *, code: str = ''):
+        super().__init__(message)
+        self.code = str(code or '')
 
 
 @dataclass(slots=True)
@@ -100,6 +103,81 @@ class FiscalDriveIntegrationService:
             response['payment_id'] = str(payment.id)
             return response
 
+    def open_shift(self, *, cash_desk=None):
+        with self._client() as client:
+            target = self._resolve_target(client=client, cash_desk=cash_desk)
+            memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            payload = None
+            if self._should_open_z_report(client=client, factory_id=target.factory_id, memory_info=memory_info):
+                payload = self._post_form(
+                    client,
+                    f'/FiscalDrive/ZReport/Open/{target.factory_id}',
+                    {'DateTime': self._format_operation_time(self._next_operation_datetime(memory_info))},
+                )
+                memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            return {
+                'ok': True,
+                'provider': self.config.provider,
+                'factory_id': target.factory_id,
+                'terminal_id': str(target.info.get('TerminalID') or self._terminal_id(cash_desk=cash_desk)).strip(),
+                'response': target.info,
+                'provider_report': {
+                    'open_result': payload if isinstance(payload, dict) else {'value': payload},
+                    'fiscal_memory': memory_info if isinstance(memory_info, dict) else None,
+                },
+            }
+
+    def close_shift(self, *, cash_desk=None):
+        with self._client() as client:
+            target = self._resolve_target(client=client, cash_desk=cash_desk)
+            memory_info_before = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            z_info_before = self._get_last_z_report(
+                client=client,
+                factory_id=target.factory_id,
+                memory_info=memory_info_before,
+            )
+            payload = self._post_form(
+                client,
+                f'/FiscalDrive/ZReport/Close/{target.factory_id}',
+                {'DateTime': self._format_operation_time(self._next_operation_datetime(memory_info_before))},
+            )
+            z_sync_result = self._sync_z_reports(client=client, factory_id=target.factory_id)
+            memory_info_after = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            z_info_after = self._get_last_z_report(
+                client=client,
+                factory_id=target.factory_id,
+                memory_info=memory_info_after,
+            )
+        provider_report = {
+            'z_info': z_info_after or z_info_before or {},
+            'fiscal_memory': memory_info_after if isinstance(memory_info_after, dict) else None,
+            'z_sync_result': z_sync_result,
+        }
+        return {
+            'ok': True,
+            'provider': self.config.provider,
+            'factory_id': target.factory_id,
+            'terminal_id': str((provider_report['z_info'] or {}).get('TerminalID') or target.info.get('TerminalID') or '').strip(),
+            'response': payload if isinstance(payload, dict) else {'value': payload},
+            'provider_report': provider_report,
+        }
+
+    def get_device_status(self, *, cash_desk=None):
+        with self._client() as client:
+            target = self._resolve_target(client=client, cash_desk=cash_desk)
+            memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+        return {
+            'online': True,
+            'provider': self.config.provider,
+            'terminal_id': str(target.info.get('TerminalID') or self._terminal_id(cash_desk=cash_desk)).strip(),
+            'detail': '',
+            'response': {
+                **target.info,
+                'FactoryID': target.factory_id,
+                'FiscalMemory': memory_info if isinstance(memory_info, dict) else None,
+            },
+        }
+
     def _client(self):
         return self.client_factory(base_url=self._endpoint_url(), timeout=self._timeout())
 
@@ -119,6 +197,9 @@ class FiscalDriveIntegrationService:
             return 15.0
 
     def _post(self, client, path: str, *, data=None, json=None):
+        if self._use_local_agent():
+            return self._post_via_agent(path=path, data=data, json=json)
+
         try:
             response = client.post(path, data=data, json=json)
             response.raise_for_status()
@@ -149,13 +230,57 @@ class FiscalDriveIntegrationService:
             return str(payload)
         return f'FiscalDriveService returned HTTP {response.status_code}.'
 
+    def _use_local_agent(self) -> bool:
+        return self.client_factory is httpx.Client
+
+    def _restaurant(self):
+        restaurant = getattr(self.config, 'restaurant', None)
+        if restaurant is not None:
+            return restaurant
+        restaurant_id = getattr(self.config, 'restaurant_id', None)
+        if restaurant_id is not None:
+            from apps.restaurants.helpers import get_restaurant_model
+
+            return get_restaurant_model().objects.get(pk=restaurant_id)
+        return None
+
+    def _post_via_agent(self, *, path: str, data=None, json=None):
+        restaurant = self._restaurant()
+        if restaurant is None:
+            raise FiscalDriveError('Local agent fiscal request requires a restaurant-bound integration config.')
+        try:
+            result = LocalAgentCommandService().local_http_request(
+                restaurant=restaurant,
+                method='POST',
+                url=f'{self._endpoint_url()}{path}',
+                json_body=json,
+                form_body=data,
+                timeout_seconds=int(self._timeout()),
+            )
+        except LocalAgentUnavailableError as error:
+            raise FiscalDriveError(str(error), code=error.code) from error
+        except LocalAgentCommandError as error:
+            raise FiscalDriveError(str(error), code=error.code) from error
+
+        status_code = int(result.get('httpStatus') or 0)
+        body = result.get('body')
+        raw_body = str(result.get('rawBody') or '').strip()
+        if status_code and not 200 <= status_code < 300:
+            if isinstance(body, dict):
+                reason = body.get('Reason') or body.get('message') or body.get('detail')
+                raise FiscalDriveError(str(reason or body))
+            raise FiscalDriveError(raw_body or f'FiscalDriveService returned HTTP {status_code}.')
+        if body is not None:
+            return body
+        return raw_body or None
+
     def _post_form(self, client, path: str, data: dict | None = None):
         return self._post(client, path, data=data or {})
 
     def _post_json(self, client, path: str, payload):
         return self._post(client, path, json=payload)
 
-    def _resolve_target(self, *, client, payment) -> FiscalDriveTarget:
+    def _resolve_target(self, *, client, payment=None, cash_desk=None) -> FiscalDriveTarget:
         configured_factory_id = self._configured_factory_id()
         if configured_factory_id:
             info = self._get_fiscal_info(client=client, factory_id=configured_factory_id)
@@ -165,7 +290,7 @@ class FiscalDriveIntegrationService:
         if not devices:
             raise FiscalDriveError('No fiscal drives were detected by FiscalDriveService.')
 
-        target_terminal_id = self._terminal_id(payment=payment)
+        target_terminal_id = self._terminal_id(payment=payment, cash_desk=cash_desk)
         if target_terminal_id:
             for device in devices:
                 factory_id = str(device.get('FactoryID') or '').strip()
@@ -189,8 +314,8 @@ class FiscalDriveIntegrationService:
         factory_id = self.settings.get('factory_id') or self.settings.get('factoryId')
         return str(factory_id or '').strip()
 
-    def _terminal_id(self, *, payment) -> str:
-        cash_desk = getattr(payment, 'cash_desk', None)
+    def _terminal_id(self, *, payment=None, cash_desk=None) -> str:
+        cash_desk = cash_desk or getattr(payment, 'cash_desk', None)
         if cash_desk is not None and getattr(cash_desk, 'terminal_id', ''):
             return str(cash_desk.terminal_id).strip()
         terminal_id = self.settings.get('terminal_id') or self.settings.get('terminalId')
@@ -552,11 +677,12 @@ class FiscalDriveIntegrationService:
             memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
             receipt_payload['Time'] = self._format_operation_time(self._next_operation_datetime(memory_info))
 
-        txid = self._post_json(client, f'/FiscalDrive/Receipt/GetTXID/{target.factory_id}', receipt_payload)
+        txid_payload = self._post_json(client, f'/FiscalDrive/Receipt/GetTXID/{target.factory_id}', receipt_payload)
+        txid = self._extract_txid(txid_payload)
         response_payload = self._post_form(
             client,
             f'/FiscalDrive/Receipt/RegisterTXID/{target.factory_id}',
-            {'TXID': int(txid)},
+            {'TXID': txid},
         )
         sync_result = self._sync_full_receipts(client=client, factory_id=target.factory_id)
         receipt_number = response_payload.get('ReceiptSeq') if isinstance(response_payload, dict) else txid
@@ -572,12 +698,13 @@ class FiscalDriveIntegrationService:
             'restaurant_address': order.restaurant.address,
             'restaurant_phone': order.restaurant.phone,
             'restaurant_social': getattr(order.restaurant, 'social', ''),
+            'service_fee_percent': str(getattr(order.restaurant, 'service_fee_percent', 0) or 0),
             'endpoint_url': self._endpoint_url(),
             'factory_id': target.factory_id,
             'terminal_id': terminal_id,
             'cashbox_id': cashbox_id or None,
             'receipt_number': str(receipt_number),
-            'txid': int(txid),
+            'txid': txid,
             'fiscal_sign': response_payload.get('FiscalSign') if isinstance(response_payload, dict) else None,
             'qr_code_url': response_payload.get('QRCodeURL') if isinstance(response_payload, dict) else None,
             'issued_at': timezone.now().isoformat(),
@@ -585,6 +712,22 @@ class FiscalDriveIntegrationService:
             'request': {'receipt': receipt_payload},
             'sync_result': sync_result,
         }
+
+    @staticmethod
+    def _extract_txid(payload) -> int:
+        value = payload
+        if isinstance(payload, dict):
+            value = (
+                payload.get('TXID')
+                or payload.get('TxID')
+                or payload.get('txid')
+                or payload.get('txId')
+                or payload.get('value')
+            )
+        try:
+            return int(value)
+        except (TypeError, ValueError) as error:
+            raise FiscalDriveError('FiscalDriveService returned an invalid receipt TXID.') from error
 
     def _sync_state(self, *, client, factory_id: str):
         self._post_form(client, f'/FiscalDrive/State/Sync/{factory_id}')
@@ -607,15 +750,29 @@ class FiscalDriveIntegrationService:
             return {'ok': True, **payload}
         return {'ok': True, 'value': payload}
 
+    def _sync_z_reports(self, *, client, factory_id: str) -> dict:
+        try:
+            payload = self._post_form(client, f'/DataBase/Files/Sync/ZReports/{factory_id}', {'ItemsCount': 32})
+        except FiscalDriveError as error:
+            return {'ok': False, 'detail': str(error)}
+        if isinstance(payload, dict):
+            return {'ok': True, **payload}
+        return {'ok': True, 'value': payload}
 
-def discover_fiscal_devices(*, endpoint_url: str | None = None, timeout_seconds: float | None = None) -> list[dict]:
+
+def discover_fiscal_devices(
+    *,
+    restaurant=None,
+    endpoint_url: str | None = None,
+    timeout_seconds: float | None = None,
+) -> list[dict]:
     settings = {}
     if endpoint_url:
         settings['endpoint_url'] = endpoint_url
     if timeout_seconds is not None:
         settings['timeout_seconds'] = timeout_seconds
 
-    config = SimpleNamespace(provider='fiscal-drive-service', settings=settings)
+    config = SimpleNamespace(provider='fiscal-drive-service', restaurant=restaurant, settings=settings)
     service = FiscalDriveIntegrationService(config)
 
     with service._client() as client:

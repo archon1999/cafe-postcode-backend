@@ -9,6 +9,7 @@ def default_enabled_payment_methods():
 
 class CashDesk(BaseModel):
     class FiscalProvider(models.TextChoices):
+        FISCAL_DRIVE_SERVICE = 'fiscal-drive-service', 'FiscalDriveService'
         UNIKASSA = 'unikassa', 'Unikassa'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.CASCADE, related_name='cash_desks')
@@ -39,7 +40,7 @@ class CashDesk(BaseModel):
     fiscal_provider = models.CharField(
         max_length=32,
         choices=FiscalProvider.choices,
-        default=FiscalProvider.UNIKASSA,
+        default=FiscalProvider.FISCAL_DRIVE_SERVICE,
     )
     receipt_printer_enabled = models.BooleanField(default=True)
     terminal_id = models.CharField(max_length=120, blank=True)

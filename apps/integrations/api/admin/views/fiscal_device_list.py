@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 from apps.integrations.api.admin.serializers import FiscalDeviceDiscoveryQuerySerializer, FiscalDeviceSerializer
 from apps.integrations.services.fiscal_drive import FiscalDriveError, discover_fiscal_devices
 from common.api.permissions import EndpointRBACPermission
+from common.api.scopes import get_request_restaurant
 
 
 class FiscalDeviceListView(APIView):
@@ -16,7 +17,10 @@ class FiscalDeviceListView(APIView):
 
         endpoint_url = serializer.validated_data.get('endpoint_url') or None
         try:
-            devices = discover_fiscal_devices(endpoint_url=endpoint_url)
+            devices = discover_fiscal_devices(
+                restaurant=get_request_restaurant(request),
+                endpoint_url=endpoint_url,
+            )
         except FiscalDriveError as error:
             return Response({'detail': str(error)}, status=status.HTTP_400_BAD_REQUEST)
 

@@ -24,7 +24,13 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
             if connection_type:
                 return f'{obj.provider} ({connection_type})'
 
-        terminal_id = settings.get('terminal_id') or settings.get('terminalId') or settings.get('fiscal')
+        terminal_id = (
+            settings.get('factory_id')
+            or settings.get('factoryId')
+            or settings.get('terminal_id')
+            or settings.get('terminalId')
+            or settings.get('fiscal')
+        )
         endpoint_url = settings.get('endpoint_url') or settings.get('endpointUrl')
         suffix = terminal_id or endpoint_url
         if suffix:
@@ -45,6 +51,12 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
             settings.pop('useLocalAgent', None)
             settings.setdefault('encoding', 'cp1251')
             settings.setdefault('code_page', 46)
+
+        if kind == IntegrationConfig.Kind.FISCAL and provider == 'fiscal-drive-service':
+            settings['transport'] = 'local-agent'
+            settings.pop('transportType', None)
+            settings.pop('use_local_agent', None)
+            settings.pop('useLocalAgent', None)
 
         return settings
 

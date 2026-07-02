@@ -130,6 +130,8 @@ class OrderMarkingScanServiceTests(PosTestCase):
             self.service.scan(order=self.order, raw_code='019999999999999921ABC', scanned_by=self.user, mode='add')
 
     def test_submit_rejects_marked_item_without_marking(self):
+        self.restaurant.marking_check_enabled = True
+        self.restaurant.save(update_fields=['marking_check_enabled', 'updated_at'])
         OrderItem.objects.create(
             order=self.order,
             catalog_item=self.marked_item,
@@ -145,7 +147,25 @@ class OrderMarkingScanServiceTests(PosTestCase):
 
         self.assertEqual(int(context.exception.detail['details']['missingCount']), 1)
 
+    def test_submit_skips_marking_validation_when_restaurant_setting_disabled(self):
+        OrderItem.objects.create(
+            order=self.order,
+            catalog_item=self.marked_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=12000,
+            line_total=12000,
+        )
+
+        OrderSubmissionService().submit(self.order)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.SUBMITTED)
+
     def test_submit_rejects_partially_marked_quantity(self):
+        self.restaurant.marking_check_enabled = True
+        self.restaurant.save(update_fields=['marking_check_enabled', 'updated_at'])
         order_item = OrderItem.objects.create(
             order=self.order,
             catalog_item=self.marked_item,
@@ -170,6 +190,8 @@ class OrderMarkingScanServiceTests(PosTestCase):
         self.assertEqual(int(context.exception.detail['details']['missingCount']), 1)
 
     def test_submit_accepts_marked_item_with_complete_markings(self):
+        self.restaurant.marking_check_enabled = True
+        self.restaurant.save(update_fields=['marking_check_enabled', 'updated_at'])
         order_item = OrderItem.objects.create(
             order=self.order,
             catalog_item=self.marked_item,

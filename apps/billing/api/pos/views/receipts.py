@@ -89,6 +89,18 @@ class ReceiptRawPrintView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
 
+    @staticmethod
+    def _payload_qr_code(payload):
+        if not isinstance(payload, dict):
+            return ''
+        direct = payload.get('qr_code_url') or payload.get('qrCodeUrl')
+        if direct:
+            return str(direct).strip()
+        response = payload.get('response')
+        if isinstance(response, dict):
+            return str(response.get('QRCodeURL') or '').strip()
+        return ''
+
     def post(self, request, pk=None):
         restaurant = get_request_restaurant(request)
         receipt = None
@@ -120,10 +132,13 @@ class ReceiptRawPrintView(APIView):
 
         cash_desk = self.shift_service_class().get_prebill_print_cash_desk(restaurant=restaurant, user=request.user)
         qr_code = request.data.get('qr_code') if isinstance(request.data, dict) else ''
+        qr_code = str(qr_code or '').strip() or self._payload_qr_code(payload)
+        qr_raster_base64 = request.data.get('qr_raster_base64') if isinstance(request.data, dict) else ''
         result = print_receipt_text(
             restaurant=restaurant,
             text=text,
-            qr_code=str(qr_code or '').strip(),
+            qr_code=qr_code,
+            qr_raster_base64=str(qr_raster_base64 or '').strip(),
             cash_desk=cash_desk,
             job_name=job_name,
         )

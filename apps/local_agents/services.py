@@ -112,6 +112,7 @@ class LocalAgentCommandService:
         url: str,
         query: dict | None = None,
         json_body: dict | None = None,
+        form_body: dict | None = None,
         timeout_seconds: int = 30,
     ) -> dict:
         request_url = url
@@ -125,6 +126,7 @@ class LocalAgentCommandService:
                 'method': method.upper(),
                 'url': request_url,
                 'json': json_body,
+                'form': form_body,
                 'timeoutSeconds': timeout_seconds,
             },
             timeout_seconds=timeout_seconds + 5,

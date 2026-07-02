@@ -459,6 +459,7 @@ class OrderPaymentService:
         payload['channel_label'] = OrderPaymentService._order_channel_label(order)
         payload['restaurant_phone'] = order.restaurant.phone
         payload['restaurant_social'] = getattr(order.restaurant, 'social', '')
+        payload['service_fee_percent'] = str(getattr(order.restaurant, 'service_fee_percent', 0) or 0)
         payload['table_label'] = OrderPaymentService._order_table_label(order)
         payload['waiter_name'] = order.opened_by.full_name if order.opened_by_id and order.opened_by else ''
         payload['order_note'] = order.note or ''
@@ -472,7 +473,7 @@ class OrderPaymentService:
         if order.channel == Order.Channel.HALL:
             return 'Zalda'
         if order.channel == Order.Channel.DELIVERY:
-            return 'Dostavka'
+            return 'Yetkazib berish'
         if order.channel == Order.Channel.ONLINE:
             return 'Online'
         return 'Zalda'

@@ -7,6 +7,7 @@ Receipt = get_receipt_model()
 
 class AdminReceiptSerializer(serializers.ModelSerializer):
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
+    order_display_name = serializers.CharField(source='order.display_name', read_only=True)
     payment_method = serializers.CharField(source='payment.method', read_only=True)
     payment_amount = serializers.IntegerField(source='payment.amount', read_only=True)
 
@@ -16,6 +17,7 @@ class AdminReceiptSerializer(serializers.ModelSerializer):
             'id',
             'order',
             'order_number',
+            'order_display_name',
             'payment',
             'payment_method',
             'payment_amount',

@@ -4,6 +4,7 @@ import os
 import socket
 from ctypes import wintypes
 
+import qrcode
 from django.utils import timezone
 
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
@@ -88,7 +89,7 @@ class WindowsRawPrinterIntegrationService:
 
     @staticmethod
     def _chars_per_line(paper_width_mm: int) -> int:
-        return 42 if paper_width_mm >= 80 else 32
+        return 48 if paper_width_mm >= 80 else 32
 
     @staticmethod
     def _pad_line(left: str, right: str, *, width: int) -> str:
@@ -131,6 +132,61 @@ class WindowsRawPrinterIntegrationService:
             return f'Telegram: {text}'
         return f'Social: {text}'
 
+    @staticmethod
+    def _normalize_channel_label(value: str) -> str:
+        text = str(value or '').strip()
+        lowered = text.lower()
+        if lowered in {'dostavka', 'delivery', 'yetkazib berish'}:
+            return 'Yetkazib berish'
+        if lowered in {'hall', 'zal', 'zalda'}:
+            return 'Zalda'
+        if lowered in {'takeaway', 'olib ketish'}:
+            return 'Olib ketish'
+        return text or 'Zalda'
+
+    @staticmethod
+    def _wrap_text(value: str, *, width: int) -> list[str]:
+        text = ' '.join(str(value or '').split())
+        if not text:
+            return []
+        lines: list[str] = []
+        current = ''
+        for word in text.split(' '):
+            if not current:
+                current = word
+            elif len(current) + 1 + len(word) <= width:
+                current = f'{current} {word}'
+            else:
+                lines.append(current)
+                current = word
+            while len(current) > width:
+                lines.append(current[:width])
+                current = current[width:]
+        if current:
+            lines.append(current)
+        return lines
+
+    def _prefixed_lines(self, prefix: str, value: str, *, width: int) -> list[str]:
+        text = ' '.join(str(value or '').split())
+        if not text:
+            return []
+        lines: list[str] = []
+        current = prefix
+        for word in text.split(' '):
+            next_line = f'{current}{word}' if current == prefix else f'{current} {word}'
+            if len(next_line) <= width:
+                current = next_line
+            else:
+                if current != prefix:
+                    lines.append(current)
+                current = word
+            while len(current) > width:
+                lines.append(current[:width])
+                current = current[width:]
+        if current and current != prefix:
+            lines.append(current)
+        return lines
+
     def _item_line(self, name: str, quantity: int, amount, *, width: int) -> str:
         amount_text = self._format_money(amount) if amount not in (None, '') else ''
         quantity_text = f'x{quantity}'
@@ -163,7 +219,7 @@ class WindowsRawPrinterIntegrationService:
         restaurant_phone = self._safe_text(payload.get('restaurant_phone') or '', encoding=encoding)
         restaurant_social = self._safe_text(self._social_line(payload.get('restaurant_social') or ''), encoding=encoding)
         order_number = str(self._order_label(payload)).lstrip('#')
-        channel_label = self._safe_text(payload.get('channel_label') or '', encoding=encoding)
+        channel_label = self._safe_text(self._normalize_channel_label(payload.get('channel_label') or ''), encoding=encoding)
 
         if payload.get('kitchen_ticket'):
             lines = [
@@ -172,6 +228,14 @@ class WindowsRawPrinterIntegrationService:
                 self._center(self._safe_text(f'Buyurtma raqami: {order_number}', encoding=encoding), width=width),
                 separator,
             ]
+            if restaurant_address:
+                lines.extend(self._prefixed_lines('Manzil: ', restaurant_address, width=width))
+            if restaurant_phone:
+                lines.append(f'Tel: {restaurant_phone}')
+            if restaurant_social:
+                lines.append(restaurant_social[:width])
+            if restaurant_address or restaurant_phone or restaurant_social:
+                lines.append(separator)
             if date:
                 lines.append(f'Sana: {date}')
             if time:
@@ -185,7 +249,7 @@ class WindowsRawPrinterIntegrationService:
             if delivery_phone:
                 lines.append(f'Mijoz tel: {delivery_phone}')
             if delivery_address:
-                lines.append(f'Mijoz manzil: {delivery_address[: max(width - 14, 0)]}')
+                lines.extend(self._prefixed_lines('Mijoz manzil: ', delivery_address, width=width))
             lines.append(separator)
             for item in payload.get('items', []):
                 item_name = self._safe_text(item.get('name', ''), encoding=encoding)
@@ -200,7 +264,7 @@ class WindowsRawPrinterIntegrationService:
             order_note = self._safe_text(payload.get('order_note') or '', encoding=encoding)
             if order_note:
                 lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
-            lines.extend([separator, self._center('Buyurtmangiz uchun raxmat!', width=width), self._center('Yoqimli ishtaha!', width=width), ''])
+            lines.extend([separator, ''])
             return lines
 
         lines = [
@@ -211,7 +275,7 @@ class WindowsRawPrinterIntegrationService:
         ]
 
         if restaurant_address:
-            lines.append(f'Manzil: {restaurant_address[: max(width - 8, 0)]}')
+            lines.extend(self._prefixed_lines('Manzil: ', restaurant_address, width=width))
         if restaurant_phone:
             lines.append(f'Tel: {restaurant_phone}')
         if restaurant_social:
@@ -254,29 +318,53 @@ class WindowsRawPrinterIntegrationService:
         if order_note:
             lines.extend([separator, f'Izoh: {order_note[: max(width - 6, 0)]}'])
 
-        lines.extend([separator, self._center('Buyurtmangiz uchun raxmat!', width=width), self._center('Yoqimli ishtaha!', width=width), ''])
+        lines.extend([separator, self._center('Buyurtmangiz uchun rahmat!', width=width), self._center('Yoqimli ishtaha!', width=width), ''])
         return lines
 
     def _build_bytes(self, payload: dict) -> bytes:
         encoding = self._encoding_from_settings(self.settings)
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 6)
-        body = '\n'.join(self._build_lines(payload))
         esc = bytes([0x1B])
         gs = bytes([0x1D])
-        print_mode = esc + b'!' + bytes([0x00])
         content = b''.join(
             [
                 esc + b'@',
                 self._escpos_code_page_command(encoding, self.settings.get('code_page')),
-                print_mode,
-                body.encode(encoding, errors='replace'),
-                esc + b'!' + bytes([0x00]),
             ]
         )
+        content += self._encode_styled_lines(self._build_lines(payload), encoding=encoding)
         if feed_lines_before_cut > 0:
             content += esc + b'd' + bytes([min(feed_lines_before_cut, 10)])
         if self.settings.get('cut_after_print', True):
             content += gs + b'V' + bytes([0])
+        return content
+
+    @staticmethod
+    def _is_emphasized_receipt_line(line: str, *, first_text_line_seen: bool) -> bool:
+        text = line.strip()
+        if not text:
+            return False
+        if not first_text_line_seen and set(text) not in ({'-'}, {'='}):
+            return True
+        return 'Buyurtma raqami:' in text
+
+    def _encode_styled_lines(self, lines: list[str], *, encoding: str) -> bytes:
+        esc = bytes([0x1B])
+        align_left = esc + b'a' + bytes([0x00])
+        align_center = esc + b'a' + bytes([0x01])
+        normal_mode = esc + b'!' + bytes([0x00])
+        tall_mode = esc + b'!' + bytes([0x30])
+        content = b''
+        first_text_line_seen = False
+        for line in lines:
+            emphasized = self._is_emphasized_receipt_line(line, first_text_line_seen=first_text_line_seen)
+            if line.strip() and set(line.strip()) not in ({'-'}, {'='}):
+                first_text_line_seen = True
+            content += align_center if emphasized else align_left
+            content += tall_mode if emphasized else normal_mode
+            text = line.strip() if emphasized else line
+            content += f'{text}\n'.encode(encoding, errors='replace')
+        content += align_left + normal_mode
         return content
 
     @staticmethod
@@ -301,7 +389,43 @@ class WindowsRawPrinterIntegrationService:
             ]
         )
 
-    def _build_text_bytes(self, *, text: str, qr_code: str = '') -> bytes:
+    @staticmethod
+    def _escpos_qr_raster(value: str) -> bytes:
+        text = str(value or '').strip()
+        if not text:
+            return b''
+
+        scale = 8
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=4, box_size=scale)
+        qr.add_data(text)
+        qr.make(fit=True)
+        matrix = qr.get_matrix()
+        module_size = len(matrix)
+        pixel_size = module_size * scale
+        width_bytes = (pixel_size + 7) // 8
+        data = bytearray()
+        for y in range(pixel_size):
+            row = matrix[y // scale]
+            for byte_index in range(width_bytes):
+                byte = 0
+                for bit in range(8):
+                    x = byte_index * 8 + bit
+                    if x < pixel_size and row[x // scale]:
+                        byte |= 0x80 >> bit
+                data.append(byte)
+
+        return b''.join(
+            [
+                b'\n',
+                b'\x1ba\x01',
+                b'\x1dv0\x00',
+                bytes([width_bytes & 0xFF, (width_bytes >> 8) & 0xFF, pixel_size & 0xFF, (pixel_size >> 8) & 0xFF]),
+                bytes(data),
+                b'\x1ba\x00\n',
+            ]
+        )
+
+    def _build_text_bytes(self, *, text: str, qr_code: str = '', qr_raster_base64: str = '') -> bytes:
         encoding = self._encoding_from_settings(self.settings)
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 5)
         normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip('\n')
@@ -317,12 +441,19 @@ class WindowsRawPrinterIntegrationService:
             [
                 esc + b'@',
                 self._escpos_code_page_command(encoding, self.settings.get('code_page')),
-                (normalized_text + ('\n' * max(feed_lines_before_cut, 0))).encode(encoding, errors='replace'),
             ]
         )
+        content += self._encode_styled_lines(normalized_text.split('\n'), encoding=encoding)
+        qr_raster_base64 = str(qr_raster_base64 or '').strip()
         qr_code = str(qr_code or '').strip()
-        if qr_code:
+        if qr_raster_base64:
+            content += base64.b64decode(qr_raster_base64, validate=True)
+        elif qr_code and self.settings.get('enable_escpos_qr_command', False):
             content += self._escpos_qr_code(qr_code)
+        elif qr_code:
+            content += self._escpos_qr_raster(qr_code)
+        if feed_lines_before_cut > 0:
+            content += esc + b'd' + bytes([min(feed_lines_before_cut, 10)])
         if self.settings.get('cut_after_print', True):
             content += gs + b'V' + bytes([0])
         return content
@@ -415,8 +546,16 @@ class WindowsRawPrinterIntegrationService:
             order_number=order.order_number,
         )
 
-    def print_text(self, *, restaurant, text: str, qr_code: str = '', job_name: str = 'Cafe Postcode Receipt'):
-        raw_payload = self._build_text_bytes(text=text, qr_code=qr_code)
+    def print_text(
+        self,
+        *,
+        restaurant,
+        text: str,
+        qr_code: str = '',
+        qr_raster_base64: str = '',
+        job_name: str = 'Cafe Postcode Receipt',
+    ):
+        raw_payload = self._build_text_bytes(text=text, qr_code=qr_code, qr_raster_base64=qr_raster_base64)
         return self._print_raw_payload(
             restaurant=restaurant,
             raw_payload=raw_payload,
