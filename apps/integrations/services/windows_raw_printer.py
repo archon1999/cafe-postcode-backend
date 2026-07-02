@@ -172,13 +172,6 @@ class WindowsRawPrinterIntegrationService:
                 self._center(self._safe_text(f'Buyurtma raqami: {order_number}', encoding=encoding), width=width),
                 separator,
             ]
-            if restaurant_address:
-                lines.append(f'Manzil: {restaurant_address[: max(width - 8, 0)]}')
-            if restaurant_phone:
-                lines.append(f'Tel: {restaurant_phone}')
-            if restaurant_social:
-                lines.append(restaurant_social[:width])
-            lines.append(separator)
             if date:
                 lines.append(f'Sana: {date}')
             if time:

@@ -96,6 +96,9 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
             **self._payload(),
             'kitchen_ticket': True,
             'order_label': '#42',
+            'restaurant_address': 'Beruniy tumani',
+            'restaurant_phone': '+998901234567',
+            'restaurant_social': 'Instagram: nyu_york',
             'prep_station_name': 'Kuxnya',
             'waiter_name': 'Adham',
             'guest_count': 3,
@@ -106,6 +109,9 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
         raw_payload = service._build_bytes(payload)
 
         self.assertIn('Buyurtma raqami: 42', '\n'.join(lines))
+        self.assertNotIn('Manzil:', '\n'.join(lines))
+        self.assertNotIn('Tel:', '\n'.join(lines))
+        self.assertNotIn('Instagram:', '\n'.join(lines))
         self.assertNotIn('Oshxona:', '\n'.join(lines))
         self.assertNotIn('Ofitsiant:', '\n'.join(lines))
         self.assertNotIn('Mehmonlar:', '\n'.join(lines))
