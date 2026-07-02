@@ -215,6 +215,28 @@ def _build_kitchen_ticket_payload(ticket):
         .exclude(status=OrderItem.Status.CANCELLED)
         .select_related('catalog_item')
     )
+    aggregated_items = []
+    item_indexes = {}
+    for item in items:
+        name = item.catalog_item.name if item.catalog_item_id else item.name_snapshot
+        note = item.note or ''
+        key = (name, note)
+        if key not in item_indexes:
+            item_indexes[key] = len(aggregated_items)
+            aggregated_items.append(
+                {
+                    'name': name,
+                    'quantity': int(item.quantity or 0),
+                    'line_total': int(item.line_total or 0),
+                    'note': note,
+                }
+            )
+            continue
+
+        aggregate = aggregated_items[item_indexes[key]]
+        aggregate['quantity'] += int(item.quantity or 0)
+        aggregate['line_total'] += int(item.line_total or 0)
+
     return {
         'kitchen_ticket': True,
         'order_number': order.order_number,
@@ -233,16 +255,8 @@ def _build_kitchen_ticket_payload(ticket):
         'delivery_phone': order.delivery_phone or '',
         'delivery_address': order.delivery_address or '',
         'order_note': order.note or '',
-        'items': [
-            {
-                'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
-                'quantity': item.quantity,
-                'line_total': int(item.line_total or 0),
-                'note': item.note,
-            }
-            for item in items
-        ],
-        'total': sum(int(item.line_total or 0) for item in items),
+        'items': aggregated_items,
+        'total': sum(int(item['line_total'] or 0) for item in aggregated_items),
     }
 
 

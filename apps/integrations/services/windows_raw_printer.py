@@ -304,7 +304,7 @@ class WindowsRawPrinterIntegrationService:
     def _build_text_bytes(self, *, text: str, qr_code: str = '') -> bytes:
         encoding = self._encoding_from_settings(self.settings)
         feed_lines_before_cut = int(self.settings.get('feed_lines_before_cut') or 5)
-        normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip()
+        normalized_text = str(text or '').replace('\r\n', '\n').replace('\r', '\n').strip('\n')
         if not normalized_text:
             raise ValueError('Receipt text is required.')
         normalized_text = '\n'.join(

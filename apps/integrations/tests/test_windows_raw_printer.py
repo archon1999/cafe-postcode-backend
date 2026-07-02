@@ -127,3 +127,11 @@ class WindowsRawPrinterIntegrationServiceTests(SimpleTestCase):
         self.assertIn('ШАВЕРМА'.encode('cp866'), raw_payload)
         self.assertIn('Ошхона'.encode('cp866'), raw_payload)
         self.assertNotIn(b'?', raw_payload)
+
+    def test_text_printing_preserves_first_line_centering_spaces(self):
+        config = SimpleNamespace(provider='windows-raw', settings={'encoding': 'cp866'})
+        service = WindowsRawPrinterIntegrationService(config)
+
+        raw_payload = service._build_text_bytes(text='        NYU YORK\n------------------------------------------', qr_code='')
+
+        self.assertIn(b'        NYU YORK', raw_payload)

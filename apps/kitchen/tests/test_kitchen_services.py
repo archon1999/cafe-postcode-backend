@@ -1,6 +1,7 @@
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.services import OrderTicketSyncService
 from apps.kitchen.services.kitchen_status import KitchenStatusService
+from apps.integrations.services import _build_kitchen_ticket_payload
 from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosTestCase
 
@@ -72,6 +73,30 @@ class OrderTicketSyncServiceTests(PosTestCase):
         self.assertFalse(KitchenTicket.objects.filter(order=self.order, prep_station=self.prep_station).exists())
         self.order.refresh_from_db()
         self.assertEqual(self.order.total, 0)
+
+    def test_kitchen_print_payload_aggregates_duplicate_items(self):
+        OrderItem.objects.create(
+            order=self.order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+            status=OrderItem.Status.NEW,
+        )
+        self.order.recalculate_totals()
+        ticket = KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=self.order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.NEW,
+            routed_via=KitchenTicket.RouteMode.BOTH,
+        )
+
+        payload = _build_kitchen_ticket_payload(ticket)
+
+        self.assertEqual(payload['items'], [{'name': 'Osh', 'quantity': 2, 'line_total': 60000, 'note': ''}])
+        self.assertEqual(payload['total'], 60000)
 
 
 class KitchenStatusServiceTests(PosTestCase):
