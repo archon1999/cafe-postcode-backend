@@ -457,6 +457,9 @@ class OrderPaymentService:
         payload['order_number'] = order.order_number
         payload['order_label'] = build_order_label(order)
         payload['channel_label'] = OrderPaymentService._order_channel_label(order)
+        payload['restaurant_name'] = order.restaurant.name
+        payload['restaurant_legal_name'] = order.restaurant.legal_name or order.restaurant.name
+        payload['restaurant_address'] = order.restaurant.address
         payload['restaurant_phone'] = order.restaurant.phone
         payload['restaurant_social'] = getattr(order.restaurant, 'social', '')
         payload['service_fee_percent'] = str(getattr(order.restaurant, 'service_fee_percent', 0) or 0)

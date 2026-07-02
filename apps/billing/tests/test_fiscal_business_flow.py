@@ -615,6 +615,40 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertIsNone(session.cash_desk_id)
         self.assertEqual(session.status, FiscalShiftSession.Status.OPEN)
 
+    def test_failed_fiscal_receipt_payload_keeps_restaurant_header_context(self):
+        shift = self.create_cash_shift()
+        order = self.create_open_order_with_item(order_number=511)
+        self.restaurant.name = 'NYU YORK'
+        self.restaurant.address = 'Beruniy'
+        self.restaurant.phone = '+998901234567'
+        self.restaurant.save(update_fields=['name', 'address', 'phone', 'updated_at'])
+
+        with (
+            patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
+            patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
+        ):
+            open_shift.return_value = {'ok': True, 'provider': 'unikassa'}
+            issue.return_value = [
+                {
+                    'ok': False,
+                    'provider': 'fiscal-drive-service',
+                    'detail': 'Fiscal drive is locked.',
+                }
+            ]
+            result = OrderPaymentService().process(
+                order=order,
+                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
+                received_by=self.user,
+                cash_shift=shift,
+            )
+
+        receipt = result['receipt']
+        self.assertEqual(receipt.status, Receipt.Status.FAILED)
+        self.assertEqual(receipt.payload['restaurant_name'], 'NYU YORK')
+        self.assertEqual(receipt.payload['restaurant_address'], 'Beruniy')
+        self.assertEqual(receipt.payload['restaurant_phone'], '+998901234567')
+        self.assertEqual(receipt.payload['order_label'], '#511')
+
     def test_second_fiscal_payment_reuses_open_fiscal_shift(self):
         FiscalShiftSession.objects.create(
             restaurant=self.restaurant,

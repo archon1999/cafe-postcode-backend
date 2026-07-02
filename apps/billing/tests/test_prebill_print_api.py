@@ -91,6 +91,32 @@ class PrebillPrintApiTests(PosAPITestCase):
         self.assertEqual(receipt.status, Receipt.Status.SENT)
         self.assertEqual(receipt.payload['snapshot']['order_note'], 'Mehmonlar kutmoqda')
 
+    def test_raw_print_does_not_mark_failed_fiscal_receipt_sent(self):
+        self.create_cash_shift(cash_desk=self.cash_desk)
+        order = Order.objects.get(pk=self.order_id)
+        receipt = Receipt.objects.create(
+            order=order,
+            kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.FAILED,
+            provider='fiscal-drive-service',
+            payload={'ok': False, 'detail': 'Fiscal drive is locked.'},
+        )
+
+        with patch(
+            'apps.billing.api.pos.views.receipts.print_receipt_text',
+            return_value={'ok': True, 'provider': 'windows-raw'},
+        ):
+            response = self.client.post(
+                f'/api/v1/pos/billing/receipts/{receipt.id}/print/',
+                {'text': 'CHEK', 'qr_code': ''},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.status, Receipt.Status.FAILED)
+        self.assertEqual(receipt.payload['raw_print_result']['provider'], 'windows-raw')
+
     def test_active_shift_cash_desk_printer_takes_precedence_over_global_printer(self):
         cash_desk_printer = self.configure_live_printer(printer_name='Cash desk POS-80')
         self.cash_desk.printer_integration = cash_desk_printer

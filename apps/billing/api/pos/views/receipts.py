@@ -146,7 +146,7 @@ class ReceiptRawPrintView(APIView):
             receipt_payload = dict(receipt.payload or {})
             receipt_payload['raw_print_result'] = result
             receipt.payload = receipt_payload
-            if result.get('ok'):
+            if result.get('ok') and receipt.kind != Receipt.Kind.FISCAL:
                 receipt.status = Receipt.Status.SENT
             receipt.save(update_fields=['payload', 'status', 'updated_at'])
             receipt.refresh_from_db()
