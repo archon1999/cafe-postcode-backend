@@ -357,8 +357,13 @@ class OrderPaymentService:
 
         receipts = []
         if is_fully_paid and payment.register_fiscal:
-            for receipt_result in self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by):
-                receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
+            receipt_results = self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by)
+            if receipt_results and all(receipt_result.get('ok') for receipt_result in receipt_results):
+                for receipt_result in receipt_results:
+                    receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
+            else:
+                payment.register_fiscal = False
+                payment.save(update_fields=['register_fiscal', 'updated_at'])
         logger.info(
             'Payment processed',
             extra={
@@ -464,6 +469,8 @@ class OrderPaymentService:
         payload['restaurant_social'] = getattr(order.restaurant, 'social', '')
         payload['service_fee_percent'] = str(getattr(order.restaurant, 'service_fee_percent', 0) or 0)
         payload['table_label'] = OrderPaymentService._order_table_label(order)
+        payload['cashier_name'] = order.cashier.full_name if order.cashier_id and order.cashier else ''
+        payload['cashier_id'] = str(order.cashier_id or '')
         payload['waiter_name'] = order.opened_by.full_name if order.opened_by_id and order.opened_by else ''
         payload['order_note'] = order.note or ''
         if order.channel == Order.Channel.DELIVERY:
@@ -505,9 +512,6 @@ class PaymentFiscalRetryService:
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError({'detail': _('Only successful payments can be sent to fiscal integration.')})
 
-        if not payment.register_fiscal:
-            raise ValidationError({'detail': _('This payment was marked to skip fiscal registration.')})
-
         sent_receipts = list(
             payment.receipts.filter(kind=Receipt.Kind.FISCAL, status=Receipt.Status.SENT).order_by('created_at')
         )
@@ -533,6 +537,15 @@ class PaymentFiscalRetryService:
             opened_by=payment.received_by,
             split_reasons=split_reasons,
         )
+        if not results or any(not result.get('ok') for result in results):
+            return {
+                'payment': payment,
+                'receipt': None,
+                'receipts': [],
+                'result': results[0] if results else {},
+                'results': results,
+            }
+
         for index, receipt_result in enumerate(results):
             receipt = self._pick_existing_receipt(
                 pending_receipts=pending_receipts,
@@ -540,6 +553,10 @@ class PaymentFiscalRetryService:
                 fallback_index=index,
             )
             receipts.append(self._persist_result(payment=payment, receipt=receipt, receipt_result=receipt_result))
+
+        if not payment.register_fiscal:
+            payment.register_fiscal = True
+            payment.save(update_fields=['register_fiscal', 'updated_at'])
 
         return {
             'payment': payment,

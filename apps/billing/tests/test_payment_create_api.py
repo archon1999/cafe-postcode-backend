@@ -241,7 +241,10 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(self.order.cashier_id, self.user.id)
         self.assertEqual(response.data['payment']['method'], Payment.Method.CASH)
-        self.assertEqual(response.data['receipt']['status'], 'failed')
+        self.assertIsNone(response.data['receipt'])
+        payment = Payment.objects.get(order=self.order)
+        self.assertFalse(payment.register_fiscal)
+        self.assertFalse(payment.receipts.exists())
 
     @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'split-ref'})
     def test_split_payments_can_close_order_across_multiple_methods(self, _charge_payment):

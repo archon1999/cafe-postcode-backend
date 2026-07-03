@@ -112,6 +112,41 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(failed_receipt.status, Receipt.Status.SENT)
         self.assertEqual(len(result['receipts']), 1)
 
+    def test_retry_failed_result_keeps_existing_receipt_unchanged(self):
+        order = self.create_closed_order()
+        payment = self.create_success_payment(order=order)
+        failed_receipt = Receipt.objects.create(
+            order=order,
+            payment=payment,
+            kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.FAILED,
+            payload={'ok': False, 'detail': 'old error'},
+            fiscal_error_code='OLD',
+            fiscal_error_message='old error',
+        )
+        original_updated_at = failed_receipt.updated_at
+
+        with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue:
+            issue.return_value = [
+                {
+                    'ok': False,
+                    'provider': 'fiscal-drive-service',
+                    'code': 'NEW',
+                    'detail': 'new error',
+                    'fiscal_requested_at': timezone.now().isoformat(),
+                }
+            ]
+            result = PaymentFiscalRetryService().retry(payment=payment)
+
+        failed_receipt.refresh_from_db()
+        self.assertEqual(failed_receipt.status, Receipt.Status.FAILED)
+        self.assertEqual(failed_receipt.payload, {'ok': False, 'detail': 'old error'})
+        self.assertEqual(failed_receipt.fiscal_error_code, 'OLD')
+        self.assertEqual(failed_receipt.fiscal_error_message, 'old error')
+        self.assertEqual(failed_receipt.updated_at, original_updated_at)
+        self.assertEqual(result['receipts'], [])
+        self.assertEqual(result['result']['code'], 'NEW')
+
     def test_unikassa_split_issue_preserves_partial_success_result(self):
         order = self.create_closed_order()
         restricted_category = CatalogCategory.objects.create(
@@ -615,7 +650,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertIsNone(session.cash_desk_id)
         self.assertEqual(session.status, FiscalShiftSession.Status.OPEN)
 
-    def test_failed_fiscal_receipt_payload_keeps_restaurant_header_context(self):
+    def test_failed_fiscal_payment_becomes_plain_payment_without_failed_receipt(self):
         shift = self.create_cash_shift()
         order = self.create_open_order_with_item(order_number=511)
         self.restaurant.name = 'NYU YORK'
@@ -642,12 +677,15 @@ class FiscalBusinessFlowTests(PosTestCase):
                 cash_shift=shift,
             )
 
-        receipt = result['receipt']
-        self.assertEqual(receipt.status, Receipt.Status.FAILED)
-        self.assertEqual(receipt.payload['restaurant_name'], 'NYU YORK')
-        self.assertEqual(receipt.payload['restaurant_address'], 'Beruniy')
-        self.assertEqual(receipt.payload['restaurant_phone'], '+998901234567')
-        self.assertEqual(receipt.payload['order_label'], '#511')
+        payment = result['payment']
+        payment.refresh_from_db()
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CLOSED)
+        self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
+        self.assertFalse(payment.register_fiscal)
+        self.assertIsNone(result['receipt'])
+        self.assertEqual(result['receipts'], [])
+        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists())
 
     def test_second_fiscal_payment_reuses_open_fiscal_shift(self):
         FiscalShiftSession.objects.create(
@@ -714,3 +752,30 @@ class FiscalBusinessFlowTests(PosTestCase):
 
         open_shift.assert_called_once_with(restaurant=self.restaurant, cash_desk=None)
         self.assertTrue(FiscalShiftSession.objects.filter(restaurant=self.restaurant, status=FiscalShiftSession.Status.OPEN).exists())
+
+    def test_fiscal_retry_converts_plain_payment_to_fiscal_payment(self):
+        order = self.create_closed_order(order_number=505)
+        payment = self.create_success_payment(order=order, register_fiscal=False)
+
+        with (
+            patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
+            patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
+        ):
+            open_shift.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
+            issue.return_value = [
+                {
+                    'ok': True,
+                    'provider': 'unikassa',
+                    'receipt_number': '1002',
+                    'fiscal_requested_at': timezone.now().isoformat(),
+                    'fiscal_registered_at': timezone.now().isoformat(),
+                }
+            ]
+            result = PaymentFiscalRetryService().retry(payment=payment)
+
+        payment.refresh_from_db()
+        self.assertTrue(payment.register_fiscal)
+        self.assertEqual(result['receipt'].status, Receipt.Status.SENT)
+        self.assertEqual(result['receipt'].payload['order_label'], '#505')
+        self.assertEqual(result['receipt'].payload['cashier_name'], self.user.full_name)
+        self.assertEqual(result['receipt'].payload['cashier_id'], str(self.user.id))

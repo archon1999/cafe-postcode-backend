@@ -178,7 +178,8 @@ class PaymentFiscalRetryView(APIView):
         )
         result = self.service_class().retry(payment=payment)
         retry_results = result.get('results') or []
-        successful = any(item.get('ok') for item in retry_results if isinstance(item, dict))
+        result_items = [item for item in retry_results if isinstance(item, dict)]
+        successful = bool(result_items) and all(item.get('ok') for item in result_items)
         response_status = status.HTTP_200_OK if successful else status.HTTP_400_BAD_REQUEST
         failed_result = next((item for item in retry_results if isinstance(item, dict) and not item.get('ok')), {})
         return Response(

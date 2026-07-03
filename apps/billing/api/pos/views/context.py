@@ -199,12 +199,12 @@ class OpenCheckListView(generics.ListAPIView):
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-        context['include_billing'] = self.get_status_filter() in {'closed', 'fiscal_unresolved'}
+        context['include_billing'] = self.get_status_filter() in {'closed', 'fiscal_closed', 'fiscal_unresolved'}
         return context
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        if self.get_status_filter() == 'fiscal_unresolved':
+        if self.get_status_filter() in {'closed', 'fiscal_closed', 'fiscal_unresolved'}:
             page_size = self.get_page_size()
             paginator = Paginator(queryset, page_size)
             page_number = max(1, int(request.query_params.get('page') or 1))
@@ -311,7 +311,7 @@ class OpenCheckListView(generics.ListAPIView):
                 Prefetch('items', queryset=item_queryset),
             )
         )
-        if status_filter in {'closed', 'fiscal_unresolved'}:
+        if status_filter in {'closed', 'fiscal_closed', 'fiscal_unresolved'}:
             refund_exists = PaymentRefund.objects.filter(
                 payment_id=OuterRef('pk'),
                 status=PaymentRefund.Status.SUCCEEDED,
@@ -358,8 +358,54 @@ class OpenCheckListView(generics.ListAPIView):
                 Prefetch('payments', queryset=payment_queryset),
                 Prefetch('receipts', queryset=receipt_queryset),
             ).filter(status=Order.Status.CLOSED)
+            sent_fiscal_receipt = Receipt.objects.filter(
+                order_id=OuterRef('pk'),
+                kind=Receipt.Kind.FISCAL,
+                status=Receipt.Status.SENT,
+            )
+            succeeded_payment = Payment.objects.filter(
+                order_id=OuterRef('pk'),
+                status=Payment.Status.SUCCEEDED,
+            )
             if status_filter == 'closed':
-                return self.apply_limit(closed_queryset.filter(closed_at__gte=start, closed_at__lt=end).order_by('-closed_at'))
+                plain_queryset = closed_queryset.annotate(
+                    has_sent_fiscal_receipt=Exists(sent_fiscal_receipt),
+                    has_succeeded_payment=Exists(succeeded_payment),
+                ).filter(
+                    closed_at__gte=start,
+                    closed_at__lt=end,
+                    has_succeeded_payment=True,
+                    has_sent_fiscal_receipt=False,
+                )
+                search = str(self.request.query_params.get('search') or '').strip()
+                if search:
+                    search_filter = (
+                        Q(display_name__icontains=search)
+                        | Q(cashier__full_name__icontains=search)
+                        | Q(opened_by__full_name__icontains=search)
+                        | Q(table_session__table__name__icontains=search)
+                    )
+                    if search.isdigit():
+                        search_filter |= Q(order_number=int(search))
+                    plain_queryset = plain_queryset.filter(search_filter).distinct()
+                return plain_queryset.order_by('-closed_at')
+
+            if status_filter == 'fiscal_closed':
+                fiscal_queryset = closed_queryset.annotate(
+                    has_sent_fiscal_receipt=Exists(sent_fiscal_receipt),
+                ).filter(has_sent_fiscal_receipt=True)
+                search = str(self.request.query_params.get('search') or '').strip()
+                if search:
+                    search_filter = (
+                        Q(display_name__icontains=search)
+                        | Q(cashier__full_name__icontains=search)
+                        | Q(opened_by__full_name__icontains=search)
+                        | Q(table_session__table__name__icontains=search)
+                    )
+                    if search.isdigit():
+                        search_filter |= Q(order_number=int(search))
+                    fiscal_queryset = fiscal_queryset.filter(search_filter).distinct()
+                return fiscal_queryset.order_by('-closed_at', '-created_at')
 
             payment_receipts = Receipt.objects.filter(payment_id=OuterRef('pk'), kind=Receipt.Kind.FISCAL)
             unresolved_payment = (

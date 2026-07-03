@@ -104,6 +104,16 @@ class OpenCheckListApiTests(APITestCase):
         order.recalculate_totals()
         return order
 
+    def create_success_payment(self, *, order, register_fiscal=False):
+        return Payment.objects.create(
+            order=order,
+            method=Payment.Method.CASH,
+            amount=order.total,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=register_fiscal,
+            paid_at=timezone.now(),
+        )
+
     def test_open_status_returns_submitted_and_ready_orders(self):
         submitted_order = self.create_order(status=Order.Status.SUBMITTED)
         ready_order = self.create_order(status=Order.Status.READY)
@@ -147,6 +157,8 @@ class OpenCheckListApiTests(APITestCase):
             status=Order.Status.CLOSED,
             closed_at=timezone.now() - timedelta(days=1),
         )
+        self.create_success_payment(order=today_order)
+        self.create_success_payment(order=yesterday_order)
 
         response = self.client.get('/api/v1/pos/billing/open-checks/?status=closed')
 
@@ -165,6 +177,8 @@ class OpenCheckListApiTests(APITestCase):
             status=Order.Status.CLOSED,
             closed_at=(start - timedelta(minutes=30)).astimezone(UTC),
         )
+        self.create_success_payment(order=included_order)
+        self.create_success_payment(order=excluded_order)
 
         response = self.client.get('/api/v1/pos/billing/open-checks/?status=closed')
 
@@ -195,6 +209,7 @@ class OpenCheckListApiTests(APITestCase):
         Receipt.objects.create(
             order=order,
             payment=payment,
+            kind=Receipt.Kind.PREBILL,
             status=Receipt.Status.SENT,
             payload={'receiptNumber': 'R-1'},
         )
@@ -208,13 +223,9 @@ class OpenCheckListApiTests(APITestCase):
 
     def test_closed_status_returns_minimal_billing_details(self):
         order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
-        payment = Payment.objects.create(
-            order=order,
-            method=Payment.Method.CASH,
-            amount=order.total,
-            status=Payment.Status.SUCCEEDED,
-            provider_payload={'large': 'payload'},
-        )
+        payment = self.create_success_payment(order=order)
+        payment.provider_payload = {'large': 'payload'}
+        payment.save(update_fields=['provider_payload', 'updated_at'])
         PaymentRefund.objects.create(
             payment=payment,
             amount=order.total,
@@ -223,6 +234,7 @@ class OpenCheckListApiTests(APITestCase):
         Receipt.objects.create(
             order=order,
             payment=payment,
+            kind=Receipt.Kind.PREBILL,
             status=Receipt.Status.SENT,
             payload={'receiptNumber': 'R-1'},
         )
@@ -236,6 +248,61 @@ class OpenCheckListApiTests(APITestCase):
         self.assertTrue(payload['payments'][0]['is_refunded'])
         self.assertNotIn('provider_payload', payload['payments'][0])
         self.assertEqual(payload['receipts'][0]['payload']['receiptNumber'], 'R-1')
+
+    def test_closed_status_excludes_fiscal_sent_orders(self):
+        plain_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        fiscal_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        plain_payment = self.create_success_payment(order=plain_order)
+        fiscal_payment = self.create_success_payment(order=fiscal_order, register_fiscal=True)
+        Receipt.objects.create(
+            order=fiscal_order,
+            payment=fiscal_payment,
+            kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.SENT,
+            payload={'receiptNumber': 'F-1'},
+        )
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=closed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
+        self.assertIn(str(plain_order.id), returned_ids)
+        self.assertNotIn(str(fiscal_order.id), returned_ids)
+
+    def test_closed_status_supports_search_and_pagination(self):
+        matched_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        matched_order.display_name = 'VIP 777'
+        matched_order.save(update_fields=['display_name', 'updated_at'])
+        other_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        self.create_success_payment(order=matched_order)
+        self.create_success_payment(order=other_order)
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=closed&search=VIP&page=1&page_size=20')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['page_size'], 20)
+        self.assertEqual(response.data['count'], 1)
+        returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
+        self.assertEqual(returned_ids, {str(matched_order.id)})
+
+    def test_fiscal_closed_status_returns_fiscal_sent_orders(self):
+        plain_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        fiscal_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        self.create_success_payment(order=plain_order)
+        fiscal_payment = self.create_success_payment(order=fiscal_order, register_fiscal=True)
+        Receipt.objects.create(
+            order=fiscal_order,
+            payment=fiscal_payment,
+            kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.SENT,
+            payload={'receiptNumber': 'F-1'},
+        )
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=fiscal_closed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
+        self.assertEqual(returned_ids, {str(fiscal_order.id)})
 
     def test_hall_order_applies_restaurant_service_fee_percent(self):
         self.restaurant.vat_enabled = True
