@@ -32,12 +32,15 @@ services:
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
     command:
       - sh
       - -c
       - >-
         python manage.py migrate --noinput &&
         python manage.py collectstatic --noinput &&
+        rm -rf /tmp/prometheus-multiproc &&
+        mkdir -p /tmp/prometheus-multiproc &&
         exec gunicorn core.wsgi:application
         --bind 0.0.0.0:8000
         --workers $${GUNICORN_WORKERS:-3}
