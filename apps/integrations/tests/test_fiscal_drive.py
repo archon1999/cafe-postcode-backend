@@ -222,6 +222,73 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(result['txid'], 42)
         self.assertEqual(assertions['register_form']['TXID'], '42')
 
+    def test_issue_receipt_opens_z_report_and_retries_when_register_reports_not_opened(self):
+        assertions = {'get_txid_calls': 0, 'register_calls': 0, 'open_calls': 0}
+
+        def handler(request: httpx.Request):
+            path = request.url.path
+            if path == '/FiscalDrive/List':
+                return httpx.Response(200, json=[{'FactoryID': 'FACTORY-1'}])
+            if path == '/FiscalDrive/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={'TerminalID': 'TERM-1', 'Locked': False, 'POSLocked': False, 'POSAuth': False},
+                )
+            if path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={
+                        'LastOperationTime': '2026-04-20 18:00:00',
+                        'ZReportsCount': 1,
+                        'ReceiptsCount': 0,
+                    },
+                )
+            if path == '/FiscalDrive/ZReport/Info/FACTORY-1':
+                return httpx.Response(
+                    200,
+                    json={
+                        'TerminalID': 'TERM-1',
+                        'FirstReceiptSeq': 0,
+                        'LastReceiptSeq': 0,
+                        'TotalSaleCount': 0,
+                    },
+                )
+            if path == '/FiscalDrive/ZReport/Open/FACTORY-1':
+                assertions['open_calls'] += 1
+                return httpx.Response(200, text='OK')
+            if path == '/FiscalDrive/Receipt/GetTXID/FACTORY-1':
+                assertions['get_txid_calls'] += 1
+                return httpx.Response(200, json=40 + assertions['get_txid_calls'])
+            if path == '/FiscalDrive/Receipt/RegisterTXID/FACTORY-1':
+                assertions['register_calls'] += 1
+                if assertions['register_calls'] == 1:
+                    return httpx.Response(500, json={'Reason': '9021 - ZREPORT_IS_NOT_OPENED'})
+                return httpx.Response(
+                    200,
+                    json={
+                        'TerminalID': 'TERM-1',
+                        'ReceiptSeq': 73,
+                        'DateTime': '2026-04-20 18:00:20',
+                        'FiscalSign': '222222222222',
+                        'QRCodeURL': 'https://ofd.soliq.uz/check?t=TERM-1&r=73',
+                    },
+                )
+            if path == '/DataBase/Files/Sync/FullReceipts/FACTORY-1':
+                return httpx.Response(200, json={'SuccessfulsCount': 1})
+            return httpx.Response(404, json={'message': f'Unexpected path: {path}'})
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=httpx.MockTransport(handler), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['receipt_number'], '73')
+        self.assertEqual(assertions['open_calls'], 1)
+        self.assertEqual(assertions['get_txid_calls'], 2)
+        self.assertEqual(assertions['register_calls'], 2)
+
     def test_issue_receipt_defaults_units_when_mxik_payload_has_no_unit_code(self):
         self.catalog_item.mxik_payload = {
             'unitCode': None,

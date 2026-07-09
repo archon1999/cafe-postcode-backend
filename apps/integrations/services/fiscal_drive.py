@@ -652,6 +652,18 @@ class FiscalDriveIntegrationService:
                 order=order,
             )
         except FiscalDriveError as error:
+            if self._is_z_report_not_open_error(error):
+                memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+                self._open_z_report(client=client, factory_id=target.factory_id, memory_info=memory_info)
+                memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+                receipt_payload['Time'] = self._format_operation_time(self._next_operation_datetime(memory_info))
+                return self._register_receipt_once(
+                    client=client,
+                    target=target,
+                    receipt_payload=receipt_payload,
+                    cashbox_id=cashbox_id,
+                    order=order,
+                )
             if not self._is_datetime_sync_error(error):
                 raise
             self._sync_state(client=client, factory_id=target.factory_id)
@@ -668,12 +680,7 @@ class FiscalDriveIntegrationService:
     def _register_receipt_once(self, *, client, target: FiscalDriveTarget, receipt_payload: dict, cashbox_id: str, order):
         memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
         if self._should_open_z_report(client=client, factory_id=target.factory_id, memory_info=memory_info):
-            open_time = self._format_operation_time(self._next_operation_datetime(memory_info))
-            self._post_form(
-                client,
-                f'/FiscalDrive/ZReport/Open/{target.factory_id}',
-                {'DateTime': open_time},
-            )
+            self._open_z_report(client=client, factory_id=target.factory_id, memory_info=memory_info)
             memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
             receipt_payload['Time'] = self._format_operation_time(self._next_operation_datetime(memory_info))
 
@@ -732,6 +739,14 @@ class FiscalDriveIntegrationService:
     def _sync_state(self, *, client, factory_id: str):
         self._post_form(client, f'/FiscalDrive/State/Sync/{factory_id}')
 
+    def _open_z_report(self, *, client, factory_id: str, memory_info: dict | None):
+        open_time = self._format_operation_time(self._next_operation_datetime(memory_info))
+        return self._post_form(
+            client,
+            f'/FiscalDrive/ZReport/Open/{factory_id}',
+            {'DateTime': open_time},
+        )
+
     @staticmethod
     def _is_datetime_sync_error(error: FiscalDriveError) -> bool:
         detail = str(error).lower()
@@ -740,6 +755,11 @@ class FiscalDriveIntegrationService:
             or '9091' in detail
             or 'receipt time is in the past' in detail
         )
+
+    @staticmethod
+    def _is_z_report_not_open_error(error: FiscalDriveError) -> bool:
+        detail = str(error).lower()
+        return 'zreport_is_not_opened' in detail or '9021' in detail
 
     def _sync_full_receipts(self, *, client, factory_id: str) -> dict:
         try:
