@@ -683,8 +683,9 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
         self.assertFalse(payment.register_fiscal)
-        self.assertIsNone(result['receipt'])
-        self.assertEqual(result['receipts'], [])
+        self.assertEqual(result['receipt'].kind, Receipt.Kind.PLAIN)
+        self.assertEqual(result['receipts'], [result['receipt']])
+        self.assertIsNotNone(result['receipt'].print_document_id)
         self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists())
 
     def test_second_fiscal_payment_reuses_open_fiscal_shift(self):
@@ -779,3 +780,9 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(result['receipt'].payload['order_label'], '#505')
         self.assertEqual(result['receipt'].payload['cashier_name'], self.user.full_name)
         self.assertEqual(result['receipt'].payload['cashier_id'], str(self.user.id))
+        self.assertIsNotNone(result['receipt'].print_document_id)
+
+        result['receipt'].print_document = None
+        result['receipt'].save(update_fields=['print_document', 'updated_at'])
+        replayed = PaymentFiscalRetryService().retry(payment=payment)
+        self.assertIsNotNone(replayed['receipt'].print_document_id)

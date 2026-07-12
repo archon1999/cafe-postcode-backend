@@ -301,7 +301,8 @@ class PlatformTariffActivationApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('activationType', response.data)
 
-    def test_extend_active_entitlement_from_current_expiry(self):
+    @patch('apps.platform.services.restaurant_subscriptions.timezone.localdate', return_value=date(2026, 4, 20))
+    def test_extend_active_entitlement_from_current_expiry(self, _localdate_mock):
         self.client.force_authenticate(self.business_partner_user)
         self.client.post(
             f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',

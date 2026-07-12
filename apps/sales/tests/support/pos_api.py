@@ -221,8 +221,3 @@ class PosAPITestCase(PosTestDataMixin, APITestCase):
         self.assertEqual(response.status_code, 201, response.data)
         return response.data
 
-    def reprint_receipt_via_api(self, receipt_id):
-        response = self.client.post(f'/api/v1/pos/billing/receipts/{receipt_id}/reprint/', {}, format='json')
-        self.assertEqual(response.status_code, 200, response.data)
-        return response.data
-

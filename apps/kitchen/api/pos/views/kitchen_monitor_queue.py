@@ -1,17 +1,17 @@
 from datetime import timedelta
 
 from django.utils import timezone
-from rest_framework import permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.kitchen.api.pos.serializers.monitor_queue import KitchenMonitorQuerySerializer, KitchenMonitorQueueSerializer
 from apps.kitchen.models import KitchenTicket
 from apps.platform.services import FeatureGateService
+from common.api.permissions import EndpointRBACPermission
 
 
 class KitchenMonitorQueueView(APIView):
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
     def get(self, request):
@@ -19,6 +19,8 @@ class KitchenMonitorQueueView(APIView):
         serializer.is_valid(raise_exception=True)
 
         restaurant = serializer.validated_data['restaurant']
+        if request.user.get_restaurant_scope() != restaurant:
+            return Response({'detail': 'Restaurant does not match the authenticated user.'}, status=403)
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
 
         base_queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related('order').order_by('-created_at')

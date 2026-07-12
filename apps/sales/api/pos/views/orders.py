@@ -50,8 +50,13 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         state_service = self.state_service_class()
         table_session = serializer.validated_data.get('table_session')
         channel = Order.Channel.HALL if table_session else serializer.validated_data.get('channel', Order.Channel.HALL)
-        required_permission = POS_TABLES_MANAGE_PERMISSION if table_session or channel == Order.Channel.HALL else POS_TAKEAWAY_MENU_VIEW_PERMISSION
-        require_any_permission_code(self.request.user, required_permission)
+        if table_session:
+            required_permissions = (POS_TABLES_MANAGE_PERMISSION,)
+        elif channel == Order.Channel.HALL:
+            required_permissions = (POS_TAKEAWAY_MENU_VIEW_PERMISSION, POS_TABLES_MANAGE_PERMISSION)
+        else:
+            required_permissions = (POS_TAKEAWAY_MENU_VIEW_PERMISSION,)
+        require_any_permission_code(self.request.user, *required_permissions)
         state_service.ensure_session_accepts_new_order(table_session=table_session)
         distribution_point = serializer.validated_data.get('distribution_point')
         state_service.ensure_distribution_point_matches_order(
@@ -84,6 +89,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
 class PosOrderDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    state_service_class = OrderStateService
     rename_allowed_statuses = {Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY}
 
     def get_queryset(self):
@@ -111,16 +117,39 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
         if order.status not in self.rename_allowed_statuses:
             raise ValidationError({'displayName': [_('Only open orders can be renamed.')]})
 
+    def ensure_order_can_update_channel(self, request, order: Order):
+        if 'channel' not in request.data:
+            return
+        if order.table_session_id:
+            raise ValidationError({'channel': [_('Table orders cannot change channel.')]})
+        if order.status != Order.Status.OPEN or order.payments.exists():
+            raise ValidationError({'channel': [_('Only unpaid open counter orders can change channel.')]})
+
+    def perform_update(self, serializer):
+        channel = serializer.validated_data.get('channel', serializer.instance.channel)
+        updates = {}
+        if channel != serializer.instance.channel:
+            updates['distribution_point'] = self.state_service_class().resolve_distribution_point(
+                restaurant=serializer.instance.restaurant,
+                channel=channel,
+            )
+            if channel != Order.Channel.DELIVERY:
+                updates['delivery_phone'] = ''
+                updates['delivery_address'] = ''
+        serializer.save(**updates)
+
     def update(self, request, *args, **kwargs):
         order = self.get_object()
         require_any_permission_code(request.user, self.get_required_permission(order))
         self.ensure_order_can_update_display_name(request, order)
+        self.ensure_order_can_update_channel(request, order)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
         order = self.get_object()
         require_any_permission_code(request.user, self.get_required_permission(order))
         self.ensure_order_can_update_display_name(request, order)
+        self.ensure_order_can_update_channel(request, order)
         return super().partial_update(request, *args, **kwargs)
 
 
@@ -137,6 +166,14 @@ class OrderSubmitView(APIView):
         if not order.items.exists():
             return Response({'detail': _('Order has no items.')}, status=status.HTTP_400_BAD_REQUEST)
         self.order_submission_service_class().submit(order)
-        return Response(OrderSerializer(order).data)
+        payload = dict(OrderSerializer(order).data)
+        payload['kitchenPrintDocuments'] = [
+            str(document_id)
+            for document_id in order.kitchen_tickets.filter(
+                routed_via__in=['printer', 'both'],
+                print_document__isnull=False,
+            ).values_list('print_document_id', flat=True)
+        ]
+        return Response(payload)
 
 __all__ = ['OrderSubmitView', 'PosOrderDetailView', 'PosOrderListCreateView']

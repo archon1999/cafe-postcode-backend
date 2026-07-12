@@ -13,6 +13,7 @@ RUN apt-get update \
         build-essential \
         curl \
         libpq-dev \
+    && pip install --no-cache-dir --upgrade "pip>=26.1.2" \
     && pip install --no-cache-dir "poetry==$POETRY_VERSION" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

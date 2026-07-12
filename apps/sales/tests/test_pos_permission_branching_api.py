@@ -125,10 +125,18 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             'guest_count': 1,
             'note': '',
         }
+        counter_hall_payload = {
+            'channel': Order.Channel.HALL,
+            'guest_count': 1,
+            'note': '',
+        }
 
         self.client.force_authenticate(self.takeaway_user)
         hall_forbidden = self.client.post('/api/v1/pos/sales/orders/', hall_payload, format='json')
         self.assertEqual(hall_forbidden.status_code, status.HTTP_403_FORBIDDEN)
+        counter_hall_success = self.client.post('/api/v1/pos/sales/orders/', counter_hall_payload, format='json')
+        self.assertEqual(counter_hall_success.status_code, status.HTTP_201_CREATED, counter_hall_success.data)
+        self.assertEqual(str(counter_hall_success.data['distribution_point']), str(self.hall_distribution.id))
 
         self.client.force_authenticate(self.hall_user)
         hall_success = self.client.post('/api/v1/pos/sales/orders/', hall_payload, format='json')
@@ -276,9 +284,36 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         self.assertEqual(hall_forbidden.status_code, status.HTTP_403_FORBIDDEN)
         takeaway_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{takeaway_item.id}/')
         self.assertEqual(takeaway_success.status_code, status.HTTP_204_NO_CONTENT)
+        takeaway_order.refresh_from_db()
+        self.assertEqual(takeaway_order.status, Order.Status.CANCELLED)
 
         self.client.force_authenticate(self.hall_user)
         hall_manager_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')
         self.assertEqual(hall_manager_success.status_code, status.HTTP_204_NO_CONTENT)
+        hall_order.refresh_from_db()
+        self.assertEqual(hall_order.status, Order.Status.OPEN)
+
+    def test_counter_draft_channel_change_updates_distribution_point(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.takeaway_user,
+            order_number=5201,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.OPEN,
+            guest_count=1,
+        )
+
+        self.client.force_authenticate(self.takeaway_user)
+        response = self.client.patch(
+            f'/api/v1/pos/sales/orders/{order.id}/',
+            {'channel': Order.Channel.HALL},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.channel, Order.Channel.HALL)
+        self.assertEqual(order.distribution_point.kind, Order.Channel.HALL)
 
 

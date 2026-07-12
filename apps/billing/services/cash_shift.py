@@ -13,7 +13,6 @@ from apps.billing.helpers import (
     get_payment_refund_model,
     get_receipt_model,
 )
-from apps.integrations.models import IntegrationConfig
 from apps.integrations.services import close_fiscal_shift, get_fiscal_device_status, open_fiscal_shift
 from apps.restaurants.helpers import get_cash_desk_model
 from apps.users.models import EmployeeProfile, User
@@ -44,39 +43,6 @@ class CashShiftService:
             .filter(Q(cashier=user) | Q(cashier__isnull=True))
             .order_by('-opened_at')
             .first()
-        )
-
-    def get_prebill_print_cash_desk(self, *, restaurant, user):
-        active_shift = self.get_active_shift(restaurant=restaurant, user=user)
-        if active_shift is not None and self._cash_desk_has_enabled_printer(active_shift.cash_desk):
-            return active_shift.cash_desk
-
-        printer_shift = (
-            CashShift.objects.select_related(
-                'cash_desk',
-                'cash_desk__printer_integration',
-            )
-            .filter(
-                cash_desk__restaurant=restaurant,
-                status=CashShift.Status.OPEN,
-                cash_desk__printer_integration__kind=IntegrationConfig.Kind.PRINTER,
-                cash_desk__printer_integration__is_enabled=True,
-            )
-            .order_by('-opened_at')
-            .first()
-        )
-        if printer_shift is not None:
-            return printer_shift.cash_desk
-
-        return active_shift.cash_desk if active_shift is not None else None
-
-    @staticmethod
-    def _cash_desk_has_enabled_printer(cash_desk):
-        printer_integration = getattr(cash_desk, 'printer_integration', None)
-        return (
-            printer_integration is not None
-            and printer_integration.kind == IntegrationConfig.Kind.PRINTER
-            and printer_integration.is_enabled
         )
 
     def get_available_cash_desks(self, *, restaurant):

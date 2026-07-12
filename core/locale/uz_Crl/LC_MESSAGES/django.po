@@ -16,16 +16,16 @@ msgid "Summary Report"
 msgstr "Ҳисобот хулосаси"
 
 msgid "Sales Report"
-msgstr "Савдо ҳисоботи"
+msgstr "Тўловлар"
 
 msgid "Open Checks Report"
 msgstr "Очиқ чеклар ҳисоботи"
 
 msgid "Top Items Report"
-msgstr "Топ маҳсулотлар ҳисоботи"
+msgstr "Маҳсулотлар"
 
 msgid "Top Staff Report"
-msgstr "Топ ходимлар ҳисоботи"
+msgstr "Ходимлар"
 
 msgid "Payment Breakdown Report"
 msgstr "Тўлов турлари ҳисоботи"
@@ -40,7 +40,7 @@ msgid "Payment Breakdown"
 msgstr "Тўлов турлари кесимида"
 
 msgid "Sales Total"
-msgstr "Жами савдо"
+msgstr "Соф тушум"
 
 msgid "Orders Count"
 msgstr "Буюртмалар сони"
@@ -107,6 +107,117 @@ msgstr "Кун"
 
 msgid "Month"
 msgstr "Ой"
+
+msgid "Search"
+msgstr "Қидирув"
+
+msgid "Yes"
+msgstr "Ҳа"
+
+msgid "No"
+msgstr "Йўқ"
+
+msgid "Gross Sales Total"
+msgstr "Жами тушум"
+
+msgid "Refunds Total"
+msgstr "Қайтаришлар"
+
+msgid "Receipts Report"
+msgstr "Чеклар"
+
+msgid "receipts-report"
+msgstr "чеклар"
+
+msgid "Type"
+msgstr "Тури"
+
+msgid "Amount"
+msgstr "Сумма"
+
+msgid "Precheck"
+msgstr "Пречек"
+
+msgid "Receipt"
+msgstr "Чек"
+
+msgid "Created"
+msgstr "Яратилган"
+
+msgid "Sent"
+msgstr "Юборилган"
+
+msgid "Failed"
+msgstr "Хатолик"
+
+msgid "Shift Report"
+msgstr "Сменалар ҳисоботи"
+
+msgid "Cashier"
+msgstr "Кассир"
+
+msgid "Cash Desk"
+msgstr "Касса"
+
+msgid "Opened At"
+msgstr "Очилган вақт"
+
+msgid "Closed At"
+msgstr "Ёпилган вақт"
+
+msgid "Opening Cash"
+msgstr "Бошланғич нақд"
+
+msgid "Expected Cash"
+msgstr "Кутилган нақд"
+
+msgid "Actual Cash"
+msgstr "Амалдаги нақд"
+
+msgid "Difference"
+msgstr "Фарқ"
+
+msgid "Cash Total"
+msgstr "Нақд тушум"
+
+msgid "Card Total"
+msgstr "Карта тушуми"
+
+msgid "Refund Total"
+msgstr "Қайтарилган сумма"
+
+msgid "Prechecks"
+msgstr "Пречеклар сони"
+
+msgid "Receipts"
+msgstr "Чеклар сони"
+
+msgid "Shift"
+msgstr "Смена"
+
+msgid "summary-report"
+msgstr "ҳисобот-хулосаси"
+
+msgid "sales-report"
+msgstr "савдо-ҳисоботи"
+
+msgid "open-checks-report"
+msgstr "очиқ-чеклар-ҳисоботи"
+
+msgid "top-items-report"
+msgstr "топ-маҳсулотлар-ҳисоботи"
+
+msgid "top-staff-report"
+msgstr "ходимлар-ҳисоботи"
+
+msgid "payment-breakdown-report"
+msgstr "тўловлар-таркиби-ҳисоботи"
+
+msgid "shift-report"
+msgstr "сменалар-ҳисоботи"
+
+msgid "range"
+msgstr "оралиқ"
 
 msgid "Year"
 msgstr "Йил"

@@ -85,3 +85,16 @@ class IntegrationConfigSerializerTests(TestCase):
         data = IntegrationConfigSerializer(instance).data
 
         self.assertEqual(data['display_name'], 'windows-raw (Windows/USB: POS-80 USB)')
+
+    def test_unikassa_fiscal_provider_is_rejected(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.FISCAL,
+                'provider': 'unikassa',
+                'is_enabled': True,
+                'settings': {},
+            }
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('provider', serializer.errors)

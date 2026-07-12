@@ -22,6 +22,7 @@ LOCAL_APPS = [
     'apps.reporting',
     'apps.integrations',
     'apps.local_agents',
+    'apps.printing',
 ]
 
 THIRD_PARTY_APPS = [

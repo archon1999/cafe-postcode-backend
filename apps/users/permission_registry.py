@@ -392,7 +392,10 @@ PERMISSION_DEFINITIONS = [
         ui_visible=True,
         group_key='restaurant_settings',
         name='Restoran sozlamalarini ko‘rish',
-        endpoints=endpoint_specs(('GET', 'api/v1/admin/restaurants/settings/')),
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/restaurants/settings/'),
+            ('GET', 'api/v1/admin/restaurants/my-restaurant/'),
+        ),
         default_roles=RESTAURANT_SETUP_ROLES,
     ),
     permission_definition(
@@ -454,10 +457,7 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/pos/billing/<uuid:pk>/refund/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
-            ('POST', 'api/v1/pos/billing/receipts/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/reprint/'),
+            ('POST', 'api/v1/pos/billing/payments/<uuid:pk>/print-document/'),
         ),
         default_roles=PAYMENT_OPERATION_ROLES,
     ),
@@ -469,7 +469,10 @@ PERMISSION_DEFINITIONS = [
         ui_visible=True,
         group_key='kitchen',
         name='Oshxona navbatini ko‘rish',
-        endpoints=endpoint_specs(('GET', 'api/v1/pos/kitchen/queue/')),
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/kitchen/queue/'),
+            ('GET', 'api/v1/pos/monitor/kitchen-queue/'),
+        ),
         default_roles=KITCHEN_OPERATION_ROLES,
     ),
     permission_definition(
@@ -514,12 +517,8 @@ PERMISSION_DEFINITIONS = [
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
             ('POST', 'api/v1/pos/catalog/scan/'),
-            ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
-            ('POST', 'api/v1/pos/billing/receipts/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
         ),
         default_roles=POS_TABLE_MANAGE_ROLES,
     ),
@@ -559,12 +558,8 @@ PERMISSION_DEFINITIONS = [
             ('DELETE', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:pk>/submit/'),
             ('POST', 'api/v1/pos/catalog/scan/'),
-            ('POST', 'api/v1/pos/billing/orders/<uuid:pk>/prebill/print/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
-            ('POST', 'api/v1/pos/billing/receipts/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
         ),
         default_roles=POS_TAKEAWAY_MENU_VIEW_ROLES,
     ),
@@ -578,6 +573,7 @@ PERMISSION_DEFINITIONS = [
         name="POS oshxona buyurtmalarini ko'rish",
         endpoints=endpoint_specs(
             ('GET', 'api/v1/pos/kitchen/queue/'),
+            ('GET', 'api/v1/pos/monitor/kitchen-queue/'),
             ('GET', 'api/v1/pos/kitchen/tickets/<uuid:pk>/'),
         ),
         default_roles=POS_KITCHEN_VIEW_ROLES,
@@ -606,6 +602,7 @@ PERMISSION_DEFINITIONS = [
         name="POS oshxona barcha buyurtmalarini ko'rish",
         endpoints=endpoint_specs(
             ('GET', 'api/v1/pos/kitchen/queue/'),
+            ('GET', 'api/v1/pos/monitor/kitchen-queue/'),
             ('GET', 'api/v1/pos/kitchen/tickets/<uuid:pk>/'),
         ),
         default_roles=POS_KITCHEN_VIEW_ALL_ROLES,
@@ -684,10 +681,7 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/pos/sales/orders/<uuid:order_id>/marking-status/'),
             ('GET', 'api/v1/pos/billing/qz/certificate/'),
             ('POST', 'api/v1/pos/billing/qz/sign/'),
-            ('POST', 'api/v1/pos/billing/receipts/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/print-result/'),
-            ('POST', 'api/v1/pos/billing/receipts/<uuid:pk>/reprint/'),
+            ('POST', 'api/v1/pos/billing/payments/<uuid:pk>/print-document/'),
         ),
         default_roles=POS_PAYMENT_OPERATION_ROLES,
     ),
@@ -759,6 +753,8 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/admin/reporting/sales/export/'),
             ('GET', 'api/v1/admin/reporting/open-checks/'),
             ('GET', 'api/v1/admin/reporting/open-checks/export/'),
+            ('GET', 'api/v1/admin/reporting/receipts/'),
+            ('GET', 'api/v1/admin/reporting/receipts/export/'),
             ('GET', 'api/v1/admin/reporting/top-items/'),
             ('GET', 'api/v1/admin/reporting/top-items/export/'),
             ('GET', 'api/v1/admin/reporting/top-staff/'),
@@ -989,6 +985,15 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/restaurants/cash-desks/',
         detail_url='api/v1/admin/restaurants/cash-desks/<uuid:pk>/',
         default_roles=RESTAURANT_SETUP_ROLES,
+        list_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/restaurants/cash-desks/'),
+            ('GET', 'api/v1/admin/restaurants/setup/readiness/'),
+        ),
+        create_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/restaurants/cash-desks/'),
+            ('POST', 'api/v1/admin/restaurants/setup/apply/'),
+            ('POST', 'api/v1/local-agent/enrollment-token/'),
+        ),
     )
 )
 PERMISSION_DEFINITIONS.extend(
@@ -1025,12 +1030,35 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/integrations/configs/',
         detail_url='api/v1/admin/integrations/configs/<uuid:pk>/',
         default_roles=RESTAURANT_SETUP_ROLES,
-        include_delete=False,
         list_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/integrations/configs/'),
             ('GET', 'api/v1/admin/integrations/fiscal-devices/'),
+            ('POST', 'api/v1/admin/integrations/marta/check/'),
             ('GET', 'api/v1/local-agent/status/'),
             ('POST', 'api/v1/local-agent/printer/check/'),
+        ),
+    )
+)
+PERMISSION_DEFINITIONS.extend(
+    crud_permissions(
+        'print_templates',
+        surface='admin',
+        group_key='restaurant_setup',
+        singular_label='Chek shabloni',
+        plural_label='Chek shablonlari',
+        list_url='api/v1/admin/printing/templates/',
+        detail_url='api/v1/admin/printing/templates/<uuid:pk>/',
+        default_roles=RESTAURANT_SETUP_ROLES,
+        include_delete=False,
+        list_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/printing/templates/'),
+            ('GET', 'api/v1/admin/printing/presets/'),
+        ),
+        create_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/printing/templates/<uuid:pk>/versions/'),
+        ),
+        update_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/printing/templates/<uuid:pk>/versions/<uuid:version_pk>/publish/'),
         ),
     )
 )

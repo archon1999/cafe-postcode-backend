@@ -25,16 +25,16 @@ msgid "Summary Report"
 msgstr "Сводный отчет"
 
 msgid "Sales Report"
-msgstr "Отчет по продажам"
+msgstr "Оплаты"
 
 msgid "Open Checks Report"
 msgstr "Отчет по открытым чекам"
 
 msgid "Top Items Report"
-msgstr "Отчет по топ-позициям"
+msgstr "Товары"
 
 msgid "Top Staff Report"
-msgstr "Отчет по топ-сотрудникам"
+msgstr "Сотрудники"
 
 msgid "Payment Breakdown Report"
 msgstr "Отчет по типам оплат"
@@ -49,7 +49,7 @@ msgid "Payment Breakdown"
 msgstr "Разбивка по оплатам"
 
 msgid "Sales Total"
-msgstr "Сумма продаж"
+msgstr "Чистая выручка"
 
 msgid "Orders Count"
 msgstr "Количество заказов"
@@ -272,3 +272,114 @@ msgstr "Статус"
 
 msgid "Month"
 msgstr "Месяц"
+
+msgid "Search"
+msgstr "Поиск"
+
+msgid "Yes"
+msgstr "Да"
+
+msgid "No"
+msgstr "Нет"
+
+msgid "Gross Sales Total"
+msgstr "Общая выручка"
+
+msgid "Refunds Total"
+msgstr "Возвраты"
+
+msgid "Receipts Report"
+msgstr "Чеки"
+
+msgid "receipts-report"
+msgstr "cheki"
+
+msgid "Type"
+msgstr "Тип"
+
+msgid "Amount"
+msgstr "Сумма"
+
+msgid "Precheck"
+msgstr "Пречек"
+
+msgid "Receipt"
+msgstr "Чек"
+
+msgid "Created"
+msgstr "Создан"
+
+msgid "Sent"
+msgstr "Отправлен"
+
+msgid "Failed"
+msgstr "Ошибка"
+
+msgid "Shift Report"
+msgstr "Отчёт по сменам"
+
+msgid "Cashier"
+msgstr "Кассир"
+
+msgid "Cash Desk"
+msgstr "Касса"
+
+msgid "Opened At"
+msgstr "Время открытия"
+
+msgid "Closed At"
+msgstr "Время закрытия"
+
+msgid "Opening Cash"
+msgstr "Начальные наличные"
+
+msgid "Expected Cash"
+msgstr "Ожидаемые наличные"
+
+msgid "Actual Cash"
+msgstr "Фактические наличные"
+
+msgid "Difference"
+msgstr "Расхождение"
+
+msgid "Cash Total"
+msgstr "Наличная выручка"
+
+msgid "Card Total"
+msgstr "Карточная выручка"
+
+msgid "Refund Total"
+msgstr "Сумма возвратов"
+
+msgid "Prechecks"
+msgstr "Количество пречеков"
+
+msgid "Receipts"
+msgstr "Количество чеков"
+
+msgid "Shift"
+msgstr "Смена"
+
+msgid "summary-report"
+msgstr "svodnyy-otchet"
+
+msgid "sales-report"
+msgstr "otchet-po-prodazham"
+
+msgid "open-checks-report"
+msgstr "otchet-po-otkrytym-chekam"
+
+msgid "top-items-report"
+msgstr "otchet-po-top-tovaram"
+
+msgid "top-staff-report"
+msgstr "otchet-po-sotrudnikam"
+
+msgid "payment-breakdown-report"
+msgstr "otchet-po-tipam-oplat"
+
+msgid "shift-report"
+msgstr "otchet-po-smenam"
+
+msgid "range"
+msgstr "period"

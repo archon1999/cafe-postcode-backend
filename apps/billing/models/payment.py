@@ -51,6 +51,7 @@ class Payment(BaseModel):
     external_ref = models.CharField(max_length=120, blank=True)
     provider_payload = models.JSONField(default=dict, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    edge_operation_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
     def save(self, *args, **kwargs):
         amount = int(self.amount or 0)

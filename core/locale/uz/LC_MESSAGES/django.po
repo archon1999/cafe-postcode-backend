@@ -25,19 +25,97 @@ msgid "Summary Report"
 msgstr "Hisobot xulosasi"
 
 msgid "Sales Report"
-msgstr "Savdo hisoboti"
+msgstr "To'lovlar"
 
 msgid "Open Checks Report"
 msgstr "Ochiq cheklar hisoboti"
 
 msgid "Top Items Report"
-msgstr "Top mahsulotlar hisoboti"
+msgstr "Mahsulotlar"
 
 msgid "Top Staff Report"
-msgstr "Top xodimlar hisoboti"
+msgstr "Xodimlar"
 
 msgid "Payment Breakdown Report"
 msgstr "To'lov turlari hisoboti"
+
+msgid "Shift Report"
+msgstr "Smenalar hisoboti"
+
+msgid "summary-report"
+msgstr "hisobot-xulosasi"
+
+msgid "sales-report"
+msgstr "savdo-hisoboti"
+
+msgid "open-checks-report"
+msgstr "ochiq-cheklar-hisoboti"
+
+msgid "top-items-report"
+msgstr "top-mahsulotlar-hisoboti"
+
+msgid "top-staff-report"
+msgstr "top-xodimlar-hisoboti"
+
+msgid "payment-breakdown-report"
+msgstr "tolovlar-tarkibi-hisoboti"
+
+msgid "shift-report"
+msgstr "smenalar-hisoboti"
+
+msgid "day"
+msgstr "kun"
+
+msgid "month"
+msgstr "oy"
+
+msgid "range"
+msgstr "oraliq"
+
+msgid "year"
+msgstr "yil"
+
+msgid "Cashier"
+msgstr "Kassir"
+
+msgid "Cash Desk"
+msgstr "Kassa"
+
+msgid "Opened At"
+msgstr "Ochilgan vaqt"
+
+msgid "Closed At"
+msgstr "Yopilgan vaqt"
+
+msgid "Opening Cash"
+msgstr "Boshlang'ich naqd"
+
+msgid "Expected Cash"
+msgstr "Kutilgan naqd"
+
+msgid "Actual Cash"
+msgstr "Amaldagi naqd"
+
+msgid "Difference"
+msgstr "Farq"
+
+msgid "Cash Total"
+msgstr "Naqd tushum"
+
+msgid "Card Total"
+msgstr "Karta tushum"
+
+msgid "Refund Total"
+msgstr "Qaytarilgan summa"
+
+msgid "Prechecks"
+msgstr "Precheklar soni"
+
+msgid "Receipts"
+msgstr "Cheklar soni"
+
+msgid "Shift"
+msgstr "Smena"
 
 msgid "Sales By Method"
 msgstr "Usullar bo'yicha savdo"
@@ -49,7 +127,7 @@ msgid "Payment Breakdown"
 msgstr "To'lov turlari kesimida"
 
 msgid "Sales Total"
-msgstr "Jami savdo"
+msgstr "Sof tushum"
 
 msgid "Orders Count"
 msgstr "Buyurtmalar soni"
@@ -271,3 +349,45 @@ msgstr "Holati"
 
 msgid "Month"
 msgstr "Oy"
+
+msgid "Search"
+msgstr "Qidiruv"
+
+msgid "Yes"
+msgstr "Ha"
+
+msgid "No"
+msgstr "Yo'q"
+
+msgid "Gross Sales Total"
+msgstr "Jami tushum"
+
+msgid "Refunds Total"
+msgstr "Qaytarishlar"
+
+msgid "Receipts Report"
+msgstr "Cheklar"
+
+msgid "receipts-report"
+msgstr "cheklar"
+
+msgid "Type"
+msgstr "Turi"
+
+msgid "Amount"
+msgstr "Summa"
+
+msgid "Precheck"
+msgstr "Prechek"
+
+msgid "Receipt"
+msgstr "Chek"
+
+msgid "Created"
+msgstr "Yaratilgan"
+
+msgid "Sent"
+msgstr "Yuborilgan"
+
+msgid "Failed"
+msgstr "Xatolik"

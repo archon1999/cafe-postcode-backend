@@ -64,7 +64,7 @@ class ReportExcelExportService:
         sheet.append([_('Filter'), _('Value')])
         self._make_bold(sheet[sheet.max_row])
         for label, value in filters:
-            sheet.append([label, value])
+            sheet.append([self._normalize_value(label), self._normalize_value(value)])
         sheet.append([])
 
     def _apply_widths(self, sheet) -> None:
@@ -86,7 +86,9 @@ class ReportExcelExportService:
         if isinstance(value, UUID):
             return str(value)
         if isinstance(value, (dict, list, tuple)):
-            return json.dumps(value, ensure_ascii=False)
+            value = json.dumps(value, ensure_ascii=False)
+        if isinstance(value, str) and value.startswith(('=', '+', '-', '@', '\t', '\r')):
+            return "'" + value
         return value
 
     @staticmethod

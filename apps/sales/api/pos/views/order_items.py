@@ -40,9 +40,25 @@ class OrderItemListCreateView(generics.ListCreateAPIView):
                 POS_TAKEAWAY_MENU_VIEW_PERMISSION,
                 POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION,
             )
+        before_documents = set(order.kitchen_tickets.values_list('print_document_id', flat=True))
         self.state_service_class().ensure_order_mutable(order=order)
         serializer.save(order=order, created_by=self.request.user)
         self.state_service_class().sync_after_items_changed(order=order)
+        self.kitchen_print_documents = [
+            str(document_id)
+            for document_id in order.kitchen_tickets.filter(
+                routed_via__in=['printer', 'both'],
+                print_document__isnull=False,
+            ).values_list('print_document_id', flat=True)
+            if document_id not in before_documents
+        ]
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        payload = dict(response.data)
+        payload['kitchenPrintDocuments'] = getattr(self, 'kitchen_print_documents', [])
+        response.data = payload
+        return response
 
 
 class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -80,5 +96,13 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         self.state_service_class().ensure_order_mutable(order=order)
         instance.delete()
         self.state_service_class().sync_after_items_changed(order=order)
+        if (
+            not order.table_session_id
+            and order.status == Order.Status.OPEN
+            and not order.items.exists()
+            and not order.payments.exists()
+        ):
+            order.status = Order.Status.CANCELLED
+            order.save(update_fields=['status', 'updated_at'])
 
 __all__ = ['OrderItemDetailView', 'OrderItemListCreateView']

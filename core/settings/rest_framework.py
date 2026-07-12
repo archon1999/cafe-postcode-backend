@@ -26,9 +26,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': DEFAULT_PAGE_SIZE,
     'EXCEPTION_HANDLER': 'common.api.exception_handler.custom_exception_handler',
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        'common.api.authentication.ExpiringSessionTokenAuthentication',
     ),
     'DEFAULT_RENDERER_CLASSES': DEFAULT_RENDERER_CLASSES,
     'DEFAULT_PARSER_CLASSES': (
@@ -47,7 +45,14 @@ REST_FRAMEWORK = {
         'login': '10/min',
         'pin_login': '20/min',
         'submit': '10/min',
+        'agent_enrollment': '10/min',
     }
+}
+
+AUTH_SESSION_TTL_SECONDS = {
+    'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(12 * 60 * 60))),
+    'pos': int(os.getenv('POS_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
+    'dashboard': int(os.getenv('DASHBOARD_AUTH_SESSION_TTL_SECONDS', str(12 * 60 * 60))),
 }
 
 JSON_CAMEL_CASE = {

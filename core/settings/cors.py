@@ -6,7 +6,7 @@ def parse_csv_env(name: str) -> list[str]:
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
-CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_CREDENTIALS = False
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'http://localhost:4300',
@@ -31,12 +31,13 @@ CORS_ALLOWED_ORIGINS = [
     'http://127.0.0.1:4175',
     'https://cafe-postcode.uz',
     'https://www.cafe-postcode.uz',
+    'https://admin.cafe-postcode.uz',
+    'https://pos.cafe-postcode.uz',
+    'https://dashboard.cafe-postcode.uz',
 ]
 CORS_ALLOWED_ORIGINS.extend(parse_csv_env('CORS_ALLOWED_ORIGINS'))
 
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r'^https://([a-z0-9-]+\.)?cafe-postcode\.uz$',
-]
+CORS_ALLOWED_ORIGIN_REGEXES = []
 CORS_ALLOWED_ORIGIN_REGEXES.extend(parse_csv_env('CORS_ALLOWED_ORIGIN_REGEXES'))
 
 CORS_ALLOW_HEADERS = [
@@ -44,18 +45,17 @@ CORS_ALLOW_HEADERS = [
     'accept-language',
     'x-language',
     "accept",
-    'access-control-allow-origin',
-    'access-control-allow-credentials',
     "accept-encoding",
     "authorization",
     "content-type",
-    "set-cookie",
     "dnt",
     "origin",
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
     "x-admin-restaurant-id",
+    "x-edge-operation-id",
+    "x-edge-token",
 ]
 
 CORS_EXPOSE_HEADERS = [

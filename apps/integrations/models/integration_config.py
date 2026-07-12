@@ -14,6 +14,7 @@ class IntegrationConfig(BaseModel):
         on_delete=models.CASCADE,
         related_name='integration_configs',
     )
+    name = models.CharField(max_length=120, blank=True, default='')
     kind = models.CharField(max_length=20, choices=Kind.choices)
     provider = models.CharField(max_length=120)
     is_enabled = models.BooleanField(default=True)
@@ -23,4 +24,4 @@ class IntegrationConfig(BaseModel):
         ordering = ('kind', 'provider')
 
     def __str__(self):
-        return f'{self.kind}:{self.provider}'
+        return self.name or f'{self.kind}:{self.provider}'

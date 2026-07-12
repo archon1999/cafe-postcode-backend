@@ -9,6 +9,7 @@ OrderItem = get_order_item_model()
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
     catalog_item_name = serializers.CharField(source='catalog_item.name', read_only=True)
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
     markings = serializers.SerializerMethodField()

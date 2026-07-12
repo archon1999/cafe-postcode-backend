@@ -9,6 +9,7 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.billing.models import CashShift, Payment, Receipt
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
+from apps.printing.models import PrintTemplate
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -241,10 +242,63 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(self.order.cashier_id, self.user.id)
         self.assertEqual(response.data['payment']['method'], Payment.Method.CASH)
-        self.assertIsNone(response.data['receipt'])
+        self.assertEqual(response.data['receipt']['kind'], Receipt.Kind.PLAIN)
+        self.assertEqual(response.data['receipt']['status'], Receipt.Status.CREATED)
+        self.assertIsNotNone(response.data['receipt']['print_document'])
         payment = Payment.objects.get(order=self.order)
         self.assertFalse(payment.register_fiscal)
-        self.assertFalse(payment.receipts.exists())
+        receipt = payment.receipts.get()
+        self.assertEqual(receipt.kind, Receipt.Kind.PLAIN)
+        self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
+        self.assertEqual(receipt.print_document.template_version.status, 'published')
+
+    def test_edge_operation_id_makes_payment_replay_idempotent(self):
+        payload = {
+            'method': Payment.Method.CASH,
+            'amount': self.order.total,
+            'edgeOperationId': 'edge-payment-order-1001',
+        }
+
+        first = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            payload,
+            format='json',
+        )
+        second = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            payload,
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(first.data['payment']['id'], second.data['payment']['id'])
+        self.assertEqual(Payment.objects.filter(order=self.order).count(), 1)
+
+    @patch('apps.billing.services.order_payment.charge_payment')
+    def test_public_pos_cannot_inject_edge_terminal_result(self, charge_payment):
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.CARD,
+                'amount': self.order.total,
+                'edgeOperationId': 'edge-untrusted-card-1',
+                'edgeProviderResult': {
+                    'ok': True,
+                    'provider': 'marta-softpos',
+                    'status': 'SUCCESS',
+                    'reference': 'trx-forged',
+                    'cardAmount': self.order.total,
+                    'edgeOperationId': 'edge-untrusted-card-1',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('edgeProviderResult', response.data)
+        charge_payment.assert_not_called()
+        self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
     @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'split-ref'})
     def test_split_payments_can_close_order_across_multiple_methods(self, _charge_payment):
@@ -310,7 +364,12 @@ class PaymentCreateApiTests(APITestCase):
         payments = Payment.objects.filter(order=self.order, status=Payment.Status.SUCCEEDED).order_by('created_at')
         self.assertEqual(payments.count(), 2)
         self.assertEqual(self.order.status, Order.Status.CLOSED)
-        self.assertFalse(Receipt.objects.filter(order=self.order).exists())
+        receipt = Receipt.objects.get(order=self.order)
+        self.assertEqual(receipt.kind, Receipt.Kind.PLAIN)
+        self.assertEqual(receipt.payload['payment_method'], Payment.Method.MIXED)
+        self.assertEqual(receipt.payload['cash_amount'], 20000)
+        self.assertEqual(receipt.payload['card_amount'], self.order.total - 20000)
+        self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
 
     def test_closed_order_cannot_be_paid_twice(self):
         first_response = self.client.post(

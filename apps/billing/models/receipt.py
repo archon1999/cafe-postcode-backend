@@ -5,7 +5,7 @@ from common.models import BaseModel
 
 class Receipt(BaseModel):
     class Kind(models.TextChoices):
-        PREBILL = 'prebill', 'Prebill'
+        PLAIN = 'plain', 'Plain payment receipt'
         FISCAL = 'fiscal', 'Fiscal'
         REFUND = 'refund', 'Refund'
 
@@ -16,6 +16,13 @@ class Receipt(BaseModel):
 
     order = models.ForeignKey('sales.Order', on_delete=models.CASCADE, related_name='receipts')
     payment = models.ForeignKey('billing.Payment', on_delete=models.SET_NULL, related_name='receipts', null=True, blank=True)
+    print_document = models.ForeignKey(
+        'printing.PrintDocument',
+        on_delete=models.PROTECT,
+        related_name='receipts',
+        null=True,
+        blank=True,
+    )
     kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.FISCAL)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.CREATED)
     provider = models.CharField(max_length=120, blank=True)

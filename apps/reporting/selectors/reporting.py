@@ -1,11 +1,16 @@
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime
 
-from django.db.models import Count, F, QuerySet, Sum, Value
+from django.db.models import Count, F, Q, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 
-from apps.billing.helpers import get_cash_shift_model, get_payment_model
+from apps.billing.helpers import (
+    get_cash_shift_model,
+    get_payment_model,
+    get_payment_refund_model,
+    get_receipt_model,
+)
 from apps.floor.models import TableSession
 from apps.sales.helpers import get_order_item_model, get_order_model
 from common.api.query_params import get_str_query_param
@@ -15,6 +20,8 @@ CashShift = get_cash_shift_model()
 Order = get_order_model()
 OrderItem = get_order_item_model()
 Payment = get_payment_model()
+PaymentRefund = get_payment_refund_model()
+Receipt = get_receipt_model()
 
 REPORT_PERIOD_DAY = 'day'
 REPORT_PERIOD_MONTH = 'month'
@@ -107,7 +114,16 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
     )
     if restaurant is not None:
         succeeded_payments = succeeded_payments.filter(order__restaurant=restaurant)
-    sales_total = succeeded_payments.aggregate(total=Sum('amount')).get('total') or 0
+    gross_sales_total = succeeded_payments.aggregate(total=Sum('amount')).get('total') or 0
+    succeeded_refunds = PaymentRefund.objects.filter(
+        status=PaymentRefund.Status.SUCCEEDED,
+        refunded_at__gte=period.start,
+        refunded_at__lt=period.end,
+    )
+    if restaurant is not None:
+        succeeded_refunds = succeeded_refunds.filter(payment__order__restaurant=restaurant)
+    refunds_total = succeeded_refunds.aggregate(total=Sum('amount')).get('total') or 0
+    sales_total = gross_sales_total - refunds_total
     closed_orders = Order.objects.filter(
         closed_at__gte=period.start,
         closed_at__lt=period.end,
@@ -132,6 +148,8 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
         active_tables = active_tables.filter(restaurant=restaurant)
     active_tables = active_tables.count()
     return {
+        'gross_sales_total': gross_sales_total,
+        'refunds_total': refunds_total,
         'sales_total': sales_total,
         'orders_count': orders_count,
         'average_check': average_check,
@@ -171,8 +189,9 @@ def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySe
 
 def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = OrderItem.objects.filter(
-        order__created_at__gte=period.start,
-        order__created_at__lt=period.end,
+        order__status=Order.Status.CLOSED,
+        order__closed_at__gte=period.start,
+        order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
     if restaurant is not None:
         queryset = queryset.filter(order__restaurant=restaurant)
@@ -186,8 +205,9 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
 
 def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = OrderItem.objects.filter(
-        order__created_at__gte=period.start,
-        order__created_at__lt=period.end,
+        order__status=Order.Status.CLOSED,
+        order__closed_at__gte=period.start,
+        order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
     if restaurant is not None:
         queryset = queryset.filter(order__restaurant=restaurant)
@@ -229,6 +249,38 @@ def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         'opened_by_id',
         cashier_name=Coalesce(F('cashier__full_name'), F('opened_by__full_name')),
         cash_desk_name=F('cash_desk__name'),
+        precheck_count=Count(
+            'payments__receipts',
+            filter=Q(payments__receipts__kind=Receipt.Kind.PLAIN),
+            distinct=True,
+        ),
+    )
+
+
+def get_receipts_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
+    queryset = Receipt.objects.filter(
+        created_at__gte=period.start,
+        created_at__lt=period.end,
+        kind__in=[Receipt.Kind.PLAIN, Receipt.Kind.FISCAL],
+    )
+    if restaurant is not None:
+        queryset = queryset.filter(order__restaurant=restaurant)
+    return queryset.values(
+        'id',
+        'kind',
+        'status',
+        'created_at',
+        'payment_id',
+        order_number=F('order__order_number'),
+        amount=Coalesce(F('payment__amount'), F('order__total'), Value(0)),
+        payment_method=F('payment__method'),
+        cashier_name=Coalesce(
+            F('payment__received_by__full_name'),
+            F('order__cashier__full_name'),
+            F('order__opened_by__full_name'),
+            Value("Noma'lum"),
+        ),
+        cash_desk_name=F('payment__cash_desk__name'),
     )
 
 

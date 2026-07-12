@@ -12,6 +12,7 @@ class ReceiptSerializer(serializers.ModelSerializer):
             'id',
             'order',
             'payment',
+            'print_document',
             'kind',
             'status',
             'provider',

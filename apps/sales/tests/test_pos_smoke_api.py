@@ -1,6 +1,7 @@
 from rest_framework import status
 
 from apps.floor.models import DiningTable, TableSession
+from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
@@ -90,11 +91,19 @@ class PosSmokeApiTests(PosAPITestCase):
                 and item['service_fee'] == 3000
                 and item['service_fee_percent'] == 10
                 and item['receipts']
-                for item in closed_checks_response.data
+                for item in closed_checks_response.data['data']
             )
         )
 
     def test_takeaway_order_lifecycle_smoke(self):
+        printer = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            settings={'connection_type': 'system_printer', 'printer_name': 'Kitchen Printer'},
+        )
+        self.prep_station.printer_integration = printer
+        self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
         order_data = self.create_order_via_api(
             {
                 'distribution_point': str(self.takeaway_distribution.id),
@@ -113,6 +122,7 @@ class PosSmokeApiTests(PosAPITestCase):
 
         submitted = self.submit_order_via_api(order_id)
         self.assertEqual(submitted['status'], Order.Status.SUBMITTED)
+        self.assertEqual(len(submitted['kitchenPrintDocuments']), 1)
         self.assertEqual(KitchenTicket.objects.filter(order_id=order_id, prep_station=self.prep_station).count(), 1)
 
         open_checks_response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
@@ -146,7 +156,7 @@ class PosSmokeApiTests(PosAPITestCase):
                 and item['channel'] == Order.Channel.TAKEAWAY
                 and item['service_fee'] == 6000
                 and item['receipts']
-                for item in closed_checks_response.data
+                for item in closed_checks_response.data['data']
             )
         )
 

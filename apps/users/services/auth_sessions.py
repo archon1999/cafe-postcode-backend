@@ -1,5 +1,8 @@
 import logging
+from datetime import timedelta
 
+from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
@@ -9,9 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class AuthSessionService:
-    def issue(self, *, user, request):
-        token, _ = Token.objects.get_or_create(user=user)
-        session = self._upsert_session(user=user, token_key=token.key, request=request)
+    @transaction.atomic
+    def issue(self, *, user, request, surface: str):
+        Token.objects.filter(user=user).delete()
+        token = Token.objects.create(user=user)
+        session = self._upsert_session(user=user, token_key=token.key, request=request, surface=surface)
         logger.info(
             'Authentication session issued',
             extra={'user_id': str(user.pk), 'session_id': str(session.pk)},
@@ -45,13 +50,15 @@ class AuthSessionService:
         token.delete()
         return session
 
-    def _upsert_session(self, *, user, token_key: str, request):
+    def _upsert_session(self, *, user, token_key: str, request, surface: str):
         auth_session_model = get_auth_session_model()
         now = timezone.now()
         session, _ = auth_session_model.objects.update_or_create(
             token_key_hash=auth_session_model.build_token_key_hash(token_key),
             defaults={
                 'user': user,
+                'surface': surface,
+                'expires_at': now + timedelta(seconds=settings.AUTH_SESSION_TTL_SECONDS[surface]),
                 'client_ip': self._get_client_ip(request),
                 'user_agent': request.headers.get('User-Agent', '')[:255],
                 'status': auth_session_model.Status.ACTIVE,

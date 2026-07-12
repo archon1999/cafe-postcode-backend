@@ -9,6 +9,7 @@ from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_m
 from apps.platform.services import get_restaurant_balance_summary
 from apps.restaurants.helpers import get_restaurant_model
 from apps.users.helpers import get_employee_profile_model, get_user_model
+from common.utils.settings import get_setting
 
 Restaurant = get_restaurant_model()
 RestaurantEntitlement = get_restaurant_entitlement_model()
@@ -31,14 +32,6 @@ def _restore_faktura_payload(value):
             restored_key = ''.join(part.capitalize() for part in key[1:].split('_') if part)
         restored[restored_key] = _restore_faktura_payload(item)
     return restored
-
-
-def _read_setting(settings: dict | None, *keys: str):
-    for key in keys:
-        value = (settings or {}).get(key)
-        if value not in (None, ''):
-            return value
-    return None
 
 
 class RestaurantSerializer(serializers.ModelSerializer):
@@ -66,6 +59,7 @@ class RestaurantSerializer(serializers.ModelSerializer):
         decimal_places=2,
         min_value=Decimal('0'),
         max_value=Decimal('99'),
+        required=False,
     )
 
     class Meta:
@@ -229,6 +223,164 @@ class RestaurantSerializer(serializers.ModelSerializer):
         return restaurant
 
 
+class RestaurantSelfServiceSerializer(serializers.ModelSerializer):
+    """Restaurant-owned settings without platform, entitlement, or Faktura write access."""
+
+    PLATFORM_OWNED_INPUT_FIELDS = frozenset(
+        {
+            'business_partner',
+            'business_partner_id',
+            'tariff',
+            'tariff_id',
+            'faktura_payload',
+            'auth_code',
+            'currency',
+            'legal_name',
+            'tax_number',
+            'is_active',
+            'activated_at',
+            'deactivated_at',
+            'starts_on',
+            'expires_on',
+            'billing_period',
+        }
+    )
+
+    restaurant_access_active = serializers.SerializerMethodField()
+    tariff = serializers.SerializerMethodField()
+    starts_on = serializers.SerializerMethodField()
+    expires_on = serializers.SerializerMethodField()
+    billing_period = serializers.SerializerMethodField()
+    activation_type = serializers.SerializerMethodField()
+    pos_auth_background_image = serializers.ImageField(required=False, allow_null=True, write_only=True)
+    pos_auth_background_image_url = serializers.SerializerMethodField()
+    clear_pos_auth_background_image = serializers.BooleanField(required=False, default=False, write_only=True)
+    service_fee_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal('0'),
+        max_value=Decimal('99'),
+        required=False,
+    )
+
+    class Meta:
+        model = Restaurant
+        fields = (
+            'id',
+            'name',
+            'legal_name',
+            'tax_number',
+            'phone',
+            'social',
+            'address',
+            'currency',
+            'auth_code',
+            'service_fee_enabled',
+            'service_fee_percent',
+            'vat_enabled',
+            'vat_percent',
+            'marking_check_enabled',
+            'pos_auth_background_image',
+            'pos_auth_background_image_url',
+            'clear_pos_auth_background_image',
+            'is_active',
+            'activated_at',
+            'deactivated_at',
+            'restaurant_access_active',
+            'activation_type',
+            'starts_on',
+            'expires_on',
+            'billing_period',
+            'tariff',
+        )
+        read_only_fields = (
+            'id',
+            'legal_name',
+            'tax_number',
+            'currency',
+            'auth_code',
+            'is_active',
+            'activated_at',
+            'deactivated_at',
+        )
+
+    @staticmethod
+    def _entitlement(instance):
+        return getattr(instance, 'entitlement', None)
+
+    def get_restaurant_access_active(self, instance):
+        entitlement = self._entitlement(instance)
+        return bool(entitlement and entitlement.is_active)
+
+    def get_tariff(self, instance):
+        entitlement = self._entitlement(instance)
+        if entitlement is None or entitlement.tariff is None:
+            return None
+        tariff = entitlement.tariff
+        return {
+            'id': str(tariff.id),
+            'name': tariff.name,
+            'permission_codes': sorted(entitlement.get_effective_permission_codes()),
+            'role_codes': sorted(entitlement.get_effective_role_codes()),
+        }
+
+    def get_starts_on(self, instance):
+        entitlement = self._entitlement(instance)
+        return entitlement.starts_on if entitlement is not None else None
+
+    def get_expires_on(self, instance):
+        entitlement = self._entitlement(instance)
+        return entitlement.expires_on if entitlement is not None else None
+
+    def get_billing_period(self, instance):
+        entitlement = self._entitlement(instance)
+        return entitlement.billing_period if entitlement is not None else None
+
+    def get_activation_type(self, instance):
+        entitlement = self._entitlement(instance)
+        if entitlement is None:
+            return None
+        return 'custom' if entitlement.is_custom else 'tariff'
+
+    def get_pos_auth_background_image_url(self, instance):
+        image = getattr(instance, 'pos_auth_background_image', None)
+        if image and getattr(image, 'name', ''):
+            return image.url
+        return None
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        clear_image = attrs.get('clear_pos_auth_background_image', False)
+        image = attrs.get('pos_auth_background_image')
+        if clear_image and image is not None:
+            raise serializers.ValidationError(
+                {'pos_auth_background_image': 'Image upload cannot be combined with image removal.'}
+            )
+        if clear_image:
+            attrs['pos_auth_background_image'] = None
+        return attrs
+
+    def to_internal_value(self, data):
+        forbidden = sorted(self.PLATFORM_OWNED_INPUT_FIELDS.intersection(data.keys()))
+        if forbidden:
+            raise serializers.ValidationError(
+                {field: 'This field is managed by the platform and cannot be changed here.' for field in forbidden}
+            )
+        return super().to_internal_value(data)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('clear_pos_auth_background_image', False)
+        old_image = instance.pos_auth_background_image
+        old_image_name = old_image.name if old_image and getattr(old_image, 'name', '') else ''
+        old_image_storage = old_image.storage if old_image_name else None
+        restaurant = super().update(instance, validated_data)
+        new_image = restaurant.pos_auth_background_image
+        new_image_name = new_image.name if new_image and getattr(new_image, 'name', '') else ''
+        if old_image_name and old_image_name != new_image_name and old_image_storage is not None:
+            old_image_storage.delete(old_image_name)
+        return restaurant
+
+
 class RestaurantLookupSerializer(serializers.Serializer):
     tax_number = serializers.CharField(source='taxNumber')
     name = serializers.CharField()
@@ -316,10 +468,10 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             'configured': True,
             'is_enabled': config.is_enabled,
             'provider': config.provider,
-            'terminal_id': _read_setting(config.settings, 'terminal_id', 'terminalId'),
-            'cashbox_id': _read_setting(config.settings, 'cashbox_id', 'cashboxId'),
-            'tax_number': _read_setting(config.settings, 'tax_number', 'taxNumber'),
-            'endpoint_url': _read_setting(config.settings, 'endpoint_url', 'endpointUrl'),
+            'terminal_id': get_setting(config.settings, 'terminal_id', 'terminalId'),
+            'cashbox_id': get_setting(config.settings, 'cashbox_id', 'cashboxId'),
+            'tax_number': get_setting(config.settings, 'tax_number', 'taxNumber'),
+            'endpoint_url': get_setting(config.settings, 'endpoint_url', 'endpointUrl'),
         }
         return RestaurantSoliqIntegrationSerializer(payload).data
 

@@ -245,14 +245,13 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(response.data['detail'], 'Unikassa request failed: illegal request line')
         self.assertFalse(response.data['results'][0]['ok'])
 
-    def test_refund_and_reprint_endpoints_work_for_closed_paid_order(self):
+    def test_refund_and_print_document_endpoints_work_for_closed_paid_order(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         order_payload = self.create_order_via_api({'channel': 'takeaway'})
         self.add_item_via_api(order_payload['id'], quantity=1)
 
         with (
             patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal,
-            patch('apps.billing.services.payment_refund.reprint_fiscal_receipt') as reprint_fiscal,
             patch('apps.billing.services.payment_refund.issue_refund_receipt') as refund_fiscal,
         ):
             issue_fiscal.return_value = [
@@ -264,11 +263,6 @@ class CashierShiftApiTests(PosAPITestCase):
                     'split_reason': 'none',
                 }
             ]
-            reprint_fiscal.return_value = {
-                'ok': True,
-                'provider': 'unikassa',
-                'receipt_number': '1001',
-            }
             refund_fiscal.return_value = {
                 'ok': True,
                 'provider': 'unikassa',
@@ -276,16 +270,20 @@ class CashierShiftApiTests(PosAPITestCase):
             }
             order = Order.objects.get(pk=order_payload['id'])
             payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=order.total)
-            reprint_response = self.reprint_receipt_via_api(payment_response['receipt']['id'])
-            self.assertIn('receipt', reprint_response)
+            Receipt.objects.filter(pk=payment_response['receipt']['id']).delete()
+            print_document_response = self.client.post(
+                f"/api/v1/pos/billing/payments/{payment_response['payment']['id']}/print-document/"
+            )
+            self.assertEqual(print_document_response.status_code, status.HTTP_200_OK)
+            self.assertIsNotNone(print_document_response.data['receipt']['print_document'])
+            self.assertEqual(print_document_response.data['receipt']['kind'], Receipt.Kind.PLAIN)
 
             refund_response = self.refund_payment_via_api(payment_response['payment']['id'], reason='Customer returned order')
 
         order = Order.objects.get(pk=order_payload['id'])
-        receipt = Receipt.objects.get(pk=payment_response['receipt']['id'])
         self.assertEqual(order.status, Order.Status.CLOSED)
-        self.assertEqual(receipt.reprint_count, 1)
         self.assertEqual(refund_response['receipt']['kind'], Receipt.Kind.REFUND)
+        self.assertIsNotNone(refund_response['receipt']['print_document'])
         self.assertTrue(
             PaymentRefund.objects.filter(payment_id=payment_response['payment']['id'], status=PaymentRefund.Status.SUCCEEDED).exists()
         )

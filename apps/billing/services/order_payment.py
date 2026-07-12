@@ -13,6 +13,7 @@ from apps.billing.services.cash_shift import CashShiftService
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.integrations.services import build_order_label, charge_payment, issue_fiscal_receipts
 from apps.integrations.services.marta_softpos import DEFAULT_AMOUNT_MULTIPLIER, DEFAULT_TIMEOUT_SECONDS, JAVA_LONG_MAX
+from apps.printing.services import attach_receipt_print_document
 from apps.sales.helpers import get_order_model
 from apps.sales.services import OrderStateService, OrderSubmissionService, validate_order_markings
 from common.api.permissions import POS_FISCAL_RECEIPTS_SKIP_PERMISSION, has_permission_code
@@ -193,8 +194,23 @@ class OrderPaymentService:
 
         return self._complete_successful_payment(order=payment.order, payment=payment, received_by=received_by)
 
-    def process(self, *, order: Order, payload: dict, received_by, cash_shift=None):
+    def process(self, *, order: Order, payload: dict, received_by, cash_shift=None, trusted_edge_replay=False):
         from apps.billing.serializers import PaymentSerializer
+
+        edge_operation_id = str(payload.get('edge_operation_id') or payload.get('edgeOperationId') or '').strip()
+        if edge_operation_id:
+            existing = Payment.objects.filter(edge_operation_id=edge_operation_id).select_related('order').first()
+            if existing is not None:
+                if existing.order_id != order.id:
+                    raise ValidationError({'edgeOperationId': _('Operation ID belongs to another order.')})
+                receipts = list(existing.receipts.order_by('created_at'))
+                return {
+                    'payment': existing,
+                    'receipt': receipts[0] if receipts else None,
+                    'receipts': receipts,
+                    'order': existing.order,
+                    'detail': (existing.provider_payload or {}).get('detail', ''),
+                }
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
@@ -213,6 +229,9 @@ class OrderPaymentService:
         serializer.is_valid(raise_exception=True)
         manual_card_override = bool(serializer.validated_data.pop('manual_card_override', False))
         manual_card_reason = str(serializer.validated_data.pop('manual_card_reason', '') or '')
+        edge_provider_result = serializer.validated_data.pop('edge_provider_result', None)
+        if edge_provider_result is not None and not trusted_edge_replay:
+            raise ValidationError({'edgeProviderResult': _('Only a trusted local agent may replay a terminal result.')})
         register_fiscal = bool(serializer.validated_data.get('register_fiscal', True))
         if not register_fiscal and not has_permission_code(received_by, POS_FISCAL_RECEIPTS_SKIP_PERMISSION):
             raise ValidationError({'register_fiscal': _('You do not have permission to skip fiscal registration.')})
@@ -236,14 +255,25 @@ class OrderPaymentService:
         if payment_amount > remaining_amount:
             raise ValidationError({'amount': _('Payment amount cannot exceed the remaining total.')})
 
+        validated_edge_result = None
+        if edge_provider_result is not None:
+            validated_edge_result = self._validated_edge_provider_result(
+                result=edge_provider_result,
+                method=serializer.validated_data['method'],
+                card_amount=serializer.validated_data['card_amount'],
+                edge_operation_id=edge_operation_id,
+            )
         payment = serializer.save(order=order, received_by=received_by, cash_shift=cash_shift, cash_desk=cash_desk)
 
-        payment_result = charge_payment(
-            order=order,
-            payment=payment,
-            manual_card_override=manual_card_override,
-            manual_card_reason=manual_card_reason,
-        )
+        if validated_edge_result is not None:
+            payment_result = validated_edge_result
+        else:
+            payment_result = charge_payment(
+                order=order,
+                payment=payment,
+                manual_card_override=manual_card_override,
+                manual_card_reason=manual_card_reason,
+            )
         payment.status = Payment.Status.SUCCEEDED if payment_result.get('ok') else Payment.Status.FAILED
         payment.external_ref = payment_result.get('reference', '')
         payment.provider_payload = payment_result
@@ -263,6 +293,47 @@ class OrderPaymentService:
             }
 
         return self._complete_successful_payment(order=order, payment=payment, received_by=received_by)
+
+    @staticmethod
+    def _validated_edge_provider_result(*, result, method, card_amount, edge_operation_id):
+        if not isinstance(result, dict):
+            raise ValidationError({'edgeProviderResult': _('Terminal result must be an object.')})
+        provider = str(result.get('provider') or '').strip()
+        terminal_status = str(result.get('status') or '').strip().upper()
+        reference = str(result.get('reference') or '').strip()
+        result_operation_id = str(result.get('edgeOperationId') or result.get('edge_operation_id') or '').strip()
+        try:
+            charged_card_amount = int(result.get('cardAmount') or result.get('card_amount') or 0)
+        except (TypeError, ValueError):
+            charged_card_amount = 0
+
+        errors = {}
+        if method not in {Payment.Method.CARD, Payment.Method.MIXED}:
+            errors['method'] = _('A terminal result is valid only for card or mixed payments.')
+        if provider != 'marta-softpos':
+            errors['provider'] = _('Unsupported local payment provider.')
+        if result.get('ok') is not True or terminal_status != 'SUCCESS':
+            errors['status'] = _('The local terminal result is not successful.')
+        if not reference:
+            errors['reference'] = _('The local terminal reference is required.')
+        if not edge_operation_id or result_operation_id != edge_operation_id:
+            errors['edgeOperationId'] = _('Terminal result does not match the Edge operation.')
+        if charged_card_amount != int(card_amount or 0):
+            errors['cardAmount'] = _('Terminal charged amount does not match the payment card amount.')
+        if errors:
+            raise ValidationError({'edgeProviderResult': errors})
+
+        return {
+            **result,
+            'ok': True,
+            'provider': provider,
+            'status': terminal_status,
+            'reference': reference,
+            'cardAmount': charged_card_amount,
+            'edgeOperationId': edge_operation_id,
+            'trustedEdgeReplay': True,
+            'replayed_at': timezone.now().isoformat(),
+        }
 
     def _validate_shift(self, *, order, cash_shift):
         if cash_shift is None:
@@ -364,6 +435,8 @@ class OrderPaymentService:
             else:
                 payment.register_fiscal = False
                 payment.save(update_fields=['register_fiscal', 'updated_at'])
+        if is_fully_paid and not receipts:
+            receipts.append(self._create_plain_receipt(order=order, payment=payment, created_by=received_by))
         logger.info(
             'Payment processed',
             extra={
@@ -442,7 +515,7 @@ class OrderPaymentService:
     def _create_fiscal_receipt(self, *, order, payment, receipt_result: dict):
         status = Receipt.Status.SENT if receipt_result.get('ok') else Receipt.Status.FAILED
         payload = self._receipt_payload_with_order_context(order=order, receipt_result=receipt_result)
-        return Receipt.objects.create(
+        receipt = Receipt.objects.create(
             order=order,
             payment=payment,
             kind=Receipt.Kind.FISCAL,
@@ -455,6 +528,26 @@ class OrderPaymentService:
             fiscal_error_code=str(receipt_result.get('code') or receipt_result.get('error_code') or ''),
             fiscal_error_message='' if status == Receipt.Status.SENT else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         )
+        attach_receipt_print_document(
+            receipt=receipt,
+            fiscal_result=receipt_result,
+            created_by=payment.received_by,
+        )
+        return receipt
+
+    @staticmethod
+    def _create_plain_receipt(*, order, payment, created_by):
+        receipt = Receipt.objects.create(
+            order=order,
+            payment=payment,
+            kind=Receipt.Kind.PLAIN,
+            status=Receipt.Status.CREATED,
+            provider='local-edge',
+            payload={},
+            original_paid_at=payment.paid_at,
+        )
+        attach_receipt_print_document(receipt=receipt, created_by=created_by)
+        return receipt
 
     @staticmethod
     def _receipt_payload_with_order_context(*, order, receipt_result: dict):
@@ -521,6 +614,13 @@ class PaymentFiscalRetryService:
             .order_by('created_at')
         )
         if sent_receipts and not pending_receipts:
+            for receipt in sent_receipts:
+                if receipt.print_document_id is None:
+                    attach_receipt_print_document(
+                        receipt=receipt,
+                        fiscal_result=receipt.payload or {},
+                        created_by=payment.received_by,
+                    )
             return {
                 'payment': payment,
                 'receipt': sent_receipts[0],
@@ -612,26 +712,32 @@ class PaymentFiscalRetryService:
             'fiscal_error_message': '' if status == Receipt.Status.SENT else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         }
         if receipt is None:
-            return Receipt.objects.create(
+            receipt = Receipt.objects.create(
                 order=payment.order,
                 payment=payment,
                 kind=Receipt.Kind.FISCAL,
                 **values,
             )
-
-        for field, value in values.items():
-            setattr(receipt, field, value)
-        receipt.save(
-            update_fields=[
-                'status',
-                'provider',
-                'payload',
-                'fiscal_requested_at',
-                'fiscal_registered_at',
-                'original_paid_at',
-                'fiscal_error_code',
-                'fiscal_error_message',
-                'updated_at',
-            ]
-        )
+        else:
+            for field, value in values.items():
+                setattr(receipt, field, value)
+            receipt.save(
+                update_fields=[
+                    'status',
+                    'provider',
+                    'payload',
+                    'fiscal_requested_at',
+                    'fiscal_registered_at',
+                    'original_paid_at',
+                    'fiscal_error_code',
+                    'fiscal_error_message',
+                    'updated_at',
+                ]
+            )
+        if status == Receipt.Status.SENT:
+            attach_receipt_print_document(
+                receipt=receipt,
+                fiscal_result=receipt_result,
+                created_by=payment.received_by,
+            )
         return receipt

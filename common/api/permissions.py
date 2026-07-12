@@ -117,7 +117,6 @@ AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
     ('POST', 'api/v1/pos/auth/logout/'),
     ('GET', 'api/v1/admin/auth/me/'),
     ('POST', 'api/v1/admin/auth/logout/'),
-    ('GET', 'api/v1/admin/restaurants/my-restaurant/'),
     ('POST', 'api/v1/dashboard/auth/logout/'),
 }
 

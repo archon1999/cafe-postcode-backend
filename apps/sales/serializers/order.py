@@ -13,6 +13,7 @@ DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
 
 
 class OrderSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
     items = serializers.SerializerMethodField()
     payments = PaymentSerializer(many=True, read_only=True)
     receipts = ReceiptSerializer(many=True, read_only=True)

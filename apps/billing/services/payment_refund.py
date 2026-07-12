@@ -4,7 +4,8 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import ValidationError
 
 from apps.billing.helpers import get_payment_model, get_payment_refund_model, get_receipt_model
-from apps.integrations.services import issue_refund_receipt, refund_payment, reprint_fiscal_receipt
+from apps.integrations.services import issue_refund_receipt, refund_payment
+from apps.printing.services import attach_receipt_print_document
 
 Payment = get_payment_model()
 PaymentRefund = get_payment_refund_model()
@@ -50,22 +51,39 @@ class PaymentRefundService:
             fiscal_error_code=str(receipt_result.get('code') or receipt_result.get('error_code') or ''),
             fiscal_error_message='' if receipt_result.get('ok') else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         )
+        self._ensure_print_document(receipt=receipt, created_by=refunded_by)
         return {'refund': refund, 'receipt': receipt}
 
     @transaction.atomic
-    def reprint(self, *, receipt, cash_shift):
+    def ensure_payment_print_document(self, *, payment, created_by, cash_shift):
+        if payment.status != Payment.Status.SUCCEEDED:
+            raise ValidationError({'detail': 'Only successful payments can be printed.'})
         if cash_shift is None or cash_shift.status != cash_shift.Status.OPEN:
-            raise ValidationError({'detail': 'An active cashier shift is required for reprint.'})
-        if receipt.order.restaurant_id != cash_shift.cash_desk.restaurant_id:
-            raise ValidationError({'detail': 'Receipt restaurant does not match the active cashier shift.'})
+            raise ValidationError({'detail': 'An active cashier shift is required for printing.'})
+        if payment.order.restaurant_id != cash_shift.cash_desk.restaurant_id:
+            raise ValidationError({'detail': 'Payment restaurant does not match the active cashier shift.'})
 
-        result = reprint_fiscal_receipt(receipt=receipt)
-        if result.get('ok'):
-            receipt.reprint_count += 1
-            receipt.last_reprinted_at = timezone.now()
-            receipt.payload = {**receipt.payload, 'last_reprint': result}
-            receipt.save(update_fields=['reprint_count', 'last_reprinted_at', 'payload', 'updated_at'])
-        return result
+        receipt = payment.receipts.order_by('-created_at').first()
+        if receipt is None:
+            receipt = Receipt.objects.create(
+                order=payment.order,
+                payment=payment,
+                kind=Receipt.Kind.PLAIN,
+                status=Receipt.Status.CREATED,
+                provider='local-edge',
+                payload={},
+                original_paid_at=payment.paid_at,
+            )
+        self._ensure_print_document(receipt=receipt, created_by=created_by)
+        return receipt
+
+    @staticmethod
+    def _ensure_print_document(*, receipt, created_by):
+        return attach_receipt_print_document(
+            receipt=receipt,
+            fiscal_result=receipt.payload,
+            created_by=created_by,
+        )
 
     @staticmethod
     def _parse_payload_datetime(value):

@@ -2,7 +2,7 @@ from collections.abc import Sequence
 
 from django.utils.translation import gettext as _
 
-from apps.billing.helpers import get_payment_model
+from apps.billing.helpers import get_payment_model, get_receipt_model
 from apps.sales.helpers import get_order_model
 
 from apps.reporting.selectors.reporting import (
@@ -15,10 +15,12 @@ from apps.reporting.selectors.reporting import (
 
 Order = get_order_model()
 Payment = get_payment_model()
+Receipt = get_receipt_model()
 
 REPORT_TITLE_SUMMARY = 'summary'
 REPORT_TITLE_SALES = 'sales'
 REPORT_TITLE_OPEN_CHECKS = 'open_checks'
+REPORT_TITLE_RECEIPTS = 'receipts'
 REPORT_TITLE_TOP_ITEMS = 'top_items'
 REPORT_TITLE_TOP_STAFF = 'top_staff'
 REPORT_TITLE_PAYMENT_BREAKDOWN = 'payment_breakdown'
@@ -30,12 +32,34 @@ def get_report_title(report_key: str) -> str:
         REPORT_TITLE_SUMMARY: _('Summary Report'),
         REPORT_TITLE_SALES: _('Sales Report'),
         REPORT_TITLE_OPEN_CHECKS: _('Open Checks Report'),
+        REPORT_TITLE_RECEIPTS: _('Receipts Report'),
         REPORT_TITLE_TOP_ITEMS: _('Top Items Report'),
         REPORT_TITLE_TOP_STAFF: _('Top Staff Report'),
         REPORT_TITLE_PAYMENT_BREAKDOWN: _('Payment Breakdown Report'),
         REPORT_TITLE_SHIFTS: _('Shift Report'),
     }
     return titles[report_key]
+
+
+def get_report_export_filename(report_key: str, period: ReportPeriod) -> str:
+    report_names = {
+        REPORT_TITLE_SUMMARY: _('summary-report'),
+        REPORT_TITLE_SALES: _('sales-report'),
+        REPORT_TITLE_OPEN_CHECKS: _('open-checks-report'),
+        REPORT_TITLE_RECEIPTS: _('receipts-report'),
+        REPORT_TITLE_TOP_ITEMS: _('top-items-report'),
+        REPORT_TITLE_TOP_STAFF: _('top-staff-report'),
+        REPORT_TITLE_PAYMENT_BREAKDOWN: _('payment-breakdown-report'),
+        REPORT_TITLE_SHIFTS: _('shift-report'),
+    }
+    period_names = {
+        REPORT_PERIOD_DAY: _('day'),
+        REPORT_PERIOD_MONTH: _('month'),
+        REPORT_PERIOD_RANGE: _('range'),
+        REPORT_PERIOD_YEAR: _('year'),
+    }
+    period_value = period.value.replace(' - ', '-')
+    return f'{report_names[report_key]}-{period_names[period.period_type]}-{period_value}.xlsx'
 
 
 def get_report_section_title(report_key: str) -> str:
@@ -49,6 +73,8 @@ def get_report_section_title(report_key: str) -> str:
 
 def get_summary_metrics(summary: dict) -> list[tuple[str, object]]:
     return [
+        (_('Gross Sales Total'), summary['gross_sales_total']),
+        (_('Refunds Total'), summary['refunds_total']),
         (_('Sales Total'), summary['sales_total']),
         (_('Orders Count'), summary['orders_count']),
         (_('Average Check'), summary['average_check']),
@@ -92,7 +118,6 @@ def get_top_staff_columns() -> list[tuple[str, str]]:
 
 def get_shift_columns() -> list[tuple[str, str]]:
     return [
-        ('id', _('Shift')),
         ('cashier_name', _('Cashier')),
         ('cash_desk_name', _('Cash Desk')),
         ('status', _('Status')),
@@ -104,10 +129,23 @@ def get_shift_columns() -> list[tuple[str, str]]:
         ('cash_difference_amount', _('Difference')),
         ('cash_total', _('Cash Total')),
         ('card_total', _('Card Total')),
-        ('qr_total', _('QR Total')),
         ('refund_total', _('Refund Total')),
+        ('precheck_count', _('Prechecks')),
         ('receipt_count', _('Receipts')),
-        ('reprint_count', _('Reprints')),
+        ('id', _('Shift')),
+    ]
+
+
+def get_receipts_columns() -> list[tuple[str, str]]:
+    return [
+        ('order_number', _('Order')),
+        ('kind', _('Type')),
+        ('status', _('Status')),
+        ('amount', _('Amount')),
+        ('payment_method', _('Payment method')),
+        ('cashier_name', _('Cashier')),
+        ('cash_desk_name', _('Cash Desk')),
+        ('created_at', _('Created At')),
     ]
 
 
@@ -145,6 +183,9 @@ def get_filter_label(key: str) -> str:
         'cash_desk': _('Cash desk'),
         'cashier': _('Cashier'),
         'difference_only': _('Difference only'),
+        'search': _('Search'),
+        'receipt_kind': _('Type'),
+        'receipt_status': _('Status'),
     }
     return labels.get(key, key)
 
@@ -154,6 +195,12 @@ def translate_filter_value(key: str, value: str) -> str:
         return get_payment_method_label(value)
     if key == 'status':
         return get_order_status_label(value)
+    if key == 'receipt_kind':
+        return get_receipt_kind_label(value)
+    if key == 'receipt_status':
+        return get_receipt_status_label(value)
+    if key == 'difference_only':
+        return _('Yes') if value.lower() in {'1', 'true', 'yes'} else _('No')
     return value
 
 
@@ -163,6 +210,18 @@ def localize_sales_rows(rows: Sequence[dict]) -> list[dict]:
 
 def localize_open_checks_rows(rows: Sequence[dict]) -> list[dict]:
     return [{**row, 'status': get_order_status_label(row.get('status'))} for row in rows]
+
+
+def localize_receipt_rows(rows: Sequence[dict]) -> list[dict]:
+    return [
+        {
+            **row,
+            'kind': get_receipt_kind_label(row.get('kind')),
+            'status': get_receipt_status_label(row.get('status')),
+            'payment_method': get_payment_method_label(row.get('payment_method')),
+        }
+        for row in rows
+    ]
 
 
 def localize_payment_breakdown_rows(rows: Sequence[dict]) -> list[dict]:
@@ -175,6 +234,23 @@ def get_payment_method_label(value: str | None) -> str:
         Payment.Method.CARD: _('Card'),
         Payment.Method.QR: _('QR'),
         Payment.Method.MIXED: _('Mixed'),
+    }
+    return labels.get(value, value or '')
+
+
+def get_receipt_kind_label(value: str | None) -> str:
+    labels = {
+        Receipt.Kind.PLAIN: _('Precheck'),
+        Receipt.Kind.FISCAL: _('Receipt'),
+    }
+    return labels.get(value, value or '')
+
+
+def get_receipt_status_label(value: str | None) -> str:
+    labels = {
+        Receipt.Status.CREATED: _('Created'),
+        Receipt.Status.SENT: _('Sent'),
+        Receipt.Status.FAILED: _('Failed'),
     }
     return labels.get(value, value or '')
 
@@ -195,4 +271,4 @@ def get_empty_value_placeholder() -> str:
 
 
 def localize_shift_rows(rows: Sequence[dict]) -> list[dict]:
-    return list(rows)
+    return [{**row, 'status': get_order_status_label(row.get('status'))} for row in rows]

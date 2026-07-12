@@ -1,9 +1,11 @@
 import time
+import json
 from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import OperationalError
+from django.conf import settings
 from django.utils import timezone
 
 from apps.local_agents.models import LocalAgent, LocalAgentCommand
@@ -33,8 +35,14 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
     agent = None
 
     async def connect(self):
-        query = parse_qs(self.scope.get('query_string', b'').decode('utf-8'))
-        token = (query.get('token') or [''])[0]
+        headers = {key.lower(): value for key, value in self.scope.get('headers', [])}
+        authorization = headers.get(b'authorization', b'').decode('utf-8')
+        scheme, _, token = authorization.partition(' ')
+        if scheme.lower() != 'bearer':
+            token = ''
+        if not token and settings.LOCAL_AGENT_ALLOW_LEGACY_WS_QUERY_TOKEN:
+            query = parse_qs(self.scope.get('query_string', b'').decode('utf-8'))
+            token = (query.get('token') or [''])[0]
         self.agent = await self._authenticate(token)
         if self.agent is None:
             await self.close(code=4401)
@@ -58,6 +66,9 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             await self._mark_offline()
 
     async def receive_json(self, content, **kwargs):
+        if len(json.dumps(content, separators=(',', ':')).encode('utf-8')) > 256 * 1024:
+            await self.close(code=1009)
+            return
         message_type = content.get('type')
         if message_type == 'heartbeat':
             await self._mark_online(

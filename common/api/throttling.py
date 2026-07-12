@@ -16,3 +16,11 @@ class PinLoginRateThrottle(SimpleRateThrottle):
     def get_cache_key(self, request, view):
         ident = self.get_ident(request)
         return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class AgentEnrollmentRateThrottle(SimpleRateThrottle):
+    scope = 'agent_enrollment'
+
+    def get_cache_key(self, request, view):
+        ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}

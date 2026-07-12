@@ -41,6 +41,7 @@ class PaymentCreateView(APIView):
             payload=request.data,
             received_by=request.user,
             cash_shift=cash_shift,
+            trusted_edge_replay=bool(getattr(request._request, 'trusted_edge_replay', False)),
         )
         payment = result['payment']
         if payment.status == Payment.Status.FAILED:
@@ -195,10 +196,34 @@ class PaymentFiscalRetryView(APIView):
         )
 
 
+class PaymentPrintDocumentView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    shift_service_class = CashShiftService
+    refund_service_class = PaymentRefundService
+    feature_gate_service_class = FeatureGateService
+
+    def post(self, request, pk):
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        payment = generics.get_object_or_404(
+            Payment.objects.select_related('order'),
+            pk=pk,
+            order__restaurant=restaurant,
+        )
+        shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
+        receipt = self.refund_service_class().ensure_payment_print_document(
+            payment=payment,
+            created_by=request.user,
+            cash_shift=shift,
+        )
+        return Response({'receipt': ReceiptSerializer(receipt).data})
+
+
 __all__ = [
     'MartaCardPaymentInitiateView',
     'MartaTerminalResultView',
     'PaymentCreateView',
     'PaymentFiscalRetryView',
+    'PaymentPrintDocumentView',
     'PaymentRefundView',
 ]

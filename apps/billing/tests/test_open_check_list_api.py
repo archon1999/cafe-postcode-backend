@@ -209,7 +209,7 @@ class OpenCheckListApiTests(APITestCase):
         Receipt.objects.create(
             order=order,
             payment=payment,
-            kind=Receipt.Kind.PREBILL,
+            kind=Receipt.Kind.PLAIN,
             status=Receipt.Status.SENT,
             payload={'receiptNumber': 'R-1'},
         )
@@ -234,7 +234,7 @@ class OpenCheckListApiTests(APITestCase):
         Receipt.objects.create(
             order=order,
             payment=payment,
-            kind=Receipt.Kind.PREBILL,
+            kind=Receipt.Kind.PLAIN,
             status=Receipt.Status.SENT,
             payload={'receiptNumber': 'R-1'},
         )

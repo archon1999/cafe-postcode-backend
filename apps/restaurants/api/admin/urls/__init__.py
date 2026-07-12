@@ -13,8 +13,11 @@ from apps.restaurants.api.admin.views.restaurants import (
     RestaurantLookupView,
     RestaurantReadDetailView,
 )
+from apps.restaurants.api.admin.views.setup import RestaurantSetupApplyView, RestaurantSetupReadinessView
 
 urlpatterns = [
+    path('setup/readiness/', RestaurantSetupReadinessView.as_view()),
+    path('setup/apply/', RestaurantSetupApplyView.as_view()),
     path('settings/', RestaurantConfigView.as_view()),
     path('my-restaurant/', MyRestaurantDetailView.as_view()),
     path('lookup/', RestaurantLookupView.as_view()),

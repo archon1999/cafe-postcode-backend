@@ -44,6 +44,7 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             'routed_via',
             'is_printed',
             'printed_payload',
+            'print_document',
             'hall_name',
             'table_name',
             'waiter_name',

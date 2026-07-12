@@ -13,13 +13,8 @@ from apps.billing.api.pos.views.payments import (
     MartaTerminalResultView,
     PaymentCreateView,
     PaymentFiscalRetryView,
+    PaymentPrintDocumentView,
     PaymentRefundView,
-)
-from apps.billing.api.pos.views.receipts import (
-    OrderPrebillPrintView,
-    ReceiptPrintResultView,
-    ReceiptRawPrintView,
-    ReceiptReprintView,
 )
 
 urlpatterns = [
@@ -29,14 +24,10 @@ urlpatterns = [
     path('fiscal-shifts/open/', FiscalShiftOpenView.as_view()),
     path('fiscal-shifts/close/', FiscalShiftCloseView.as_view()),
     path('open-checks/', OpenCheckListView.as_view()),
-    path('orders/<uuid:pk>/prebill/print/', OrderPrebillPrintView.as_view()),
     path('orders/<uuid:pk>/pay/', PaymentCreateView.as_view()),
     path('orders/<uuid:pk>/card-payments/initiate/', MartaCardPaymentInitiateView.as_view()),
     path('payments/<uuid:pk>/terminal-result/', MartaTerminalResultView.as_view()),
     path('payments/<uuid:pk>/retry-fiscal/', PaymentFiscalRetryView.as_view()),
+    path('payments/<uuid:pk>/print-document/', PaymentPrintDocumentView.as_view()),
     path('<uuid:pk>/refund/', PaymentRefundView.as_view()),
-    path('receipts/print/', ReceiptRawPrintView.as_view()),
-    path('receipts/<uuid:pk>/print/', ReceiptRawPrintView.as_view()),
-    path('receipts/<uuid:pk>/print-result/', ReceiptPrintResultView.as_view()),
-    path('receipts/<uuid:pk>/reprint/', ReceiptReprintView.as_view()),
 ]

@@ -1,4 +1,5 @@
-from django.core.exceptions import ObjectDoesNotExist
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
 from django.utils.text import slugify
 from rest_framework import serializers
@@ -197,6 +198,12 @@ class UserSerializer(serializers.ModelSerializer):
 
             if errors:
                 raise serializers.ValidationError(errors)
+
+        if isinstance(password, str) and password:
+            try:
+                validate_password(password, user=self.instance)
+            except DjangoValidationError as error:
+                raise serializers.ValidationError({'password': list(error.messages)}) from error
 
         if restaurant is not None and primary_hall is not None and primary_hall.restaurant_id != restaurant.id:
             raise serializers.ValidationError({'primaryHallId': _('Selected hall does not belong to the selected restaurant.')})

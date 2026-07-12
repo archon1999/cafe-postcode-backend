@@ -7,6 +7,8 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
 
     def get_display_name(self, obj):
+        if obj.name:
+            return obj.name
         settings = obj.settings or {}
         if obj.kind == IntegrationConfig.Kind.PRINTER:
             printer_name = settings.get('printer_name') or settings.get('printerName')
@@ -60,7 +62,15 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
 
         return settings
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        kind = attrs.get('kind', getattr(self.instance, 'kind', None))
+        provider = attrs.get('provider', getattr(self.instance, 'provider', None))
+        if kind == IntegrationConfig.Kind.FISCAL and provider != 'fiscal-drive-service':
+            raise serializers.ValidationError({'provider': 'Fiscal Drive is the only supported fiscal provider.'})
+        return attrs
+
     class Meta:
         model = IntegrationConfig
-        fields = ('id', 'kind', 'provider', 'display_name', 'is_enabled', 'settings')
+        fields = ('id', 'name', 'kind', 'provider', 'display_name', 'is_enabled', 'settings')
         read_only_fields = ('display_name',)

@@ -7,12 +7,19 @@ from common.models import BaseModel
 
 
 class AuthSession(BaseModel):
+    class Surface(models.TextChoices):
+        ADMIN = 'admin', 'Admin'
+        POS = 'pos', 'POS'
+        DASHBOARD = 'dashboard', 'Dashboard'
+
     class Status(models.TextChoices):
         ACTIVE = 'active', 'Active'
         REVOKED = 'revoked', 'Revoked'
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='auth_sessions')
     token_key_hash = models.CharField(max_length=64, unique=True)
+    surface = models.CharField(max_length=20, choices=Surface.choices)
+    expires_at = models.DateTimeField()
     client_ip = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.CharField(max_length=255, blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from django.db.models import Q, QuerySet
 from django.http import HttpResponse
+from django.utils.http import content_disposition_header
 
 from apps.reporting.services import ORDER_STATUS_VALUES, PAYMENT_METHOD_VALUES, ReportPeriod, SHIFT_STATUS_VALUES, get_report_period
 from common.api.query_params import apply_ordering, get_ordering_query_param, get_str_list_query_param, get_str_query_param
@@ -28,6 +29,7 @@ TOP_ITEMS_ORDERING_FIELDS = {
 TOP_STAFF_ORDERING_FIELDS = {
     'staffName': ('staff_name', 'total_sales'),
     'orderCount': 'order_count',
+    'itemsCount': 'items_count',
     'totalSales': 'total_sales',
 }
 PAYMENT_BREAKDOWN_ORDERING_FIELDS = {
@@ -41,7 +43,22 @@ SHIFT_ORDERING_FIELDS = {
     'status': 'status',
     'openedAt': 'opened_at',
     'closedAt': 'closed_at',
+    'openingCashAmount': 'opening_cash_amount',
+    'cashTotal': 'cash_total',
+    'refundTotal': 'refund_total',
+    'precheckCount': 'precheck_count',
+    'receiptCount': 'receipt_count',
     'difference': 'cash_difference_amount',
+}
+RECEIPTS_ORDERING_FIELDS = {
+    'orderNumber': 'order_number',
+    'kind': 'kind',
+    'status': 'status',
+    'amount': 'amount',
+    'paymentMethod': 'payment_method',
+    'cashierName': ('cashier_name', 'created_at'),
+    'cashDeskName': ('cash_desk_name', 'created_at'),
+    'createdAt': 'created_at',
 }
 
 
@@ -58,7 +75,7 @@ def build_excel_attachment(payload: bytes, *, filename: str) -> HttpResponse:
         payload,
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    response['Content-Disposition'] = content_disposition_header(True, filename)
     return response
 
 
@@ -134,6 +151,52 @@ class OpenChecksReportFilters:
 
 
 @dataclass(frozen=True)
+class ReceiptsReportFilters:
+    period: ReportPeriod
+    search: str = ''
+    kind: str = ''
+    status: str = ''
+    ordering: tuple[str, ...] = ()
+
+    @classmethod
+    def from_request(cls, request) -> 'ReceiptsReportFilters':
+        query_params = request.query_params
+        return cls(
+            period=get_report_period(query_params),
+            search=get_str_query_param(query_params, 'search'),
+            kind=get_choice_query_param(
+                query_params,
+                'receipt_kind',
+                {'plain', 'fiscal'},
+                alias='receiptKind',
+            ),
+            status=get_choice_query_param(
+                query_params,
+                'status',
+                {'created', 'sent', 'failed'},
+            ),
+            ordering=get_ordering_query_param(query_params, RECEIPTS_ORDERING_FIELDS),
+        )
+
+    def apply(self, queryset: QuerySet) -> QuerySet:
+        if self.search:
+            search_query = (
+                Q(cashier_name__icontains=self.search)
+                | Q(cash_desk_name__icontains=self.search)
+                | Q(payment_method__icontains=self.search)
+            )
+            normalized_search = self.search.lstrip('#')
+            if normalized_search.isdigit():
+                search_query |= Q(order_number=int(normalized_search))
+            queryset = queryset.filter(search_query)
+        if self.kind:
+            queryset = queryset.filter(kind=self.kind)
+        if self.status:
+            queryset = queryset.filter(status=self.status)
+        return apply_ordering(queryset, self.ordering, default_ordering=('-created_at',))
+
+
+@dataclass(frozen=True)
 class TopItemsReportFilters:
     period: ReportPeriod
     search: str = ''
@@ -152,7 +215,9 @@ class TopItemsReportFilters:
 
     def apply(self, queryset: QuerySet) -> QuerySet:
         if self.search:
-            queryset = queryset.filter(catalog_item_name__icontains=self.search)
+            queryset = queryset.filter(
+                Q(catalog_item_name__icontains=self.search) | Q(category_name__icontains=self.search)
+            )
         if self.category_id:
             queryset = queryset.filter(category_id=self.category_id)
         return apply_ordering(queryset, self.ordering, default_ordering=('-quantity', '-revenue'))

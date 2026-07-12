@@ -1,6 +1,7 @@
 from .filters import (
     OpenChecksReportFilters,
     PaymentBreakdownReportFilters,
+    ReceiptsReportFilters,
     SalesReportFilters,
     ShiftReportFilters,
     SummaryReportFilters,
@@ -12,6 +13,7 @@ from .filters import (
 __all__ = [
     'OpenChecksReportFilters',
     'PaymentBreakdownReportFilters',
+    'ReceiptsReportFilters',
     'SalesReportFilters',
     'ShiftReportFilters',
     'SummaryReportFilters',

@@ -6,10 +6,10 @@ from rest_framework import status
 from apps.kitchen.models import KitchenTicket
 from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
 from apps.sales.models import Order
-from apps.sales.tests.support.pos_api import PosTestCase
+from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
-class KitchenMonitorQueueApiTests(PosTestCase):
+class KitchenMonitorQueueApiTests(PosAPITestCase):
     @classmethod
     def setUpTestData(cls):
         super().setUpTestData()
@@ -52,7 +52,7 @@ class KitchenMonitorQueueApiTests(PosTestCase):
             completed_at=completed_at,
         )
 
-    def test_monitor_queue_is_public_and_returns_minimal_payload(self):
+    def test_monitor_queue_is_authenticated_and_returns_minimal_payload(self):
         self.create_ticket(
             restaurant=self.restaurant,
             distribution_point=self.takeaway_distribution,
@@ -101,3 +101,17 @@ class KitchenMonitorQueueApiTests(PosTestCase):
 
         self.assertEqual(missing_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_monitor_queue_rejects_anonymous_request(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get(f'/api/v1/pos/monitor/kitchen-queue/?restaurant_id={self.restaurant.id}')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_monitor_queue_rejects_another_restaurant(self):
+        response = self.client.get(
+            f'/api/v1/pos/monitor/kitchen-queue/?restaurant_id={self.other_restaurant.id}'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

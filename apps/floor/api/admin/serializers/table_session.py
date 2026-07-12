@@ -14,6 +14,7 @@ def get_supported_seat_count(seat_count: int) -> int:
 
 
 class TableSessionSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
     table_name = serializers.CharField(source='table.name', read_only=True)
     hall_name = serializers.CharField(source='hall.name', read_only=True)
 

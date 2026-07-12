@@ -10,7 +10,6 @@ def default_enabled_payment_methods():
 class CashDesk(BaseModel):
     class FiscalProvider(models.TextChoices):
         FISCAL_DRIVE_SERVICE = 'fiscal-drive-service', 'FiscalDriveService'
-        UNIKASSA = 'unikassa', 'Unikassa'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.CASCADE, related_name='cash_desks')
     fiscal_integration = models.ForeignKey(

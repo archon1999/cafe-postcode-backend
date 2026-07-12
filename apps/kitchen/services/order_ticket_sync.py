@@ -2,7 +2,7 @@ import logging
 
 from django.utils import timezone
 
-from apps.integrations.services import print_kitchen_ticket
+from apps.printing.services import create_kitchen_ticket_print_document
 from apps.sales.helpers import get_order_item_model, get_order_model
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
@@ -90,14 +90,20 @@ class OrderTicketSyncService:
                     extra={'ticket_id': str(ticket.pk), 'order_id': str(order.pk), 'status': ticket.status},
                 )
 
-            if created and route_mode in [KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH]:
-                print_result = print_kitchen_ticket(ticket)
-                ticket.is_printed = bool(print_result.get('ok'))
-                ticket.printed_payload = print_result
-                ticket.save(update_fields=['is_printed', 'printed_payload', 'updated_at'])
+            document, _snapshot = create_kitchen_ticket_print_document(
+                ticket=ticket,
+                created_by=order.opened_by,
+            )
+            if ticket.print_document_id != document.id:
+                ticket.print_document = document
+                ticket.printed_payload = {
+                    'status': 'queued' if route_mode in [KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH] else 'display_only',
+                    'print_document_id': str(document.id),
+                }
+                ticket.save(update_fields=['print_document', 'printed_payload', 'updated_at'])
                 logger.info(
-                    'Kitchen ticket printer dispatch finished',
-                    extra={'ticket_id': str(ticket.pk), 'order_id': str(order.pk), 'printed': ticket.is_printed},
+                    'Kitchen ticket print document created',
+                    extra={'ticket_id': str(ticket.pk), 'order_id': str(order.pk), 'print_document_id': str(document.id)},
                 )
 
         active_items = order.items.exclude(status=OrderItem.Status.CANCELLED)
