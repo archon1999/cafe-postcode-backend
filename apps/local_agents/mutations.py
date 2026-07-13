@@ -120,7 +120,14 @@ class LocalAgentMutationPushView(APIView):
                 and existing.response_status == status.HTTP_400_BAD_REQUEST
                 and 'already has an active shift' in json.dumps(existing.response_body).lower()
             )
-            if recoverable_shift_conflict:
+            requested_cashier_id = str(body.get('cashierId') or body.get('cashier_id') or '').strip()
+            recoverable_implicit_cashier = (
+                path == '/api/v1/pos/billing/shifts/open/'
+                and existing.response_status == status.HTTP_400_BAD_REQUEST
+                and requested_cashier_id == user_id
+                and 'selected cashier was not found' in json.dumps(existing.response_body).lower()
+            )
+            if recoverable_shift_conflict or recoverable_implicit_cashier:
                 existing.delete()
             else:
                 return {
@@ -141,6 +148,13 @@ class LocalAgentMutationPushView(APIView):
             return {'operationId': operation_id, 'ok': False, 'status': 403, 'error': 'POS user is invalid.', 'retryable': False}
 
         if path == '/api/v1/pos/billing/shifts/open/':
+            requested_cashier_id = str(body.get('cashierId') or body.get('cashier_id') or '').strip()
+            role_code = getattr(user.role, 'code', None)
+            if requested_cashier_id == str(user.id) and role_code not in CashShiftService.cashier_role_codes:
+                # Legacy agents treated the logged-in manager as an explicitly selected cashier.
+                # With a single cash desk this must stay cashier-less and use opened_by instead.
+                body.pop('cashierId', None)
+                body.pop('cashier_id', None)
             reconciled = self._reconcile_open_shift(
                 agent=agent,
                 user=user,

@@ -520,6 +520,59 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(CashShift.objects.filter(cash_desk=self.cash_desk, status=CashShift.Status.OPEN).count(), 1)
 
+    def test_offline_shift_open_recovers_legacy_manager_as_cashier_payload(self):
+        operation = {
+            'operationId': 'edge-shift-open-implicit-manager-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/billing/shifts/open/',
+            'body': {
+                'cashDeskId': str(self.cash_desk.id),
+                'cashierId': str(self.user.id),
+                'openingCashAmount': 0,
+            },
+        }
+        LocalAgentMutationReceipt.objects.create(
+            restaurant=self.restaurant,
+            operation_id=operation['operationId'],
+            user_id=self.user.id,
+            method=operation['method'],
+            path=operation['path'],
+            request_hash=_request_hash(
+                user_id=str(self.user.id),
+                method=operation['method'],
+                path=operation['path'],
+                body={
+                    'cash_desk_id': str(self.cash_desk.id),
+                    'cashier_id': str(self.user.id),
+                    'opening_cash_amount': 0,
+                },
+            ),
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'cashierId': 'Selected cashier was not found.'},
+        )
+
+        first = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        second = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        first_result = first.data['results'][0]
+        self.assertEqual(first_result['status'], status.HTTP_201_CREATED, first.data)
+        self.assertTrue(first_result['ok'])
+        shift = CashShift.objects.get(cash_desk=self.cash_desk, status=CashShift.Status.OPEN)
+        self.assertEqual(shift.opened_by_id, self.user.id)
+        self.assertIsNone(shift.cashier_id)
+        self.assertTrue(second.data['results'][0]['replayed'])
+
     @patch('apps.billing.services.order_payment.charge_payment')
     def test_trusted_edge_card_result_is_replayed_without_second_terminal_charge(self, charge_payment):
         order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
