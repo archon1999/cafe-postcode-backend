@@ -429,13 +429,9 @@ class OrderPaymentService:
         receipts = []
         if is_fully_paid and payment.register_fiscal:
             receipt_results = self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by)
-            if receipt_results and all(receipt_result.get('ok') for receipt_result in receipt_results):
-                for receipt_result in receipt_results:
-                    receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
-            else:
-                payment.register_fiscal = False
-                payment.save(update_fields=['register_fiscal', 'updated_at'])
-        if is_fully_paid and not receipts:
+            for receipt_result in receipt_results or []:
+                receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
+        if is_fully_paid and not payment.register_fiscal:
             receipts.append(self._create_plain_receipt(order=order, payment=payment, created_by=received_by))
         logger.info(
             'Payment processed',
@@ -528,11 +524,12 @@ class OrderPaymentService:
             fiscal_error_code=str(receipt_result.get('code') or receipt_result.get('error_code') or ''),
             fiscal_error_message='' if status == Receipt.Status.SENT else str(receipt_result.get('detail') or receipt_result.get('message') or ''),
         )
-        attach_receipt_print_document(
-            receipt=receipt,
-            fiscal_result=receipt_result,
-            created_by=payment.received_by,
-        )
+        if status == Receipt.Status.SENT:
+            attach_receipt_print_document(
+                receipt=receipt,
+                fiscal_result=receipt_result,
+                created_by=payment.received_by,
+            )
         return receipt
 
     @staticmethod

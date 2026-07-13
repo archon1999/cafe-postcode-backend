@@ -650,7 +650,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertIsNone(session.cash_desk_id)
         self.assertEqual(session.status, FiscalShiftSession.Status.OPEN)
 
-    def test_failed_fiscal_payment_becomes_plain_payment_without_failed_receipt(self):
+    def test_failed_fiscal_payment_remains_retryable_and_does_not_create_plain_receipt(self):
         shift = self.create_cash_shift()
         order = self.create_open_order_with_item(order_number=511)
         self.restaurant.name = 'NYU YORK'
@@ -682,11 +682,13 @@ class FiscalBusinessFlowTests(PosTestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
-        self.assertFalse(payment.register_fiscal)
-        self.assertEqual(result['receipt'].kind, Receipt.Kind.PLAIN)
+        self.assertTrue(payment.register_fiscal)
+        self.assertEqual(result['receipt'].kind, Receipt.Kind.FISCAL)
+        self.assertEqual(result['receipt'].status, Receipt.Status.FAILED)
+        self.assertEqual(result['receipt'].fiscal_error_message, 'Fiscal drive is locked.')
         self.assertEqual(result['receipts'], [result['receipt']])
-        self.assertIsNotNone(result['receipt'].print_document_id)
-        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists())
+        self.assertIsNone(result['receipt'].print_document_id)
+        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.PLAIN).exists())
 
     def test_second_fiscal_payment_reuses_open_fiscal_shift(self):
         FiscalShiftSession.objects.create(
