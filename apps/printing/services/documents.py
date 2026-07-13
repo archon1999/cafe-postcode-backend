@@ -55,6 +55,21 @@ def _payment_method(*, cash_amount: int, card_amount: int, fallback: str) -> str
     return fallback
 
 
+def _payment_method_label(value: str) -> str:
+    return {
+        'cash': 'Naqd',
+        'card': 'Karta',
+        'mixed': 'Aralash',
+        'qr': 'QR',
+    }.get(str(value or ''), str(value or ''))
+
+
+def _local_datetime(value) -> str:
+    if not value:
+        return ''
+    return timezone.localtime(value).strftime('%Y-%m-%d %H:%M:%S')
+
+
 def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) -> dict:
     order = receipt.order
     payment = receipt.payment
@@ -93,7 +108,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
             'table': table_name,
             'hall': hall_name,
             'guestCount': int(order.guest_count or 0),
-            'openedAt': timezone.localtime(order.created_at).isoformat(),
+            'openedAt': _local_datetime(order.created_at),
             'waiter': order.opened_by.full_name if order.opened_by_id and order.opened_by else '',
             'cashier': order.cashier.full_name if order.cashier_id and order.cashier else '',
             'note': order.note or '',
@@ -114,12 +129,14 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
         ],
         'payment': {
             'id': str(payment.id),
-            'method': _payment_method(cash_amount=cash_amount, card_amount=card_amount, fallback=payment.method),
+            'method': _payment_method_label(
+                _payment_method(cash_amount=cash_amount, card_amount=card_amount, fallback=payment.method)
+            ),
             'amount': amount,
             'cash': cash_amount,
             'card': card_amount,
             'change': 0,
-            'paidAt': timezone.localtime(payment.paid_at).isoformat() if payment.paid_at else '',
+            'paidAt': _local_datetime(payment.paid_at),
             'operationType': 'sale',
         },
         'totals': {
@@ -141,7 +158,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
             'factoryId': str(result.get('factory_id') or result.get('factoryId') or response.get('FactoryID') or ''),
             'fiscalSign': str(result.get('fiscal_sign') or result.get('fiscalSign') or response.get('FiscalSign') or ''),
             'qrUrl': str(result.get('qr_code_url') or result.get('qrCodeUrl') or response.get('QRCodeURL') or ''),
-            'registeredAt': receipt.fiscal_registered_at.isoformat() if receipt.fiscal_registered_at else '',
+            'registeredAt': _local_datetime(receipt.fiscal_registered_at),
         },
         'system': {'copyNumber': 1, 'isReprint': False},
     }
@@ -234,7 +251,7 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
             'table': table_name,
             'hall': hall_name,
             'guestCount': int(order.guest_count or 0),
-            'openedAt': timezone.localtime(order.created_at).isoformat(),
+            'openedAt': _local_datetime(order.created_at),
             'waiter': order.opened_by.full_name if order.opened_by_id and order.opened_by else '',
             'cashier': order.cashier.full_name if order.cashier_id and order.cashier else '',
             'note': order.note or '',
@@ -246,7 +263,7 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
         'kitchen': {
             'ticketNumber': f'K-{str(ticket.id)[-6:].upper()}',
             'prepStation': ticket.prep_station.name,
-            'createdAt': timezone.localtime(ticket.created_at).isoformat(),
+            'createdAt': _local_datetime(ticket.created_at),
         },
         'system': {'copyNumber': 1, 'isReprint': False},
     }

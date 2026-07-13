@@ -5,6 +5,27 @@ from apps.printing.presets import PRESET_PACKS
 from apps.printing.services import TemplateLayoutValidationError, validate_template_layout
 
 
+LAYOUT_KEY_MAP = {
+    'schema_version': 'schemaVersion',
+    'paper_width_mm': 'paperWidthMm',
+    'show_notes': 'showNotes',
+    'separator_after_each': 'separatorAfterEach',
+    'show_vat': 'showVat',
+    'vat_label': 'vatLabel',
+    'vat_value': 'vatValue',
+    'qr_scale': 'qrScale',
+    'hide_zero': 'hideZero',
+}
+
+
+def _canonical_layout_keys(value):
+    if isinstance(value, list):
+        return [_canonical_layout_keys(item) for item in value]
+    if isinstance(value, dict):
+        return {LAYOUT_KEY_MAP.get(key, key): _canonical_layout_keys(child) for key, child in value.items()}
+    return value
+
+
 class PrintTemplateVersionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrintTemplateVersion
@@ -45,10 +66,12 @@ class PrintTemplateVersionCreateSerializer(serializers.Serializer):
         if preset_key and preset_key not in valid_preset_keys:
             raise serializers.ValidationError({'preset_key': 'Unknown preset pack.'})
         if layout is not None:
+            layout = _canonical_layout_keys(layout)
             template = self.context['template']
             try:
                 validate_template_layout(kind=template.kind, layout=layout)
             except TemplateLayoutValidationError as error:
                 raise serializers.ValidationError(error.errors) from error
+            attrs['layout'] = layout
         attrs['preset_key'] = preset_key
         return attrs

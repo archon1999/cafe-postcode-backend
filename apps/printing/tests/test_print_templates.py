@@ -165,3 +165,25 @@ class PrintTemplateAdminApiTests(APITestCase):
         response = self.client.get(f'/api/v1/admin/printing/templates/{foreign_template.id}/')
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND, response.data)
+
+    def test_nested_camel_case_layout_survives_request_parser_underscoreization(self):
+        template = PrintTemplate.objects.get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL,
+        )
+        layout = dict(template.published_version.layout)
+
+        response = self.client.post(
+            f'/api/v1/admin/printing/templates/{template.id}/versions/',
+            {'layout': layout, 'presetKey': 'legacy_80'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        saved_layout = template.versions.get(id=response.data['id']).layout
+        self.assertEqual(saved_layout['schemaVersion'], 1)
+        self.assertEqual(saved_layout['paperWidthMm'], 80)
+        items = next(block for block in saved_layout['blocks'] if block['type'] == 'items_table')
+        qr = next(block for block in saved_layout['blocks'] if block['type'] == 'qr')
+        self.assertTrue(items['showVat'])
+        self.assertEqual(qr['qrScale'], 2)
