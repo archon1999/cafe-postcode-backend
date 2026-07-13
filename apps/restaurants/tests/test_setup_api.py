@@ -3,6 +3,7 @@ from rest_framework.test import APITestCase
 
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.integrations.models import IntegrationConfig
+from apps.local_agents.models import LocalAgent
 from apps.printing.models import PrintTemplate
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 from apps.users.models import User
@@ -40,6 +41,42 @@ class RestaurantSetupApiTests(APITestCase):
             {step['id'] for step in response.data['steps']},
             {'profile', 'staff', 'service_points', 'menu', 'integrations', 'coordinator', 'printing'},
         )
+
+    def test_missing_card_payment_integration_is_warning(self):
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+            settings={'tax_number': '312217845'},
+        )
+        CashDesk.objects.create(
+            restaurant=self.restaurant,
+            name='Kassa',
+            receipt_printer_enabled=False,
+            enabled_payment_methods=['cash', 'card'],
+            fiscal_integration=fiscal,
+        )
+
+        response = self.client.get('/api/v1/admin/restaurants/setup/readiness/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        integrations = next(step for step in response.data['steps'] if step['id'] == 'integrations')
+        payment_issue = next(
+            issue for issue in integrations['issues'] if issue['code'] == 'cash_desk_payment_missing'
+        )
+        self.assertFalse(payment_issue['blocking'])
+        self.assertEqual(integrations['status'], 'warning')
+
+    def test_offline_local_agent_is_blocking(self):
+        LocalAgent.issue_for_restaurant(restaurant=self.restaurant)
+
+        response = self.client.get('/api/v1/admin/restaurants/setup/readiness/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        coordinator = next(step for step in response.data['steps'] if step['id'] == 'coordinator')
+        offline_issue = next(issue for issue in coordinator['issues'] if issue['code'] == 'local_agent_offline')
+        self.assertTrue(offline_issue['blocking'])
+        self.assertEqual(coordinator['status'], 'blocked')
 
     def test_apply_multi_terminal_baseline_is_idempotent_and_binds_devices(self):
         payload = {

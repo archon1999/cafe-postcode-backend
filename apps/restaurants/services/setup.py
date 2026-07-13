@@ -110,7 +110,11 @@ def restaurant_setup_readiness(*, restaurant, backend_url='') -> dict:
             )
         if methods & {'card', 'mixed'} and not _enabled(cash_desk.payment_integration):
             integration_issues.append(
-                _issue('cash_desk_payment_missing', f'{cash_desk.name}: card payment integration is not configured.', blocking=True)
+                _issue(
+                    'cash_desk_payment_missing',
+                    f'{cash_desk.name}: card payment integration is not configured.',
+                    blocking=False,
+                )
             )
         if not _enabled(cash_desk.fiscal_integration):
             integration_issues.append(
@@ -127,7 +131,7 @@ def restaurant_setup_readiness(*, restaurant, backend_url='') -> dict:
     if agent is None:
         agent_issues.append(_issue('local_agent_missing', 'Install and pair the site coordinator.', blocking=True))
     elif not agent.is_online():
-        agent_issues.append(_issue('local_agent_offline', 'Site coordinator is currently offline.', blocking=False))
+        agent_issues.append(_issue('local_agent_offline', 'Site coordinator is currently offline.', blocking=True))
 
     templates = PrintTemplate.objects.filter(
         restaurant=restaurant,

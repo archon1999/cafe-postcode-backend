@@ -184,6 +184,11 @@ class CoreSettings(Settings):
     FAKTURA_TIMEOUT = env_float('FAKTURA_TIMEOUT', 10.0)
     FAKTURA_PROXY_URL = os.getenv('FAKTURA_PROXY_URL', '').strip()
 
+    LOCAL_AGENT_RELEASE_MANIFEST_URL = os.getenv(
+        'LOCAL_AGENT_RELEASE_MANIFEST_URL',
+        'https://admin.cafe-postcode.uz/downloads/local-agent-release.json',
+    ).strip()
+
     QZ_TRAY_CERTIFICATE_PEM = os.getenv('QZ_TRAY_CERTIFICATE_PEM', '').replace('\\n', '\n').strip()
     QZ_TRAY_PRIVATE_KEY_PEM = os.getenv('QZ_TRAY_PRIVATE_KEY_PEM', '').replace('\\n', '\n').strip()
     QZ_TRAY_CERTIFICATE_PATH = os.getenv('QZ_TRAY_CERTIFICATE_PATH', '').strip()

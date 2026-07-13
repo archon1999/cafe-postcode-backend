@@ -1036,6 +1036,8 @@ PERMISSION_DEFINITIONS.extend(
             ('GET', 'api/v1/admin/integrations/fiscal-devices/'),
             ('POST', 'api/v1/admin/integrations/marta/check/'),
             ('GET', 'api/v1/local-agent/status/'),
+            ('GET', 'api/v1/local-agent/diagnostics/'),
+            ('POST', 'api/v1/local-agent/update-now/'),
             ('POST', 'api/v1/local-agent/printer/check/'),
         ),
     )

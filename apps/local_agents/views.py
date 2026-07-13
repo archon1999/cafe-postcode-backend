@@ -5,6 +5,7 @@ from rest_framework.views import APIView
 
 from apps.local_agents.models import LocalAgent, LocalAgentEnrollmentToken
 from apps.local_agents.authentication import authenticate_local_agent
+from apps.local_agents.releases import agent_update_status
 from apps.local_agents.serializers import LocalAgentEnrollmentSerializer, LocalAgentStatusSerializer
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from common.api.admin_permissions import AdminPermissionRequiredMixin
@@ -88,7 +89,66 @@ class LocalAgentAdminStatusView(AdminPermissionRequiredMixin, APIView):
     def get(self, request):
         restaurant = get_request_restaurant(request)
         agent = LocalAgent.objects.select_related('restaurant').filter(restaurant=restaurant).first()
-        return Response({'agent': LocalAgentStatusSerializer(agent).data if agent else None})
+        if agent is None:
+            return Response({'agent': None, 'update': None})
+        agent_data = LocalAgentStatusSerializer(agent).data
+        agent_data['online'] = agent.is_online()
+        return Response({'agent': agent_data, 'update': agent_update_status(agent)})
+
+
+class LocalAgentDiagnosticsView(AdminPermissionRequiredMixin, APIView):
+    command_service_class = LocalAgentCommandService
+
+    def get(self, request):
+        restaurant = get_request_restaurant(request)
+        try:
+            result = self.command_service_class().execute(
+                restaurant=restaurant,
+                command_type='system.status',
+                payload={},
+                timeout_seconds=12,
+            )
+        except LocalAgentUnavailableError as error:
+            return Response({'detail': str(error), 'code': error.code}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except LocalAgentCommandError as error:
+            return Response(
+                {'detail': str(error), 'code': error.code, 'result': error.result},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({'ok': True, 'status': result})
+
+
+class LocalAgentUpdateNowView(AdminPermissionRequiredMixin, APIView):
+    command_service_class = LocalAgentCommandService
+
+    def post(self, request):
+        restaurant = get_request_restaurant(request)
+        agent = LocalAgent.objects.filter(restaurant=restaurant, is_active=True).first()
+        if agent is None or not agent.is_online():
+            return Response(
+                {'detail': 'Local agent is offline.', 'code': 'LOCAL_AGENT_OFFLINE'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if 'auto_update' not in (agent.capabilities or []):
+            return Response(
+                {'detail': 'Installed Local Agent does not support remote updates.', 'code': 'AUTO_UPDATE_UNSUPPORTED'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            result = self.command_service_class().execute(
+                restaurant=restaurant,
+                command_type='agent.update_now',
+                payload={},
+                timeout_seconds=8,
+            )
+        except LocalAgentUnavailableError as error:
+            return Response({'detail': str(error), 'code': error.code}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except LocalAgentCommandError as error:
+            return Response(
+                {'detail': str(error), 'code': error.code, 'result': error.result},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({'ok': True, 'result': result})
 
 
 class LocalAgentPrinterCheckView(AdminPermissionRequiredMixin, APIView):
