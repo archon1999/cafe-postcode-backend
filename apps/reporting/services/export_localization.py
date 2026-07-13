@@ -78,8 +78,8 @@ def get_summary_metrics(summary: dict) -> list[tuple[str, object]]:
         (_('Sales Total'), summary['sales_total']),
         (_('Orders Count'), summary['orders_count']),
         (_('Average Check'), summary['average_check']),
-        (_('Open Checks'), summary['open_checks']),
-        (_('Active Tables'), summary['active_tables']),
+        (_('Prechecks'), summary['prechecks_count']),
+        (_('Receipts'), summary['receipts_count']),
     ]
 
 

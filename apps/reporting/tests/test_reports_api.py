@@ -197,6 +197,10 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(response.data['refunds_total'], 5000)
         self.assertEqual(response.data['sales_total'], self.closed_order.total - 5000)
         self.assertEqual(response.data['average_check'], self.closed_order.total - 5000)
+        self.assertEqual(response.data['prechecks_count'], 1)
+        self.assertEqual(response.data['receipts_count'], 1)
+        self.assertNotIn('open_checks', response.data)
+        self.assertNotIn('active_tables', response.data)
 
     def test_open_checks_report_returns_current_branch_rows(self):
         response = self.client.get('/api/v1/admin/reporting/open-checks/', self.current_range_params())
@@ -206,6 +210,17 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['order_number'], self.open_order.order_number)
         self.assertEqual(rows[0]['total'], self.open_order.total)
+
+    def test_summary_export_contains_precheck_and_receipt_counts(self):
+        response = self.client.get('/api/v1/admin/reporting/summary/export/', self.current_range_params())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sheet = load_workbook(filename=BytesIO(response.content)).active
+        values = [cell.value for row in sheet.iter_rows() for cell in row if cell.value is not None]
+        self.assertIn(_('Prechecks'), values)
+        self.assertIn(_('Receipts'), values)
+        self.assertNotIn(_('Open Checks'), values)
+        self.assertNotIn(_('Active Tables'), values)
 
     def test_receipts_report_returns_prechecks_and_receipts(self):
         response = self.client.get('/api/v1/admin/reporting/receipts/', self.current_range_params())

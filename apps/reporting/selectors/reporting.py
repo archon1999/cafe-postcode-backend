@@ -11,7 +11,6 @@ from apps.billing.helpers import (
     get_payment_refund_model,
     get_receipt_model,
 )
-from apps.floor.models import TableSession
 from apps.sales.helpers import get_order_item_model, get_order_model
 from common.api.query_params import get_str_query_param
 from common.utils.date import tashkent_day_bounds, tashkent_month_bounds, tashkent_now, tashkent_year_bounds
@@ -132,29 +131,25 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
         closed_orders = closed_orders.filter(restaurant=restaurant)
     orders_count = closed_orders.count()
     average_check = sales_total // orders_count if orders_count else 0
-    open_checks = (
-        Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end)
-        .exclude(status__in=[Order.Status.CLOSED, Order.Status.CANCELLED])
-    )
-    if restaurant is not None:
-        open_checks = open_checks.filter(restaurant=restaurant)
-    open_checks = open_checks.count()
-    active_tables = TableSession.objects.filter(
+    receipts = Receipt.objects.filter(
         created_at__gte=period.start,
         created_at__lt=period.end,
-        status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
+        kind__in=[Receipt.Kind.PLAIN, Receipt.Kind.FISCAL],
     )
     if restaurant is not None:
-        active_tables = active_tables.filter(restaurant=restaurant)
-    active_tables = active_tables.count()
+        receipts = receipts.filter(order__restaurant=restaurant)
+    receipt_counts = receipts.aggregate(
+        prechecks_count=Count('id', filter=Q(kind=Receipt.Kind.PLAIN)),
+        receipts_count=Count('id', filter=Q(kind=Receipt.Kind.FISCAL)),
+    )
     return {
         'gross_sales_total': gross_sales_total,
         'refunds_total': refunds_total,
         'sales_total': sales_total,
         'orders_count': orders_count,
         'average_check': average_check,
-        'open_checks': open_checks,
-        'active_tables': active_tables,
+        'prechecks_count': receipt_counts['prechecks_count'],
+        'receipts_count': receipt_counts['receipts_count'],
     }
 
 
