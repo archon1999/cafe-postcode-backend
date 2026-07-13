@@ -5,14 +5,17 @@ from rest_framework import serializers
 
 
 ADMIN_RESTAURANT_HEADER = 'X-Admin-Restaurant-Id'
-ADMIN_API_PATH_PREFIX = '/api/v1/admin/'
+ADMIN_SCOPED_PATH_PREFIXES = (
+    '/api/v1/admin/',
+    '/api/v1/local-agent/',
+)
 
 
 def _is_admin_superuser_request(request) -> bool:
     return bool(
         getattr(request.user, 'is_authenticated', False)
         and getattr(request.user, 'is_superuser', False)
-        and request.path.startswith(ADMIN_API_PATH_PREFIX)
+        and request.path.startswith(ADMIN_SCOPED_PATH_PREFIXES)
     )
 
 

@@ -15,6 +15,11 @@ from common.api.throttling import AgentEnrollmentRateThrottle
 class LocalAgentEnrollmentTokenView(AdminPermissionRequiredMixin, APIView):
     def post(self, request):
         restaurant = get_request_restaurant(request)
+        if not restaurant.is_active:
+            return Response(
+                {'restaurantId': ['Local Agent cannot be installed for an inactive restaurant.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         token, raw_token = LocalAgentEnrollmentToken.issue(restaurant=restaurant, issued_by=request.user)
         return Response(
             {

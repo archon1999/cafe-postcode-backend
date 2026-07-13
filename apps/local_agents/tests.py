@@ -118,6 +118,7 @@ class LocalAgentAuthTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_can_issue_hashed_enrollment_token(self):
+        other_restaurant = Restaurant.objects.create(name='Other Restaurant', auth_code='OT1234')
         admin = User.objects.create_superuser(
             username='agent-enrollment-admin',
             password='Strong-Agent-Admin-123!',
@@ -135,6 +136,29 @@ class LocalAgentAuthTests(APITestCase):
         self.assertTrue(response.data['enrollmentToken'].startswith('cpe_'))
         enrollment = LocalAgentEnrollmentToken.objects.get(restaurant=self.restaurant)
         self.assertNotEqual(enrollment.token_hash, response.data['enrollmentToken'])
+        self.assertFalse(LocalAgentEnrollmentToken.objects.filter(restaurant=other_restaurant).exists())
+
+    def test_admin_cannot_issue_enrollment_token_for_inactive_restaurant(self):
+        inactive_restaurant = Restaurant.objects.create(
+            name='Inactive Restaurant',
+            auth_code='IN1234',
+            is_active=False,
+        )
+        admin = User.objects.create_superuser(
+            username='inactive-agent-enrollment-admin',
+            password='Strong-Agent-Admin-123!',
+            full_name='Inactive Agent Enrollment Admin',
+        )
+        self.client.force_authenticate(admin)
+
+        response = self.client.post(
+            '/api/v1/local-agent/enrollment-token/',
+            format='json',
+            HTTP_X_ADMIN_RESTAURANT_ID=str(inactive_restaurant.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertFalse(LocalAgentEnrollmentToken.objects.filter(restaurant=inactive_restaurant).exists())
 
 
 class LocalAgentWebSocketSecurityTests(TransactionTestCase):
