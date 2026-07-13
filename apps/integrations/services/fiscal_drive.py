@@ -162,6 +162,27 @@ class FiscalDriveIntegrationService:
             'provider_report': provider_report,
         }
 
+    def get_shift_report(self, *, cash_desk=None):
+        with self._client() as client:
+            target = self._resolve_target(client=client, cash_desk=cash_desk)
+            memory_info = self._get_fiscal_memory_info(client=client, factory_id=target.factory_id)
+            report = self._get_last_z_report(
+                client=client,
+                factory_id=target.factory_id,
+                memory_info=memory_info,
+            ) or {}
+        return {
+            **report,
+            'TerminalID': str(report.get('TerminalID') or target.info.get('TerminalID') or '').strip(),
+            'FactoryID': target.factory_id,
+            'SerialNumber': str(
+                report.get('SerialNumber')
+                or target.info.get('SerialNumber')
+                or target.info.get('SN')
+                or ''
+            ).strip(),
+        }
+
     def get_device_status(self, *, cash_desk=None):
         with self._client() as client:
             target = self._resolve_target(client=client, cash_desk=cash_desk)

@@ -13,7 +13,13 @@ from apps.billing.helpers import (
     get_payment_refund_model,
     get_receipt_model,
 )
-from apps.integrations.services import close_fiscal_shift, get_fiscal_device_status, open_fiscal_shift
+from apps.integrations.services import (
+    close_fiscal_shift,
+    get_fiscal_device_status,
+    get_fiscal_shift_report,
+    open_fiscal_shift,
+)
+from apps.printing.services import create_shift_report_print_document
 from apps.restaurants.helpers import get_cash_desk_model
 from apps.users.models import EmployeeProfile, User
 from common.api.permissions import POS_CASH_SHIFT_MANAGE_PERMISSION, has_permission_code
@@ -277,6 +283,46 @@ class CashShiftService:
             'pos_report': all_report,
             'fiscal_sent_report': fiscal_sent_report,
         }
+
+    def create_shift_report_documents(self, *, shift, created_by=None, closed=False, fiscal_report=None):
+        own_report = self.build_fiscal_shift_report(shift=shift)['pos_report']
+        documents = [
+            create_shift_report_print_document(
+                shift=shift,
+                report=own_report,
+                fiscal=False,
+                closed=closed,
+                created_by=created_by,
+            )
+        ]
+        if fiscal_report is not None:
+            documents.append(
+                create_shift_report_print_document(
+                    shift=shift,
+                    report=fiscal_report,
+                    fiscal=True,
+                    closed=closed,
+                    created_by=created_by,
+                )
+            )
+        return documents
+
+    def print_shift_reports(self, *, shift, created_by=None):
+        fiscal_report = self.get_open_fiscal_report(shift=shift)
+        return self.create_shift_report_documents(
+            shift=shift,
+            created_by=created_by,
+            closed=False,
+            fiscal_report=fiscal_report,
+        )
+
+    def get_open_fiscal_report(self, *, shift):
+        if not self.has_open_fiscal_shift(restaurant=shift.cash_desk.restaurant):
+            return None
+        return get_fiscal_shift_report(
+            restaurant=shift.cash_desk.restaurant,
+            cash_desk=shift.cash_desk,
+        )
 
     def _build_unikassa_like_report(
         self,

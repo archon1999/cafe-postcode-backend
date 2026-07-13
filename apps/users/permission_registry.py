@@ -696,6 +696,7 @@ PERMISSION_DEFINITIONS = [
         endpoints=endpoint_specs(
             ('POST', 'api/v1/pos/billing/shifts/open/'),
             ('POST', 'api/v1/pos/billing/shifts/current/close/'),
+            ('POST', 'api/v1/pos/billing/shifts/current/print-report/'),
         ),
         default_roles=POS_CASH_SHIFT_MANAGE_ROLES,
     ),

@@ -9,7 +9,13 @@ from rest_framework.views import APIView
 
 from apps.billing.api.pos.serializers import OpenCheckOrderSerializer
 from apps.billing.helpers import get_payment_model, get_payment_refund_model, get_receipt_model
-from apps.billing.serializers import CashShiftCloseSerializer, CashShiftOpenSerializer, CashierContextSerializer, FiscalShiftSerializer
+from apps.billing.serializers import (
+    CashierContextSerializer,
+    CashShiftCloseSerializer,
+    CashShiftOpenSerializer,
+    CashShiftReportSerializer,
+    FiscalShiftSerializer,
+)
 from apps.billing.services import CashShiftService
 from apps.platform.services import FeatureGateService
 from apps.restaurants.helpers import get_cash_desk_model
@@ -107,7 +113,9 @@ class CashShiftCloseView(APIView):
 
         shift_service = self.shift_service_class()
         fiscal_shift_payload = None
-        if serializer.validated_data.get('close_fiscal_shift') and shift_service.has_open_fiscal_shift(restaurant=restaurant):
+        print_report_error = ''
+        fiscal_shift_open = shift_service.has_open_fiscal_shift(restaurant=restaurant)
+        if serializer.validated_data.get('close_fiscal_shift') and fiscal_shift_open:
             active_manager_shifts = shift_service.get_active_shifts_for_manager(restaurant=restaurant, user=request.user)
             has_other_open_shifts = any(item.pk != shift.pk for item in active_manager_shifts)
             if has_other_open_shifts:
@@ -122,6 +130,19 @@ class CashShiftCloseView(APIView):
                     detail = "Fiscal smenani yopib bo'lmaydi: fiscal smenada savdo yoki qaytim operatsiyasi yo'q."
                 raise ValidationError({'detail': detail}) from error
 
+        fiscal_report = None
+        if fiscal_shift_payload is not None:
+            provider_report = fiscal_shift_payload.get('provider_report') or {}
+            fiscal_report = dict(provider_report.get('z_info') or {})
+            result = fiscal_shift_payload.get('result') or {}
+            fiscal_report.setdefault('FactoryID', result.get('factory_id') or result.get('factoryId') or '')
+            fiscal_report.setdefault('TerminalID', result.get('terminal_id') or result.get('terminalId') or '')
+        elif fiscal_shift_open:
+            try:
+                fiscal_report = shift_service.get_open_fiscal_report(shift=shift)
+            except Exception as error:
+                print_report_error = str(error)
+
         shift_service.close_shift(
             shift=shift,
             actual_closing_cash_amount=serializer.validated_data.get('actual_closing_cash_amount'),
@@ -130,15 +151,50 @@ class CashShiftCloseView(APIView):
         )
 
         payload = shift_service.build_context(restaurant=restaurant, user=request.user)
+        try:
+            print_documents = shift_service.create_shift_report_documents(
+                shift=shift,
+                created_by=request.user,
+                closed=True,
+                fiscal_report=fiscal_report,
+            )
+        except Exception as error:
+            print_documents = []
+            print_report_error = str(error)
         response_payload = {
             **CashierContextSerializer(payload).data,
             'report': shift_service.build_fiscal_shift_report(shift=shift),
+            'printDocuments': [str(document.id) for document in print_documents],
         }
+        if print_report_error:
+            response_payload['printReportError'] = print_report_error
         if fiscal_shift_payload is not None:
             response_payload['fiscal_shift'] = fiscal_shift_payload
         return Response(
             response_payload
         )
+
+
+class CashShiftReportPrintView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    shift_service_class = CashShiftService
+    feature_gate_service_class = FeatureGateService
+
+    def post(self, request):
+        restaurant = get_request_restaurant(request)
+        self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        serializer = CashShiftReportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        shifts = self.shift_service_class().get_active_shifts_for_manager(restaurant=restaurant, user=request.user)
+        shift_id = serializer.validated_data.get('cash_shift_id')
+        if shift_id is not None:
+            shift = next((item for item in shifts if item.id == shift_id), None)
+        else:
+            shift = shifts[0] if len(shifts) == 1 else None
+        if shift is None:
+            return Response({'detail': 'Faol smena topilmadi.'}, status=400)
+        documents = self.shift_service_class().print_shift_reports(shift=shift, created_by=request.user)
+        return Response({'printDocuments': [str(document.id) for document in documents]})
 
 
 class FiscalShiftOpenView(APIView):

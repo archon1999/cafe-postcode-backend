@@ -177,6 +177,13 @@ def close_fiscal_shift(*, restaurant, cash_desk=None):
     return service.close_shift(cash_desk=cash_desk)
 
 
+def get_fiscal_shift_report(*, restaurant, cash_desk=None):
+    service, _config = _get_fiscal_service(restaurant=restaurant, cash_desk=cash_desk)
+    if not hasattr(service, 'get_shift_report'):
+        raise ValueError('Fiscal provider does not support shift reports.')
+    return service.get_shift_report(cash_desk=cash_desk)
+
+
 def get_fiscal_device_status(*, restaurant, cash_desk=None):
     config = None
     checked_at = timezone.now().isoformat()

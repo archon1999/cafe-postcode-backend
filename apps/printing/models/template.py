@@ -9,6 +9,7 @@ class PrintTemplate(BaseModel):
         KITCHEN_TICKET = 'kitchen_ticket', 'Kitchen ticket'
         PAYMENT_RECEIPT_PLAIN = 'payment_receipt_plain', 'Plain payment receipt'
         PAYMENT_RECEIPT_FISCAL = 'payment_receipt_fiscal', 'Fiscal payment receipt'
+        SHIFT_REPORT = 'shift_report', 'Shift report'
 
     restaurant = models.ForeignKey(
         'restaurants.Restaurant',

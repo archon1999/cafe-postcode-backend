@@ -9,6 +9,7 @@ from apps.printing.api.admin.serializers import (
 )
 from apps.printing.models import PrintTemplate, PrintTemplateVersion
 from apps.printing.presets import (
+    PRINT_KINDS,
     VARIABLE_GROUPS,
     VARIABLES_BY_KIND,
     get_preset_catalog,
@@ -24,7 +25,7 @@ class RestaurantPrintTemplateQuerysetMixin:
         restaurant = get_request_restaurant(self.request)
         ensure_restaurant_templates(restaurant=restaurant)
         return (
-            PrintTemplate.objects.filter(restaurant=restaurant)
+            PrintTemplate.objects.filter(restaurant=restaurant, kind__in=PRINT_KINDS)
             .select_related('published_version')
             .prefetch_related('versions')
         )

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
@@ -8,7 +9,7 @@ from django.utils import timezone
 
 from apps.printing.models import PrintDocument, PrintTemplate
 
-from .templates import ensure_restaurant_templates
+from .templates import ensure_restaurant_templates, ensure_shift_report_template
 
 
 def _money(value) -> int:
@@ -277,6 +278,98 @@ def _hash_document(*, snapshot: dict, template_version_id) -> str:
         separators=(',', ':'),
     )
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
+def _report_pair(value) -> tuple[int, int]:
+    value = value if isinstance(value, dict) else {}
+    return (_money(value.get('Sale')), _money(value.get('Refund')))
+
+
+def build_shift_report_print_snapshot(*, shift, report: dict, fiscal: bool, closed: bool) -> dict:
+    restaurant = shift.cash_desk.restaurant
+    report = dict(report or {})
+    cash_sale, cash_refund = _report_pair(report.get('TotalCash'))
+    card_sale, card_refund = _report_pair(report.get('TotalCard'))
+    qr_sale, qr_refund = _report_pair(report.get('TotalQR'))
+    vat_sale, vat_refund = _report_pair(report.get('TotalVAT'))
+    payments = report.get('Payments') if isinstance(report.get('Payments'), list) else []
+    order_numbers = [str(row.get('order_number')) for row in payments if isinstance(row, dict) and row.get('order_number')]
+    terminal_id = str(report.get('TerminalID') or shift.cash_desk.terminal_id or '').strip()
+    return {
+        'restaurant': {
+            'name': restaurant.name,
+            'legalName': restaurant.legal_name or restaurant.name,
+            'taxNumber': restaurant.tax_number,
+        },
+        'shift': {
+            'id': str(shift.id),
+            'cashDeskName': shift.cash_desk.name,
+            'cashierName': (
+                shift.cashier.full_name
+                if shift.cashier_id and shift.cashier
+                else shift.opened_by.full_name if shift.opened_by_id and shift.opened_by else ''
+            ),
+        },
+        'report': {
+            'label': 'Fiscal to\'lovlar' if fiscal else 'Umumiy hisobot',
+            'terminalId': terminal_id,
+            'factoryId': str(report.get('FactoryID') or report.get('FactoryId') or '').strip(),
+            'serialNumber': str(report.get('SerialNumber') or report.get('SN') or '').strip(),
+            'printedAt': _local_datetime(timezone.now()),
+            'openedAt': str(report.get('OpenTime') or _local_datetime(shift.opened_at)),
+            'closedAt': str(report.get('CloseTime') or (_local_datetime(shift.closed_at) if closed else '')),
+            'firstReceipt': str(report.get('FirstReceiptSeq') or (order_numbers[0] if order_numbers else '')),
+            'lastReceipt': str(report.get('LastReceiptSeq') or (order_numbers[-1] if order_numbers else '')),
+            'saleCount': _money(report.get('TotalSaleCount')),
+            'refundCount': _money(report.get('TotalRefundCount')),
+            'cashSale': cash_sale,
+            'cardSale': card_sale,
+            'qrSale': qr_sale,
+            'vatSale': vat_sale if fiscal else 0,
+            'totalSale': _money(report.get('TotalSaleAmount')) or cash_sale + card_sale + qr_sale,
+            'cashRefund': cash_refund,
+            'cardRefund': card_refund,
+            'qrRefund': qr_refund,
+            'vatRefund': vat_refund if fiscal else 0,
+            'totalRefund': _money(report.get('TotalRefundAmount')) or cash_refund + card_refund + qr_refund,
+        },
+        'system': {'isFiscal': fiscal, 'isClosing': closed},
+    }
+
+
+@transaction.atomic
+def create_shift_report_print_document(*, shift, report: dict, fiscal: bool, closed: bool, created_by=None):
+    template = ensure_shift_report_template(restaurant=shift.cash_desk.restaurant)
+    snapshot = build_shift_report_print_snapshot(shift=shift, report=report, fiscal=fiscal, closed=closed)
+    content_hash = _hash_document(snapshot=snapshot, template_version_id=template.published_version_id)
+    mode = 'fiscal' if fiscal else 'general'
+    idempotency_key = (
+        f'shift-report:{shift.id}:close:{mode}'
+        if closed
+        else f'shift-report:{shift.id}:live:{mode}:{uuid.uuid4().hex}'
+    )
+    document, created = PrintDocument.objects.get_or_create(
+        restaurant=shift.cash_desk.restaurant,
+        idempotency_key=idempotency_key,
+        defaults={
+            'kind': PrintTemplate.Kind.SHIFT_REPORT,
+            'operation_type': PrintDocument.OperationType.TEST,
+            'source_model': 'billing.cashshift',
+            'source_id': shift.id,
+            'data_snapshot': snapshot,
+            'template_version': template.published_version,
+            'content_hash': content_hash,
+            'metadata': {
+                'cashDeskId': str(shift.cash_desk_id),
+                'reportType': mode,
+                'closing': closed,
+            },
+            'created_by': created_by,
+        },
+    )
+    if not created and document.content_hash != content_hash:
+        raise ValueError('Shift report print document already exists with different content.')
+    return document
 
 
 @transaction.atomic

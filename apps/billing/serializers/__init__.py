@@ -4,6 +4,7 @@ from .cashier_context import (
     CashierContextSerializer,
     CashShiftCloseSerializer,
     CashShiftOpenSerializer,
+    CashShiftReportSerializer,
     FiscalShiftSerializer,
     PaymentRefundCreateSerializer,
 )
@@ -16,6 +17,7 @@ __all__ = [
     'CashierContextSerializer',
     'CashShiftCloseSerializer',
     'CashShiftOpenSerializer',
+    'CashShiftReportSerializer',
     'CashShiftSerializer',
     'FiscalShiftSerializer',
     'MartaTerminalResultSerializer',

@@ -3,7 +3,7 @@ from django.db.models import Max
 from django.utils import timezone
 
 from apps.printing.models import PrintTemplate, PrintTemplateVersion
-from apps.printing.presets import PRINT_KINDS, get_preset_layout
+from apps.printing.presets import PRINT_KINDS, get_preset_layout, get_shift_report_layout
 
 from .validation import validate_template_layout
 
@@ -31,6 +31,27 @@ def ensure_restaurant_templates(*, restaurant) -> list[PrintTemplate]:
             template.save(update_fields=('published_version', 'updated_at'))
         templates.append(template)
     return templates
+
+
+@transaction.atomic
+def ensure_shift_report_template(*, restaurant) -> PrintTemplate:
+    template, _created = PrintTemplate.objects.get_or_create(
+        restaurant=restaurant,
+        kind=PrintTemplate.Kind.SHIFT_REPORT,
+    )
+    if template.published_version_id is None:
+        version = PrintTemplateVersion.objects.create(
+            template=template,
+            revision=1,
+            schema_version=1,
+            status=PrintTemplateVersion.Status.PUBLISHED,
+            preset_key='internal_shift_report_80',
+            layout=get_shift_report_layout(),
+            published_at=timezone.now(),
+        )
+        template.published_version = version
+        template.save(update_fields=('published_version', 'updated_at'))
+    return template
 
 
 @transaction.atomic

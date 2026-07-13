@@ -140,6 +140,45 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(payload['Items'][0]['SPIC'], self.catalog_item.mxik_code)
         self.assertEqual(payload['Items'][1], {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': 300000})
 
+    def test_get_shift_report_reads_current_z_report_info(self):
+        report = {
+            'TerminalID': 'ZZ000000000000',
+            'OpenTime': '2024-09-04 09:39:14',
+            'CloseTime': '',
+            'TotalSaleCount': 1,
+            'TotalRefundCount': 0,
+            'TotalCash': {'Sale': 50000, 'Refund': 0},
+            'TotalCard': {'Sale': 50000, 'Refund': 0},
+            'TotalVAT': {'Sale': 10714, 'Refund': 0},
+            'FirstReceiptSeq': 1,
+            'LastReceiptSeq': 1,
+        }
+
+        def handler(request: httpx.Request):
+            if request.url.path == '/FiscalDrive/List':
+                return httpx.Response(200, json=[{'FactoryID': 'FACTORY-1'}])
+            if request.url.path == '/FiscalDrive/Info/FACTORY-1':
+                return httpx.Response(200, json={'TerminalID': 'TERM-1', 'SN': 'SN-1'})
+            if request.url.path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
+                return httpx.Response(200, json={'ZReportsCount': 1})
+            if request.url.path == '/FiscalDrive/ZReport/Info/FACTORY-1':
+                self.assertEqual(dict(httpx.QueryParams(request.content.decode())).get('Index'), '0')
+                return httpx.Response(200, json=report)
+            return httpx.Response(404)
+
+        service = FiscalDriveIntegrationService(
+            self.config,
+            client_factory=lambda **kwargs: httpx.Client(
+                transport=httpx.MockTransport(handler),
+                base_url=kwargs['base_url'],
+            ),
+        )
+        result = service.get_shift_report(cash_desk=self.cash_desk)
+
+        self.assertEqual(result['TotalVAT']['Sale'], 10714)
+        self.assertEqual(result['FactoryID'], 'FACTORY-1')
+        self.assertEqual(result['SerialNumber'], 'SN-1')
+
     def test_issue_receipt_includes_vat_without_changing_total(self):
         self.restaurant.vat_enabled = True
         self.restaurant.vat_percent = 12

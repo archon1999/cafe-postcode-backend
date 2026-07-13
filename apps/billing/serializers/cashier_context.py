@@ -143,6 +143,10 @@ class CashShiftCloseSerializer(serializers.Serializer):
     close_fiscal_shift = serializers.BooleanField(required=False, default=False)
 
 
+class CashShiftReportSerializer(serializers.Serializer):
+    cash_shift_id = serializers.UUIDField(required=False, allow_null=True)
+
+
 class FiscalShiftSerializer(serializers.Serializer):
     cash_desk_id = serializers.UUIDField(required=False, allow_null=True)
 

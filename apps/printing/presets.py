@@ -6,6 +6,78 @@ PAYMENT_RECEIPT_PLAIN = 'payment_receipt_plain'
 PAYMENT_RECEIPT_FISCAL = 'payment_receipt_fiscal'
 PRINT_KINDS = (KITCHEN_TICKET, PAYMENT_RECEIPT_PLAIN, PAYMENT_RECEIPT_FISCAL)
 
+
+def get_shift_report_layout() -> dict:
+    """Internal fixed layout for POS and Fiscal Drive shift summaries."""
+    return {
+        'schemaVersion': 1,
+        'paperWidthMm': 80,
+        'blocks': [
+            {'id': 'title', 'type': 'text', 'text': 'Hisobot', 'align': 'center', 'bold': True, 'size': 'large'},
+            {'id': 'header-divider', 'type': 'divider'},
+            {
+                'id': 'identity',
+                'type': 'metadata',
+                'rows': [
+                    {'label': 'STIR', 'value': '{{restaurant.taxNumber}}'},
+                    {'label': 'Terminal', 'value': '{{report.terminalId}}'},
+                    {'label': 'Kassa', 'value': '{{shift.cashDeskName}}'},
+                    {'label': 'Kassir', 'value': '{{shift.cashierName}}'},
+                    {'label': 'Sana', 'value': '{{report.printedAt}}'},
+                ],
+            },
+            {'id': 'period-divider', 'type': 'divider'},
+            {'id': 'report-kind', 'type': 'text', 'text': '{{report.label}}', 'align': 'center', 'bold': True},
+            {
+                'id': 'period',
+                'type': 'metadata',
+                'rows': [
+                    {'label': 'Ochilish', 'value': '{{report.openedAt}}'},
+                    {'label': 'Yopilish', 'value': '{{report.closedAt}}'},
+                    {'label': 'Birinchi chek', 'value': '{{report.firstReceipt}}'},
+                    {'label': 'Oxirgi chek', 'value': '{{report.lastReceipt}}'},
+                ],
+            },
+            {'id': 'sales-title', 'type': 'text', 'text': 'Sotuv', 'align': 'center', 'bold': True},
+            {
+                'id': 'sales',
+                'type': 'totals',
+                'rows': [
+                    {'label': 'Sotuvlar', 'value': '{{report.saleCount}}'},
+                    {'label': 'Naqd', 'value': '{{report.cashSale}}', 'format': 'money'},
+                    {'label': 'Karta', 'value': '{{report.cardSale}}', 'format': 'money'},
+                    {'label': 'QR', 'value': '{{report.qrSale}}', 'format': 'money', 'hideZero': True},
+                    {'label': 'QQS', 'value': '{{report.vatSale}}', 'format': 'money', 'hideZero': True},
+                    {'label': 'Jami', 'value': '{{report.totalSale}}', 'format': 'money', 'bold': True},
+                ],
+            },
+            {'id': 'refund-title', 'type': 'text', 'text': 'Qaytarish', 'align': 'center', 'bold': True},
+            {
+                'id': 'refunds',
+                'type': 'totals',
+                'rows': [
+                    {'label': 'Qaytarishlar', 'value': '{{report.refundCount}}'},
+                    {'label': 'Naqd', 'value': '{{report.cashRefund}}', 'format': 'money'},
+                    {'label': 'Karta', 'value': '{{report.cardRefund}}', 'format': 'money'},
+                    {'label': 'QR', 'value': '{{report.qrRefund}}', 'format': 'money', 'hideZero': True},
+                    {'label': 'QQS', 'value': '{{report.vatRefund}}', 'format': 'money', 'hideZero': True},
+                    {'label': 'Jami', 'value': '{{report.totalRefund}}', 'format': 'money', 'bold': True},
+                ],
+            },
+            {'id': 'footer-divider', 'type': 'divider'},
+            {
+                'id': 'device',
+                'type': 'metadata',
+                'rows': [
+                    {'label': 'FM', 'value': '{{report.factoryId}}'},
+                    {'label': 'SN', 'value': '{{report.serialNumber}}'},
+                ],
+            },
+            {'id': 'feed', 'type': 'feed', 'lines': 5},
+            {'id': 'cut', 'type': 'cut'},
+        ],
+    }
+
 COMMON_VARIABLES = (
     'restaurant.name',
     'restaurant.legalName',
