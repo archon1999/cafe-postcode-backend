@@ -304,6 +304,25 @@ class OpenCheckListApiTests(APITestCase):
         returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
         self.assertEqual(returned_ids, {str(fiscal_order.id)})
 
+    def test_fiscal_closed_status_only_returns_today_orders(self):
+        today_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
+        old_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now() - timedelta(days=1))
+        for order, receipt_number in ((today_order, 'F-TODAY'), (old_order, 'F-OLD')):
+            payment = self.create_success_payment(order=order, register_fiscal=True)
+            Receipt.objects.create(
+                order=order,
+                payment=payment,
+                kind=Receipt.Kind.FISCAL,
+                status=Receipt.Status.SENT,
+                payload={'receiptNumber': receipt_number},
+            )
+
+        response = self.client.get('/api/v1/pos/billing/open-checks/?status=fiscal_closed')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
+        self.assertEqual(returned_ids, {str(today_order.id)})
+
     def test_hall_order_applies_restaurant_service_fee_percent(self):
         self.restaurant.vat_enabled = True
         self.restaurant.vat_percent = 12

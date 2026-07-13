@@ -393,7 +393,11 @@ class OpenCheckListView(generics.ListAPIView):
             if status_filter == 'fiscal_closed':
                 fiscal_queryset = closed_queryset.annotate(
                     has_sent_fiscal_receipt=Exists(sent_fiscal_receipt),
-                ).filter(has_sent_fiscal_receipt=True)
+                ).filter(
+                    closed_at__gte=start,
+                    closed_at__lt=end,
+                    has_sent_fiscal_receipt=True,
+                )
                 search = str(self.request.query_params.get('search') or '').strip()
                 if search:
                     search_filter = (
