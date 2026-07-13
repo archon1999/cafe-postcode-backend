@@ -6,7 +6,7 @@ def parse_csv_env(name: str) -> list[str]:
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
-CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:4200',
     'http://localhost:4300',

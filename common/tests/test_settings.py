@@ -1,9 +1,14 @@
+from django.conf import settings
 from django.test import SimpleTestCase
 
 from common.utils.settings import coerce_bool, coerce_int, get_setting
 
 
 class ConfigSettingsUtilsTests(SimpleTestCase):
+    def test_cross_origin_frontends_allow_credentials(self):
+        self.assertTrue(settings.CORS_ALLOW_CREDENTIALS)
+        self.assertIn('https://admin.cafe-postcode.uz', settings.CORS_ALLOWED_ORIGINS)
+
     def test_get_setting_uses_first_non_empty_alias(self):
         settings = {'endpoint_url': '', 'endpointUrl': 'http://127.0.0.1:8090'}
 
