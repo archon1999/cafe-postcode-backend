@@ -35,10 +35,9 @@ class LocalAgentAuthTests(APITestCase):
         return raw_token
 
     def test_enrollment_returns_agent_token(self):
-        enrollment_token = self.issue_enrollment_token()
         response = self.client.post(
             '/api/v1/local-agent/auth/enroll/',
-            {'enrollmentToken': enrollment_token, 'name': 'Cashier PC', 'version': '0.2.0'},
+            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC', 'version': '0.2.0'},
             format='json',
         )
 
@@ -62,27 +61,25 @@ class LocalAgentAuthTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_enrollment_token_is_one_time(self):
-        enrollment_token = self.issue_enrollment_token()
-        payload = {'enrollmentToken': enrollment_token, 'name': 'Cashier PC'}
+    def test_restaurant_code_can_reinstall_agent(self):
+        payload = {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'}
 
         first = self.client.post('/api/v1/local-agent/auth/enroll/', payload, format='json')
         second = self.client.post('/api/v1/local-agent/auth/enroll/', payload, format='json')
 
         self.assertEqual(first.status_code, status.HTTP_200_OK)
-        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertNotEqual(first.data['agentToken'], second.data['agentToken'])
 
-    def test_enrollment_preflight_does_not_consume_token(self):
-        enrollment_token = self.issue_enrollment_token()
-
+    def test_restaurant_code_preflight_allows_enrollment(self):
         preflight = self.client.post(
             '/api/v1/local-agent/auth/enrollment/preflight/',
-            {'enrollmentToken': enrollment_token, 'name': 'Cashier PC'},
+            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'},
             format='json',
         )
         enroll = self.client.post(
             '/api/v1/local-agent/auth/enroll/',
-            {'enrollmentToken': enrollment_token, 'name': 'Cashier PC'},
+            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'},
             format='json',
         )
 
@@ -90,19 +87,19 @@ class LocalAgentAuthTests(APITestCase):
         self.assertEqual(preflight.data['restaurantId'], str(self.restaurant.id))
         self.assertEqual(enroll.status_code, status.HTTP_200_OK, enroll.data)
 
-    def test_enrollment_preflight_rejects_invalid_token(self):
+    def test_enrollment_preflight_rejects_invalid_restaurant_code(self):
         response = self.client.post(
             '/api/v1/local-agent/auth/enrollment/preflight/',
-            {'enrollmentToken': 'cpe_invalid-but-long-enough'},
+            {'restaurantCode': 'BAD000'},
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_enrollment_rejects_invalid_token(self):
+    def test_enrollment_rejects_invalid_restaurant_code(self):
         response = self.client.post(
             '/api/v1/local-agent/auth/enroll/',
-            {'enrollmentToken': 'cpe_invalid-but-long-enough'},
+            {'restaurantCode': 'BAD000'},
             format='json',
         )
 

@@ -1,10 +1,21 @@
 from rest_framework import serializers
 
+from apps.restaurants.models import Restaurant
+
 
 class LocalAgentEnrollmentSerializer(serializers.Serializer):
-    enrollment_token = serializers.CharField(min_length=20, max_length=128, trim_whitespace=True)
+    restaurant_code = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)
     name = serializers.CharField(required=False, allow_blank=True, max_length=255)
     version = serializers.CharField(required=False, allow_blank=True, max_length=50)
+
+    def validate(self, attrs):
+        code = attrs['restaurant_code'].strip()
+        restaurant = Restaurant.objects.filter(auth_code=code, is_active=True).first()
+        if restaurant is None:
+            raise serializers.ValidationError({'restaurant_code': 'Restaurant code is invalid.'})
+        attrs['restaurant_code'] = code
+        attrs['restaurant'] = restaurant
+        return attrs
 
 
 class LocalAgentStatusSerializer(serializers.Serializer):

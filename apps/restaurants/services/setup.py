@@ -185,6 +185,7 @@ def restaurant_setup_readiness(*, restaurant, backend_url='') -> dict:
             'schemaVersion': 1,
             'restaurantId': str(restaurant.id),
             'restaurantName': restaurant.name,
+            'restaurantCode': restaurant.auth_code,
             'backendUrl': backend_url.rstrip('/'),
             'coordinatorMode': True,
             'localHttpListen': '127.0.0.1:18181',

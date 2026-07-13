@@ -20,7 +20,7 @@ class RestaurantSetupApiTests(APITestCase):
         self.client.force_authenticate(self.superuser)
         self.client.credentials(HTTP_X_ADMIN_RESTAURANT_ID=str(self.restaurant.id))
 
-    def test_readiness_exposes_blocking_steps_and_safe_installer_manifest(self):
+    def test_readiness_exposes_blocking_steps_and_installer_manifest(self):
         self.assertTrue(
             DistributionPoint.objects.filter(
                 restaurant=self.restaurant,
@@ -33,7 +33,7 @@ class RestaurantSetupApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertFalse(response.data['ready'])
         self.assertGreater(response.data['blockingIssueCount'], 0)
-        self.assertNotIn('restaurantCode', response.data['installerManifest'])
+        self.assertEqual(response.data['installerManifest']['restaurantCode'], self.restaurant.auth_code)
         self.assertNotIn('agentToken', response.data['installerManifest'])
         self.assertEqual(response.data['installerManifest']['localHttpListen'], '127.0.0.1:18181')
         self.assertEqual(

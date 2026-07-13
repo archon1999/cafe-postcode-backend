@@ -39,13 +39,7 @@ class LocalAgentEnrollView(APIView):
     def post(self, request):
         serializer = LocalAgentEnrollmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        enrollment = LocalAgentEnrollmentToken.consume(serializer.validated_data['enrollment_token'])
-        if enrollment is None:
-            return Response(
-                {'enrollmentToken': ['Enrollment token is invalid, expired, or already used.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        restaurant = enrollment.restaurant
+        restaurant = serializer.validated_data['restaurant']
         agent, token = LocalAgent.issue_for_restaurant(
             restaurant=restaurant,
             name=serializer.validated_data.get('name', ''),
@@ -70,19 +64,12 @@ class LocalAgentEnrollmentPreflightView(APIView):
     def post(self, request):
         serializer = LocalAgentEnrollmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        enrollment = LocalAgentEnrollmentToken.inspect(serializer.validated_data['enrollment_token'])
-        if enrollment is None:
-            return Response(
-                {'enrollmentToken': ['Enrollment token is invalid, expired, or already used.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        restaurant = enrollment.restaurant
+        restaurant = serializer.validated_data['restaurant']
         return Response(
             {
                 'ok': True,
                 'restaurantId': str(restaurant.id),
                 'restaurantName': restaurant.name,
-                'expiresAt': enrollment.expires_at,
             }
         )
 
