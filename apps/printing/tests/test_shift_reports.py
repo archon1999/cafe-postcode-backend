@@ -14,7 +14,7 @@ class ShiftReportPrintDocumentTests(PosTestCase):
             'TotalCash': {'Sale': 50000, 'Refund': 0},
             'TotalCard': {'Sale': 30000, 'Refund': 0},
             'TotalQR': {'Sale': 10000, 'Refund': 0},
-            'TotalVAT': {'Sale': 9000, 'Refund': 0},
+            'TotalVAT': {'Sale': 9055, 'Refund': 0},
             'TotalSaleAmount': 90000,
             'Payments': [{'order_number': 10}, {'order_number': 11}],
         }
@@ -46,6 +46,8 @@ class ShiftReportPrintDocumentTests(PosTestCase):
         self.assertEqual(general.data_snapshot['report']['firstReceipt'], '10')
         self.assertEqual(general.data_snapshot['report']['vatSale'], 0)
         self.assertEqual(fiscal.data_snapshot['report']['firstReceipt'], '21')
-        self.assertEqual(fiscal.data_snapshot['report']['vatSale'], 9000)
+        self.assertEqual(fiscal.data_snapshot['report']['cashSale'], 500)
+        self.assertEqual(fiscal.data_snapshot['report']['vatSale'], 90.55)
+        self.assertEqual(fiscal.data_snapshot['report']['totalSale'], 900)
         self.assertEqual(fiscal.data_snapshot['report']['factoryId'], 'FM-1')
         self.assertEqual(PrintDocument.objects.filter(source_id=shift.id).count(), 2)
