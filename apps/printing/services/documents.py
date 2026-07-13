@@ -31,9 +31,9 @@ def _included_vat(*, amount: int, percent) -> int:
 
 def _channel_label(order) -> str:
     labels = {
-        'hall': 'Зал',
-        'takeaway': 'С собой',
-        'delivery': 'Доставка',
+        'hall': 'Zal',
+        'takeaway': 'Soboy',
+        'delivery': 'Dostavka',
         'online': 'Online',
     }
     return labels.get(str(order.channel or ''), str(order.channel or ''))
@@ -71,6 +71,27 @@ def _local_datetime(value) -> str:
     return timezone.localtime(value).strftime('%Y-%m-%d %H:%M:%S')
 
 
+def _aggregate_print_items(queryset, *, vat_enabled=False, vat_percent=0, include_vat=False) -> list[dict]:
+    aggregated = {}
+    for item in queryset.order_by('created_at'):
+        name = item.catalog_item.name if item.catalog_item_id else item.name_snapshot
+        unit_price = _money(item.unit_price)
+        note = item.note or ''
+        key = (str(item.catalog_item_id or name), note, unit_price)
+        current = aggregated.setdefault(
+            key,
+            {'name': name, 'quantity': 0, 'unitPrice': unit_price, 'lineTotal': 0, 'note': note},
+        )
+        current['quantity'] += int(item.quantity or 0)
+        current['lineTotal'] += _money(item.line_total)
+        if include_vat:
+            current['vat'] = current.get('vat', 0) + (
+                _included_vat(amount=_money(item.line_total), percent=vat_percent) if vat_enabled else 0
+            )
+            current['vatPercent'] = _json_number(vat_percent)
+    return list(aggregated.values())
+
+
 def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) -> dict:
     order = receipt.order
     payment = receipt.payment
@@ -91,6 +112,12 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     vat_percent = getattr(restaurant, 'vat_percent', 0) or 0
     result = dict(fiscal_result or receipt.payload or {})
     response = result.get('response') if isinstance(result.get('response'), dict) else {}
+    items = _aggregate_print_items(
+        active_items,
+        vat_enabled=vat_enabled,
+        vat_percent=vat_percent,
+        include_vat=True,
+    )
 
     return {
         'restaurant': {
@@ -116,18 +143,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
             'deliveryPhone': order.delivery_phone or '',
             'deliveryAddress': order.delivery_address or '',
         },
-        'items': [
-            {
-                'name': item.catalog_item.name if item.catalog_item_id else item.name_snapshot,
-                'quantity': int(item.quantity or 0),
-                'unitPrice': _money(item.unit_price),
-                'lineTotal': _money(item.line_total),
-                'vat': _included_vat(amount=_money(item.line_total), percent=vat_percent) if vat_enabled else 0,
-                'vatPercent': _json_number(vat_percent),
-                'note': item.note or '',
-            }
-            for item in active_items
-        ],
+        'items': items,
         'payment': {
             'id': str(payment.id),
             'method': _payment_method_label(
@@ -217,24 +233,12 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
     order = ticket.order
     restaurant = ticket.restaurant
     table_name, hall_name = _table_parts(order)
-    aggregated_items = {}
     queryset = (
         order.items.filter(prep_station=ticket.prep_station)
         .exclude(status=order.items.model.Status.CANCELLED)
         .select_related('catalog_item')
-        .order_by('created_at')
     )
-    for item in queryset:
-        name = item.catalog_item.name if item.catalog_item_id else ''
-        key = (name, item.note or '')
-        current = aggregated_items.setdefault(
-            key,
-            {'name': name, 'quantity': 0, 'unitPrice': _money(item.unit_price), 'lineTotal': 0, 'note': item.note or ''},
-        )
-        current['quantity'] += int(item.quantity or 0)
-        current['lineTotal'] += _money(item.line_total)
-
-    items = list(aggregated_items.values())
+    items = _aggregate_print_items(queryset)
     return {
         'restaurant': {
             'name': restaurant.name,

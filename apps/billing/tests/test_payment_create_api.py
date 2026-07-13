@@ -11,6 +11,7 @@ from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintTemplate
 from apps.sales.models import Order, OrderItem
+from apps.sales.services import OrderSubmissionService
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
 
@@ -251,6 +252,100 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(receipt.kind, Receipt.Kind.PLAIN)
         self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
         self.assertEqual(receipt.print_document.template_version.status, 'published')
+
+    def test_payment_returns_kitchen_document_for_configured_station_printer(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        printer = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            settings={'connection_type': 'system_printer', 'printer_name': 'Kitchen Printer'},
+        )
+        self.prep_station.printer_integration = printer
+        self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        ticket = KitchenTicket.objects.get(order=self.order, prep_station=self.prep_station)
+        self.assertEqual(response.data['kitchenPrintDocuments'], [str(ticket.print_document_id)])
+
+    def test_receipt_print_document_aggregates_duplicate_items(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        OrderItem.objects.create(
+            order=self.order,
+            catalog_item=self.item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=2,
+            unit_price=30000,
+        )
+        self.order.recalculate_totals()
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        receipt = Receipt.objects.get(order=self.order)
+        self.assertEqual(
+            receipt.print_document.data_snapshot['items'],
+            [
+                {
+                    'name': 'Osh',
+                    'quantity': 3,
+                    'unitPrice': 30000,
+                    'lineTotal': 90000,
+                    'note': '',
+                    'vat': 0,
+                    'vatPercent': 12,
+                }
+            ],
+        )
+
+    def test_payment_does_not_return_already_submitted_kitchen_document(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        printer = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            settings={'connection_type': 'system_printer', 'printer_name': 'Kitchen Printer'},
+        )
+        self.prep_station.printer_integration = printer
+        self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
+        OrderSubmissionService().submit(self.order)
+        existing_document_id = KitchenTicket.objects.get(order=self.order).print_document_id
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['kitchenPrintDocuments'], [])
+        self.assertEqual(KitchenTicket.objects.get(order=self.order).print_document_id, existing_document_id)
 
     def test_edge_operation_id_makes_payment_replay_idempotent(self):
         payload = {

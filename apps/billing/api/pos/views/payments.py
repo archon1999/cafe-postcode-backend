@@ -21,6 +21,18 @@ Order = get_order_model()
 Payment = get_payment_model()
 
 
+def _kitchen_print_document_ids(order, *, exclude=None):
+    excluded_ids = {str(document_id) for document_id in (exclude or [])}
+    return [
+        str(document_id)
+        for document_id in order.kitchen_tickets.filter(
+            routed_via__in=['printer', 'both'],
+            print_document__isnull=False,
+        ).values_list('print_document_id', flat=True)
+        if str(document_id) not in excluded_ids
+    ]
+
+
 class PaymentCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     order_payment_service_class = OrderPaymentService
@@ -35,6 +47,7 @@ class PaymentCreateView(APIView):
             pk=pk,
             restaurant=restaurant,
         )
+        existing_kitchen_documents = _kitchen_print_document_ids(order)
         cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
         result = self.order_payment_service_class().process(
             order=order,
@@ -59,6 +72,10 @@ class PaymentCreateView(APIView):
                 'payment': PaymentSerializer(payment).data,
                 'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
                 'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
+                'kitchenPrintDocuments': _kitchen_print_document_ids(
+                    result['order'],
+                    exclude=existing_kitchen_documents,
+                ),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -111,6 +128,7 @@ class MartaTerminalResultView(APIView):
             pk=pk,
             order__restaurant=restaurant,
         )
+        existing_kitchen_documents = _kitchen_print_document_ids(payment.order)
         result = self.service_class().complete_marta_terminal_payment(
             payment=payment,
             terminal_result=terminal_result,
@@ -131,6 +149,10 @@ class MartaTerminalResultView(APIView):
                 'payment': PaymentSerializer(result['payment']).data,
                 'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
                 'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
+                'kitchenPrintDocuments': _kitchen_print_document_ids(
+                    result['order'],
+                    exclude=existing_kitchen_documents,
+                ),
             },
             status=status.HTTP_201_CREATED,
         )

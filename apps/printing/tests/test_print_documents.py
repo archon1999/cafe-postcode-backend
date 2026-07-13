@@ -6,10 +6,10 @@ from apps.printing.services.documents import _channel_label, _payment_method_lab
 
 
 class PrintDocumentChannelLabelTests(SimpleTestCase):
-    def test_receipt_channel_labels_use_requested_cyrillic_text(self):
-        self.assertEqual(_channel_label(SimpleNamespace(channel='hall')), 'Зал')
-        self.assertEqual(_channel_label(SimpleNamespace(channel='takeaway')), 'С собой')
-        self.assertEqual(_channel_label(SimpleNamespace(channel='delivery')), 'Доставка')
+    def test_receipt_channel_labels_use_requested_latin_text(self):
+        self.assertEqual(_channel_label(SimpleNamespace(channel='hall')), 'Zal')
+        self.assertEqual(_channel_label(SimpleNamespace(channel='takeaway')), 'Soboy')
+        self.assertEqual(_channel_label(SimpleNamespace(channel='delivery')), 'Dostavka')
 
     def test_payment_method_uses_receipt_label(self):
         self.assertEqual(_payment_method_label('cash'), 'Naqd')

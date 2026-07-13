@@ -169,7 +169,7 @@ SAMPLE_DATA = {
     'order': {
         'displayNumber': '1042',
         'channel': 'hall',
-        'channelLabel': 'Zalda',
+        'channelLabel': 'Zal',
         'table': '12-stol',
         'hall': 'Asosiy zal',
         'guestCount': 3,
@@ -278,7 +278,7 @@ def _order_blocks(*, kitchen: bool, detailed: bool) -> list[dict]:
 
 def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = False) -> dict:
     columns = [{'label': 'Nomi', 'value': '{{item.name}}', 'grow': 1}]
-    columns.append({'label': 'Soni', 'value': '{{item.quantity}}', 'align': 'right'})
+    columns.append({'label': 'Soni', 'value': 'x{{item.quantity}}', 'align': 'right'})
     if show_price:
         columns.append({'label': 'Summa', 'value': '{{item.lineTotal}}', 'align': 'right', 'format': 'money'})
     block = {

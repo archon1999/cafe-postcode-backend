@@ -571,12 +571,14 @@ class OrderPaymentService:
     @staticmethod
     def _order_channel_label(order) -> str:
         if order.channel == Order.Channel.HALL:
-            return 'Zalda'
+            return 'Zal'
+        if order.channel == Order.Channel.TAKEAWAY:
+            return 'Soboy'
         if order.channel == Order.Channel.DELIVERY:
-            return 'Yetkazib berish'
+            return 'Dostavka'
         if order.channel == Order.Channel.ONLINE:
             return 'Online'
-        return 'Zalda'
+        return str(order.channel or '')
 
     @staticmethod
     def _order_table_label(order) -> str:
