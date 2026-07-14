@@ -893,7 +893,10 @@ class AdminApiTests(APITestCase):
             summary_export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('summary-report-range-2026-03-27-to-2026-03-27.xlsx', summary_export_response['Content-Disposition'])
+        self.assertIn(
+            'hisobot-xulosasi-oraliq-2026-03-27-2026-03-27.xlsx',
+            summary_export_response['Content-Disposition'],
+        )
 
         sales_response = self.client.get(
             '/api/v1/admin/reporting/sales/',
@@ -913,7 +916,10 @@ class AdminApiTests(APITestCase):
             export_response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
-        self.assertIn('sales-report-range-2026-03-27-to-2026-03-27.xlsx', export_response['Content-Disposition'])
+        self.assertIn(
+            'savdo-hisoboti-oraliq-2026-03-27-2026-03-27.xlsx',
+            export_response['Content-Disposition'],
+        )
 
         open_checks_export_response = self.client.get(
             '/api/v1/admin/reporting/open-checks/export/',
@@ -925,7 +931,7 @@ class AdminApiTests(APITestCase):
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         self.assertIn(
-            'open-checks-report-range-2026-03-27-to-2026-03-27.xlsx',
+            'ochiq-cheklar-hisoboti-oraliq-2026-03-27-2026-03-27.xlsx',
             open_checks_export_response['Content-Disposition'],
         )
 
@@ -948,7 +954,7 @@ class AdminApiTests(APITestCase):
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
         self.assertIn(
-            'top-items-report-range-2026-03-27-to-2026-03-27.xlsx',
+            'top-mahsulotlar-hisoboti-oraliq-2026-03-27-2026-03-27.xlsx',
             top_items_export_response['Content-Disposition'],
         )
 
@@ -1009,9 +1015,11 @@ class AdminApiTests(APITestCase):
         )
         self.assertEqual(sales_export_ru.status_code, status.HTTP_200_OK)
         sales_values_ru = self._workbook_values(sales_export_ru)
-        self.assertIn('Отчет по продажам', sales_values_ru)
+        self.assertIn('Оплаты', sales_values_ru)
         self.assertIn('Способ', sales_values_ru)
         self.assertIn('Карта', sales_values_ru)
+        self.assertIn(1, sales_values_ru)
+        self.assertIn(100_000, sales_values_ru)
 
         open_checks_export_uz_crl = self.client.get(
             '/api/v1/admin/reporting/open-checks/export/',
