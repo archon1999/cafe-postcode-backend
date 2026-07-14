@@ -19,14 +19,43 @@ class IntegrationConfigSerializerTests(TestCase):
                 'settings': {
                     'connection_type': 'system_printer',
                     'printer_name': 'POS-80 USB',
+                    'transport_type': 'direct',
+                    'use_local_agent': False,
                 },
             }
         )
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertEqual(serializer.validated_data['settings']['transport'], 'local-agent')
-        self.assertEqual(serializer.validated_data['settings']['encoding'], 'cp1251')
-        self.assertEqual(serializer.validated_data['settings']['code_page'], 46)
+        self.assertEqual(
+            serializer.validated_data['settings'],
+            {
+                'connection_type': 'system_printer',
+                'printer_name': 'POS-80 USB',
+                'transport': 'local-agent',
+                'encoding': 'cp1251',
+                'code_page': 46,
+            },
+        )
+
+    def test_fiscal_drive_removes_parser_normalized_transport_aliases(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.FISCAL,
+                'provider': 'fiscal-drive-service',
+                'is_enabled': True,
+                'settings': {
+                    'terminal_id': 'T-1',
+                    'transport_type': 'direct',
+                    'use_local_agent': False,
+                },
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(
+            serializer.validated_data['settings'],
+            {'terminal_id': 'T-1', 'transport': 'local-agent'},
+        )
 
     def test_windows_raw_socket_uses_local_agent_transport(self):
         instance = IntegrationConfig.objects.create(

@@ -3,6 +3,22 @@ from rest_framework import serializers
 from apps.integrations.models import IntegrationConfig
 
 
+_LOCAL_AGENT_TRANSPORT_ALIASES = (
+    'transport_type',
+    'transportType',
+    'use_local_agent',
+    'useLocalAgent',
+)
+
+
+def _normalize_local_agent_transport_settings(settings):
+    normalized = dict(settings)
+    normalized['transport'] = 'local-agent'
+    for alias in _LOCAL_AGENT_TRANSPORT_ALIASES:
+        normalized.pop(alias, None)
+    return normalized
+
+
 class IntegrationConfigSerializer(serializers.ModelSerializer):
     display_name = serializers.SerializerMethodField()
 
@@ -47,18 +63,12 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
         connection_type = (settings.get('connection_type') or settings.get('connectionType') or '').strip()
 
         if kind == IntegrationConfig.Kind.PRINTER and provider == 'windows-raw':
-            settings['transport'] = 'local-agent'
-            settings.pop('transportType', None)
-            settings.pop('use_local_agent', None)
-            settings.pop('useLocalAgent', None)
+            settings = _normalize_local_agent_transport_settings(settings)
             settings.setdefault('encoding', 'cp1251')
             settings.setdefault('code_page', 46)
 
         if kind == IntegrationConfig.Kind.FISCAL and provider == 'fiscal-drive-service':
-            settings['transport'] = 'local-agent'
-            settings.pop('transportType', None)
-            settings.pop('use_local_agent', None)
-            settings.pop('useLocalAgent', None)
+            settings = _normalize_local_agent_transport_settings(settings)
 
         return settings
 

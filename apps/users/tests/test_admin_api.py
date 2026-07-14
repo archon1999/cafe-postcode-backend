@@ -826,22 +826,51 @@ class AdminApiTests(APITestCase):
             '/api/v1/admin/integrations/configs/',
             {
                 'kind': IntegrationConfig.Kind.FISCAL,
-                'provider': 'soliq-service',
+                'provider': 'fiscal-drive-service',
                 'is_enabled': True,
-                'settings': {'terminalId': 'T-1'},
+                'settings': {
+                    'terminalId': 'T-1',
+                    'transportType': 'direct',
+                    'useLocalAgent': False,
+                },
             },
             format='json',
         )
-        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED, create_response.data)
+        self.assertEqual(create_response.data['provider'], 'fiscal-drive-service')
+        self.assertEqual(
+            create_response.data['settings'],
+            {'terminal_id': 'T-1', 'transport': 'local-agent'},
+        )
         config_id = create_response.data['id']
+        config = IntegrationConfig.objects.get(pk=config_id)
+        self.assertEqual(
+            config.settings,
+            {'terminal_id': 'T-1', 'transport': 'local-agent'},
+        )
 
         update_response = self.client.patch(
             f'/api/v1/admin/integrations/configs/{config_id}/',
-            {'provider': 'soliq-service-v2'},
+            {
+                'settings': {
+                    'factoryId': 'FD-2',
+                    'transportType': 'direct',
+                    'use_local_agent': False,
+                }
+            },
             format='json',
         )
-        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(update_response.data['provider'], 'soliq-service-v2')
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK, update_response.data)
+        self.assertEqual(update_response.data['provider'], 'fiscal-drive-service')
+        self.assertEqual(
+            update_response.data['settings'],
+            {'factory_id': 'FD-2', 'transport': 'local-agent'},
+        )
+        config.refresh_from_db()
+        self.assertEqual(
+            config.settings,
+            {'factory_id': 'FD-2', 'transport': 'local-agent'},
+        )
 
     def test_admin_reports_summary_and_export(self):
         self.authenticate()
