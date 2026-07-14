@@ -5,6 +5,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.local_agents.lan import private_lan_endpoints
 from apps.local_agents.models import LocalAgent
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.users.api.pos.serializers import (
@@ -40,7 +41,7 @@ def _issue_coordinator(*, restaurant, terminal_id='', terminal_name=''):
         return {
             'restaurantId': str(restaurant.id),
             'edgeToken': edge_token,
-            'coordinatorUrls': list(agent.lan_endpoints or []) if agent else [],
+            'coordinatorUrls': private_lan_endpoints(agent.lan_endpoints or []) if agent else [],
         }
     except (LocalAgentUnavailableError, LocalAgentCommandError):
         return None

@@ -3,6 +3,7 @@ from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.local_agents.models import LocalAgent
 from apps.users.models import EmployeeProfile, User
 from apps.sales.tests.support.pos_api import PosTestDataMixin
 
@@ -98,6 +99,8 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
 
     @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
     def test_pos_restaurant_code_returns_matching_coordinator_credentials(self, execute):
+        LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Site coordinator')
+        LocalAgent.objects.filter(restaurant=self.restaurant).update(lan_endpoints=['http://192.168.1.20:18181'])
         execute.return_value = {
             'restaurantId': str(self.restaurant.id),
             'edgeToken': 'ept_terminal-secret',
@@ -117,12 +120,30 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['coordinator']['restaurantId'], str(self.restaurant.id))
         self.assertEqual(response.data['coordinator']['edgeToken'], 'ept_terminal-secret')
+        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.20:18181'])
         execute.assert_called_once_with(
             restaurant=self.restaurant,
             command_type='edge.terminal.issue',
             payload={'terminalId': 'pos-terminal-12345678', 'terminalName': 'Main POS'},
             timeout_seconds=6,
         )
+
+    @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
+    def test_pos_restaurant_code_filters_invalid_coordinator_urls(self, execute):
+        LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Site coordinator')
+        LocalAgent.objects.filter(restaurant=self.restaurant).update(
+            lan_endpoints=[None, '', 'not-a-url', 'http://192.168.1.20:18181', 'http://127.0.0.1:18181']
+        )
+        execute.return_value = {'edgeToken': 'ept_terminal-secret'}
+
+        response = self.client.post(
+            '/api/v1/pos/auth/restaurant-code/',
+            {'code': self.restaurant.auth_code},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.20:18181'])
 
     def test_pos_pin_login_rejects_inactive_employee_with_explicit_message(self):
         response = self.client.post(

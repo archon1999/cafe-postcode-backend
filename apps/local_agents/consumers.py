@@ -1,7 +1,6 @@
-import ipaddress
 import json
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -9,6 +8,7 @@ from django.db import OperationalError
 from django.conf import settings
 from django.utils import timezone
 
+from apps.local_agents.lan import private_lan_endpoints
 from apps.local_agents.models import LocalAgent, LocalAgentCommand
 from apps.local_agents.services import local_agent_group_name
 
@@ -30,25 +30,6 @@ def _with_database_lock_retry(operation):
             if not _is_database_locked(error) or delay == SQLITE_LOCK_RETRY_DELAYS[-1]:
                 raise
     return None
-
-
-def _private_lan_endpoints(values):
-    endpoints = []
-    for value in values[:8]:
-        if not isinstance(value, str) or len(value) > 255:
-            continue
-        try:
-            parsed = urlsplit(value)
-            address = ipaddress.ip_address(parsed.hostname or '')
-            port = parsed.port
-        except (ValueError, TypeError):
-            continue
-        if parsed.scheme != 'http' or parsed.username or parsed.password or parsed.path not in ('', '/'):
-            continue
-        if address.version != 4 or not address.is_private or address.is_loopback or not port:
-            continue
-        endpoints.append(f'http://{address}:{port}')
-    return endpoints
 
 
 class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
@@ -130,7 +111,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         if capabilities is not None:
             values['capabilities'] = capabilities
         if lan_endpoints is not None:
-            values['lan_endpoints'] = _private_lan_endpoints(lan_endpoints)
+            values['lan_endpoints'] = private_lan_endpoints(lan_endpoints)
         if isinstance(protocol_version, int) and 1 <= protocol_version <= 255:
             values['protocol_version'] = protocol_version
         _with_database_lock_retry(lambda: LocalAgent.objects.filter(pk=self.agent.pk).update(**values))
