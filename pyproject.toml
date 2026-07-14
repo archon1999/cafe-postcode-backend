@@ -53,3 +53,12 @@ build-backend = "poetry.core.masonry.api"
 loadtest = [
     "locust (>=2.43.4,<3.0.0)"
 ]
+dev = [
+    "ruff (==0.15.21)"
+]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]

@@ -1,17 +1,55 @@
 name: Backend CI/CD
 
 on:
+  pull_request:
   push:
     branches:
       - production
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DB_ENGINE: sqlite
+      ALLOW_SQLITE_FALLBACK: "1"
+      SQLITE_PATH: /tmp/cafe-postcode-ci.sqlite3
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Poetry
+        run: python -m pip install "poetry==2.3.2"
+
+      - name: Install verification dependencies
+        run: poetry install --only main,dev --no-root --no-ansi
+
+      - name: Compile translations
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gettext
+          poetry run python manage.py compilemessages
+
+      - name: Run Ruff correctness checks
+        run: poetry run ruff check .
+
+      - name: Run Django system check
+        run: poetry run python manage.py check
+
+      - name: Check migration drift
+        run: poetry run python manage.py makemigrations --check --dry-run
+
+      - name: Run backend test suite
+        run: poetry run python manage.py test --noinput
 
       - name: Build Docker image
         run: docker build -t postcode/backend:ci .
