@@ -115,6 +115,9 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
     ('GET', 'api/v1/pos/auth/me/'),
     ('POST', 'api/v1/pos/auth/logout/'),
+    ('POST', 'api/v1/pos/auth/transport/'),
+    ('GET', 'api/v1/system/status/'),
+    ('GET', 'api/v1/local-agent/releases/latest/'),
     ('GET', 'api/v1/admin/auth/me/'),
     ('POST', 'api/v1/admin/auth/logout/'),
     ('POST', 'api/v1/dashboard/auth/logout/'),

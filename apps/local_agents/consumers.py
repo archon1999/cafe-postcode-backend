@@ -1,6 +1,7 @@
-import time
+import ipaddress
 import json
-from urllib.parse import parse_qs
+import time
+from urllib.parse import parse_qs, urlsplit
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -29,6 +30,25 @@ def _with_database_lock_retry(operation):
             if not _is_database_locked(error) or delay == SQLITE_LOCK_RETRY_DELAYS[-1]:
                 raise
     return None
+
+
+def _private_lan_endpoints(values):
+    endpoints = []
+    for value in values[:8]:
+        if not isinstance(value, str) or len(value) > 255:
+            continue
+        try:
+            parsed = urlsplit(value)
+            address = ipaddress.ip_address(parsed.hostname or '')
+            port = parsed.port
+        except (ValueError, TypeError):
+            continue
+        if parsed.scheme != 'http' or parsed.username or parsed.password or parsed.path not in ('', '/'):
+            continue
+        if address.version != 4 or not address.is_private or address.is_loopback or not port:
+            continue
+        endpoints.append(f'http://{address}:{port}')
+    return endpoints
 
 
 class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
@@ -74,6 +94,8 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             await self._mark_online(
                 version=str(content.get('version') or ''),
                 capabilities=content.get('capabilities') if isinstance(content.get('capabilities'), list) else None,
+                lan_endpoints=content.get('lanEndpoints') if isinstance(content.get('lanEndpoints'), list) else None,
+                protocol_version=content.get('protocolVersion'),
             )
             await self.send_json({'type': 'heartbeat_ack', 'serverTime': timezone.now().isoformat()})
             return
@@ -96,7 +118,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         return LocalAgent.authenticate_token(token)
 
     @database_sync_to_async
-    def _mark_online(self, *, version='', capabilities=None):
+    def _mark_online(self, *, version='', capabilities=None, lan_endpoints=None, protocol_version=None):
         now = timezone.now()
         values = {
             'status': LocalAgent.Status.ONLINE,
@@ -107,6 +129,10 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             values['version'] = version
         if capabilities is not None:
             values['capabilities'] = capabilities
+        if lan_endpoints is not None:
+            values['lan_endpoints'] = _private_lan_endpoints(lan_endpoints)
+        if isinstance(protocol_version, int) and 1 <= protocol_version <= 255:
+            values['protocol_version'] = protocol_version
         _with_database_lock_retry(lambda: LocalAgent.objects.filter(pk=self.agent.pk).update(**values))
 
     @database_sync_to_async

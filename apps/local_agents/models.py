@@ -33,6 +33,8 @@ class LocalAgent(BaseModel):
     last_seen_at = models.DateTimeField(blank=True, null=True)
     version = models.CharField(max_length=50, blank=True)
     capabilities = models.JSONField(default=list, blank=True)
+    lan_endpoints = models.JSONField(default=list, blank=True)
+    protocol_version = models.PositiveSmallIntegerField(default=1)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -53,6 +55,8 @@ class LocalAgent(BaseModel):
                 'last_seen_at': None,
                 'version': version or '',
                 'capabilities': ['local_http', 'printer', 'marta_discovery'],
+                'lan_endpoints': [],
+                'protocol_version': 1,
                 'is_active': True,
             },
         )

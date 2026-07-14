@@ -2,12 +2,14 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import include, path
 
+from apps.local_agents.pos_views import LocalAgentPOSSystemStatusView
 from common.constants import API_PREFIX, API_V1_PREFIX
 from core.health import healthz, readyz
 
 urlpatterns = [
     path('healthz/', healthz, name='healthz'),
     path('readyz/', readyz, name='readyz'),
+    path(f'{API_V1_PREFIX}system/status/', LocalAgentPOSSystemStatusView.as_view()),
     path('', include('django_prometheus.urls')),
     path('admin/', admin.site.urls),
     path(f'{API_PREFIX}i18n/', include('django.conf.urls.i18n')),
@@ -35,6 +37,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}pos/billing/', include('apps.billing.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/kitchen/', include('apps.kitchen.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/monitor/', include('apps.kitchen.api.pos.monitor_urls')),
+    path(f'{API_V1_PREFIX}pos/printing/', include('apps.printing.api.pos.urls')),
 ]
 
 if settings.ENABLE_API_DOCS:

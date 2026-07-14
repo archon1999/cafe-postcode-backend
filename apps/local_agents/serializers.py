@@ -27,3 +27,5 @@ class LocalAgentStatusSerializer(serializers.Serializer):
     last_seen_at = serializers.DateTimeField(allow_null=True)
     version = serializers.CharField()
     capabilities = serializers.JSONField()
+    lan_endpoints = serializers.JSONField()
+    protocol_version = serializers.IntegerField()

@@ -193,6 +193,40 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
 
         async_to_sync(run_scenario)()
 
+    def test_heartbeat_persists_private_lan_discovery_metadata(self):
+        from core.asgi import application
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.receive_json_from()
+            await communicator.send_json_to(
+                {
+                    'type': 'heartbeat',
+                    'version': '0.6.0',
+                    'protocolVersion': 2,
+                    'capabilities': ['local_http', 'edge_terminal_issue'],
+                    'lanEndpoints': ['http://192.168.1.20:18181', 'https://public.example', 123],
+                }
+            )
+            acknowledgement = await communicator.receive_json_from()
+            self.assertEqual(acknowledgement['type'], 'heartbeat_ack')
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        self.assertEqual(agent.version, '0.6.0')
+        self.assertEqual(agent.protocol_version, 2)
+        self.assertEqual(agent.lan_endpoints, ['http://192.168.1.20:18181'])
+
     @override_settings(LOCAL_AGENT_ALLOW_LEGACY_WS_QUERY_TOKEN=True)
     def test_legacy_query_token_can_be_enabled_only_for_rollout(self):
         from core.asgi import application
@@ -317,6 +351,58 @@ class LocalAgentPrintDocumentTests(APITestCase):
         response = self.client.get(f'/api/v1/local-agent/print-documents/{self.document.id}/')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class POSRemotePrintTests(PosAPITestCase):
+    def setUp(self):
+        super().setUp()
+        ensure_restaurant_templates(restaurant=self.restaurant)
+        template = PrintTemplate.objects.select_related('published_version').get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
+        self.document = PrintDocument.objects.create(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+            idempotency_key='remote-print-document',
+            data_snapshot={},
+            template_version=template.published_version,
+            content_hash='d' * 64,
+        )
+
+    @patch('apps.printing.api.pos.views.LocalAgentCommandService.execute')
+    def test_remote_pos_print_routes_document_to_restaurants_agent(self, execute):
+        execute.return_value = {
+            'job': {
+                'operationId': 'pos:remote-print-123',
+                'documentId': str(self.document.id),
+                'copies': 1,
+                'status': 'succeeded',
+            }
+        }
+
+        response = self.client.post(
+            '/api/v1/pos/printing/jobs/',
+            {
+                'operation_id': 'pos:remote-print-123',
+                'document_id': str(self.document.id),
+                'copies': 1,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['job']['status'], 'succeeded')
+        execute.assert_called_once_with(
+            restaurant=self.restaurant,
+            command_type='print.document',
+            payload={
+                'operationId': 'pos:remote-print-123',
+                'documentId': str(self.document.id),
+                'copies': 1,
+            },
+            timeout_seconds=100,
+        )
 
 
 class LocalAgentBootstrapTests(PosAPITestCase):

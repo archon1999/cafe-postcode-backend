@@ -7,6 +7,8 @@ Restaurant = get_restaurant_model()
 
 class PosRestaurantCodeSerializer(serializers.Serializer):
     code = serializers.CharField(min_length=6, max_length=6, trim_whitespace=True)
+    terminal_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    terminal_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
 
     def validate(self, attrs):
         code = attrs['code'].strip()
@@ -16,6 +18,11 @@ class PosRestaurantCodeSerializer(serializers.Serializer):
 
         attrs['restaurant'] = restaurant
         return attrs
+
+
+class PosTransportDiscoverySerializer(serializers.Serializer):
+    terminal_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
+    terminal_name = serializers.CharField(required=False, allow_blank=True, max_length=100)
 
 
 class PosRestaurantContextSerializer(serializers.ModelSerializer):

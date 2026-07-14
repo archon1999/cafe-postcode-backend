@@ -96,6 +96,34 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data['pos_auth_background_image_url'])
 
+    @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
+    def test_pos_restaurant_code_returns_matching_coordinator_credentials(self, execute):
+        execute.return_value = {
+            'restaurantId': str(self.restaurant.id),
+            'edgeToken': 'ept_terminal-secret',
+            'coordinatorUrls': ['http://192.168.1.20:18181'],
+        }
+
+        response = self.client.post(
+            '/api/v1/pos/auth/restaurant-code/',
+            {
+                'code': self.restaurant.auth_code,
+                'terminal_id': 'pos-terminal-12345678',
+                'terminal_name': 'Main POS',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['coordinator']['restaurantId'], str(self.restaurant.id))
+        self.assertEqual(response.data['coordinator']['edgeToken'], 'ept_terminal-secret')
+        execute.assert_called_once_with(
+            restaurant=self.restaurant,
+            command_type='edge.terminal.issue',
+            payload={'terminalId': 'pos-terminal-12345678', 'terminalName': 'Main POS'},
+            timeout_seconds=6,
+        )
+
     def test_pos_pin_login_rejects_inactive_employee_with_explicit_message(self):
         response = self.client.post(
             '/api/v1/pos/auth/pin-login/',
