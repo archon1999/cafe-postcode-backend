@@ -527,6 +527,21 @@ class DashboardAuthApiTests(APITestCase):
             paid_at=cls.dt(2026, 4, 7, 12, 31),
         )
 
+    def test_dashboard_login_returns_token_text_and_session(self):
+        response = self.client.post(
+            '/api/v1/dashboard/auth/login/',
+            {'username': self.owner_user.username, 'password': 'secret123'},
+            format='json',
+            REMOTE_ADDR='192.0.2.10',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertIsInstance(response.data['token'], str)
+        self.assertTrue(response.data['token'])
+        self.assertEqual(response.data['user']['id'], str(self.owner_user.id))
+        self.assertEqual(response.data['session']['surface'], 'dashboard')
+        self.assertEqual(response.data['session']['status'], 'active')
+
     def test_dashboard_auth_me_requires_dashboard_permission(self):
         self.client.force_authenticate(self.owner_user)
         owner_response = self.client.get('/api/v1/dashboard/auth/me/')

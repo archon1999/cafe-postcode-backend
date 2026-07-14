@@ -32,7 +32,7 @@ class DashboardAuthLoginView(APIView):
         user = serializer.validated_data['user']
         token, session = self.auth_session_service_class().issue(user=user, request=request, surface='dashboard')
         return Response(
-            {'token': token.key, 'user': OwnerDashboardUserSerializer(user).data, 'session': AuthSessionSerializer(session).data}
+            {'token': token, 'user': OwnerDashboardUserSerializer(user).data, 'session': AuthSessionSerializer(session).data}
         )
 
 
