@@ -339,6 +339,13 @@ PERMISSION_DEFINITIONS = [
         ui_visible=False,
         group_key='platform',
         name='Mahsulot egasi paneliga kirish',
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/local-agents/'),
+            ('POST', 'api/v1/admin/local-agents/bulk-action/'),
+            ('GET', 'api/v1/admin/local-agents/<uuid:pk>/diagnostics/'),
+            ('GET', 'api/v1/admin/local-agents/<uuid:pk>/logs/'),
+            ('POST', 'api/v1/admin/local-agents/<uuid:pk>/update-now/'),
+        ),
         default_roles=PRODUCT_OWNER_ROLES,
     ),
     permission_definition(
@@ -1039,6 +1046,7 @@ PERMISSION_DEFINITIONS.extend(
             ('POST', 'api/v1/admin/integrations/marta/check/'),
             ('GET', 'api/v1/local-agent/status/'),
             ('GET', 'api/v1/local-agent/diagnostics/'),
+            ('GET', 'api/v1/local-agent/logs/'),
             ('POST', 'api/v1/local-agent/update-now/'),
             ('POST', 'api/v1/local-agent/printer/check/'),
         ),

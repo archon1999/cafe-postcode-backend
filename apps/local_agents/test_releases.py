@@ -18,8 +18,9 @@ from apps.local_agents.admin_views import (
 from apps.local_agents.models import LocalAgent
 from apps.local_agents.releases import compare_release_versions
 from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentLogsView, LocalAgentUpdateNowView
+from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import Restaurant
-from apps.users.models import User
+from apps.users.models import Permission, Role, User
 
 
 class _ManifestResponse(BytesIO):
@@ -176,6 +177,50 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertNotIn('cpa_super-secret', response.data['lines'][1])
         self.assertIn('[REDACTED]', response.data['lines'][1])
 
+    def test_restaurant_agent_logs_require_integration_view_permission(self):
+        permission = Permission.objects.get(code='integration_configs.view')
+        allowed_role = Role.objects.create(
+            code='agent-logs-allowed',
+            name='Agent logs allowed',
+            is_system=False,
+        )
+        allowed_role.permissions.add(permission)
+        denied_role = Role.objects.create(
+            code='agent-logs-denied',
+            name='Agent logs denied',
+            is_system=False,
+        )
+        entitlement = RestaurantEntitlement.objects.create(restaurant=self.restaurant, is_active=True)
+        entitlement.permissions.add(permission)
+        entitlement.allowed_roles.add(allowed_role, denied_role)
+        allowed_user = User.objects.create_user(
+            username='agent-logs-allowed',
+            password='Strong-Agent-Monitor-123!',
+            full_name='Agent Logs Allowed',
+            restaurant=self.restaurant,
+            role=allowed_role,
+            is_staff=True,
+        )
+        denied_user = User.objects.create_user(
+            username='agent-logs-denied',
+            password='Strong-Agent-Monitor-123!',
+            full_name='Agent Logs Denied',
+            restaurant=self.restaurant,
+            role=denied_role,
+            is_staff=True,
+        )
+        service = _SuccessfulAgentCommandService()
+
+        with patch.object(LocalAgentLogsView, 'command_service_class', return_value=service):
+            self.client.force_authenticate(allowed_user)
+            allowed_response = self.client.get('/api/v1/local-agent/logs/', **self.headers)
+            self.client.force_authenticate(denied_user)
+            denied_response = self.client.get('/api/v1/local-agent/logs/', **self.headers)
+
+        self.assertEqual(allowed_response.status_code, status.HTTP_200_OK, allowed_response.data)
+        self.assertEqual(denied_response.status_code, status.HTTP_403_FORBIDDEN, denied_response.data)
+        self.assertEqual(len(service.calls), 1)
+
     def test_superuser_can_list_all_local_agents(self):
         offline_restaurant = Restaurant.objects.create(name='Offline Restaurant', auth_code='OFF123')
         offline_agent, _token = LocalAgent.issue_for_restaurant(
@@ -202,6 +247,21 @@ class LocalAgentAdminMonitoringTests(APITestCase):
             full_name='Regular Agent Monitor',
         )
         self.client.force_authenticate(regular_user)
+
+        response = self.client.get('/api/v1/admin/local-agents/')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+
+    def test_product_owner_permission_does_not_bypass_superuser_fleet_guard(self):
+        product_owner = User.objects.create_user(
+            username='product-owner-agent-monitor',
+            password='Strong-Agent-Monitor-123!',
+            full_name='Product Owner Agent Monitor',
+            role=Role.objects.get(code='product_owner'),
+            is_staff=True,
+        )
+        self.assertIn('platform.product_owner.view', product_owner.permission_codes)
+        self.client.force_authenticate(product_owner)
 
         response = self.client.get('/api/v1/admin/local-agents/')
 

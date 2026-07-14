@@ -307,6 +307,29 @@ class EndpointRBACPermissionTests(TestCase):
             ).exists()
         )
 
+    def test_local_agent_routes_have_explicit_least_privilege_owners(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("users"))
+        expected_owners = {
+            ("GET", "api/v1/admin/local-agents/"): "platform.product_owner.view",
+            ("POST", "api/v1/admin/local-agents/bulk-action/"): "platform.product_owner.view",
+            ("GET", "api/v1/admin/local-agents/<uuid:pk>/diagnostics/"): "platform.product_owner.view",
+            ("GET", "api/v1/admin/local-agents/<uuid:pk>/logs/"): "platform.product_owner.view",
+            ("POST", "api/v1/admin/local-agents/<uuid:pk>/update-now/"): "platform.product_owner.view",
+            ("GET", "api/v1/local-agent/logs/"): "integration_configs.view",
+        }
+
+        for (method, url), permission_code in expected_owners.items():
+            with self.subTest(method=method, url=url):
+                self.assertEqual(
+                    set(
+                        PermissionEndpoint.objects.filter(method=method, url=url).values_list(
+                            "permission__code",
+                            flat=True,
+                        )
+                    ),
+                    {permission_code},
+                )
+
     def test_default_product_owner_role_is_limited_to_business_partners_and_tariffs(self):
         permission_codes = set(DEFAULT_ROLE_MAP["product_owner"]["permissions"])
 
