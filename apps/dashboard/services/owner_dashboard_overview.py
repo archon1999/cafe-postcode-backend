@@ -5,6 +5,7 @@ from django.db.models import Count, F, IntegerField, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce, TruncDate, TruncHour, TruncMonth
 
 from apps.billing.helpers import get_payment_model
+from apps.floor.models import TableSession
 from apps.reporting.services import (
     REPORT_PERIOD_DAY,
     REPORT_PERIOD_MONTH,
@@ -231,6 +232,22 @@ class OwnerDashboardBaseService:
 
     def get_open_checks_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
         return get_open_checks_report_queryset(restaurant, period).order_by('-created_at', '-order_number')
+
+    def get_active_tables_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
+        return TableSession.objects.filter(
+            restaurant=restaurant,
+            created_at__gte=period.start,
+            created_at__lt=period.end,
+            status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
+        )
+
+    def build_dashboard_summary(self, restaurant, period: ReportPeriod) -> dict:
+        summary = build_summary_payload(restaurant, period)
+        return {
+            **summary,
+            'open_checks': self.get_open_checks_queryset(restaurant, period).count(),
+            'active_tables': self.get_active_tables_queryset(restaurant, period).count(),
+        }
 
     def get_shift_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
         return get_shift_report_queryset(restaurant, period).order_by('-opened_at')
@@ -620,8 +637,8 @@ class OwnerDashboardBaseService:
 class OwnerDashboardOverviewService(OwnerDashboardBaseService):
     def build(self, *, restaurant, period: ReportPeriod) -> dict:
         previous_period = self.get_previous_period(period)
-        current_summary = build_summary_payload(restaurant, period)
-        previous_summary = build_summary_payload(restaurant, previous_period)
+        current_summary = self.build_dashboard_summary(restaurant, period)
+        previous_summary = self.build_dashboard_summary(restaurant, previous_period)
         series_blueprint = self.get_series_blueprint(period)
         revenue_series = self.build_revenue_series(restaurant, period, blueprint=series_blueprint)
         previous_revenue_series = self.build_revenue_series(

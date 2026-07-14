@@ -587,6 +587,7 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.data['spotlight']['top_cashier']['items_count'], 2)
         self.assertIn('managers', response.data['staff_breakdown'])
         self.assertEqual(response.data['open_checks_snapshot']['count'], 1)
+        self.assertEqual(response.data['open_checks_snapshot']['rows'][0]['order_number'], 106)
         self.assertEqual(response.data['cash_shift_snapshot']['open_count'], 1)
         self.assertEqual(response.data['cash_shift_snapshot']['rows'][0]['cash_total'], 32000)
 
