@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from apps.local_agents.models import LocalAgent, LocalAgentEnrollmentToken
 from apps.local_agents.authentication import authenticate_local_agent
 from apps.local_agents.releases import agent_update_status
+from apps.local_agents.sanitization import sanitize_remote_logs_result
 from apps.local_agents.serializers import LocalAgentEnrollmentSerializer, LocalAgentStatusSerializer
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from common.api.admin_permissions import AdminPermissionRequiredMixin
@@ -116,6 +117,34 @@ class LocalAgentDiagnosticsView(AdminPermissionRequiredMixin, APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         return Response({'ok': True, 'status': result})
+
+
+class LocalAgentLogsView(AdminPermissionRequiredMixin, APIView):
+    command_service_class = LocalAgentCommandService
+
+    def get(self, request):
+        restaurant = get_request_restaurant(request)
+        agent = LocalAgent.objects.filter(restaurant=restaurant, is_active=True).first()
+        if agent is None or 'remote_logs' not in (agent.capabilities or []):
+            return Response(
+                {'detail': 'Installed Local Agent does not support remote logs.', 'code': 'REMOTE_LOGS_UNSUPPORTED'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            result = self.command_service_class().execute(
+                restaurant=restaurant,
+                command_type='agent.logs',
+                payload={},
+                timeout_seconds=8,
+            )
+        except LocalAgentUnavailableError as error:
+            return Response({'detail': str(error), 'code': error.code}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except LocalAgentCommandError as error:
+            return Response(
+                {'detail': str(error), 'code': error.code, 'result': error.result},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({'ok': True, **sanitize_remote_logs_result(result)})
 
 
 class LocalAgentUpdateNowView(AdminPermissionRequiredMixin, APIView):

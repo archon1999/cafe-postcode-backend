@@ -10,6 +10,7 @@ from apps.local_agents.views import (
     LocalAgentEnrollView,
     LocalAgentEnrollmentPreflightView,
     LocalAgentEnrollmentTokenView,
+    LocalAgentLogsView,
     LocalAgentPrinterCheckView,
     LocalAgentTokenAuthView,
     LocalAgentUpdateNowView,
@@ -26,6 +27,7 @@ urlpatterns = [
     path('sync/mutations/', LocalAgentMutationPushView.as_view()),
     path('status/', LocalAgentAdminStatusView.as_view()),
     path('diagnostics/', LocalAgentDiagnosticsView.as_view()),
+    path('logs/', LocalAgentLogsView.as_view()),
     path('update-now/', LocalAgentUpdateNowView.as_view()),
     path('printer/check/', LocalAgentPrinterCheckView.as_view()),
 ]

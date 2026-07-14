@@ -17,7 +17,7 @@ from apps.local_agents.admin_views import (
 )
 from apps.local_agents.models import LocalAgent
 from apps.local_agents.releases import compare_release_versions
-from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentUpdateNowView
+from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentLogsView, LocalAgentUpdateNowView
 from apps.restaurants.models import Restaurant
 from apps.users.models import User
 
@@ -166,6 +166,16 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertTrue(response.data['result']['accepted'])
         self.assertEqual(service.calls[0]['command_type'], 'agent.update_now')
 
+    def test_admin_can_read_sanitized_agent_logs(self):
+        service = _SuccessfulAgentCommandService()
+        with patch.object(LocalAgentLogsView, 'command_service_class', return_value=service):
+            response = self.client.get('/api/v1/local-agent/logs/', **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['lines'][0], 'normal log')
+        self.assertNotIn('cpa_super-secret', response.data['lines'][1])
+        self.assertIn('[REDACTED]', response.data['lines'][1])
+
     def test_superuser_can_list_all_local_agents(self):
         offline_restaurant = Restaurant.objects.create(name='Offline Restaurant', auth_code='OFF123')
         offline_agent, _token = LocalAgent.issue_for_restaurant(
@@ -199,11 +209,22 @@ class LocalAgentAdminMonitoringTests(APITestCase):
 
     def test_superuser_can_run_fleet_diagnostics(self):
         service = _SuccessfulAgentCommandService()
-        with patch.object(LocalAgentFleetDiagnosticsView, 'command_service_class', return_value=service):
+        update = {
+            'status': 'pending',
+            'currentVersion': '0.6.0',
+            'latestVersion': '0.7.5',
+            'mandatory': False,
+            'detail': '',
+        }
+        with (
+            patch.object(LocalAgentFleetDiagnosticsView, 'command_service_class', return_value=service),
+            patch('apps.local_agents.admin_views.agent_update_status', return_value=update),
+        ):
             response = self.client.get(f'/api/v1/admin/local-agents/{self.agent.id}/diagnostics/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(response.data['status']['backend']['online'])
+        self.assertEqual(response.data['update']['latestVersion'], '0.7.5')
         self.assertEqual(service.calls[0]['command_type'], 'system.status')
 
     def test_superuser_can_request_fleet_agent_update(self):

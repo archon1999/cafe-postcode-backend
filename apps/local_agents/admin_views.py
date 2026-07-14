@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from apps.local_agents.admin_serializers import LocalAgentFleetSerializer
 from apps.local_agents.models import LocalAgent
+from apps.local_agents.releases import agent_update_status
 from apps.local_agents.sanitization import sanitize_remote_logs_result, sanitize_remote_text
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from common.api.permissions import IsAdmin
@@ -94,7 +95,14 @@ class LocalAgentFleetDiagnosticsView(LocalAgentFleetActionView):
             )
         except (LocalAgentUnavailableError, LocalAgentCommandError) as error:
             return self.command_error_response(error)
-        return Response({'ok': True, 'agent': LocalAgentFleetSerializer(agent).data, 'status': result})
+        return Response(
+            {
+                'ok': True,
+                'agent': LocalAgentFleetSerializer(agent).data,
+                'status': result,
+                'update': agent_update_status(agent),
+            }
+        )
 
 
 class LocalAgentFleetUpdateView(LocalAgentFleetActionView):
