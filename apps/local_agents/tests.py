@@ -512,6 +512,70 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(Order.objects.filter(id=order_id, restaurant=self.restaurant).count(), 1)
 
+    def test_offline_order_numbers_advance_canonical_shift_counter(self):
+        shift = self.create_cash_shift(cash_desk=self.cash_desk, opened_by=self.user)
+        operations = [
+            {
+                'operationId': f'edge-order-number-{index}',
+                'userId': str(self.user.id),
+                'method': 'POST',
+                'path': '/api/v1/pos/sales/orders/',
+                'body': {
+                    'id': str(uuid.uuid4()),
+                    'channel': 'takeaway',
+                    'guestCount': 1,
+                    # Reproduce a stale Local Agent counter. The backend must
+                    # not persist the same visible number twice.
+                    'displayName': '1',
+                },
+            }
+            for index in range(2)
+        ]
+
+        first = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': operations},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        replay = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': operations},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertEqual([item['status'] for item in first.data['results']], [201, 201], first.data)
+        display_names = list(
+            Order.objects.filter(id__in=[item['body']['id'] for item in operations])
+            .order_by('created_at')
+            .values_list('display_name', flat=True)
+        )
+        self.assertEqual(display_names, ['1', '2'])
+        self.assertTrue(all(item['replayed'] for item in replay.data['results']))
+        shift.refresh_from_db()
+        self.assertEqual(shift.next_order_number, 2)
+
+        bootstrap = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(bootstrap.status_code, status.HTTP_200_OK, bootstrap.data)
+        self.assertEqual(bootstrap.data['cashShifts'][0]['nextOrderNumber'], 2)
+
+        online_order = self.client.post(
+            '/api/v1/pos/sales/orders/',
+            {
+                'distributionPoint': str(self.takeaway_distribution.id),
+                'channel': 'takeaway',
+                'guestCount': 1,
+            },
+            format='json',
+        )
+        self.assertEqual(online_order.status_code, status.HTTP_201_CREATED, online_order.data)
+        self.assertEqual(online_order.data['display_name'], '3')
+
     def test_mutation_rejects_non_pos_path(self):
         response = self.client.post(
             '/api/v1/local-agent/sync/mutations/',

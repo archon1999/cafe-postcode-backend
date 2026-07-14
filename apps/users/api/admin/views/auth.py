@@ -26,7 +26,7 @@ class AdminLoginView(AdminAllowAnyMixin, APIView):
             raise
         user = serializer.validated_data['user']
         token, session = self.auth_session_service_class().issue(user=user, request=request, surface='admin')
-        return Response({'token': token.key, 'user': SessionUserSerializer(user).data, 'session': AuthSessionSerializer(session).data})
+        return Response({'token': token, 'user': SessionUserSerializer(user).data, 'session': AuthSessionSerializer(session).data})
 
 
 class LogoutView(AdminAuthenticatedMixin, APIView):

@@ -32,6 +32,16 @@ class AuthSessionSecurityTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_admin_session_is_valid_for_one_day_by_default(self):
+        self.login()
+        session = AuthSession.objects.get(user=self.user)
+
+        self.assertAlmostEqual(
+            (session.expires_at - session.created_at).total_seconds(),
+            24 * 60 * 60,
+            delta=2,
+        )
+
     def test_expired_session_is_rejected(self):
         token = self.login()
         AuthSession.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
@@ -40,7 +50,7 @@ class AuthSessionSecurityTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_new_login_rotates_previous_token(self):
+    def test_new_login_keeps_previous_session_active(self):
         old_token = self.login()
         new_token = self.login()
 
@@ -48,6 +58,19 @@ class AuthSessionSecurityTests(APITestCase):
         new_response = self.client.get('/api/v1/admin/auth/me/', HTTP_AUTHORIZATION=f'Token {new_token}')
 
         self.assertNotEqual(old_token, new_token)
+        self.assertEqual(old_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(new_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(AuthSession.objects.filter(user=self.user, status=AuthSession.Status.ACTIVE).count(), 2)
+
+    def test_logout_revokes_only_the_current_session(self):
+        old_token = self.login()
+        new_token = self.login()
+
+        logout_response = self.client.post('/api/v1/admin/auth/logout/', HTTP_AUTHORIZATION=f'Token {old_token}')
+        old_response = self.client.get('/api/v1/admin/auth/me/', HTTP_AUTHORIZATION=f'Token {old_token}')
+        new_response = self.client.get('/api/v1/admin/auth/me/', HTTP_AUTHORIZATION=f'Token {new_token}')
+
+        self.assertEqual(logout_response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertEqual(old_response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(new_response.status_code, status.HTTP_200_OK)
 

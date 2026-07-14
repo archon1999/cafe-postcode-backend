@@ -42,6 +42,36 @@ class OrderStateServiceTests(PosTestCase):
         second_shift.refresh_from_db()
         self.assertEqual(second_shift.next_order_number, 1)
 
+    def test_reconcile_shift_display_name_advances_counter_for_offline_number(self):
+        shift = self.create_cash_shift()
+
+        first = self.service.reconcile_shift_display_name(
+            restaurant=self.restaurant,
+            user=self.user,
+            requested_display_name='5',
+        )
+        second = self.service.next_shift_display_name(restaurant=self.restaurant, user=self.user)
+
+        shift.refresh_from_db()
+        self.assertEqual(first, '5')
+        self.assertEqual(second, '6')
+        self.assertEqual(shift.next_order_number, 6)
+
+    def test_reconcile_shift_display_name_renumbers_stale_offline_number(self):
+        shift = self.create_cash_shift()
+        shift.next_order_number = 5
+        shift.save(update_fields=['next_order_number', 'updated_at'])
+
+        display_name = self.service.reconcile_shift_display_name(
+            restaurant=self.restaurant,
+            user=self.user,
+            requested_display_name='1',
+        )
+
+        shift.refresh_from_db()
+        self.assertEqual(display_name, '6')
+        self.assertEqual(shift.next_order_number, 6)
+
     def test_ensure_session_accepts_new_order_rejects_existing_active_order(self):
         session = self.create_table_session()
         Order.objects.create(

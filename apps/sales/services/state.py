@@ -42,6 +42,15 @@ class OrderStateService:
         return locked_restaurant.last_order_number
 
     def next_shift_display_name(self, *, restaurant: Restaurant, user=None) -> str:
+        return self.reconcile_shift_display_name(restaurant=restaurant, user=user)
+
+    def reconcile_shift_display_name(
+        self,
+        *,
+        restaurant: Restaurant,
+        user=None,
+        requested_display_name: str = '',
+    ) -> str:
         queryset = CashShift.objects.select_for_update().filter(
             cash_desk__restaurant=restaurant,
             status=CashShift.Status.OPEN,
@@ -52,9 +61,18 @@ class OrderStateService:
         if shift is None:
             shift = queryset.order_by('-opened_at').first()
         if shift is None:
-            return ''
+            return str(requested_display_name or '').strip()
 
-        shift.next_order_number += 1
+        requested = str(requested_display_name or '').strip()
+        requested_number = 0
+        if requested.isdecimal():
+            requested_number = int(requested)
+
+        # Trusted Local Agent replays may already contain the number printed
+        # while offline. Advance the backend counter to at least that value.
+        # If another online writer has already consumed it, allocate the next
+        # canonical number instead of persisting a duplicate.
+        shift.next_order_number = max(shift.next_order_number + 1, requested_number)
         shift.save(update_fields=['next_order_number', 'updated_at'])
         return str(shift.next_order_number)
 

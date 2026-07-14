@@ -50,9 +50,10 @@ REST_FRAMEWORK = {
 }
 
 AUTH_SESSION_TTL_SECONDS = {
-    'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(12 * 60 * 60))),
+    # Keep login/password and POS PIN sessions active for a full day by default.
+    'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
     'pos': int(os.getenv('POS_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
-    'dashboard': int(os.getenv('DASHBOARD_AUTH_SESSION_TTL_SECONDS', str(12 * 60 * 60))),
+    'dashboard': int(os.getenv('DASHBOARD_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
 }
 
 JSON_CAMEL_CASE = {

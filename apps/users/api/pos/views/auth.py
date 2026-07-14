@@ -97,7 +97,7 @@ class PosPinLoginView(APIView):
         user = serializer.validated_data['user']
         restaurant = serializer.validated_data['restaurant']
         token, session = self.auth_session_service_class().issue(user=user, request=request, surface='pos')
-        return Response(PosSessionSerializer({'token': token.key, 'user': user, 'session': session, 'restaurant': restaurant}).data)
+        return Response(PosSessionSerializer({'token': token, 'user': user, 'session': session, 'restaurant': restaurant}).data)
 
 
 class LogoutView(APIView):

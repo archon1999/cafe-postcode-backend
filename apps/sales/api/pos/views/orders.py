@@ -71,10 +71,19 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
                 table_session=table_session,
             )
         order_number = state_service.next_order_number(restaurant=restaurant)
-        display_name = serializer.validated_data.get('display_name') or state_service.next_shift_display_name(
-            restaurant=restaurant,
-            user=self.request.user,
-        )
+        requested_display_name = serializer.validated_data.get('display_name') or ''
+        trusted_edge_replay = bool(getattr(self.request._request, 'trusted_edge_replay', False))
+        if trusted_edge_replay:
+            display_name = state_service.reconcile_shift_display_name(
+                restaurant=restaurant,
+                user=self.request.user,
+                requested_display_name=requested_display_name,
+            )
+        else:
+            display_name = requested_display_name or state_service.next_shift_display_name(
+                restaurant=restaurant,
+                user=self.request.user,
+            )
         serializer.save(
             restaurant=restaurant,
             opened_by=self.request.user,
