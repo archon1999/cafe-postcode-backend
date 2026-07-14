@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -122,4 +125,15 @@ class KitchenStatusApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['data']), 1)
         self.assertEqual(str(response.data['data'][0]['id']), str(self.ticket.id))
+
+    def test_queue_excludes_stale_new_ticket_for_closed_order(self):
+        self.order.status = Order.Status.CLOSED
+        self.order.closed_at = timezone.now() - timedelta(days=2)
+        self.order.save(update_fields=['status', 'closed_at', 'updated_at'])
+        KitchenTicket.objects.filter(pk=self.ticket.pk).update(created_at=timezone.now() - timedelta(days=2))
+
+        response = self.client.get('/api/v1/pos/kitchen/queue/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['data'], [])
 

@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -7,6 +8,7 @@ from rest_framework.views import APIView
 from apps.kitchen.api.pos.serializers.monitor_queue import KitchenMonitorQuerySerializer, KitchenMonitorQueueSerializer
 from apps.kitchen.models import KitchenTicket
 from apps.platform.services import FeatureGateService
+from apps.sales.models import Order
 from common.api.permissions import EndpointRBACPermission
 
 
@@ -24,9 +26,12 @@ class KitchenMonitorQueueView(APIView):
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
 
         base_queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related('order').order_by('-created_at')
-        preparing = base_queryset.filter(status__in=(KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING)).order_by(
-            'order__order_number',
-            'created_at',
+        preparing_cutoff = timezone.now() - timedelta(days=1)
+        active_order_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
+        preparing = (
+            base_queryset.filter(status__in=(KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING))
+            .filter(Q(order__status__in=active_order_statuses) | Q(created_at__gte=preparing_cutoff))
+            .order_by('order__order_number', 'created_at')
         )
         recent_done_cutoff = timezone.now() - timedelta(minutes=2)
         recently_done = base_queryset.filter(

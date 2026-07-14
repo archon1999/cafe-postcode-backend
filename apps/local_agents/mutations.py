@@ -3,7 +3,7 @@ import json
 import re
 
 from django.core.serializers.json import DjangoJSONEncoder
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.urls import Resolver404, resolve
 from djangorestframework_camel_case.util import camelize
 from rest_framework import permissions, status
@@ -11,12 +11,13 @@ from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
-from apps.billing.models import CashShift
+from apps.billing.models import CashShift, Payment
 from apps.billing.serializers import CashierContextSerializer
 from apps.billing.services import CashShiftService
 from apps.local_agents.authentication import authenticate_local_agent
 from apps.local_agents.models import LocalAgentMutationReceipt
 from apps.kitchen.models import KitchenTicket
+from apps.sales.models import Order
 from apps.users.models import User
 
 
@@ -42,6 +43,7 @@ MUTATION_PATHS = (
 )
 ALLOWED_METHODS = {'POST', 'PATCH', 'DELETE'}
 ORDER_ITEM_DELETE_PATH = re.compile(r'^/api/v1/pos/sales/orders/items/[0-9a-f-]+/$')
+ORDER_PAYMENT_PATH = re.compile(r'^/api/v1/pos/billing/orders/(?P<order_id>[0-9a-f-]+)/pay/$')
 
 
 def _reconciled_order_item_delete(*, method, path, response_status, response_body):
@@ -53,6 +55,33 @@ def _reconciled_order_item_delete(*, method, path, response_status, response_bod
     if response_status == status.HTTP_400_BAD_REQUEST and 'closed or cancelled orders cannot be modified' in detail:
         return {'reconciled': True, 'reason': 'order_already_finalized'}
     return None
+
+
+def _reconciled_fully_paid_order(*, agent, method, path, response_status, response_body):
+    match = ORDER_PAYMENT_PATH.fullmatch(path)
+    if method != 'POST' or match is None or response_status != status.HTTP_400_BAD_REQUEST:
+        return None
+    detail = json.dumps(response_body or {}, ensure_ascii=False).lower()
+    if 'payment amount cannot exceed the remaining total' not in detail and 'order is already fully paid' not in detail:
+        return None
+    order = Order.objects.filter(
+        id=match.group('order_id'),
+        restaurant=agent.restaurant,
+        status=Order.Status.CLOSED,
+    ).first()
+    if order is None:
+        return None
+    paid_total = (
+        Payment.objects.filter(order=order, status=Payment.Status.SUCCEEDED).aggregate(total=Sum('amount')).get('total')
+        or 0
+    )
+    if int(paid_total) < int(order.total or 0):
+        return None
+    return {
+        'reconciled': True,
+        'reason': 'order_already_fully_paid',
+        'orderId': str(order.id),
+    }
 
 
 def _request_hash(*, user_id, method, path, body):
@@ -142,6 +171,26 @@ class LocalAgentMutationPushView(APIView):
                     'ok': True,
                     'status': status.HTTP_204_NO_CONTENT,
                     'body': reconciled_delete,
+                    'replayed': True,
+                    'reconciled': True,
+                    'retryable': False,
+                }
+            reconciled_payment = _reconciled_fully_paid_order(
+                agent=agent,
+                method=method,
+                path=path,
+                response_status=existing.response_status,
+                response_body=existing.response_body,
+            )
+            if reconciled_payment is not None:
+                existing.response_status = status.HTTP_200_OK
+                existing.response_body = reconciled_payment
+                existing.save(update_fields=['response_status', 'response_body', 'updated_at'])
+                return {
+                    'operationId': operation_id,
+                    'ok': True,
+                    'status': status.HTTP_200_OK,
+                    'body': reconciled_payment,
                     'replayed': True,
                     'reconciled': True,
                     'retryable': False,
@@ -273,6 +322,16 @@ class LocalAgentMutationPushView(APIView):
         if reconciled_delete is not None:
             response_status = status.HTTP_204_NO_CONTENT
             response_body = reconciled_delete
+        reconciled_payment = _reconciled_fully_paid_order(
+            agent=agent,
+            method=method,
+            path=path,
+            response_status=response_status,
+            response_body=response_body,
+        )
+        if reconciled_payment is not None:
+            response_status = status.HTTP_200_OK
+            response_body = reconciled_payment
 
         if response_status < 500:
             LocalAgentMutationReceipt.objects.create(
@@ -291,7 +350,7 @@ class LocalAgentMutationPushView(APIView):
             'status': response_status,
             'body': response_body,
             'replayed': False,
-            'reconciled': reconciled_delete is not None,
+            'reconciled': reconciled_delete is not None or reconciled_payment is not None,
             'retryable': response_status >= 500,
         }
 

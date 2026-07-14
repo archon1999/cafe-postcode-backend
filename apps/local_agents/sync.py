@@ -91,11 +91,14 @@ def _table_session_snapshot(restaurant):
 
 
 def _kitchen_snapshot(restaurant):
+    cutoff = timezone.now() - timedelta(days=1)
+    active_order_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
     tickets = (
         KitchenTicket.objects.filter(
             restaurant=restaurant,
             status__in=[KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING],
         )
+        .filter(Q(order__status__in=active_order_statuses) | Q(created_at__gte=cutoff))
         .select_related(
             'prep_station',
             'order__opened_by',

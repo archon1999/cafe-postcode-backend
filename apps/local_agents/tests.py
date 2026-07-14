@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.utils import timezone
@@ -19,6 +20,7 @@ from apps.local_agents.mutations import _allowed_mutation, _request_hash
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, Receipt
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.integrations.models import IntegrationConfig
+from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintDocument, PrintTemplate
 from apps.printing.services import ensure_restaurant_templates
 from apps.restaurants.models import CashDesk, PrepStation, Restaurant
@@ -444,6 +446,33 @@ class LocalAgentBootstrapTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_bootstrap_excludes_stale_kitchen_ticket_for_closed_order(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=9091,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            closed_at=timezone.now() - timedelta(days=2),
+        )
+        ticket = KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.NEW,
+            routed_via=KitchenTicket.RouteMode.BOTH,
+        )
+        KitchenTicket.objects.filter(pk=ticket.pk).update(created_at=timezone.now() - timedelta(days=2))
+
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn(str(ticket.id), [str(item['id']) for item in response.data['kitchenTickets']])
+
 
 class LocalAgentMutationPushTests(PosAPITestCase):
     def setUp(self):
@@ -565,6 +594,66 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         receipt.refresh_from_db()
         self.assertEqual(receipt.response_status, status.HTTP_204_NO_CONTENT)
         self.assertEqual(receipt.response_body['reason'], 'order_already_finalized')
+
+    def test_legacy_payment_conflict_is_reconciled_when_order_is_fully_paid(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=9090,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            subtotal=71000,
+            total=71000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=71000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+        operation = {
+            'operationId': 'edge-legacy-duplicate-payment-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            'body': {'method': 'cash', 'amount': 71000},
+        }
+        receipt = LocalAgentMutationReceipt.objects.create(
+            restaurant=self.restaurant,
+            operation_id=operation['operationId'],
+            user_id=self.user.id,
+            method=operation['method'],
+            path=operation['path'],
+            request_hash=_request_hash(
+                user_id=str(self.user.id),
+                method=operation['method'],
+                path=operation['path'],
+                body=operation['body'],
+            ),
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'amount': 'Payment amount cannot exceed the remaining total.'},
+        )
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['status'], status.HTTP_200_OK)
+        self.assertEqual(result['body']['reason'], 'order_already_fully_paid')
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.response_status, status.HTTP_200_OK)
 
     def test_online_only_pos_commands_are_allowed_through_agent_replay(self):
         payment_id = uuid.uuid4()
