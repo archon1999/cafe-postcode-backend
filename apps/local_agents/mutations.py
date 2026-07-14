@@ -41,6 +41,18 @@ MUTATION_PATHS = (
     re.compile(r'^/api/v1/pos/kitchen/items/[0-9a-f-]+/status/$'),
 )
 ALLOWED_METHODS = {'POST', 'PATCH', 'DELETE'}
+ORDER_ITEM_DELETE_PATH = re.compile(r'^/api/v1/pos/sales/orders/items/[0-9a-f-]+/$')
+
+
+def _reconciled_order_item_delete(*, method, path, response_status, response_body):
+    if method != 'DELETE' or not ORDER_ITEM_DELETE_PATH.fullmatch(path):
+        return None
+    if response_status == status.HTTP_404_NOT_FOUND:
+        return {'reconciled': True, 'reason': 'already_absent'}
+    detail = json.dumps(response_body or {}, ensure_ascii=False).lower()
+    if response_status == status.HTTP_400_BAD_REQUEST and 'closed or cancelled orders cannot be modified' in detail:
+        return {'reconciled': True, 'reason': 'order_already_finalized'}
+    return None
 
 
 def _request_hash(*, user_id, method, path, body):
@@ -113,6 +125,25 @@ class LocalAgentMutationPushView(APIView):
                     'ok': False,
                     'status': 409,
                     'error': 'operationId already belongs to another mutation.',
+                    'retryable': False,
+                }
+            reconciled_delete = _reconciled_order_item_delete(
+                method=method,
+                path=path,
+                response_status=existing.response_status,
+                response_body=existing.response_body,
+            )
+            if reconciled_delete is not None:
+                existing.response_status = status.HTTP_204_NO_CONTENT
+                existing.response_body = reconciled_delete
+                existing.save(update_fields=['response_status', 'response_body', 'updated_at'])
+                return {
+                    'operationId': operation_id,
+                    'ok': True,
+                    'status': status.HTTP_204_NO_CONTENT,
+                    'body': reconciled_delete,
+                    'replayed': True,
+                    'reconciled': True,
                     'retryable': False,
                 }
             recoverable_shift_conflict = (
@@ -233,6 +264,15 @@ class LocalAgentMutationPushView(APIView):
         response = match.func(internal_request, *match.args, **match.kwargs)
         response_body = _decode_response(response)
         response_status = int(response.status_code)
+        reconciled_delete = _reconciled_order_item_delete(
+            method=method,
+            path=path,
+            response_status=response_status,
+            response_body=response_body,
+        )
+        if reconciled_delete is not None:
+            response_status = status.HTTP_204_NO_CONTENT
+            response_body = reconciled_delete
 
         if response_status < 500:
             LocalAgentMutationReceipt.objects.create(
@@ -251,6 +291,7 @@ class LocalAgentMutationPushView(APIView):
             'status': response_status,
             'body': response_body,
             'replayed': False,
+            'reconciled': reconciled_delete is not None,
             'retryable': response_status >= 500,
         }
 

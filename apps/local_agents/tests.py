@@ -503,6 +503,68 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data['results'][0]['status'], status.HTTP_403_FORBIDDEN)
 
+    def test_missing_order_item_delete_is_reconciled_as_success(self):
+        operation = {
+            'operationId': 'edge-delete-missing-item-1',
+            'userId': str(self.user.id),
+            'method': 'DELETE',
+            'path': f'/api/v1/pos/sales/orders/items/{uuid.uuid4()}/',
+            'body': {},
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['status'], status.HTTP_204_NO_CONTENT)
+        self.assertEqual(result['body']['reason'], 'already_absent')
+
+    def test_legacy_failed_delete_on_closed_order_is_reconciled_when_replayed(self):
+        item_id = uuid.uuid4()
+        operation = {
+            'operationId': 'edge-delete-closed-item-1',
+            'userId': str(self.user.id),
+            'method': 'DELETE',
+            'path': f'/api/v1/pos/sales/orders/items/{item_id}/',
+            'body': {},
+        }
+        receipt = LocalAgentMutationReceipt.objects.create(
+            restaurant=self.restaurant,
+            operation_id=operation['operationId'],
+            user_id=self.user.id,
+            method=operation['method'],
+            path=operation['path'],
+            request_hash=_request_hash(
+                user_id=str(self.user.id),
+                method=operation['method'],
+                path=operation['path'],
+                body={},
+            ),
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'detail': 'Closed or cancelled orders cannot be modified.'},
+        )
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['status'], status.HTTP_204_NO_CONTENT)
+        receipt.refresh_from_db()
+        self.assertEqual(receipt.response_status, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(receipt.response_body['reason'], 'order_already_finalized')
+
     def test_online_only_pos_commands_are_allowed_through_agent_replay(self):
         payment_id = uuid.uuid4()
         paths = (
