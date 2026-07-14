@@ -1,4 +1,7 @@
+import json
+
 from rest_framework import generics, permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -199,7 +202,27 @@ class PaymentFiscalRetryView(APIView):
             pk=pk,
             order__restaurant=restaurant,
         )
-        result = self.service_class().retry(payment=payment)
+        trusted_edge_replay = bool(getattr(request._request, 'trusted_edge_replay', False))
+        edge_fiscal_results = request.data.get('edge_fiscal_results')
+        edge_fiscal_results_json = request.data.get('edge_fiscal_results_json')
+        if (edge_fiscal_results is not None or edge_fiscal_results_json is not None) and not trusted_edge_replay:
+            raise ValidationError({'edgeFiscalResults': 'Only a trusted local agent may submit fiscal results.'})
+        if edge_fiscal_results_json is not None:
+            if edge_fiscal_results is not None:
+                raise ValidationError({'edgeFiscalResults': 'Submit fiscal results in only one format.'})
+            try:
+                edge_fiscal_results = json.loads(edge_fiscal_results_json)
+            except (TypeError, ValueError) as error:
+                raise ValidationError({'edgeFiscalResults': 'Fiscal results JSON is invalid.'}) from error
+        validated_edge_fiscal_results = None
+        if edge_fiscal_results is not None:
+            validated_edge_fiscal_results = OrderPaymentService._validated_edge_fiscal_results(
+                results=edge_fiscal_results,
+                cash_desk=payment.cash_desk,
+                register_fiscal=True,
+                expected_amount=int(payment.order.total or 0),
+            )
+        result = self.service_class().retry(payment=payment, fiscal_results=validated_edge_fiscal_results)
         retry_results = result.get('results') or []
         result_items = [item for item in retry_results if isinstance(item, dict)]
         successful = bool(result_items) and all(item.get('ok') for item in result_items)

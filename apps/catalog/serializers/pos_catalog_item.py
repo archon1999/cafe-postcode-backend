@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.catalog.models import CatalogItem
+from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 
@@ -11,6 +12,9 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
     requires_marking = serializers.SerializerMethodField()
     marking_gtin = serializers.SerializerMethodField()
+    mxik_code = serializers.SerializerMethodField()
+    mxik_payload = serializers.SerializerMethodField()
+    cash_payment_forbidden = serializers.SerializerMethodField()
 
     @staticmethod
     def get_image_url(obj):
@@ -26,6 +30,18 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_marking_gtin(obj):
         return item_marking_gtin(obj)
+
+    @staticmethod
+    def get_mxik_code(obj):
+        return str(obj.mxik_code or getattr(obj.category, 'mxik_code', '') or '').strip()
+
+    @staticmethod
+    def get_mxik_payload(obj):
+        return obj.mxik_payload or getattr(obj.category, 'mxik_payload', {}) or {}
+
+    @staticmethod
+    def get_cash_payment_forbidden(obj):
+        return is_catalog_item_cash_sale_forbidden(obj)
 
     @staticmethod
     def get_prep_station(obj):
@@ -48,5 +64,8 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
             'prep_station_name',
             'requires_marking',
             'marking_gtin',
+            'mxik_code',
+            'mxik_payload',
+            'cash_payment_forbidden',
             'price',
         )

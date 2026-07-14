@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from apps.local_agents.lan import private_lan_endpoints
 from apps.local_agents.models import LocalAgent, LocalAgentCommand
+from apps.local_agents.sanitization import sanitize_remote_logs_result
 from apps.local_agents.services import local_agent_group_name
 
 
@@ -99,7 +100,14 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         return LocalAgent.authenticate_token(token)
 
     @database_sync_to_async
-    def _mark_online(self, *, version='', capabilities=None, lan_endpoints=None, protocol_version=None):
+    def _mark_online(
+        self,
+        *,
+        version='',
+        capabilities=None,
+        lan_endpoints=None,
+        protocol_version=None,
+    ):
         now = timezone.now()
         values = {
             'status': LocalAgent.Status.ONLINE,
@@ -141,6 +149,9 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         ok = content.get('ok') is True
         result = content.get('result') if isinstance(content.get('result'), dict) else {}
         error = content.get('error') if isinstance(content.get('error'), dict) else {}
+        command = LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).only('command_type').first()
+        if command is not None and command.command_type == 'agent.logs':
+            result = sanitize_remote_logs_result(result)
         _with_database_lock_retry(
             lambda: LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).update(
                 status=LocalAgentCommand.Status.SUCCEEDED if ok else LocalAgentCommand.Status.FAILED,

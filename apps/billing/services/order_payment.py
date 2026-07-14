@@ -1,3 +1,4 @@
+import json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -230,8 +231,16 @@ class OrderPaymentService:
         manual_card_override = bool(serializer.validated_data.pop('manual_card_override', False))
         manual_card_reason = str(serializer.validated_data.pop('manual_card_reason', '') or '')
         edge_provider_result = serializer.validated_data.pop('edge_provider_result', None)
+        edge_fiscal_results = serializer.validated_data.pop('edge_fiscal_results', None)
+        edge_fiscal_results_json = serializer.validated_data.pop('edge_fiscal_results_json', None)
         if edge_provider_result is not None and not trusted_edge_replay:
             raise ValidationError({'edgeProviderResult': _('Only a trusted local agent may replay a terminal result.')})
+        if (edge_fiscal_results is not None or edge_fiscal_results_json is not None) and not trusted_edge_replay:
+            raise ValidationError({'edgeFiscalResults': _('Only a trusted local agent may submit fiscal results.')})
+        if edge_fiscal_results_json is not None:
+            if edge_fiscal_results is not None:
+                raise ValidationError({'edgeFiscalResults': _('Submit fiscal results in only one format.')})
+            edge_fiscal_results = self._parse_edge_fiscal_results_json(edge_fiscal_results_json)
         register_fiscal = bool(serializer.validated_data.get('register_fiscal', True))
         if not register_fiscal and not has_permission_code(received_by, POS_FISCAL_RECEIPTS_SKIP_PERMISSION):
             raise ValidationError({'register_fiscal': _('You do not have permission to skip fiscal registration.')})
@@ -241,6 +250,12 @@ class OrderPaymentService:
             if cash_shift is not None
             else order.restaurant.cash_desks.filter(is_active=True).order_by('name').first()
         )
+        validated_edge_fiscal_results = self._validated_edge_fiscal_results(
+            results=edge_fiscal_results,
+            cash_desk=cash_desk,
+            register_fiscal=register_fiscal,
+            expected_amount=int(order.total or 0),
+        ) if edge_fiscal_results is not None else None
         if cash_desk and serializer.validated_data['method'] not in set(cash_desk.enabled_payment_methods or []):
             raise ValidationError({'method': _('Selected payment method is disabled on the active cash desk.')})
         if cash_desk and serializer.validated_data['method'] == Payment.Method.MIXED:
@@ -292,7 +307,12 @@ class OrderPaymentService:
                 'detail': payment_result.get('detail') or payment_result.get('message') or _('Payment charge failed.'),
             }
 
-        return self._complete_successful_payment(order=order, payment=payment, received_by=received_by)
+        return self._complete_successful_payment(
+            order=order,
+            payment=payment,
+            received_by=received_by,
+            fiscal_results=validated_edge_fiscal_results,
+        )
 
     @staticmethod
     def _validated_edge_provider_result(*, result, method, card_amount, edge_operation_id):
@@ -334,6 +354,62 @@ class OrderPaymentService:
             'trustedEdgeReplay': True,
             'replayed_at': timezone.now().isoformat(),
         }
+
+    @staticmethod
+    def _parse_edge_fiscal_results_json(value):
+        try:
+            parsed = json.loads(value)
+        except (TypeError, ValueError) as error:
+            raise ValidationError({'edgeFiscalResults': _('Fiscal results JSON is invalid.')}) from error
+        return parsed
+
+    @staticmethod
+    def _validated_edge_fiscal_results(*, results, cash_desk, register_fiscal, expected_amount):
+        if not register_fiscal:
+            raise ValidationError({'edgeFiscalResults': _('Fiscal results require fiscal registration.')})
+        if not isinstance(results, list) or not 1 <= len(results) <= 4:
+            raise ValidationError({'edgeFiscalResults': _('Provide between one and four fiscal results.')})
+
+        integration = getattr(cash_desk, 'fiscal_integration', None) if cash_desk is not None else None
+        expected_provider = str(getattr(integration, 'provider', '') or '').strip()
+        if not expected_provider:
+            raise ValidationError({'edgeFiscalResults': _('Fiscal integration is not configured for the active cash desk.')})
+
+        normalized = []
+        successful_fiscal_total = 0
+        successful_count = 0
+        for result in results:
+            if not isinstance(result, dict):
+                raise ValidationError({'edgeFiscalResults': _('Each fiscal result must be an object.')})
+            provider = str(result.get('provider') or '').strip()
+            if provider != expected_provider:
+                raise ValidationError({'edgeFiscalResults': _('Fiscal result provider does not match the active cash desk.')})
+            if not isinstance(result.get('ok'), bool):
+                raise ValidationError({'edgeFiscalResults': _('Each fiscal result must contain a boolean ok field.')})
+            if result.get('ok'):
+                successful_count += 1
+                if not str(result.get('terminal_id') or '').strip():
+                    raise ValidationError({'edgeFiscalResults': _('Successful fiscal result requires terminal_id.')})
+                if not str(result.get('receipt_number') or '').strip():
+                    raise ValidationError({'edgeFiscalResults': _('Successful fiscal result requires receipt_number.')})
+                request_payload = result.get('request') if isinstance(result.get('request'), dict) else {}
+                receipt_payload = request_payload.get('receipt') if isinstance(request_payload.get('receipt'), dict) else {}
+                normalized_tenders = {
+                    str(key).lstrip('_').replace('_', '').lower(): value
+                    for key, value in receipt_payload.items()
+                }
+                try:
+                    received_cash = int(normalized_tenders.get('receivedcash') or 0)
+                    received_card = int(normalized_tenders.get('receivedcard') or 0)
+                except (TypeError, ValueError) as error:
+                    raise ValidationError({'edgeFiscalResults': _('Fiscal receipt tender amounts are invalid.')}) from error
+                if received_cash < 0 or received_card < 0:
+                    raise ValidationError({'edgeFiscalResults': _('Fiscal receipt tender amounts cannot be negative.')})
+                successful_fiscal_total += received_cash + received_card
+            normalized.append(dict(result))
+        if successful_count and successful_fiscal_total != int(expected_amount or 0) * 100:
+            raise ValidationError({'edgeFiscalResults': _('Fiscal receipt amount does not match the order total.')})
+        return normalized
 
     def _validate_shift(self, *, order, cash_shift):
         if cash_shift is None:
@@ -406,7 +482,7 @@ class OrderPaymentService:
         )
         return restricted_total + restricted_fee
 
-    def _complete_successful_payment(self, *, order, payment, received_by):
+    def _complete_successful_payment(self, *, order, payment, received_by, fiscal_results=None):
         if order.channel == Order.Channel.TAKEAWAY and order.status == Order.Status.OPEN:
             self.order_submission_service_class().submit(order)
 
@@ -428,7 +504,9 @@ class OrderPaymentService:
 
         receipts = []
         if is_fully_paid and payment.register_fiscal:
-            receipt_results = self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by)
+            receipt_results = fiscal_results
+            if receipt_results is None:
+                receipt_results = self._issue_fiscal_receipts(order=order, payment=payment, opened_by=received_by)
             for receipt_result in receipt_results or []:
                 receipts.append(self._create_fiscal_receipt(order=order, payment=payment, receipt_result=receipt_result))
         if is_fully_paid and not payment.register_fiscal:
@@ -600,7 +678,7 @@ class OrderPaymentService:
 
 
 class PaymentFiscalRetryService:
-    def retry(self, *, payment: Payment):
+    def retry(self, *, payment: Payment, fiscal_results=None):
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError({'detail': _('Only successful payments can be sent to fiscal integration.')})
 
@@ -630,12 +708,14 @@ class PaymentFiscalRetryService:
 
         split_reasons = self._retry_split_reasons(sent_receipts=sent_receipts, pending_receipts=pending_receipts)
         receipts = []
-        results = OrderPaymentService()._issue_fiscal_receipts(
-            order=payment.order,
-            payment=payment,
-            opened_by=payment.received_by,
-            split_reasons=split_reasons,
-        )
+        results = fiscal_results
+        if results is None:
+            results = OrderPaymentService()._issue_fiscal_receipts(
+                order=payment.order,
+                payment=payment,
+                opened_by=payment.received_by,
+                split_reasons=split_reasons,
+            )
         if not results or any(not result.get('ok') for result in results):
             return {
                 'payment': payment,

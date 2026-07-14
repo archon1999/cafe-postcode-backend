@@ -1,3 +1,5 @@
+import json
+
 from django.core.paginator import Paginator
 from django.contrib.auth import get_user_model
 from django.db.models import Exists, IntegerField, OuterRef, Prefetch, Q, Sum, Value
@@ -208,8 +210,30 @@ class FiscalShiftOpenView(APIView):
         serializer = FiscalShiftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         cash_desk = self._resolve_cash_desk(restaurant=restaurant, cash_desk_id=serializer.validated_data.get('cash_desk_id'))
-        result = self.shift_service_class().open_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk, opened_by=request.user)
+        provider_result = self._edge_provider_result(request=request, cash_desk=cash_desk)
+        result = self.shift_service_class().open_fiscal_shift(
+            restaurant=restaurant,
+            cash_desk=cash_desk,
+            opened_by=request.user,
+            provider_result=provider_result,
+        )
         return Response(result, status=201)
+
+    def _edge_provider_result(self, *, request, cash_desk):
+        result = request.data.get('edge_fiscal_result')
+        result_json = request.data.get('edge_fiscal_result_json')
+        if result is None and result_json is None:
+            return None
+        if not bool(getattr(request._request, 'trusted_edge_replay', False)):
+            raise ValidationError({'edgeFiscalResult': 'Only a trusted local agent may submit fiscal results.'})
+        if result_json is not None:
+            if result is not None:
+                raise ValidationError({'edgeFiscalResult': 'Submit fiscal result in only one format.'})
+            try:
+                result = json.loads(result_json)
+            except (TypeError, ValueError) as error:
+                raise ValidationError({'edgeFiscalResult': 'Fiscal result JSON is invalid.'}) from error
+        return self.shift_service_class().validate_edge_fiscal_shift_result(result=result, cash_desk=cash_desk)
 
     def _resolve_cash_desk(self, *, restaurant, cash_desk_id):
         if cash_desk_id is None:
@@ -230,11 +254,13 @@ class FiscalShiftCloseView(FiscalShiftOpenView):
         serializer = FiscalShiftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         cash_desk = self._resolve_cash_desk(restaurant=restaurant, cash_desk_id=serializer.validated_data.get('cash_desk_id'))
+        provider_result = self._edge_provider_result(request=request, cash_desk=cash_desk)
         try:
             payload = self.shift_service_class().close_fiscal_shift(
                 restaurant=restaurant,
                 cash_desk=cash_desk,
                 closed_by=request.user,
+                provider_result=provider_result,
             )
         except Exception as error:
             detail = str(error)

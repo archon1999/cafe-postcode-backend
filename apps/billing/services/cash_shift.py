@@ -466,7 +466,7 @@ class CashShiftService:
                 return str(payment_cash_desk.terminal_id).strip()
         return ''
 
-    def open_fiscal_shift(self, *, restaurant, cash_desk=None, opened_by=None):
+    def open_fiscal_shift(self, *, restaurant, cash_desk=None, opened_by=None, provider_result=None):
         existing = FiscalShiftSession.objects.filter(
             restaurant=restaurant,
             cash_desk=cash_desk,
@@ -475,7 +475,7 @@ class CashShiftService:
         if existing is not None:
             raise ValidationError({'detail': 'Fiscal smena allaqachon ochiq.'})
 
-        result = open_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk)
+        result = provider_result if provider_result is not None else open_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk)
         FiscalShiftSession.objects.create(
             restaurant=restaurant,
             cash_desk=cash_desk,
@@ -503,7 +503,7 @@ class CashShiftService:
     def has_open_fiscal_shift(self, *, restaurant, cash_desk=None):
         return self._get_active_fiscal_session(restaurant=restaurant, cash_desk=cash_desk) is not None
 
-    def close_fiscal_shift(self, *, restaurant, cash_desk=None, closed_by=None):
+    def close_fiscal_shift(self, *, restaurant, cash_desk=None, closed_by=None, provider_result=None):
         session = self._get_active_fiscal_session(restaurant=restaurant, cash_desk=cash_desk)
         if session is None:
             return {
@@ -525,7 +525,7 @@ class CashShiftService:
             paid_at_from=paid_at_from,
             paid_at_to=paid_at_to,
         )
-        result = close_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk)
+        result = provider_result if provider_result is not None else close_fiscal_shift(restaurant=restaurant, cash_desk=cash_desk)
         if session is not None:
             close_payload = {
                 'provider_result': result,
@@ -661,6 +661,17 @@ class CashShiftService:
             + (totals.get('cash_total') or 0)
             - cash_refund_total,
         }
+
+    @staticmethod
+    def validate_edge_fiscal_shift_result(*, result, cash_desk):
+        if not isinstance(result, dict) or result.get('ok') is not True:
+            raise ValidationError({'edgeFiscalResult': 'Local fiscal shift result is invalid.'})
+        integration = getattr(cash_desk, 'fiscal_integration', None) if cash_desk is not None else None
+        expected_provider = str(getattr(integration, 'provider', '') or '').strip()
+        provider = str(result.get('provider') or '').strip()
+        if not expected_provider or provider != expected_provider:
+            raise ValidationError({'edgeFiscalResult': 'Fiscal result provider does not match the active cash desk.'})
+        return dict(result)
 
     @transaction.atomic
     def close_shift(self, *, shift, actual_closing_cash_amount, closed_by, notes_close=''):

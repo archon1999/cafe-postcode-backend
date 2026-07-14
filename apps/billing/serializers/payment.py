@@ -17,6 +17,8 @@ class PaymentSerializer(serializers.ModelSerializer):
     card_amount = serializers.IntegerField(required=False, min_value=0, default=0)
     edge_operation_id = serializers.CharField(required=False, allow_blank=True, max_length=128)
     edge_provider_result = serializers.JSONField(required=False, write_only=True)
+    edge_fiscal_results = serializers.JSONField(required=False, write_only=True)
+    edge_fiscal_results_json = serializers.CharField(required=False, write_only=True, max_length=262144)
 
     def validate_method(self, value):
         if value not in {Payment.Method.CASH, Payment.Method.CARD, Payment.Method.MIXED}:
@@ -59,6 +61,8 @@ class PaymentSerializer(serializers.ModelSerializer):
         validated_data.pop('manual_card_override', None)
         validated_data.pop('manual_card_reason', None)
         validated_data.pop('edge_provider_result', None)
+        validated_data.pop('edge_fiscal_results', None)
+        validated_data.pop('edge_fiscal_results_json', None)
         return super().create(validated_data)
 
     class Meta:
@@ -83,6 +87,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             'paid_at',
             'edge_operation_id',
             'edge_provider_result',
+            'edge_fiscal_results',
+            'edge_fiscal_results_json',
             'refunds',
             'manual_card_override',
             'manual_card_reason',

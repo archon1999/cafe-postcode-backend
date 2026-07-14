@@ -1,3 +1,4 @@
+import json
 import uuid
 from unittest.mock import patch
 
@@ -15,7 +16,7 @@ from apps.local_agents.models import (
     LocalAgentMutationReceipt,
 )
 from apps.local_agents.mutations import _allowed_mutation, _request_hash
-from apps.billing.models import CashShift, Payment
+from apps.billing.models import CashShift, FiscalShiftSession, Payment, Receipt
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.integrations.models import IntegrationConfig
 from apps.printing.models import PrintDocument, PrintTemplate
@@ -762,6 +763,234 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
         self.assertEqual(payment.external_ref, 'trx-edge-1')
         self.assertTrue(payment.provider_payload['trustedEdgeReplay'])
+
+    @patch('apps.billing.services.order_payment.issue_fiscal_receipts')
+    def test_trusted_edge_fiscal_result_is_persisted_without_remote_fiscal_call(self, issue_fiscal_receipts):
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+            settings={'endpoint_url': 'http://127.0.0.1:3449'},
+        )
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        self.create_cash_shift()
+        order = Order.objects.get(id=order_data['id'])
+        operation = {
+            'operationId': 'edge-local-fiscal-payment-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            'body': {
+                'method': 'cash',
+                'amount': order.total,
+                'registerFiscal': True,
+                'edgeFiscalResultsJson': json.dumps([{
+                    'ok': True,
+                    'provider': 'fiscal-drive-service',
+                    'receipt_number': '71',
+                    'terminal_id': 'TERM-1',
+                    'fiscal_sign': '123',
+                    'qr_code_url': 'https://ofd.uz/71',
+                    'response': {'TerminalID': 'TERM-1', 'ReceiptSeq': 71},
+                    'request': {'receipt': {'ReceivedCash': order.total * 100, 'ReceivedCard': 0}},
+                }]),
+            },
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['results'][0]['status'], status.HTTP_201_CREATED, response.data)
+        issue_fiscal_receipts.assert_not_called()
+        receipt = Receipt.objects.get(order=order, kind=Receipt.Kind.FISCAL)
+        self.assertEqual(receipt.status, Receipt.Status.SENT)
+        self.assertEqual(receipt.payload['receipt_number'], '71')
+        self.assertEqual(receipt.payload['response']['TerminalID'], 'TERM-1')
+        self.assertEqual(receipt.payload['request']['receipt']['ReceivedCash'], order.total * 100)
+
+    def test_browser_cannot_submit_edge_fiscal_result(self):
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+            settings={'endpoint_url': 'http://127.0.0.1:3449'},
+        )
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        self.create_cash_shift()
+        order = Order.objects.get(id=order_data['id'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {
+                'method': 'cash',
+                'amount': order.total,
+                'registerFiscal': True,
+                'edgeFiscalResultsJson': json.dumps([{'ok': True, 'provider': 'fiscal-drive-service'}]),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertFalse(Payment.objects.filter(order=order).exists())
+
+    @patch('apps.billing.services.order_payment.issue_fiscal_receipts')
+    def test_trusted_edge_fiscal_retry_uses_local_result_without_remote_fiscal_call(self, issue_fiscal_receipts):
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+            settings={'endpoint_url': 'http://127.0.0.1:3449'},
+        )
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        self.create_cash_shift()
+        order = Order.objects.get(id=order_data['id'])
+        payment_operation = {
+            'operationId': 'edge-local-fiscal-failed-payment-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            'body': {
+                'method': 'cash',
+                'amount': order.total,
+                'registerFiscal': True,
+                'edgeFiscalResultsJson': json.dumps([{
+                    'ok': False,
+                    'provider': 'fiscal-drive-service',
+                    'code': 'LOCAL_FISCAL_FAILED',
+                    'detail': 'Device unavailable',
+                }]),
+            },
+        }
+        paid = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [payment_operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertTrue(paid.data['results'][0]['ok'], paid.data)
+        payment = Payment.objects.get(order=order)
+        self.assertTrue(Receipt.objects.filter(payment=payment, status=Receipt.Status.FAILED).exists())
+
+        retry_operation = {
+            'operationId': 'edge-local-fiscal-retry-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/payments/{payment.id}/retry-fiscal/',
+            'body': {
+                'edgeFiscalResultsJson': json.dumps([{
+                    'ok': True,
+                    'provider': 'fiscal-drive-service',
+                    'receipt_number': '72',
+                    'terminal_id': 'TERM-1',
+                    'response': {'TerminalID': 'TERM-1', 'ReceiptSeq': 72},
+                    'request': {'receipt': {'ReceivedCash': order.total * 100, 'ReceivedCard': 0}},
+                }]),
+            },
+        }
+        retried = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [retry_operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertTrue(retried.data['results'][0]['ok'], retried.data)
+        self.assertEqual(retried.data['results'][0]['status'], status.HTTP_200_OK, retried.data)
+        issue_fiscal_receipts.assert_not_called()
+        sent_receipt = Receipt.objects.get(payment=payment, status=Receipt.Status.SENT)
+        self.assertEqual(sent_receipt.payload['receipt_number'], '72')
+        self.assertEqual(sent_receipt.payload['response']['TerminalID'], 'TERM-1')
+
+    @patch('apps.billing.services.cash_shift.close_fiscal_shift')
+    @patch('apps.billing.services.cash_shift.open_fiscal_shift')
+    def test_trusted_edge_fiscal_shift_results_do_not_call_remote_fiscal(
+        self,
+        open_fiscal_shift,
+        close_fiscal_shift,
+    ):
+        from apps.users.models import Permission
+
+        permission, _ = Permission.objects.get_or_create(
+            code='pos_fiscal_shift.manage',
+            defaults={'name': 'Manage fiscal shift', 'description': 'Manage fiscal shift'},
+        )
+        self.role.permissions.add(permission)
+        self.entitlement.permissions.add(permission)
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+            settings={'endpoint_url': 'http://127.0.0.1:3449'},
+        )
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration', 'updated_at'])
+        open_result = {
+            'ok': True,
+            'provider': 'fiscal-drive-service',
+            'factory_id': 'FACTORY-1',
+            'terminal_id': 'TERM-1',
+            'response': {'TerminalID': 'TERM-1'},
+        }
+        open_operation = {
+            'operationId': 'edge-local-fiscal-shift-open-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/billing/fiscal-shifts/open/',
+            'body': {'cashDeskId': str(self.cash_desk.id), 'edgeFiscalResultJson': json.dumps(open_result)},
+        }
+
+        opened = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [open_operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertTrue(opened.data['results'][0]['ok'], opened.data)
+        open_fiscal_shift.assert_not_called()
+        session = FiscalShiftSession.objects.get(restaurant=self.restaurant, status=FiscalShiftSession.Status.OPEN)
+        self.assertEqual(session.terminal_id, 'TERM-1')
+
+        close_result = {
+            'ok': True,
+            'provider': 'fiscal-drive-service',
+            'factory_id': 'FACTORY-1',
+            'terminal_id': 'TERM-1',
+            'response': {'TerminalID': 'TERM-1'},
+            'provider_report': {'z_info': {'TerminalID': 'TERM-1', 'TotalSaleCount': 0}},
+        }
+        close_operation = {
+            'operationId': 'edge-local-fiscal-shift-close-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/billing/fiscal-shifts/close/',
+            'body': {'cashDeskId': str(self.cash_desk.id), 'edgeFiscalResultJson': json.dumps(close_result)},
+        }
+        closed = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [close_operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertTrue(closed.data['results'][0]['ok'], closed.data)
+        close_fiscal_shift.assert_not_called()
+        session.refresh_from_db()
+        self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
 
 
 class LocalAgentCommandServiceTests(APITestCase):
