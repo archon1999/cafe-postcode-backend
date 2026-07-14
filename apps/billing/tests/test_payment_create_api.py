@@ -231,10 +231,22 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('method', response.data)
 
-    def test_cash_payment_auto_submits_and_closes_order(self):
+    @patch('apps.billing.services.order_payment.issue_fiscal_receipts')
+    @patch(
+        'apps.billing.services.order_payment.charge_payment',
+        return_value={'ok': True, 'provider': 'cash', 'reference': ''},
+    )
+    def test_cash_payment_auto_submits_and_closes_order(self, charge_payment, issue_fiscal_receipts):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+
         response = self.client.post(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CASH, 'amount': self.order.total},
+            {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
         )
 
@@ -252,6 +264,8 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(receipt.kind, Receipt.Kind.PLAIN)
         self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
         self.assertEqual(receipt.print_document.template_version.status, 'published')
+        charge_payment.assert_called_once()
+        issue_fiscal_receipts.assert_not_called()
 
     def test_payment_returns_kitchen_document_for_configured_station_printer(self):
         skip_permission = Permission.objects.get_or_create(
@@ -428,8 +442,9 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(sum(payment.cash_amount for payment in payments), 20000)
         self.assertEqual(sum(payment.card_amount for payment in payments), self.order.total - 20000)
 
+    @patch('apps.billing.services.order_payment.issue_fiscal_receipts')
     @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'plain-split-ref'})
-    def test_plain_split_payments_can_partially_pay_order(self, _charge_payment):
+    def test_plain_split_payments_can_partially_pay_order(self, charge_payment, issue_fiscal_receipts):
         skip_permission = Permission.objects.get_or_create(
             code='pos_fiscal_receipts.skip',
             defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
@@ -458,13 +473,17 @@ class PaymentCreateApiTests(APITestCase):
         self.order.refresh_from_db()
         payments = Payment.objects.filter(order=self.order, status=Payment.Status.SUCCEEDED).order_by('created_at')
         self.assertEqual(payments.count(), 2)
+        self.assertEqual(list(payments.values_list('method', flat=True)), [Payment.Method.CASH, Payment.Method.CARD])
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         receipt = Receipt.objects.get(order=self.order)
         self.assertEqual(receipt.kind, Receipt.Kind.PLAIN)
-        self.assertEqual(receipt.payload['payment_method'], Payment.Method.MIXED)
+        self.assertEqual(receipt.payload['payment_method'], 'Aralash')
         self.assertEqual(receipt.payload['cash_amount'], 20000)
         self.assertEqual(receipt.payload['card_amount'], self.order.total - 20000)
         self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
+        self.assertEqual(receipt.print_document.data_snapshot['payment']['method'], 'Aralash')
+        self.assertEqual(charge_payment.call_count, 2)
+        issue_fiscal_receipts.assert_not_called()
 
     def test_closed_order_cannot_be_paid_twice(self):
         first_response = self.client.post(
