@@ -39,6 +39,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
             distribution_point=distribution_point,
             opened_by=self.user,
             order_number=order_number,
+            display_name=str(order_number - 100),
             channel=Order.Channel.TAKEAWAY,
             status=Order.Status.READY if status == KitchenTicket.Status.DONE else Order.Status.SUBMITTED,
             guest_count=1,
@@ -91,9 +92,17 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item['orderNumber'] for item in payload['preparing']], [101, 102])
+        self.assertEqual([item['displayName'] for item in payload['preparing']], ['1', '2'])
         self.assertEqual([item['orderNumber'] for item in payload['recentlyDone']], [103])
-        self.assertEqual(set(payload['preparing'][0].keys()), {'id', 'orderNumber', 'status', 'completedAt'})
-        self.assertEqual(set(payload['recentlyDone'][0].keys()), {'id', 'orderNumber', 'status', 'completedAt'})
+        self.assertEqual([item['displayName'] for item in payload['recentlyDone']], ['3'])
+        self.assertEqual(
+            set(payload['preparing'][0].keys()),
+            {'id', 'orderNumber', 'displayName', 'status', 'completedAt'},
+        )
+        self.assertEqual(
+            set(payload['recentlyDone'][0].keys()),
+            {'id', 'orderNumber', 'displayName', 'status', 'completedAt'},
+        )
 
     def test_monitor_queue_requires_valid_restaurant_id(self):
         missing_response = self.client.get('/api/v1/pos/monitor/kitchen-queue/')

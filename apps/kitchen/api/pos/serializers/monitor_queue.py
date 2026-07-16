@@ -20,12 +20,14 @@ class KitchenMonitorQuerySerializer(serializers.Serializer):
 
 class KitchenMonitorTicketSerializer(serializers.ModelSerializer):
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
+    display_name = serializers.CharField(source='order.display_name', read_only=True)
 
     class Meta:
         model = KitchenTicket
         fields = (
             'id',
             'order_number',
+            'display_name',
             'status',
             'completed_at',
         )
