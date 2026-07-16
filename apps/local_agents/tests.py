@@ -476,13 +476,23 @@ class LocalAgentBootstrapTests(PosAPITestCase):
     def test_bootstrap_kitchen_ticket_selection_matrix(self):
         now = timezone.now()
 
-        def create_ticket(*, number, order_status, ticket_status, age):
+        def create_ticket(
+            *,
+            number,
+            order_status,
+            ticket_status,
+            age,
+            completed_age=None,
+            channel=Order.Channel.TAKEAWAY,
+        ):
             order = Order.objects.create(
                 restaurant=self.restaurant,
-                distribution_point=self.takeaway_distribution,
+                distribution_point=(
+                    self.hall_distribution if channel == Order.Channel.HALL else self.takeaway_distribution
+                ),
                 opened_by=self.user,
                 order_number=number,
-                channel=Order.Channel.TAKEAWAY,
+                channel=channel,
                 status=order_status,
                 closed_at=now if order_status == Order.Status.CLOSED else None,
             )
@@ -492,6 +502,7 @@ class LocalAgentBootstrapTests(PosAPITestCase):
                 prep_station=self.prep_station,
                 status=ticket_status,
                 routed_via=KitchenTicket.RouteMode.BOTH,
+                completed_at=now - completed_age if completed_age is not None else None,
             )
             KitchenTicket.objects.filter(pk=ticket.pk).update(created_at=now - age)
             return ticket
@@ -514,11 +525,20 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             ticket_status=KitchenTicket.Status.NEW,
             age=timedelta(hours=25),
         )
-        done_active = create_ticket(
+        recently_done_closed = create_ticket(
             number=9104,
-            order_status=Order.Status.OPEN,
+            order_status=Order.Status.CLOSED,
             ticket_status=KitchenTicket.Status.DONE,
             age=timedelta(minutes=1),
+            completed_age=timedelta(minutes=1),
+            channel=Order.Channel.HALL,
+        )
+        stale_done_active = create_ticket(
+            number=9105,
+            order_status=Order.Status.OPEN,
+            ticket_status=KitchenTicket.Status.DONE,
+            age=timedelta(minutes=3),
+            completed_age=timedelta(minutes=3),
         )
 
         response = self.client.get(
@@ -531,7 +551,8 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertIn(str(active_old.id), ticket_ids)
         self.assertIn(str(closed_fresh.id), ticket_ids)
         self.assertNotIn(str(closed_stale.id), ticket_ids)
-        self.assertNotIn(str(done_active.id), ticket_ids)
+        self.assertIn(str(recently_done_closed.id), ticket_ids)
+        self.assertNotIn(str(stale_done_active.id), ticket_ids)
         self.assertLess(ticket_ids.index(str(active_old.id)), ticket_ids.index(str(closed_fresh.id)))
 
 

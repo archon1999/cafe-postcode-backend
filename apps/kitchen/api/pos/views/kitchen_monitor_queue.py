@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.kitchen.api.pos.serializers.monitor_queue import KitchenMonitorQuerySerializer, KitchenMonitorQueueSerializer
+from apps.kitchen.constants import KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
 from apps.kitchen.models import KitchenTicket
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
@@ -33,7 +34,7 @@ class KitchenMonitorQueueView(APIView):
             .filter(Q(order__status__in=active_order_statuses) | Q(created_at__gte=preparing_cutoff))
             .order_by('order__order_number', 'created_at')
         )
-        recent_done_cutoff = timezone.now() - timedelta(minutes=2)
+        recent_done_cutoff = timezone.now() - KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
         recently_done = base_queryset.filter(
             status=KitchenTicket.Status.DONE,
             completed_at__gte=recent_done_cutoff,
