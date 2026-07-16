@@ -3,6 +3,12 @@ from .kitchen_monitor_queue import KitchenMonitorQueueView
 from .kitchen_item_status_update import KitchenItemStatusUpdateView
 from .kitchen_ticket_detail import KitchenTicketDetailView
 from .kitchen_ticket_status_update import KitchenTicketStatusUpdateView
+from .tv_monitor_pairing import (
+    TvKitchenMonitorQueueView,
+    TvMonitorPairingClaimView,
+    TvMonitorPairingCreateView,
+    TvMonitorPairingStatusView,
+)
 
 __all__ = [
     'KitchenItemStatusUpdateView',
@@ -10,4 +16,8 @@ __all__ = [
     'KitchenQueueView',
     'KitchenTicketDetailView',
     'KitchenTicketStatusUpdateView',
+    'TvKitchenMonitorQueueView',
+    'TvMonitorPairingClaimView',
+    'TvMonitorPairingCreateView',
+    'TvMonitorPairingStatusView',
 ]

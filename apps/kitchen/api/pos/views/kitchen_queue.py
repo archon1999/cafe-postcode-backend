@@ -6,6 +6,7 @@ from rest_framework import generics, permissions
 
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
 from apps.kitchen.models import KitchenTicket
+from apps.kitchen.services import complete_stale_closed_order_kitchen_work
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
 from common.api.permissions import (
@@ -24,6 +25,7 @@ class KitchenQueueView(generics.ListAPIView):
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
+        complete_stale_closed_order_kitchen_work(restaurant=restaurant)
 
         queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related(
             'prep_station',
@@ -49,7 +51,10 @@ class KitchenQueueView(generics.ListAPIView):
                     status__in=(KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING),
                     created_at__gte=cutoff,
                 )
-                | Q(status=KitchenTicket.Status.DONE, completed_at__gte=cutoff)
+                | (
+                    Q(status=KitchenTicket.Status.DONE, completed_at__gte=cutoff)
+                    & (~Q(order__status=Order.Status.CLOSED) | Q(order__closed_at__gte=cutoff))
+                )
             )
         if not has_permission_code(self.request.user, POS_KITCHEN_ORDERS_VIEW_ALL_PERMISSION):
             queryset = queryset.filter(Q(prep_station__cooks=self.request.user) | Q(prep_station__cooks__isnull=True))

@@ -5,7 +5,7 @@ from rest_framework import status
 
 from apps.kitchen.models import KitchenTicket
 from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
-from apps.sales.models import Order
+from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
@@ -110,6 +110,88 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
 
         self.assertEqual(missing_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_monitor_queue_completes_closed_kitchen_work_after_one_hour(self):
+        now = timezone.now()
+        stale_order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=301,
+            display_name='301',
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            closed_at=now - timedelta(hours=1, minutes=1),
+        )
+        stale_item = OrderItem.objects.create(
+            order=stale_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+            status=OrderItem.Status.NEW,
+        )
+        served_item = OrderItem.objects.create(
+            order=stale_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+            status=OrderItem.Status.SERVED,
+        )
+        stale_ticket = KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=stale_order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.NEW,
+        )
+        recent_order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=302,
+            display_name='302',
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            closed_at=now - timedelta(minutes=59),
+        )
+        recent_item = OrderItem.objects.create(
+            order=recent_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+            status=OrderItem.Status.COOKING,
+        )
+        recent_ticket = KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=recent_order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.COOKING,
+        )
+
+        response = self.client.get(f'/api/v1/pos/monitor/kitchen-queue/?restaurant_id={self.restaurant.id}')
+        payload = response.json()
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item['orderNumber'] for item in payload['preparing']], [302])
+        self.assertEqual([item['orderNumber'] for item in payload['recentlyDone']], [301])
+        stale_order.refresh_from_db()
+        stale_item.refresh_from_db()
+        served_item.refresh_from_db()
+        stale_ticket.refresh_from_db()
+        recent_item.refresh_from_db()
+        recent_ticket.refresh_from_db()
+        self.assertEqual(stale_order.status, Order.Status.CLOSED)
+        self.assertEqual(stale_item.status, OrderItem.Status.DONE)
+        self.assertEqual(served_item.status, OrderItem.Status.SERVED)
+        self.assertEqual(stale_ticket.status, KitchenTicket.Status.DONE)
+        self.assertIsNotNone(stale_ticket.completed_at)
+        self.assertEqual(recent_item.status, OrderItem.Status.COOKING)
+        self.assertEqual(recent_ticket.status, KitchenTicket.Status.COOKING)
 
     def test_monitor_queue_rejects_anonymous_request(self):
         self.client.force_authenticate(user=None)

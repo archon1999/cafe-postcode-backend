@@ -8,9 +8,33 @@ from rest_framework.views import APIView
 from apps.kitchen.api.pos.serializers.monitor_queue import KitchenMonitorQuerySerializer, KitchenMonitorQueueSerializer
 from apps.kitchen.constants import KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
 from apps.kitchen.models import KitchenTicket
+from apps.kitchen.services import complete_stale_closed_order_kitchen_work
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
 from common.api.permissions import EndpointRBACPermission
+
+
+def serialize_kitchen_monitor_queue(restaurant):
+    complete_stale_closed_order_kitchen_work(restaurant=restaurant)
+    base_queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related('order').order_by('-created_at')
+    preparing_cutoff = timezone.now() - timedelta(days=1)
+    active_order_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
+    preparing = (
+        base_queryset.filter(status__in=(KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING))
+        .filter(Q(order__status__in=active_order_statuses) | Q(created_at__gte=preparing_cutoff))
+        .order_by('order__order_number', 'created_at')
+    )
+    recent_done_cutoff = timezone.now() - KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
+    recently_done = base_queryset.filter(
+        status=KitchenTicket.Status.DONE,
+        completed_at__gte=recent_done_cutoff,
+    ).order_by('-completed_at', '-created_at')
+    return KitchenMonitorQueueSerializer(
+        {
+            'preparing': preparing,
+            'recently_done': recently_done,
+        }
+    ).data
 
 
 class KitchenMonitorQueueView(APIView):
@@ -25,26 +49,4 @@ class KitchenMonitorQueueView(APIView):
         if request.user.get_restaurant_scope() != restaurant:
             return Response({'detail': 'Restaurant does not match the authenticated user.'}, status=403)
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
-
-        base_queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related('order').order_by('-created_at')
-        preparing_cutoff = timezone.now() - timedelta(days=1)
-        active_order_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
-        preparing = (
-            base_queryset.filter(status__in=(KitchenTicket.Status.NEW, KitchenTicket.Status.COOKING))
-            .filter(Q(order__status__in=active_order_statuses) | Q(created_at__gte=preparing_cutoff))
-            .order_by('order__order_number', 'created_at')
-        )
-        recent_done_cutoff = timezone.now() - KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
-        recently_done = base_queryset.filter(
-            status=KitchenTicket.Status.DONE,
-            completed_at__gte=recent_done_cutoff,
-        ).order_by('-completed_at', '-created_at')
-
-        return Response(
-            KitchenMonitorQueueSerializer(
-                {
-                    'preparing': preparing,
-                    'recently_done': recently_done,
-                }
-            ).data
-        )
+        return Response(serialize_kitchen_monitor_queue(restaurant))
