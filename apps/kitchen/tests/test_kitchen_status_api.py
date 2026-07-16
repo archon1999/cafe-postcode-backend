@@ -73,6 +73,7 @@ class KitchenStatusApiTests(APITestCase):
             distribution_point=self.distribution_point,
             opened_by=self.user,
             order_number=1002,
+            display_name='17',
             channel=Order.Channel.HALL,
             status=Order.Status.SUBMITTED,
             guest_count=2,
@@ -125,6 +126,8 @@ class KitchenStatusApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['data']), 1)
         self.assertEqual(str(response.data['data'][0]['id']), str(self.ticket.id))
+        self.assertEqual(response.data['data'][0]['display_name'], '17')
+        self.assertEqual(response.data['data'][0]['channel'], Order.Channel.HALL)
 
     def test_queue_excludes_stale_new_ticket_for_closed_order(self):
         self.order.status = Order.Status.CLOSED

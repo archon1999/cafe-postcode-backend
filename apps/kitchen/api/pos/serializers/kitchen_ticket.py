@@ -10,6 +10,8 @@ OrderItem = get_order_item_model()
 class KitchenTicketSerializer(serializers.ModelSerializer):
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)
     order_number = serializers.IntegerField(source='order.order_number', read_only=True)
+    display_name = serializers.CharField(source='order.display_name', read_only=True)
+    channel = serializers.CharField(source='order.channel', read_only=True)
     hall_name = serializers.CharField(source='order.table_session.hall.name', read_only=True)
     table_name = serializers.CharField(source='order.table_session.table.name', read_only=True)
     waiter_name = serializers.CharField(source='order.opened_by.full_name', read_only=True)
@@ -38,6 +40,8 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             'id',
             'order',
             'order_number',
+            'display_name',
+            'channel',
             'prep_station',
             'prep_station_name',
             'status',
