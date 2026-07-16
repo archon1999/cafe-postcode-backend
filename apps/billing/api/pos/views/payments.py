@@ -1,5 +1,6 @@
 import json
 
+from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -36,6 +37,23 @@ def _kitchen_print_document_ids(order, *, exclude=None):
     ]
 
 
+def _payment_request_payload(request):
+    payload = request.data.copy()
+    header_operation_id = str(request.headers.get('X-Edge-Operation-ID') or '').strip()
+    if not header_operation_id:
+        return payload
+    body_operation_ids = {
+        str(payload.get(key) or '').strip()
+        for key in ('edge_operation_id', 'edgeOperationId')
+        if str(payload.get(key) or '').strip()
+    }
+    if any(operation_id != header_operation_id for operation_id in body_operation_ids):
+        raise ValidationError({'edgeOperationId': _('Header and body operation IDs must match.')})
+    payload['edge_operation_id'] = header_operation_id
+    payload.pop('edgeOperationId', None)
+    return payload
+
+
 class PaymentCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     order_payment_service_class = OrderPaymentService
@@ -45,6 +63,7 @@ class PaymentCreateView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        payment_payload = _payment_request_payload(request)
         order = generics.get_object_or_404(
             Order.objects.select_related('restaurant', 'table_session__table'),
             pk=pk,
@@ -54,7 +73,7 @@ class PaymentCreateView(APIView):
         cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
         result = self.order_payment_service_class().process(
             order=order,
-            payload=request.data,
+            payload=payment_payload,
             received_by=request.user,
             cash_shift=cash_shift,
             trusted_edge_replay=bool(getattr(request._request, 'trusted_edge_replay', False)),

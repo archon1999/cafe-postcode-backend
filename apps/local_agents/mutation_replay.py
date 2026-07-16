@@ -1,0 +1,96 @@
+import json
+
+from rest_framework import status
+
+from apps.local_agents.mutation_reconciliation import (
+    reconciled_fully_paid_order,
+    reconciled_order_item_delete,
+)
+
+
+class LocalAgentMutationReplayMixin:
+    @staticmethod
+    def _replay_existing(
+        *, agent, existing, operation_id, user_id, method, path, body, digest
+    ):
+        if (
+            existing.restaurant_id != agent.restaurant_id
+            or existing.request_hash != digest
+        ):
+            return {
+                "operationId": operation_id,
+                "ok": False,
+                "status": 409,
+                "error": "operationId already belongs to another mutation.",
+                "retryable": False,
+            }
+        reconciled_delete = reconciled_order_item_delete(
+            method=method,
+            path=path,
+            response_status=existing.response_status,
+            response_body=existing.response_body,
+        )
+        if reconciled_delete is not None:
+            existing.response_status = status.HTTP_204_NO_CONTENT
+            existing.response_body = reconciled_delete
+            existing.save(
+                update_fields=["response_status", "response_body", "updated_at"]
+            )
+            return {
+                "operationId": operation_id,
+                "ok": True,
+                "status": status.HTTP_204_NO_CONTENT,
+                "body": reconciled_delete,
+                "replayed": True,
+                "reconciled": True,
+                "retryable": False,
+            }
+        reconciled_payment = reconciled_fully_paid_order(
+            agent=agent,
+            method=method,
+            path=path,
+            response_status=existing.response_status,
+            response_body=existing.response_body,
+        )
+        if reconciled_payment is not None:
+            existing.response_status = status.HTTP_200_OK
+            existing.response_body = reconciled_payment
+            existing.save(
+                update_fields=["response_status", "response_body", "updated_at"]
+            )
+            return {
+                "operationId": operation_id,
+                "ok": True,
+                "status": status.HTTP_200_OK,
+                "body": reconciled_payment,
+                "replayed": True,
+                "reconciled": True,
+                "retryable": False,
+            }
+        recoverable_shift_conflict = (
+            path == "/api/v1/pos/billing/shifts/open/"
+            and existing.response_status == status.HTTP_400_BAD_REQUEST
+            and "already has an active shift"
+            in json.dumps(existing.response_body).lower()
+        )
+        requested_cashier_id = str(
+            body.get("cashierId") or body.get("cashier_id") or ""
+        ).strip()
+        recoverable_implicit_cashier = (
+            path == "/api/v1/pos/billing/shifts/open/"
+            and existing.response_status == status.HTTP_400_BAD_REQUEST
+            and requested_cashier_id == user_id
+            and "selected cashier was not found"
+            in json.dumps(existing.response_body).lower()
+        )
+        if recoverable_shift_conflict or recoverable_implicit_cashier:
+            existing.delete()
+            return None
+        return {
+            "operationId": operation_id,
+            "ok": 200 <= existing.response_status < 300,
+            "status": existing.response_status,
+            "body": existing.response_body,
+            "replayed": True,
+            "retryable": False,
+        }

@@ -21,6 +21,7 @@ LOCAL_APPS = [
     'apps.kitchen',
     'apps.reporting',
     'apps.integrations',
+    'apps.landing',
     'apps.local_agents',
     'apps.printing',
 ]
