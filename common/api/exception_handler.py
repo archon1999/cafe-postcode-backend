@@ -6,6 +6,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
+from common.api.error_codes import ErrorCode
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ def custom_exception_handler(exc, context):
             {
                 'status': status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                 'message': _('Uploaded file is too large.'),
-                'code': 'request_too_large',
+                'code': ErrorCode.REQUEST_TOO_LARGE,
             },
             status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
         )
@@ -45,7 +47,7 @@ def custom_exception_handler(exc, context):
         {
             'status': status.HTTP_500_INTERNAL_SERVER_ERROR,
             'message': message,
-            'code': 'server_error',
+            'code': ErrorCode.SERVER_ERROR,
         },
         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )
