@@ -13,7 +13,6 @@ urlpatterns = [
     path('', include('django_prometheus.urls')),
     path('admin/', admin.site.urls),
     path(f'{API_PREFIX}i18n/', include('django.conf.urls.i18n')),
-    path(f'{API_V1_PREFIX}landing/', include('apps.landing.api.urls')),
     path(f'{API_V1_PREFIX}dashboard/', include('apps.dashboard.api.urls')),
     path(f'{API_V1_PREFIX}admin/auth/', include('apps.users.api.admin.urls.auth')),
     path(f'{API_V1_PREFIX}admin/users/', include('apps.users.api.admin.urls.users')),

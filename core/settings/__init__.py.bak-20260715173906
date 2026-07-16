@@ -184,11 +184,6 @@ class CoreSettings(Settings):
     FAKTURA_TIMEOUT = env_float('FAKTURA_TIMEOUT', 10.0)
     FAKTURA_PROXY_URL = os.getenv('FAKTURA_PROXY_URL', '').strip()
 
-    TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
-    TELEGRAM_LEADS_CHAT_ID = os.getenv('TELEGRAM_LEADS_CHAT_ID', '').strip()
-    TELEGRAM_TIMEOUT = env_float('TELEGRAM_TIMEOUT', 10.0)
-    TELEGRAM_PROXY_URL = os.getenv('TELEGRAM_PROXY_URL', '').strip()
-
     LOCAL_AGENT_RELEASE_MANIFEST_URL = os.getenv(
         'LOCAL_AGENT_RELEASE_MANIFEST_URL',
         'https://admin.cafe-postcode.uz/downloads/local-agent-release.json',

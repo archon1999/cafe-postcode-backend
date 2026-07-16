@@ -91,6 +91,11 @@ server {
         proxy_pass http://127.0.0.1:8880;
     }
 
+    location = /api/leads {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:8787;
+    }
+
     location / {
         root /var/www/cafe-postcode-landing;
         try_files $uri $uri/ /index.html;
