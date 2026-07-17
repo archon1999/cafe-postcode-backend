@@ -56,6 +56,8 @@ CORS_ALLOW_HEADERS = [
     "x-admin-restaurant-id",
     "x-edge-operation-id",
     "x-edge-token",
+    "x-tv-pairing-token",
+    "x-tv-token",
 ]
 
 CORS_EXPOSE_HEADERS = [

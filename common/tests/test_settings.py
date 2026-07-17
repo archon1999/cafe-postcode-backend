@@ -9,6 +9,10 @@ class ConfigSettingsUtilsTests(SimpleTestCase):
         self.assertTrue(settings.CORS_ALLOW_CREDENTIALS)
         self.assertIn('https://admin.cafe-postcode.uz', settings.CORS_ALLOWED_ORIGINS)
 
+    def test_tv_pairing_headers_are_allowed_cross_origin(self):
+        self.assertIn('x-tv-pairing-token', settings.CORS_ALLOW_HEADERS)
+        self.assertIn('x-tv-token', settings.CORS_ALLOW_HEADERS)
+
     def test_get_setting_uses_first_non_empty_alias(self):
         settings = {'endpoint_url': '', 'endpointUrl': 'http://127.0.0.1:8090'}
 
