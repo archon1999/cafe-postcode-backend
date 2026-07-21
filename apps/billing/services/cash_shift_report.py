@@ -47,8 +47,8 @@ def build_unikassa_like_report(
             "Refund": refund_totals.get(Payment.Method.QR, 0),
         },
         "TotalVAT": {
-            "Sale": _estimate_vat(sale_total, restaurant=restaurant),
-            "Refund": _estimate_vat(refund_total, restaurant=restaurant),
+            "Sale": estimate_vat(sale_total, restaurant=restaurant),
+            "Refund": estimate_vat(refund_total, restaurant=restaurant),
         },
         "TotalSaleAmount": sale_total,
         "TotalRefundAmount": refund_total,
@@ -147,7 +147,7 @@ def _format_report_datetime(value) -> str | None:
     )
 
 
-def _estimate_vat(amount: int, *, restaurant=None) -> int:
+def estimate_vat(amount: int, *, restaurant=None) -> int:
     if not restaurant or not getattr(restaurant, "vat_enabled", False):
         return 0
     try:

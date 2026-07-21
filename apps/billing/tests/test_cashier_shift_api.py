@@ -63,6 +63,16 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(context_response.status_code, status.HTTP_200_OK, context_response.data)
         self.assertEqual(context_response.data['current_shift']['cash_total'], 40000)
         self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 190000)
+        self.assertEqual(context_response.data['current_shift']['sale_count'], 1)
+        self.assertEqual(context_response.data['current_shift']['refund_count'], 0)
+        self.assertEqual(context_response.data['current_shift']['total_sale_amount'], 40000)
+        self.assertEqual(context_response.data['current_shift']['cash_refund_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['card_refund_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['qr_refund_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['vat_sale_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['vat_refund_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['first_receipt'], '77')
+        self.assertEqual(context_response.data['current_shift']['last_receipt'], '77')
 
         close_response = self.close_shift_via_api(actual_closing_cash_amount=185000, notes_close='Cash mismatch')
 

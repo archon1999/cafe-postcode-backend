@@ -3,6 +3,7 @@ from rest_framework import serializers
 from django.db.models import Count, Q, Sum
 
 from apps.billing.helpers import get_cash_shift_model, get_payment_model, get_payment_refund_model, get_receipt_model
+from apps.billing.services.cash_shift_report import estimate_vat, refund_tender_amounts
 
 CashShift = get_cash_shift_model()
 Payment = get_payment_model()
@@ -19,6 +20,16 @@ class CashShiftSerializer(serializers.ModelSerializer):
     card_total = serializers.SerializerMethodField()
     qr_total = serializers.SerializerMethodField()
     refund_total = serializers.SerializerMethodField()
+    sale_count = serializers.SerializerMethodField()
+    refund_count = serializers.SerializerMethodField()
+    total_sale_amount = serializers.SerializerMethodField()
+    cash_refund_total = serializers.SerializerMethodField()
+    card_refund_total = serializers.SerializerMethodField()
+    qr_refund_total = serializers.SerializerMethodField()
+    vat_sale_total = serializers.SerializerMethodField()
+    vat_refund_total = serializers.SerializerMethodField()
+    first_receipt = serializers.SerializerMethodField()
+    last_receipt = serializers.SerializerMethodField()
     receipt_count = serializers.SerializerMethodField()
     reprint_count = serializers.SerializerMethodField()
 
@@ -44,6 +55,16 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'card_total',
             'qr_total',
             'refund_total',
+            'sale_count',
+            'refund_count',
+            'total_sale_amount',
+            'cash_refund_total',
+            'card_refund_total',
+            'qr_refund_total',
+            'vat_sale_total',
+            'vat_refund_total',
+            'first_receipt',
+            'last_receipt',
             'receipt_count',
             'reprint_count',
             'next_order_number',
@@ -69,6 +90,36 @@ class CashShiftSerializer(serializers.ModelSerializer):
     def get_refund_total(self, obj):
         return self._snapshot(obj)['refund_total']
 
+    def get_sale_count(self, obj):
+        return self._snapshot(obj)['sale_count']
+
+    def get_refund_count(self, obj):
+        return self._snapshot(obj)['refund_count']
+
+    def get_total_sale_amount(self, obj):
+        return self._snapshot(obj)['total_sale_amount']
+
+    def get_cash_refund_total(self, obj):
+        return self._snapshot(obj)['cash_refund_total']
+
+    def get_card_refund_total(self, obj):
+        return self._snapshot(obj)['card_refund_total']
+
+    def get_qr_refund_total(self, obj):
+        return self._snapshot(obj)['qr_refund_total']
+
+    def get_vat_sale_total(self, obj):
+        return self._snapshot(obj)['vat_sale_total']
+
+    def get_vat_refund_total(self, obj):
+        return self._snapshot(obj)['vat_refund_total']
+
+    def get_first_receipt(self, obj):
+        return self._snapshot(obj)['first_receipt']
+
+    def get_last_receipt(self, obj):
+        return self._snapshot(obj)['last_receipt']
+
     def get_receipt_count(self, obj):
         return self._snapshot(obj)['receipt_count']
 
@@ -79,6 +130,38 @@ class CashShiftSerializer(serializers.ModelSerializer):
         cached = getattr(obj, '_live_snapshot', None)
         if cached is not None:
             return cached
+        payments = Payment.objects.filter(cash_shift=obj, status=Payment.Status.SUCCEEDED).select_related('order')
+        refunds = list(
+            PaymentRefund.objects.filter(payment__cash_shift=obj, status=PaymentRefund.Status.SUCCEEDED).select_related(
+                'payment'
+            )
+        )
+        refund_tenders = {
+            Payment.Method.CASH: 0,
+            Payment.Method.CARD: 0,
+            Payment.Method.QR: 0,
+        }
+        for refund in refunds:
+            for method, amount in refund_tender_amounts(refund).items():
+                refund_tenders[method] = refund_tenders.get(method, 0) + int(amount or 0)
+        payment_order_numbers = list(
+            payments.order_by('paid_at', 'created_at').values_list('order__order_number', flat=True)
+        )
+        total_sale_amount = payments.aggregate(total=Sum('amount')).get('total') or 0
+        refund_total = sum(int(refund.amount or 0) for refund in refunds)
+        restaurant = obj.cash_desk.restaurant
+        report_values = {
+            'sale_count': payments.count(),
+            'refund_count': len(refunds),
+            'total_sale_amount': total_sale_amount,
+            'cash_refund_total': refund_tenders[Payment.Method.CASH],
+            'card_refund_total': refund_tenders[Payment.Method.CARD],
+            'qr_refund_total': refund_tenders[Payment.Method.QR],
+            'vat_sale_total': estimate_vat(total_sale_amount, restaurant=restaurant),
+            'vat_refund_total': estimate_vat(refund_total, restaurant=restaurant),
+            'first_receipt': str(payment_order_numbers[0]) if payment_order_numbers else '',
+            'last_receipt': str(payment_order_numbers[-1]) if payment_order_numbers else '',
+        }
         if obj.status != CashShift.Status.OPEN:
             cached = {
                 'cash_total': obj.cash_total,
@@ -88,20 +171,18 @@ class CashShiftSerializer(serializers.ModelSerializer):
                 'receipt_count': obj.receipt_count,
                 'reprint_count': obj.reprint_count,
                 'expected_closing_cash_amount': obj.expected_closing_cash_amount,
+                **report_values,
             }
             setattr(obj, '_live_snapshot', cached)
             return cached
 
-        payments = Payment.objects.filter(cash_shift=obj, status=Payment.Status.SUCCEEDED)
-        refunds = PaymentRefund.objects.filter(payment__cash_shift=obj, status=PaymentRefund.Status.SUCCEEDED)
         totals = payments.aggregate(
             cash_total=Sum('cash_amount'),
             card_total=Sum('card_amount'),
             qr_total=Sum('amount', filter=Q(method=Payment.Method.QR)),
         )
-        refund_total = refunds.aggregate(total=Sum('amount')).get('total') or 0
         cash_refund_total = (
-            refunds.exclude(payment__method=Payment.Method.QR).aggregate(total=Sum('payment__cash_amount')).get('total') or 0
+            refund_tenders[Payment.Method.CASH]
         )
         cached = {
             'cash_total': totals.get('cash_total') or 0,
@@ -117,6 +198,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'expected_closing_cash_amount': (obj.opening_cash_amount or 0)
             + (totals.get('cash_total') or 0)
             - cash_refund_total,
+            **report_values,
         }
         setattr(obj, '_live_snapshot', cached)
         return cached
