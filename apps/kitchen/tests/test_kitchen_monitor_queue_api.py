@@ -111,7 +111,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
         self.assertEqual(missing_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_monitor_queue_completes_closed_kitchen_work_after_one_hour(self):
+    def test_monitor_queue_completes_closed_kitchen_work_after_fifteen_minutes(self):
         now = timezone.now()
         stale_order = Order.objects.create(
             restaurant=self.restaurant,
@@ -121,7 +121,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
             display_name='301',
             channel=Order.Channel.TAKEAWAY,
             status=Order.Status.CLOSED,
-            closed_at=now - timedelta(hours=1, minutes=1),
+            closed_at=now - timedelta(minutes=16),
         )
         stale_item = OrderItem.objects.create(
             order=stale_order,
@@ -155,7 +155,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
             display_name='302',
             channel=Order.Channel.TAKEAWAY,
             status=Order.Status.CLOSED,
-            closed_at=now - timedelta(minutes=59),
+            closed_at=now - timedelta(minutes=14),
         )
         recent_item = OrderItem.objects.create(
             order=recent_order,
