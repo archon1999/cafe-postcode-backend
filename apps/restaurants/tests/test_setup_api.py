@@ -226,8 +226,8 @@ class RestaurantSetupApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         quick_setup = response.data['quickSetup']
-        self.assertEqual(quick_setup['taxNumber'], '312217845')
-        self.assertEqual(quick_setup['martaAddress'], 'http://192.168.1.133:8090')
+        self.assertEqual(quick_setup['fiscalTaxNumber'], '312217845')
+        self.assertEqual(quick_setup['martaTaxNumber'], '312217845')
         self.assertEqual(quick_setup['cashDesks'][0]['id'], str(desk.id))
         self.assertEqual(quick_setup['cashDesks'][0]['name'], 'Kassa')
         self.assertEqual(quick_setup['cashDesks'][0]['printerTarget'], 'POS-80 USB')
@@ -237,6 +237,16 @@ class RestaurantSetupApiTests(APITestCase):
         self.assertEqual(quick_setup['prepStations'][0]['printerIntegrationId'], str(kitchen_printer.id))
 
     def test_apply_updates_existing_ids_preserves_hidden_settings_and_removes_setup_shadow(self):
+        payment = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos',
+            settings={
+                'endpoint_url': 'http://192.168.1.133:8090',
+                'hmac_secret': 'secret',
+                'transport': 'local-agent',
+            },
+        )
         fiscal = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.FISCAL,
@@ -258,6 +268,7 @@ class RestaurantSetupApiTests(APITestCase):
         desk = CashDesk.objects.create(
             restaurant=self.restaurant,
             name='Kassa',
+            payment_integration=payment,
             fiscal_integration=fiscal,
             receipt_printer_enabled=False,
             enabled_payment_methods=['cash'],
@@ -270,6 +281,12 @@ class RestaurantSetupApiTests(APITestCase):
                     'name': 'Kassa',
                     'enabledPaymentMethods': ['cash'],
                     'receiptPrinterEnabled': False,
+                    'payment': {
+                        'id': str(payment.id),
+                        'name': 'Kassa MARTA',
+                        'provider': 'marta-softpos',
+                        'settings': {'taxNumber': '309123456'},
+                    },
                     'fiscal': {
                         'id': str(fiscal.id),
                         'name': 'Kassa Fiscal Drive',
@@ -295,6 +312,10 @@ class RestaurantSetupApiTests(APITestCase):
             1,
         )
         fiscal.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(payment.settings['tax_number'], '309123456')
+        self.assertEqual(payment.settings['endpoint_url'], 'http://192.168.1.133:8090')
+        self.assertEqual(payment.settings['hmac_secret'], 'secret')
         self.assertEqual(fiscal.settings['factory_id'], 'fiscal-device-1')
         self.assertEqual(fiscal.settings['terminal_id'], 'terminal-1')
 

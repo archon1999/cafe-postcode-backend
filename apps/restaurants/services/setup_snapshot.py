@@ -84,10 +84,9 @@ def quick_setup_snapshot(*, restaurant, cash_desks, prep_stations):
         )
 
     return {
-        "taxNumber": read_setting(fiscal, "tax_number")
-        or read_setting(payment, "tax_number")
+        "fiscalTaxNumber": read_setting(fiscal, "tax_number")
         or str(restaurant.tax_number or "").strip(),
-        "martaAddress": read_setting(payment, "endpoint_url"),
+        "martaTaxNumber": read_setting(payment, "tax_number"),
         "cashDesks": cash_desk_values,
         "prepStations": prep_station_values,
     }
