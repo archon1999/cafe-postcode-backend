@@ -402,6 +402,60 @@ class POSRemotePrintTests(PosAPITestCase):
         )
 
 
+class POSSystemStatusTests(PosAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.agent, _token = LocalAgent.issue_for_restaurant(
+            restaurant=self.restaurant,
+            name='Site coordinator',
+            version='0.8.5',
+        )
+        self.agent.status = LocalAgent.Status.ONLINE
+        self.agent.last_seen_at = timezone.now()
+        self.agent.save(update_fields=['status', 'last_seen_at', 'updated_at'])
+
+    @patch('apps.local_agents.pos_views.LocalAgentCommandService.enqueue')
+    def test_status_returns_recent_cached_result_without_waiting_for_agent(self, enqueue):
+        LocalAgentCommand.objects.create(
+            agent=self.agent,
+            command_type='system.status',
+            status=LocalAgentCommand.Status.SUCCEEDED,
+            result={
+                'agent': {'online': True, 'version': 'old'},
+                'backend': {'online': True, 'offlineMode': False},
+                'sync': {'ready': True, 'pendingOutbox': 0, 'failedOutbox': 0, 'schemaVersion': 1},
+                'fiscal': {'configured': False, 'online': False, 'state': 'not_configured'},
+                'marta': {'configured': False, 'online': False, 'state': 'not_configured'},
+                'printer': {'configured': True, 'online': True, 'state': 'online'},
+                'alerts': [],
+            },
+            completed_at=timezone.now(),
+        )
+
+        response = self.client.get('/api/v1/system/status/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['status']['printer']['online'])
+        self.assertEqual(response.data['status']['agent']['version'], '0.8.5')
+        enqueue.assert_not_called()
+
+    @patch('apps.local_agents.pos_views.LocalAgentCommandService.enqueue')
+    def test_status_schedules_refresh_and_returns_immediately_when_cache_is_empty(self, enqueue):
+        enqueue.return_value = {'accepted': True, 'commandId': 'command-123', 'commandStatus': 'pending'}
+
+        response = self.client.get('/api/v1/system/status/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['status']['agent']['online'])
+        self.assertEqual(response.data['status']['printer']['state'], 'unknown')
+        enqueue.assert_called_once_with(
+            restaurant=self.restaurant,
+            command_type='system.status',
+            payload={},
+            timeout_seconds=8,
+        )
+
+
 class LocalAgentBootstrapTests(PosAPITestCase):
     def setUp(self):
         super().setUp()

@@ -32,7 +32,7 @@ def _issue_coordinator(*, restaurant, terminal_id='', terminal_name=''):
                 'terminalId': str(terminal_id or '').strip(),
                 'terminalName': str(terminal_name or '').strip() or 'POS terminal',
             },
-            timeout_seconds=6,
+            timeout_seconds=2,
         )
         edge_token = str(result.get('edgeToken') or '')
         if not edge_token.startswith('ept_'):

@@ -125,7 +125,7 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
             restaurant=self.restaurant,
             command_type='edge.terminal.issue',
             payload={'terminalId': 'pos-terminal-12345678', 'terminalName': 'Main POS'},
-            timeout_seconds=6,
+            timeout_seconds=2,
         )
 
     @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
