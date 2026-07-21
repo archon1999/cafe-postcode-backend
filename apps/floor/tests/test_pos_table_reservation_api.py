@@ -74,6 +74,7 @@ class PosTableReservationApiTests(PosAPITestCase):
         success_response = self.client.post('/api/v1/pos/floor/table-sessions/', payload, format='json')
 
         self.assertEqual(success_response.status_code, status.HTTP_201_CREATED, success_response.data)
+        self.assertEqual(success_response.data['table_number'], self.table.table_number)
         self.table.refresh_from_db()
         self.assertEqual(self.table.status, DiningTable.Status.OCCUPIED)
 
