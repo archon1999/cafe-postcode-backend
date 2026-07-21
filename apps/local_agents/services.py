@@ -26,7 +26,7 @@ def local_agent_group_name(agent_id) -> str:
 class LocalAgentCommandService:
     poll_interval_seconds = 0.2
 
-    def execute(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int = 30) -> dict:
+    def _enqueue_command(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int):
         agent = LocalAgent.objects.filter(restaurant=restaurant, is_active=True).first()
         if agent is None or not agent.is_online():
             raise LocalAgentUnavailableError('Local agent is offline.')
@@ -46,6 +46,28 @@ class LocalAgentCommandService:
                 'command_type': command_type,
                 'payload': payload,
             },
+        )
+        return agent, command
+
+    def enqueue(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int = 30) -> dict:
+        _agent, command = self._enqueue_command(
+            restaurant=restaurant,
+            command_type=command_type,
+            payload=payload,
+            timeout_seconds=timeout_seconds,
+        )
+        return {
+            'accepted': True,
+            'commandId': str(command.id),
+            'commandStatus': command.status,
+        }
+
+    def execute(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int = 30) -> dict:
+        agent, command = self._enqueue_command(
+            restaurant=restaurant,
+            command_type=command_type,
+            payload=payload,
+            timeout_seconds=timeout_seconds,
         )
 
         deadline = time.monotonic() + command.timeout_seconds

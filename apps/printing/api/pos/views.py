@@ -2,7 +2,7 @@ from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
+from apps.local_agents.services import LocalAgentCommandService, LocalAgentUnavailableError
 from apps.printing.models import PrintDocument
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
@@ -28,7 +28,7 @@ class PosPrintJobCreateView(APIView):
         if document is None:
             return Response({'detail': 'Print document was not found.'}, status=status.HTTP_404_NOT_FOUND)
         try:
-            result = self.command_service_class().execute(
+            result = self.command_service_class().enqueue(
                 restaurant=restaurant,
                 command_type='print.document',
                 payload={
@@ -40,9 +40,16 @@ class PosPrintJobCreateView(APIView):
             )
         except LocalAgentUnavailableError as error:
             return Response({'detail': str(error), 'code': error.code}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        except LocalAgentCommandError as error:
-            return Response(
-                {'detail': str(error), 'code': error.code, 'result': error.result},
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-        return Response(result)
+        return Response(
+            {
+                'ok': True,
+                'job': {
+                    'operationId': serializer.validated_data['operation_id'],
+                    'documentId': str(document.id),
+                    'copies': serializer.validated_data['copies'],
+                    'status': 'queued',
+                    'commandId': result['commandId'],
+                },
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )

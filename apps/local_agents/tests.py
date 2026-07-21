@@ -373,16 +373,9 @@ class POSRemotePrintTests(PosAPITestCase):
             content_hash='d' * 64,
         )
 
-    @patch('apps.printing.api.pos.views.LocalAgentCommandService.execute')
-    def test_remote_pos_print_routes_document_to_restaurants_agent(self, execute):
-        execute.return_value = {
-            'job': {
-                'operationId': 'pos:remote-print-123',
-                'documentId': str(self.document.id),
-                'copies': 1,
-                'status': 'succeeded',
-            }
-        }
+    @patch('apps.printing.api.pos.views.LocalAgentCommandService.enqueue')
+    def test_remote_pos_print_queues_document_for_restaurants_agent(self, enqueue):
+        enqueue.return_value = {'accepted': True, 'commandId': 'command-123', 'commandStatus': 'pending'}
 
         response = self.client.post(
             '/api/v1/pos/printing/jobs/',
@@ -394,9 +387,10 @@ class POSRemotePrintTests(PosAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(response.data['job']['status'], 'succeeded')
-        execute.assert_called_once_with(
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
+        self.assertEqual(response.data['job']['status'], 'queued')
+        self.assertEqual(response.data['job']['commandId'], 'command-123')
+        enqueue.assert_called_once_with(
             restaurant=self.restaurant,
             command_type='print.document',
             payload={
@@ -1241,6 +1235,23 @@ class LocalAgentCommandServiceTests(APITestCase):
                 payload={},
                 timeout_seconds=1,
             )
+
+    def test_enqueue_returns_after_command_is_dispatched_without_waiting_for_result(self):
+        self.agent.status = LocalAgent.Status.ONLINE
+        self.agent.last_seen_at = timezone.now()
+        self.agent.save(update_fields=['status', 'last_seen_at', 'updated_at'])
+
+        result = LocalAgentCommandService().enqueue(
+            restaurant=self.restaurant,
+            command_type='print.document',
+            payload={'operationId': 'print-operation', 'documentId': 'document-id', 'copies': 1},
+            timeout_seconds=100,
+        )
+
+        self.assertTrue(result['accepted'])
+        self.assertEqual(result['commandStatus'], LocalAgentCommand.Status.PENDING)
+        command = LocalAgentCommand.objects.get(pk=result['commandId'])
+        self.assertEqual(command.status, LocalAgentCommand.Status.PENDING)
 
     def test_execute_times_out_when_agent_does_not_return_result(self):
         self.agent.status = LocalAgent.Status.ONLINE
