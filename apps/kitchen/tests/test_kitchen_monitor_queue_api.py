@@ -121,7 +121,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
             display_name='301',
             channel=Order.Channel.TAKEAWAY,
             status=Order.Status.CLOSED,
-            closed_at=now - timedelta(minutes=16),
+            closed_at=now - timedelta(minutes=31),
         )
         stale_item = OrderItem.objects.create(
             order=stale_order,
@@ -155,7 +155,7 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
             display_name='302',
             channel=Order.Channel.TAKEAWAY,
             status=Order.Status.CLOSED,
-            closed_at=now - timedelta(minutes=14),
+            closed_at=now - timedelta(minutes=29),
         )
         recent_item = OrderItem.objects.create(
             order=recent_order,
