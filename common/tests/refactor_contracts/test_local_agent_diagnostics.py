@@ -1,23 +1,10 @@
-from unittest.mock import patch
-
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.local_agents.models import LocalAgent
-from apps.local_agents.pos_views import LocalAgentPOSSystemStatusView
-from apps.local_agents.services import LocalAgentUnavailableError
+from apps.local_agents.models import LocalAgent, LocalAgentCommand
 from apps.restaurants.models import Restaurant
 from apps.users.models import User
-
-
-class _UnavailableCommandService:
-    def __init__(self):
-        self.calls = []
-
-    def execute(self, **kwargs):
-        self.calls.append(kwargs)
-        raise LocalAgentUnavailableError("Local agent is offline.")
 
 
 class BackendLocalAgentDiagnosticsCharacterizationTests(APITestCase):
@@ -49,10 +36,8 @@ class BackendLocalAgentDiagnosticsCharacterizationTests(APITestCase):
         self.client.force_authenticate(self.user)
         self.headers = {"HTTP_X_ADMIN_RESTAURANT_ID": str(self.restaurant.id)}
 
-    def test_remote_pos_unavailable_snapshot_is_explicit_and_restaurant_scoped(self):
-        service = _UnavailableCommandService()
-        with patch.object(LocalAgentPOSSystemStatusView, "command_service_class", return_value=service):
-            response = self.client.get("/api/v1/system/status/", **self.headers)
+    def test_remote_pos_offline_snapshot_is_explicit_and_restaurant_scoped(self):
+        response = self.client.get("/api/v1/system/status/", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         snapshot = response.data["status"]
@@ -69,9 +54,12 @@ class BackendLocalAgentDiagnosticsCharacterizationTests(APITestCase):
         self.assertEqual(snapshot["fiscal"]["state"], "unknown")
         self.assertEqual(snapshot["marta"]["state"], "unknown")
         self.assertEqual(snapshot["printer"]["state"], "unknown")
-        self.assertEqual(service.calls[0]["restaurant"], self.restaurant)
-        self.assertEqual(service.calls[0]["command_type"], "system.status")
-        self.assertEqual(service.calls[0]["timeout_seconds"], 8)
+        self.assertFalse(
+            LocalAgentCommand.objects.filter(
+                agent=self.agent,
+                command_type="system.status",
+            ).exists()
+        )
 
     def test_remote_pos_diagnostics_requires_authentication(self):
         self.client.force_authenticate(user=None)
