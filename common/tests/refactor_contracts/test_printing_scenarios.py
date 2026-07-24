@@ -116,6 +116,8 @@ class BackendPrintingScenarioTests(PosTestCase):
                         "unitPrice": 30000,
                         "lineTotal": 60000,
                         "note": "Piyozsiz",
+                        "modifierText": "",
+                        "modifiers": [],
                         "vat": 6428,
                         "vatPercent": 12,
                     }
@@ -213,6 +215,8 @@ class BackendPrintingScenarioTests(PosTestCase):
                     "unitPrice": 30000,
                     "lineTotal": 60000,
                     "note": "Piyozsiz",
+                    "modifierText": "",
+                    "modifiers": [],
                 }
             ],
         )
@@ -292,6 +296,8 @@ class BackendPrintingScenarioTests(PosTestCase):
                 "qrRefund": 0,
                 "vatRefund": 0,
                 "totalRefund": 15000,
+                "expenseTotal": 0,
+                "netCashAfterExpenses": 40000,
             },
         )
         self.assertEqual(
@@ -308,6 +314,7 @@ class BackendPrintingScenarioTests(PosTestCase):
                 "cardRefund": 50,
                 "vatRefund": 16.07,
                 "totalRefund": 150,
+                "netCashAfterExpenses": 400,
             },
         )
         self.assertEqual(general["system"], {"isFiscal": False, "isClosing": True})

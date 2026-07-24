@@ -100,7 +100,17 @@ class OrderTicketSyncServiceTests(PosAPITestCase):
 
         self.assertEqual(
             snapshot['items'],
-            [{'name': 'Osh', 'quantity': 2, 'unitPrice': 30000, 'lineTotal': 60000, 'note': ''}],
+            [
+                {
+                    'name': 'Osh',
+                    'quantity': 2,
+                    'unitPrice': 30000,
+                    'lineTotal': 60000,
+                    'note': '',
+                    'modifierText': '',
+                    'modifiers': [],
+                }
+            ],
         )
         self.assertEqual(document.kind, 'kitchen_ticket')
         self.assertEqual(document.metadata['prepStationId'], str(self.prep_station.id))

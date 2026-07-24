@@ -327,6 +327,8 @@ class PaymentCreateApiTests(APITestCase):
                     'unitPrice': 30000,
                     'lineTotal': 90000,
                     'note': '',
+                    'modifierText': '',
+                    'modifiers': [],
                     'vat': 0,
                     'vatPercent': 12,
                 }

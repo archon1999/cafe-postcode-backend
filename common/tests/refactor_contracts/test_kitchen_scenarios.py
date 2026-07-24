@@ -55,6 +55,8 @@ class BackendKitchenScenarioTests(PosAPITestCase):
                     "unitPrice": 30000,
                     "lineTotal": 60000,
                     "note": "",
+                    "modifierText": "",
+                    "modifiers": [],
                 }
             ],
         )
