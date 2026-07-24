@@ -23,6 +23,13 @@ class PosTestDataMixin:
         'pos_payment_order_items.delete',
         'pos_payments.create',
         'pos_cash_shift.manage',
+        'pos_cash_expenses.create',
+        'pos_cash_expenses.void',
+        'expense_categories.view',
+        'expense_categories.create',
+        'expense_categories.update',
+        'expenses.view',
+        'expenses.update',
         'pos_table_reservations.manage',
         'reports.view',
     )

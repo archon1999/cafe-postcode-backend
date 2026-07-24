@@ -60,3 +60,12 @@ def seed_default_roles_signal(sender, **kwargs):
         role.is_system = True
         role.save()
         role.permissions.set([permissions_by_code[item] for item in role_data['permissions']])
+
+    # Tariffs are a second permission gate. Keep newly introduced capabilities
+    # available after every migration, including on a fresh database where
+    # permissions are created by this signal only after data migrations run.
+    from apps.platform.services.expense_access import grant_default_expense_access
+    from apps.platform.services.modifier_access import grant_default_modifier_access
+
+    grant_default_expense_access()
+    grant_default_modifier_access()

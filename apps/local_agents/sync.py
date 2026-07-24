@@ -9,8 +9,10 @@ from rest_framework.views import APIView
 
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.serializers import CatalogMenuCategorySerializer
-from apps.billing.models import CashShift
-from apps.billing.serializers import CashShiftSerializer
+from apps.catalog.selectors import active_modifier_assignments_prefetch
+from apps.billing.models import CashExpense, CashShift, ExpenseCategory
+from apps.billing.serializers import CashExpenseSerializer, CashShiftSerializer
+from apps.billing.services import CashExpenseService
 from apps.floor.api.admin.serializers import HallSerializer, TableSessionSerializer
 from apps.floor.models import Hall, TableSession
 from apps.local_agents.authentication import authenticate_local_agent
@@ -33,7 +35,7 @@ def _menu_snapshot(restaurant):
     items = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related(
         'category__prep_station',
         'prep_station',
-    )
+    ).prefetch_related(active_modifier_assignments_prefetch())
     categories = (
         CatalogCategory.objects.filter(restaurant=restaurant, is_active=True)
         .select_related('prep_station')
@@ -123,6 +125,7 @@ def _cash_shift_snapshot(restaurant):
             'cardTotal': row['card_total'],
             'qrTotal': row['qr_total'],
             'refundTotal': row['refund_total'],
+            'expenseTotal': row['expense_total'],
             'receiptCount': row['receipt_count'],
             'reprintCount': row['reprint_count'],
             'nextOrderNumber': row['next_order_number'],
@@ -133,6 +136,63 @@ def _cash_shift_snapshot(restaurant):
         }
         for row in rows
     ]
+
+
+def _expense_snapshot(restaurant):
+    categories = ExpenseCategory.objects.filter(restaurant=restaurant).order_by('sort_order', 'name')
+    recipients = CashExpenseService().get_available_recipients(restaurant=restaurant)
+    expenses = (
+        CashExpense.objects.filter(restaurant=restaurant, cash_shift__status=CashShift.Status.OPEN)
+        .select_related('cash_shift', 'cash_desk', 'category', 'recipient', 'created_by', 'voided_by')
+        .order_by('occurred_at')
+    )
+    rows = CashExpenseSerializer(expenses, many=True).data
+    return {
+        'categories': [
+            {
+                'id': str(category.id),
+                'name': category.name,
+                'isActive': category.is_active,
+                'sortOrder': category.sort_order,
+                'createdAt': category.created_at,
+                'updatedAt': category.updated_at,
+            }
+            for category in categories
+        ],
+        'recipients': [
+            {
+                'id': str(user.id),
+                'fullName': user.full_name,
+                'username': user.username,
+            }
+            for user in recipients
+        ],
+        'expenses': [
+            {
+                'id': str(row['id']),
+                'cashShiftId': str(row['cash_shift_id']),
+                'cashDesk': str(row['cash_desk']),
+                'cashDeskName': row['cash_desk_name'],
+                'category': str(row['category']),
+                'categoryName': row['category_name'],
+                'amount': row['amount'],
+                'comment': row['comment'],
+                'recipient': str(row['recipient'] or ''),
+                'recipientName': row['recipient_name'],
+                'createdBy': str(row['created_by']),
+                'createdByName': row['created_by_name'],
+                'status': row['status'],
+                'occurredAt': row['occurred_at'],
+                'voidedAt': row['voided_at'],
+                'voidedBy': str(row['voided_by'] or ''),
+                'voidedByName': row['voided_by_name'] or '',
+                'voidReason': row['void_reason'],
+                'createdAt': row['created_at'],
+                'updatedAt': row['updated_at'],
+            }
+            for row in rows
+        ],
+    }
 
 
 def _user_snapshots(restaurant, now):
@@ -230,6 +290,7 @@ class LocalAgentBootstrapView(APIView):
 
         now = timezone.now()
         restaurant = agent.restaurant
+        expenses = _expense_snapshot(restaurant)
         return Response(
             {
                 'schemaVersion': 1,
@@ -244,6 +305,9 @@ class LocalAgentBootstrapView(APIView):
                 'orders': _order_snapshot(restaurant, now),
                 'kitchenTickets': _kitchen_snapshot(restaurant),
                 'cashShifts': _cash_shift_snapshot(restaurant),
+                'expenseCategories': expenses['categories'],
+                'expenseRecipients': expenses['recipients'],
+                'cashExpenses': expenses['expenses'],
                 'bindings': _device_bindings(restaurant),
                 'printTemplates': _print_templates(restaurant),
             }

@@ -3,7 +3,7 @@ from datetime import datetime
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.billing.models import CashShift, Payment
+from apps.billing.models import CashExpense, CashShift, ExpenseCategory, Payment
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.platform.models import RestaurantEntitlement
@@ -366,6 +366,39 @@ class DashboardAuthApiTests(APITestCase):
             qr_total=48000,
             receipt_count=1,
         )
+        cls.expense_category = ExpenseCategory.objects.create(
+            restaurant=cls.restaurant,
+            name='Transport',
+            created_by=cls.owner_user,
+        )
+        CashExpense.objects.create(
+            restaurant=cls.restaurant,
+            cash_shift=cls.shift_today,
+            cash_desk=cls.cash_desk,
+            category=cls.expense_category,
+            amount=7000,
+            comment='Day delivery',
+            recipient=cls.cashier_user,
+            created_by=cls.owner_user,
+            category_name_snapshot='Transport',
+            recipient_name_snapshot=cls.cashier_user.full_name,
+            occurred_at=cls.dt(2026, 4, 7, 13, 0),
+        )
+        CashExpense.objects.create(
+            restaurant=cls.restaurant,
+            cash_shift=cls.shift_month,
+            cash_desk=cls.cash_desk,
+            category=cls.expense_category,
+            amount=5000,
+            comment='Month delivery',
+            created_by=cls.owner_user,
+            category_name_snapshot='Transport',
+            occurred_at=cls.dt(2026, 4, 3, 13, 0),
+        )
+        cls.shift_today.expense_total = 7000
+        cls.shift_today.save(update_fields=('expense_total', 'updated_at'))
+        cls.shift_month.expense_total = 5000
+        cls.shift_month.save(update_fields=('expense_total', 'updated_at'))
 
         cls.order_today = cls.create_order(
             restaurant=cls.restaurant,
@@ -580,6 +613,8 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.data['summary']['orders_count'], 1)
         self.assertEqual(response.data['summary']['open_checks'], 1)
         self.assertEqual(response.data['summary']['active_tables'], 1)
+        self.assertEqual(response.data['summary']['expenses_total'], 7000)
+        self.assertEqual(response.data['summary']['expenses_count'], 1)
         self.assertEqual(len(response.data['revenue_series']), 24)
         self.assertEqual(len(response.data['previous_revenue_series']), 24)
         self.assertEqual(response.data['spotlight']['top_item']['item_name'], 'Burger')
@@ -590,6 +625,11 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.data['open_checks_snapshot']['rows'][0]['order_number'], 106)
         self.assertEqual(response.data['cash_shift_snapshot']['open_count'], 1)
         self.assertEqual(response.data['cash_shift_snapshot']['rows'][0]['cash_total'], 32000)
+        self.assertEqual(response.data['cash_shift_snapshot']['expense_total'], 7000)
+        self.assertEqual(response.data['cash_shift_snapshot']['rows'][0]['expense_total'], 7000)
+        self.assertEqual(response.data['expense_snapshot']['total'], 7000)
+        self.assertEqual(response.data['expense_snapshot']['category_breakdown'][0]['name'], 'Transport')
+        self.assertEqual(response.data['expense_snapshot']['rows'][0]['comment'], 'Day delivery')
 
     def test_dashboard_overview_returns_month_and_year_payload(self):
         self.client.force_authenticate(self.owner_user)
@@ -603,6 +643,7 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(month_response.data['period']['period_type'], 'month')
         self.assertEqual(month_response.data['period']['chart_granularity'], 'day')
         self.assertEqual(month_response.data['summary']['sales_total'], 114000)
+        self.assertEqual(month_response.data['summary']['expenses_total'], 12000)
         self.assertEqual(len(month_response.data['revenue_series']), 30)
         self.assertEqual(len(month_response.data['previous_revenue_series']), 30)
 

@@ -2,6 +2,26 @@ from apps.reporting.services import ReportPeriod
 
 
 class OwnerDashboardRowsMixin:
+    def build_expense_rows(self, restaurant, period: ReportPeriod, *, limit: int = 5) -> list[dict]:
+        queryset = (
+            self.get_expense_queryset(restaurant, period)
+            .select_related('cash_desk', 'created_by')
+            .order_by('-occurred_at', '-created_at')[:limit]
+        )
+        return [
+            {
+                'id': row.id,
+                'amount': int(row.amount or 0),
+                'category_name': row.category_name_snapshot,
+                'comment': row.comment,
+                'recipient_name': row.recipient_name_snapshot,
+                'created_by_name': row.created_by.full_name if row.created_by_id else '',
+                'cash_desk_name': row.cash_desk.name,
+                'occurred_at': row.occurred_at,
+            }
+            for row in queryset
+        ]
+
     def get_role_breakdown_rows(
         self, restaurant, period: ReportPeriod, *, role: str
     ) -> list[dict]:
@@ -76,6 +96,8 @@ class OwnerDashboardRowsMixin:
                 "average_check",
                 "open_checks",
                 "active_tables",
+                "expenses_total",
+                "expenses_count",
             )
         }
 
@@ -157,6 +179,7 @@ class OwnerDashboardRowsMixin:
                     "card_total": card_total,
                     "qr_total": qr_total,
                     "refund_total": self.get_safe_number(row.get("refund_total")),
+                    "expense_total": self.get_safe_number(row.get("expense_total")),
                     "receipt_count": self.get_safe_number(row.get("receipt_count")),
                     "reprint_count": self.get_safe_number(row.get("reprint_count")),
                     "cash_desk_id": row.get("cash_desk_id"),

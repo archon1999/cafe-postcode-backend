@@ -1,9 +1,28 @@
 from apps.printing.models import PrintDocument, PrintTemplate
 from apps.printing.services import create_shift_report_print_document
+from apps.printing.services.templates import ensure_shift_report_template
 from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class ShiftReportPrintDocumentTests(PosTestCase):
+    def test_upgrades_the_internal_shift_template_with_expense_rows(self):
+        template = ensure_shift_report_template(restaurant=self.restaurant)
+        old_layout = dict(template.published_version.layout)
+        old_layout['blocks'] = [
+            block for block in old_layout['blocks'] if block.get('id') != 'expenses'
+        ]
+        template.published_version.layout = old_layout
+        template.published_version.save(update_fields=('layout', 'updated_at'))
+        previous_revision = template.published_version.revision
+
+        upgraded = ensure_shift_report_template(restaurant=self.restaurant)
+
+        self.assertEqual(upgraded.published_version.revision, previous_revision + 1)
+        self.assertIn(
+            '{{report.expenseTotal}}',
+            str(upgraded.published_version.layout),
+        )
+
     def test_creates_fixed_general_and_fiscal_shift_documents(self):
         shift = self.create_cash_shift()
         general_report = {

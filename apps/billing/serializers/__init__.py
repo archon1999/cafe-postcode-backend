@@ -1,4 +1,10 @@
 from .cash_shift import CashShiftSerializer
+from .expense import (
+    CashExpenseCreateSerializer,
+    CashExpenseSerializer,
+    CashExpenseVoidSerializer,
+    ExpenseCategorySerializer,
+)
 from .cashier_context import (
     CashDeskContextSerializer,
     CashierContextSerializer,
@@ -14,12 +20,16 @@ from .receipt import ReceiptSerializer
 
 __all__ = [
     'CashDeskContextSerializer',
+    'CashExpenseCreateSerializer',
+    'CashExpenseSerializer',
+    'CashExpenseVoidSerializer',
     'CashierContextSerializer',
     'CashShiftCloseSerializer',
     'CashShiftOpenSerializer',
     'CashShiftReportSerializer',
     'CashShiftSerializer',
     'FiscalShiftSerializer',
+    'ExpenseCategorySerializer',
     'MartaTerminalResultSerializer',
     'PaymentRefundCreateSerializer',
     'PaymentRefundSerializer',

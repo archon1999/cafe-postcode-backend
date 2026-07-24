@@ -51,6 +51,12 @@ class CatalogItem(BaseModel):
     price = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_stoplisted = models.BooleanField(default=False)
+    modifier_groups = models.ManyToManyField(
+        'catalog.ModifierGroup',
+        through='catalog.CatalogItemModifierGroup',
+        related_name='catalog_items',
+        blank=True,
+    )
 
     class Meta:
         ordering = ('name',)

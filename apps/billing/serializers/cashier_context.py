@@ -5,6 +5,7 @@ from django.contrib.auth import get_user_model
 from apps.restaurants.helpers import get_cash_desk_model
 
 from .cash_shift import CashShiftSerializer
+from .expense import ExpenseCategorySerializer
 
 CashDesk = get_cash_desk_model()
 User = get_user_model()
@@ -123,6 +124,8 @@ class CashierContextSerializer(serializers.Serializer):
     restaurant_fiscal_profile = RestaurantFiscalProfileSerializer()
     available_cash_desks = CashDeskContextSerializer(many=True)
     available_cashiers = CashierOptionSerializer(many=True)
+    expense_categories = ExpenseCategorySerializer(many=True)
+    expense_recipients = CashierOptionSerializer(many=True)
     current_shift = CashShiftSerializer(allow_null=True)
     active_shifts = CashShiftSerializer(many=True)
     fiscal_shift_open = serializers.BooleanField()

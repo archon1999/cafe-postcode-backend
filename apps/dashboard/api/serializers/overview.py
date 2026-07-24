@@ -27,6 +27,8 @@ class DashboardSummarySerializer(serializers.Serializer):
     average_check = serializers.IntegerField()
     open_checks = serializers.IntegerField()
     active_tables = serializers.IntegerField()
+    expenses_total = serializers.IntegerField()
+    expenses_count = serializers.IntegerField()
 
 
 class DashboardSummaryDeltaSerializer(serializers.Serializer):
@@ -35,6 +37,8 @@ class DashboardSummaryDeltaSerializer(serializers.Serializer):
     average_check = serializers.FloatField()
     open_checks = serializers.FloatField()
     active_tables = serializers.FloatField()
+    expenses_total = serializers.FloatField()
+    expenses_count = serializers.FloatField()
 
 
 class DashboardTopItemSerializer(serializers.Serializer):
@@ -124,6 +128,7 @@ class DashboardCashShiftSerializer(serializers.Serializer):
     card_total = serializers.IntegerField()
     qr_total = serializers.IntegerField()
     refund_total = serializers.IntegerField()
+    expense_total = serializers.IntegerField()
     receipt_count = serializers.IntegerField()
     reprint_count = serializers.IntegerField()
     cash_desk_id = serializers.UUIDField(allow_null=True)
@@ -141,8 +146,33 @@ class DashboardCashShiftSnapshotSerializer(serializers.Serializer):
     card_total = serializers.IntegerField()
     qr_total = serializers.IntegerField()
     refund_total = serializers.IntegerField()
+    expense_total = serializers.IntegerField()
     receipt_count = serializers.IntegerField()
     rows = DashboardCashShiftSerializer(many=True)
+
+
+class DashboardExpenseCategorySerializer(serializers.Serializer):
+    name = serializers.CharField()
+    total = serializers.IntegerField()
+    count = serializers.IntegerField()
+
+
+class DashboardExpenseRowSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    amount = serializers.IntegerField()
+    category_name = serializers.CharField()
+    comment = serializers.CharField(allow_blank=True)
+    recipient_name = serializers.CharField(allow_blank=True)
+    created_by_name = serializers.CharField(allow_blank=True)
+    cash_desk_name = serializers.CharField()
+    occurred_at = serializers.DateTimeField()
+
+
+class DashboardExpenseSnapshotSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    count = serializers.IntegerField()
+    category_breakdown = DashboardExpenseCategorySerializer(many=True)
+    rows = DashboardExpenseRowSerializer(many=True)
 
 
 class DashboardOverviewSerializer(serializers.Serializer):
@@ -160,3 +190,4 @@ class DashboardOverviewSerializer(serializers.Serializer):
     channel_breakdown = DashboardBreakdownSerializer(many=True)
     open_checks_snapshot = DashboardOpenChecksSnapshotSerializer()
     cash_shift_snapshot = DashboardCashShiftSnapshotSerializer()
+    expense_snapshot = DashboardExpenseSnapshotSerializer()

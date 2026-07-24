@@ -1,5 +1,7 @@
 from .payment_models import (
+    get_cash_expense_model,
     get_cash_shift_model,
+    get_expense_category_model,
     get_fiscal_shift_session_model,
     get_payment_model,
     get_payment_refund_model,
@@ -7,7 +9,9 @@ from .payment_models import (
 )
 
 __all__ = [
+    'get_cash_expense_model',
     'get_cash_shift_model',
+    'get_expense_category_model',
     'get_fiscal_shift_session_model',
     'get_payment_model',
     'get_payment_refund_model',

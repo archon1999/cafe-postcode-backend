@@ -3,6 +3,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.billing.helpers import (
+    get_cash_expense_model,
     get_payment_model,
     get_payment_refund_model,
     get_receipt_model,
@@ -15,6 +16,7 @@ from apps.billing.services.cash_shift_report import (
 from apps.printing.services import create_shift_report_print_document
 
 Payment = get_payment_model()
+CashExpense = get_cash_expense_model()
 PaymentRefund = get_payment_refund_model()
 Receipt = get_receipt_model()
 
@@ -217,6 +219,7 @@ class CashShiftReportingMixin:
         self, *, shift, created_by=None, closed=False, fiscal_report=None
     ):
         own_report = self.build_fiscal_shift_report(shift=shift)["pos_report"]
+        own_report["TotalExpenseAmount"] = self.build_shift_snapshot(shift=shift)["expense_total"]
         documents = [
             create_shift_report_print_document(
                 shift=shift,
@@ -276,12 +279,20 @@ class CashShiftReportingMixin:
             refund_tender_amounts(refund).get(Payment.Method.CASH, 0)
             for refund in refunds.select_related("payment")
         )
+        expense_total = (
+            CashExpense.objects.filter(
+                cash_shift=shift,
+                status=CashExpense.Status.POSTED,
+            ).aggregate(total=Sum("amount")).get("total")
+            or 0
+        )
 
         return {
             "cash_total": totals.get("cash_total") or 0,
             "card_total": totals.get("card_total") or 0,
             "qr_total": totals.get("qr_total") or 0,
             "refund_total": refund_total,
+            "expense_total": expense_total,
             "receipt_count": receipts.filter(kind=Receipt.Kind.FISCAL)
             .aggregate(total=Count("id"))
             .get("total")
@@ -290,5 +301,6 @@ class CashShiftReportingMixin:
             or 0,
             "expected_closing_cash_amount": (shift.opening_cash_amount or 0)
             + (totals.get("cash_total") or 0)
-            - cash_refund_total,
+            - cash_refund_total
+            - expense_total,
         }

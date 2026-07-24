@@ -64,6 +64,14 @@ def get_shift_report_layout() -> dict:
                     {'label': 'Jami', 'value': '{{report.totalRefund}}', 'format': 'money', 'bold': True},
                 ],
             },
+            {
+                'id': 'expenses',
+                'type': 'totals',
+                'rows': [
+                    {'label': 'Xarajatlar', 'value': '{{report.expenseTotal}}', 'format': 'money', 'bold': True},
+                    {'label': 'Kassada qolgan', 'value': '{{report.netCashAfterExpenses}}', 'format': 'money', 'bold': True},
+                ],
+            },
             {'id': 'footer-divider', 'type': 'divider'},
             {
                 'id': 'device',

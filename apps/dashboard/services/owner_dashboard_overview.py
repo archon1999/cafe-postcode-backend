@@ -30,6 +30,10 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
         previous_period = self.get_previous_period(period)
         current_summary = self.build_dashboard_summary(restaurant, period)
         previous_summary = self.build_dashboard_summary(restaurant, previous_period)
+        current_expenses = self.build_expense_summary(restaurant, period)
+        previous_expenses = self.build_expense_summary(restaurant, previous_period)
+        current_summary.update(current_expenses)
+        previous_summary.update(previous_expenses)
         series_blueprint = self.get_series_blueprint(period)
         revenue_series = self.build_revenue_series(
             restaurant, period, blueprint=series_blueprint
@@ -92,6 +96,8 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
                 "active_tables": self.get_safe_number(
                     current_summary.get("active_tables")
                 ),
+                "expenses_total": self.get_safe_number(current_summary.get("expenses_total")),
+                "expenses_count": self.get_safe_number(current_summary.get("expenses_count")),
             },
             "summary_delta": self.build_summary_delta(
                 current_summary, previous_summary
@@ -143,8 +149,22 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
                 "card_total": sum(row["card_total"] for row in all_shift_rows),
                 "qr_total": sum(row["qr_total"] for row in all_shift_rows),
                 "refund_total": sum(row["refund_total"] for row in all_shift_rows),
+                "expense_total": sum(row["expense_total"] for row in all_shift_rows),
                 "receipt_count": sum(row["receipt_count"] for row in all_shift_rows),
                 "rows": shift_rows,
+            },
+            "expense_snapshot": {
+                "total": self.get_safe_number(current_summary.get("expenses_total")),
+                "count": self.get_safe_number(current_summary.get("expenses_count")),
+                "category_breakdown": [
+                    {
+                        "name": row.get("name") or "Noma'lum",
+                        "total": self.get_safe_number(row.get("total")),
+                        "count": self.get_safe_number(row.get("count")),
+                    }
+                    for row in self.get_expense_category_breakdown(restaurant, period)
+                ],
+                "rows": self.build_expense_rows(restaurant, period),
             },
         }
 

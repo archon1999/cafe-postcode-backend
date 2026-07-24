@@ -1,8 +1,7 @@
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 
-from apps.catalog.models import CatalogItem
-from apps.catalog.models import CatalogCategory
+from apps.catalog.models import CatalogCategory, CatalogItem, ModifierGroup
 from apps.catalog.serializers.mxik import CatalogImageSerializerMixin, MxikCodeValidationMixin
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking, payload_requires_marking
 from apps.restaurants.helpers import get_prep_station_model
@@ -17,6 +16,8 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
     prep_station_name = serializers.SerializerMethodField()
     requires_marking = serializers.BooleanField(required=False)
     marking_gtin = serializers.CharField(required=False, allow_blank=True)
+    modifier_groups = serializers.PrimaryKeyRelatedField(many=True, required=False, queryset=ModifierGroup.objects.none())
+    clear_modifier_groups = serializers.BooleanField(write_only=True, required=False, default=False)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -30,6 +31,11 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
 
         self.fields['category'].queryset = CatalogCategory.objects.filter(restaurant=restaurant)
         self.fields['prep_station'].queryset = PrepStation.objects.filter(restaurant=restaurant)
+        # ``many=True`` wraps the relation in DRF's ``ManyRelatedField``.  Its
+        # child relation performs each primary-key lookup, so setting a
+        # queryset on the wrapper leaves the original ``objects.none()`` in
+        # effect and makes every submitted modifier group look invalid.
+        self.fields['modifier_groups'].child_relation.queryset = ModifierGroup.objects.filter(restaurant=restaurant)
 
     class Meta:
         model = CatalogItem
@@ -58,6 +64,8 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
             'description_uz_crl',
             'description_ru',
             'price',
+            'modifier_groups',
+            'clear_modifier_groups',
             'is_active',
             'is_stoplisted',
         )
@@ -104,6 +112,17 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
             if derived_gtin:
                 attrs['marking_gtin'] = derived_gtin
         return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('clear_modifier_groups', None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        clear_modifier_groups = validated_data.pop('clear_modifier_groups', False)
+        instance = super().update(instance, validated_data)
+        if clear_modifier_groups:
+            instance.modifier_groups.clear()
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

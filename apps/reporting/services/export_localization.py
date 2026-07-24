@@ -130,6 +130,7 @@ def get_shift_columns() -> list[tuple[str, str]]:
         ('cash_total', _('Cash Total')),
         ('card_total', _('Card Total')),
         ('refund_total', _('Refund Total')),
+        ('expense_total', _('Expense Total')),
         ('precheck_count', _('Prechecks')),
         ('receipt_count', _('Receipts')),
         ('id', _('Shift')),

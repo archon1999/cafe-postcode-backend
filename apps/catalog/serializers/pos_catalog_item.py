@@ -4,6 +4,7 @@ from apps.catalog.models import CatalogItem
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
+from apps.catalog.serializers.modifier import PosModifierGroupSerializer
 
 
 class PosCatalogItemSerializer(serializers.ModelSerializer):
@@ -15,6 +16,7 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     mxik_code = serializers.SerializerMethodField()
     mxik_payload = serializers.SerializerMethodField()
     cash_payment_forbidden = serializers.SerializerMethodField()
+    modifier_groups = serializers.SerializerMethodField()
 
     @staticmethod
     def get_image_url(obj):
@@ -53,6 +55,15 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
         station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
         return station.name if station is not None else ''
 
+    @staticmethod
+    def get_modifier_groups(obj):
+        assignments = getattr(obj, 'active_modifier_assignments', None)
+        if assignments is None:
+            assignments = obj.modifier_assignments.filter(modifier_group__is_active=True).select_related(
+                'modifier_group'
+            ).prefetch_related('modifier_group__options')
+        return PosModifierGroupSerializer([assignment.modifier_group for assignment in assignments], many=True).data
+
     class Meta:
         model = CatalogItem
         fields = (
@@ -68,4 +79,5 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
             'mxik_payload',
             'cash_payment_forbidden',
             'price',
+            'modifier_groups',
         )

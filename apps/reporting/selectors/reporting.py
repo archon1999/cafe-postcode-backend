@@ -237,6 +237,7 @@ def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         'card_total',
         'qr_total',
         'refund_total',
+        'expense_total',
         'receipt_count',
         'reprint_count',
         'cash_desk_id',

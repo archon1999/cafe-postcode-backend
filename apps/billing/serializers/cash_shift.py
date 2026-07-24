@@ -2,10 +2,17 @@ from rest_framework import serializers
 
 from django.db.models import Count, Q, Sum
 
-from apps.billing.helpers import get_cash_shift_model, get_payment_model, get_payment_refund_model, get_receipt_model
+from apps.billing.helpers import (
+    get_cash_expense_model,
+    get_cash_shift_model,
+    get_payment_model,
+    get_payment_refund_model,
+    get_receipt_model,
+)
 from apps.billing.services.cash_shift_report import estimate_vat, refund_tender_amounts
 
 CashShift = get_cash_shift_model()
+CashExpense = get_cash_expense_model()
 Payment = get_payment_model()
 PaymentRefund = get_payment_refund_model()
 Receipt = get_receipt_model()
@@ -20,6 +27,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
     card_total = serializers.SerializerMethodField()
     qr_total = serializers.SerializerMethodField()
     refund_total = serializers.SerializerMethodField()
+    expense_total = serializers.SerializerMethodField()
     sale_count = serializers.SerializerMethodField()
     refund_count = serializers.SerializerMethodField()
     total_sale_amount = serializers.SerializerMethodField()
@@ -55,6 +63,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'card_total',
             'qr_total',
             'refund_total',
+            'expense_total',
             'sale_count',
             'refund_count',
             'total_sale_amount',
@@ -89,6 +98,9 @@ class CashShiftSerializer(serializers.ModelSerializer):
 
     def get_refund_total(self, obj):
         return self._snapshot(obj)['refund_total']
+
+    def get_expense_total(self, obj):
+        return self._snapshot(obj)['expense_total']
 
     def get_sale_count(self, obj):
         return self._snapshot(obj)['sale_count']
@@ -168,6 +180,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
                 'card_total': obj.card_total,
                 'qr_total': obj.qr_total,
                 'refund_total': obj.refund_total,
+                'expense_total': obj.expense_total,
                 'receipt_count': obj.receipt_count,
                 'reprint_count': obj.reprint_count,
                 'expected_closing_cash_amount': obj.expected_closing_cash_amount,
@@ -184,11 +197,19 @@ class CashShiftSerializer(serializers.ModelSerializer):
         cash_refund_total = (
             refund_tenders[Payment.Method.CASH]
         )
+        expense_total = (
+            CashExpense.objects.filter(
+                cash_shift=obj,
+                status=CashExpense.Status.POSTED,
+            ).aggregate(total=Sum('amount')).get('total')
+            or 0
+        )
         cached = {
             'cash_total': totals.get('cash_total') or 0,
             'card_total': totals.get('card_total') or 0,
             'qr_total': totals.get('qr_total') or 0,
             'refund_total': refund_total,
+            'expense_total': expense_total,
             'receipt_count': Receipt.objects.filter(
                 payment__cash_shift=obj,
                 kind=Receipt.Kind.FISCAL,
@@ -197,7 +218,8 @@ class CashShiftSerializer(serializers.ModelSerializer):
             or 0,
             'expected_closing_cash_amount': (obj.opening_cash_amount or 0)
             + (totals.get('cash_total') or 0)
-            - cash_refund_total,
+            - cash_refund_total
+            - expense_total,
             **report_values,
         }
         setattr(obj, '_live_snapshot', cached)

@@ -4,6 +4,10 @@ from rest_framework import serializers
 from apps.catalog.utils.marking import item_requires_marking
 from apps.sales.helpers import get_order_item_model
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
+from apps.catalog.models import CatalogItemModifierGroup
+from apps.sales.models import OrderItemModifier
+
+from .order_item_modifier import OrderItemModifierSerializer, SelectedModifierGroupSerializer
 
 OrderItem = get_order_item_model()
 
@@ -15,6 +19,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
     markings = serializers.SerializerMethodField()
     marking_required_count = serializers.SerializerMethodField()
     marking_scanned_count = serializers.SerializerMethodField()
+    modifiers = OrderItemModifierSerializer(many=True, read_only=True)
+    selected_modifiers = SelectedModifierGroupSerializer(many=True, write_only=True, required=False, default=list)
 
     def get_markings(self, obj):
         markings = getattr(obj, '_prefetched_objects_cache', {}).get('markings')
@@ -50,6 +56,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'prep_station',
             'prep_station_name',
             'quantity',
+            'base_unit_price',
             'unit_price',
             'line_total',
             'status',
@@ -57,9 +64,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'markings',
             'marking_required_count',
             'marking_scanned_count',
+            'modifiers',
+            'selected_modifiers',
             'created_at',
         )
-        read_only_fields = ('order', 'unit_price', 'line_total', 'prep_station')
+        read_only_fields = ('order', 'base_unit_price', 'unit_price', 'line_total', 'prep_station')
 
     def validate(self, attrs):
         catalog_item = attrs.get('catalog_item') or getattr(self.instance, 'catalog_item', None)
@@ -67,17 +76,90 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'catalog_item': _('This menu item is inactive.')})
         if catalog_item and catalog_item.is_stoplisted:
             raise serializers.ValidationError({'catalog_item': _('This menu item is in stoplist.')})
+        if self.instance is not None:
+            if 'selected_modifiers' in attrs and attrs['selected_modifiers']:
+                raise serializers.ValidationError({'selected_modifiers': _('Modifiers cannot be changed after adding the item.')})
+            return attrs
+
+        selections = attrs.pop('selected_modifiers', [])
+        assignments = list(
+            CatalogItemModifierGroup.objects.filter(
+                catalog_item=catalog_item,
+                modifier_group__is_active=True,
+            )
+            .select_related('modifier_group')
+            .prefetch_related('modifier_group__options')
+            .order_by('sort_order', 'modifier_group__sort_order', 'modifier_group__name')
+        )
+        assignments_by_id = {assignment.modifier_group_id: assignment for assignment in assignments}
+        selected_by_group = {}
+        for selection in selections:
+            group_id = selection['group']
+            if group_id in selected_by_group:
+                raise serializers.ValidationError({'selected_modifiers': _('Each modifier group may be submitted only once.')})
+            option_ids = selection['options']
+            if len(option_ids) != len(set(option_ids)):
+                raise serializers.ValidationError({'selected_modifiers': _('Modifier options cannot be duplicated.')})
+            selected_by_group[group_id] = option_ids
+
+        unknown_group_ids = set(selected_by_group) - set(assignments_by_id)
+        if unknown_group_ids:
+            raise serializers.ValidationError({'selected_modifiers': _('A selected modifier group is not assigned to this item.')})
+
+        resolved = []
+        for assignment in assignments:
+            group = assignment.modifier_group
+            option_ids = selected_by_group.get(group.id, [])
+            if len(option_ids) < group.min_selections:
+                raise serializers.ValidationError(
+                    {'selected_modifiers': _('%(group)s requires at least %(count)s selection(s).') % {
+                        'group': group.name,
+                        'count': group.min_selections,
+                    }}
+                )
+            if len(option_ids) > group.max_selections:
+                raise serializers.ValidationError(
+                    {'selected_modifiers': _('%(group)s allows at most %(count)s selection(s).') % {
+                        'group': group.name,
+                        'count': group.max_selections,
+                    }}
+                )
+            active_options = {option.id: option for option in group.options.all() if option.is_active}
+            invalid_option_ids = set(option_ids) - set(active_options)
+            if invalid_option_ids:
+                raise serializers.ValidationError(
+                    {'selected_modifiers': _('%(group)s contains an unavailable option.') % {'group': group.name}}
+                )
+            resolved.extend((assignment, active_options[option_id]) for option_id in option_ids)
+        attrs['_resolved_modifiers'] = resolved
         return attrs
 
     def create(self, validated_data):
+        resolved_modifiers = validated_data.pop('_resolved_modifiers', [])
         catalog_item = validated_data['catalog_item']
         catalog_item = type(catalog_item).objects.select_related('category__prep_station', 'prep_station').get(
             pk=catalog_item.pk
         )
-        validated_data['unit_price'] = int(catalog_item.price or 0)
+        base_unit_price = int(catalog_item.price or 0)
+        validated_data['base_unit_price'] = base_unit_price
+        validated_data['unit_price'] = base_unit_price + sum(int(option.price_delta or 0) for _, option in resolved_modifiers)
         order = validated_data.get('order')
         validated_data['prep_station'] = resolve_order_item_prep_station(
             catalog_item=catalog_item,
             restaurant=getattr(order, 'restaurant', None),
         )
-        return super().create(validated_data)
+        order_item = super().create(validated_data)
+        OrderItemModifier.objects.bulk_create(
+            [
+                OrderItemModifier(
+                    order_item=order_item,
+                    modifier_option=option,
+                    group_name=assignment.modifier_group.name,
+                    option_name=option.name,
+                    price_delta=int(option.price_delta or 0),
+                    sort_order=(assignment.sort_order * 1000) + option.sort_order,
+                )
+                for assignment, option in resolved_modifiers
+            ]
+        )
+        return order_item

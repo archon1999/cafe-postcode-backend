@@ -29,6 +29,7 @@ class OrderItem(BaseModel):
         blank=True,
     )
     quantity = models.PositiveIntegerField(default=1)
+    base_unit_price = models.PositiveIntegerField(default=0)
     unit_price = models.PositiveIntegerField(default=0)
     line_total = models.PositiveIntegerField(default=0)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.NEW)

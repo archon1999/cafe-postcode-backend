@@ -70,8 +70,15 @@ def _aggregate_print_items(
     for item in queryset.order_by("created_at"):
         name = item.catalog_item.name if item.catalog_item_id else item.name_snapshot
         unit_price = _money(item.unit_price)
-        note = item.note or ""
-        key = (str(item.catalog_item_id or name), note, unit_price)
+        modifier_rows = list(item.modifiers.all())
+        modifier_signature = tuple(
+            (str(row.modifier_option_id or ''), row.group_name, row.option_name, _money(row.price_delta))
+            for row in modifier_rows
+        )
+        modifier_text = " · ".join(f"{row.group_name}: {row.option_name}" for row in modifier_rows)
+        item_note = item.note or ""
+        note = " · ".join(value for value in (modifier_text, item_note) if value)
+        key = (str(item.catalog_item_id or name), modifier_signature, item_note, unit_price)
         current = aggregated.setdefault(
             key,
             {
@@ -80,6 +87,15 @@ def _aggregate_print_items(
                 "unitPrice": unit_price,
                 "lineTotal": 0,
                 "note": note,
+                "modifierText": modifier_text,
+                "modifiers": [
+                    {
+                        "groupName": row.group_name,
+                        "optionName": row.option_name,
+                        "priceDelta": _money(row.price_delta),
+                    }
+                    for row in modifier_rows
+                ],
             },
         )
         current["quantity"] += int(item.quantity or 0)
@@ -101,7 +117,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     table_name, hall_name = _table_parts(order)
     active_items = order.items.exclude(
         status=order.items.model.Status.CANCELLED
-    ).select_related("catalog_item")
+    ).select_related("catalog_item").prefetch_related("modifiers")
     paid = order.payments.filter(status=payment.Status.SUCCEEDED).aggregate(
         amount=Sum("amount"),
         cash=Sum("cash_amount"),
@@ -227,6 +243,7 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
         order.items.filter(prep_station=ticket.prep_station)
         .exclude(status=order.items.model.Status.CANCELLED)
         .select_related("catalog_item")
+        .prefetch_related("modifiers")
     )
     items = _aggregate_print_items(queryset)
     return {

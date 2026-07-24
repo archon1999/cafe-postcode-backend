@@ -41,6 +41,7 @@ class CashShift(BaseModel):
     card_total = models.PositiveIntegerField(default=0)
     qr_total = models.PositiveIntegerField(default=0)
     refund_total = models.PositiveIntegerField(default=0)
+    expense_total = models.PositiveBigIntegerField(default=0)
     receipt_count = models.PositiveIntegerField(default=0)
     reprint_count = models.PositiveIntegerField(default=0)
     next_order_number = models.PositiveIntegerField(default=0)

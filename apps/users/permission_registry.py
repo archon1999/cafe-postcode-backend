@@ -83,6 +83,7 @@ POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_DELETE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_CASH_SHIFT_MANAGE_ROLES = ('manager', 'fast_food_manager')
+POS_CASH_EXPENSE_ROLES = ('manager', 'fast_food_manager')
 POS_FISCAL_RECEIPT_SKIP_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
 POS_FISCAL_SHIFT_MANAGE_ROLES = ('manager', 'fast_food_manager')
 POS_TABLE_RESERVATION_ROLES = ('manager',)
@@ -710,6 +711,34 @@ PERMISSION_DEFINITIONS = [
         default_roles=POS_CASH_SHIFT_MANAGE_ROLES,
     ),
     permission_definition(
+        'pos_cash_expenses.create',
+        surface='pos',
+        resource='pos_cash_expenses',
+        action='create',
+        ui_visible=True,
+        group_key='payments',
+        name='POS kassadan xarajat kiritish',
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/pos/billing/expense-categories/'),
+            ('GET', 'api/v1/pos/billing/shifts/current/expenses/'),
+            ('POST', 'api/v1/pos/billing/shifts/current/expenses/'),
+        ),
+        default_roles=POS_CASH_EXPENSE_ROLES,
+    ),
+    permission_definition(
+        'pos_cash_expenses.void',
+        surface='pos',
+        resource='pos_cash_expenses',
+        action='void',
+        ui_visible=True,
+        group_key='payments',
+        name='POS kassa xarajatini bekor qilish',
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/pos/billing/expenses/<uuid:pk>/void/'),
+        ),
+        default_roles=POS_CASH_EXPENSE_ROLES,
+    ),
+    permission_definition(
         'pos_fiscal_receipts.skip',
         surface='pos',
         resource='pos_fiscal_receipts',
@@ -1054,6 +1083,23 @@ PERMISSION_DEFINITIONS.extend(
 )
 PERMISSION_DEFINITIONS.extend(
     crud_permissions(
+        'catalog_modifier_groups',
+        surface='admin',
+        group_key='catalog',
+        singular_label='Mahsulot xususiyati',
+        plural_label='Mahsulot xususiyatlari',
+        list_url='api/v1/admin/catalog/modifier-groups/',
+        detail_url='api/v1/admin/catalog/modifier-groups/<uuid:pk>/',
+        default_roles=CATALOG_ADMIN_ROLES,
+        create_endpoints=endpoint_specs(('POST', 'api/v1/admin/catalog/modifier-groups/')),
+        update_endpoints=endpoint_specs(
+            ('PUT', 'api/v1/admin/catalog/modifier-groups/<uuid:pk>/'),
+            ('PATCH', 'api/v1/admin/catalog/modifier-groups/<uuid:pk>/'),
+        ),
+    )
+)
+PERMISSION_DEFINITIONS.extend(
+    crud_permissions(
         'print_templates',
         surface='admin',
         group_key='restaurant_setup',
@@ -1117,6 +1163,40 @@ PERMISSION_DEFINITIONS.extend(
         ),
         include_create=False,
         include_update=False,
+        include_delete=False,
+    )
+)
+PERMISSION_DEFINITIONS.extend(
+    crud_permissions(
+        'expense_categories',
+        surface='admin',
+        group_key='expenses',
+        singular_label='Xarajat kategoriyasi',
+        plural_label='Xarajat kategoriyalari',
+        list_url='api/v1/admin/billing/expense-categories/',
+        detail_url='api/v1/admin/billing/expense-categories/<uuid:pk>/',
+        default_roles=PAYMENT_ADMIN_ROLES,
+        include_delete=False,
+    )
+)
+PERMISSION_DEFINITIONS.extend(
+    crud_permissions(
+        'expenses',
+        surface='admin',
+        group_key='expenses',
+        singular_label='Xarajat',
+        plural_label='Xarajatlar',
+        list_url='api/v1/admin/billing/expenses/',
+        detail_url='api/v1/admin/billing/expenses/<uuid:pk>/',
+        default_roles=PAYMENT_ADMIN_ROLES,
+        view_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/billing/expenses/'),
+            ('GET', 'api/v1/admin/billing/expenses/<uuid:pk>/'),
+        ),
+        update_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/billing/expenses/<uuid:pk>/void/'),
+        ),
+        include_create=False,
         include_delete=False,
     )
 )
@@ -1319,6 +1399,8 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_payment_order_items.delete',
         'pos_payments.create',
         'pos_cash_shift.manage',
+        'pos_cash_expenses.create',
+        'pos_cash_expenses.void',
         'pos_fiscal_receipts.skip',
         'pos_fiscal_shift.manage',
         'pos_table_reservations.manage',

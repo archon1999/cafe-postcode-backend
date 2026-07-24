@@ -14,4 +14,4 @@ class ItemDetailView(generics.RetrieveUpdateAPIView):
         return filter_catalog_queryset_by_scope(CatalogItem.objects.all(), self.request).select_related(
             'category__prep_station',
             'prep_station',
-        )
+        ).prefetch_related('modifier_groups')

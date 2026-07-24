@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.catalog.api.admin.views.categories import CategoryDetailView, CategoryListCreateView
 from apps.catalog.api.admin.views.items import ItemDetailView, ItemListCreateView, ItemStoplistToggleView
+from apps.catalog.views.modifiers import ModifierGroupDetailView, ModifierGroupListCreateView
 
 urlpatterns = [
     path('categories/', CategoryListCreateView.as_view()),
@@ -9,4 +10,6 @@ urlpatterns = [
     path('items/', ItemListCreateView.as_view()),
     path('items/<uuid:pk>/', ItemDetailView.as_view()),
     path('items/<uuid:pk>/stoplist/', ItemStoplistToggleView.as_view()),
+    path('modifier-groups/', ModifierGroupListCreateView.as_view()),
+    path('modifier-groups/<uuid:pk>/', ModifierGroupDetailView.as_view()),
 ]

@@ -9,6 +9,15 @@ from .validation import validate_template_layout
 
 
 DEFAULT_PRESET_KEY = 'legacy_80'
+SHIFT_REPORT_PRESET_KEY = 'internal_shift_report_80'
+
+
+def _shift_report_layout_has_expenses(layout: dict) -> bool:
+    return any(
+        row.get('value') == '{{report.expenseTotal}}'
+        for block in layout.get('blocks', [])
+        for row in block.get('rows', [])
+    )
 
 
 @transaction.atomic
@@ -45,7 +54,27 @@ def ensure_shift_report_template(*, restaurant) -> PrintTemplate:
             revision=1,
             schema_version=1,
             status=PrintTemplateVersion.Status.PUBLISHED,
-            preset_key='internal_shift_report_80',
+            preset_key=SHIFT_REPORT_PRESET_KEY,
+            layout=get_shift_report_layout(),
+            published_at=timezone.now(),
+        )
+        template.published_version = version
+        template.save(update_fields=('published_version', 'updated_at'))
+    elif (
+        template.published_version.preset_key == SHIFT_REPORT_PRESET_KEY
+        and not _shift_report_layout_has_expenses(template.published_version.layout)
+    ):
+        template.versions.filter(status=PrintTemplateVersion.Status.PUBLISHED).update(
+            status=PrintTemplateVersion.Status.RETIRED,
+            updated_at=timezone.now(),
+        )
+        revision = (template.versions.aggregate(value=Max('revision'))['value'] or 0) + 1
+        version = PrintTemplateVersion.objects.create(
+            template=template,
+            revision=revision,
+            schema_version=1,
+            status=PrintTemplateVersion.Status.PUBLISHED,
+            preset_key=SHIFT_REPORT_PRESET_KEY,
             layout=get_shift_report_layout(),
             published_at=timezone.now(),
         )

@@ -101,6 +101,8 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         return queryset.order_by("-opened_at").first()
 
     def build_context(self, *, restaurant, user):
+        from .cash_expense import CashExpenseService
+
         active_shift = self.get_active_shift(restaurant=restaurant, user=user)
         available_cash_desks = self.get_available_cash_desks(restaurant=restaurant)
         status_cash_desk = (
@@ -110,6 +112,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             if available_cash_desks
             else None
         )
+        expense_service = CashExpenseService()
         return {
             "restaurant_fiscal_profile": {
                 "legal_name": restaurant.legal_name,
@@ -127,6 +130,8 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             },
             "available_cash_desks": available_cash_desks,
             "available_cashiers": self.get_available_cashiers(restaurant=restaurant),
+            "expense_categories": expense_service.get_active_categories(restaurant=restaurant),
+            "expense_recipients": expense_service.get_available_recipients(restaurant=restaurant),
             "current_shift": active_shift,
             "active_shifts": self.get_active_shifts_for_manager(
                 restaurant=restaurant, user=user
@@ -256,6 +261,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         shift.card_total = snapshot["card_total"]
         shift.qr_total = snapshot["qr_total"]
         shift.refund_total = snapshot["refund_total"]
+        shift.expense_total = snapshot["expense_total"]
         shift.receipt_count = snapshot["receipt_count"]
         shift.reprint_count = snapshot["reprint_count"]
         shift.notes_close = notes_close or ""
@@ -276,6 +282,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                 "card_total",
                 "qr_total",
                 "refund_total",
+                "expense_total",
                 "receipt_count",
                 "reprint_count",
                 "close_report_payload",

@@ -1,7 +1,7 @@
 from django.db.models import Count, F, IntegerField, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 
-from apps.billing.helpers import get_payment_model
+from apps.billing.helpers import get_cash_expense_model, get_payment_model
 from apps.floor.models import TableSession
 from apps.reporting.services import (
     ReportPeriod,
@@ -14,6 +14,7 @@ from apps.sales.helpers import get_order_model
 
 Order = get_order_model()
 Payment = get_payment_model()
+CashExpense = get_cash_expense_model()
 
 STAFF_ROLE_GROUPS = {
     "waiter": ("waiter",),
@@ -23,6 +24,31 @@ STAFF_ROLE_GROUPS = {
 
 
 class OwnerDashboardQueryMixin:
+    def get_expense_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
+        return CashExpense.objects.filter(
+            restaurant=restaurant,
+            status=CashExpense.Status.POSTED,
+            occurred_at__gte=period.start,
+            occurred_at__lt=period.end,
+        )
+
+    def build_expense_summary(self, restaurant, period: ReportPeriod) -> dict:
+        return self.get_expense_queryset(restaurant, period).aggregate(
+            expenses_total=Coalesce(Sum('amount'), Value(0), output_field=IntegerField()),
+            expenses_count=Count('id'),
+        )
+
+    def get_expense_category_breakdown(self, restaurant, period: ReportPeriod) -> QuerySet:
+        return (
+            self.get_expense_queryset(restaurant, period)
+            .values(name=F('category_name_snapshot'))
+            .annotate(
+                total=Coalesce(Sum('amount'), Value(0), output_field=IntegerField()),
+                count=Count('id'),
+            )
+            .order_by('-total', 'name')
+        )
+
     def get_payment_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
         return Payment.objects.filter(
             order__restaurant=restaurant,

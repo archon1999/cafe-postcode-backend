@@ -52,6 +52,12 @@ def build_shift_report_print_snapshot(
         fallback=cash_refund + card_refund + qr_refund,
         fiscal=fiscal,
     )
+    expense_total = _report_total(
+        report,
+        "TotalExpenseAmount",
+        fallback=0,
+        fiscal=fiscal,
+    )
     payments = (
         report.get("Payments") if isinstance(report.get("Payments"), list) else []
     )
@@ -115,6 +121,8 @@ def build_shift_report_print_snapshot(
             "qrRefund": qr_refund,
             "vatRefund": vat_refund if fiscal else 0,
             "totalRefund": total_refund,
+            "expenseTotal": expense_total,
+            "netCashAfterExpenses": cash_sale - cash_refund - expense_total,
         },
         "system": {"isFiscal": fiscal, "isClosing": closed},
     }
