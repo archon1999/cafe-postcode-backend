@@ -1,4 +1,4 @@
-BOT_NAME = "PosCode Hisobot"
+BOT_NAME = "Cafe PosCode - Hisobot Bot"
 BOT_DESCRIPTION = (
     "Shahobchalaringiz tushumi, buyurtmalar soni, o‘rtacha chek va top mahsulotlarini kuzating. "
     "Kunlik, haftalik va oylik hisobotlar avtomatik yuboriladi."
