@@ -148,7 +148,7 @@ services:
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
-      Q_CLUSTER_WORKERS: ${Q_CLUSTER_WORKERS:-8}
+      Q_CLUSTER_WORKERS: ${Q_CLUSTER_WORKERS:-1}
     command: ["python", "manage.py", "qcluster"]
     depends_on:
       web:

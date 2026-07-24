@@ -30,7 +30,7 @@ REDIS_URL = os.getenv('REDIS_URL', '').strip()
 
 Q_CLUSTER = {
     'name': os.getenv('Q_CLUSTER_NAME', 'cafe-postcode'),
-    'workers': env_int('Q_CLUSTER_WORKERS', 8),
+    'workers': env_int('Q_CLUSTER_WORKERS', 1),
     'recycle': env_int('Q_CLUSTER_RECYCLE', 500),
     'timeout': env_int('Q_CLUSTER_TIMEOUT', 300),
     'retry': env_int('Q_CLUSTER_RETRY', 300),
