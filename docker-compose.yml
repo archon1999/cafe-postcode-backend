@@ -54,6 +54,7 @@ services:
         mkdir -p /tmp/prometheus-multiproc &&
         exec gunicorn core.wsgi:application
         --bind 0.0.0.0:8000
+        --no-control-socket
         --workers $${GUNICORN_WORKERS:-3}
         --threads $${GUNICORN_THREADS:-2}
         --timeout $${GUNICORN_TIMEOUT:-60}
