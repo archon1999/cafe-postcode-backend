@@ -25,6 +25,7 @@ from .export_localization import (
 )
 from .report_excel_export import ReportExcelExportService
 from .sales_report_excel_export import SalesReportExcelExportService
+from .common_report import CommonReportService, ReportMetricComparison
 from apps.reporting.selectors.reporting import (
     ORDER_STATUS_VALUES,
     PAYMENT_METHOD_VALUES,
@@ -64,6 +65,8 @@ __all__ = [
     'ReportExcelExportService',
     'ReportPeriod',
     'SalesReportExcelExportService',
+    'CommonReportService',
+    'ReportMetricComparison',
     'build_report_filter_pairs',
     'build_summary_payload',
     'get_open_checks_columns',

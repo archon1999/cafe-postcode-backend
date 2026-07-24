@@ -54,6 +54,29 @@ Only enable API docs intentionally:
 ENABLE_API_DOCS=1
 ```
 
+## Telegram Sales Reports Bot
+
+Configure these values in the production environment:
+
+```bash
+TELEGRAM_REPORTS_BOT_TOKEN=<botfather-token>
+TELEGRAM_REPORTS_WEBHOOK_SECRET=<random-secret>
+TELEGRAM_REPORTS_WEBHOOK_URL=https://cafe-postcode.uz/api/v1/telegram-reports/webhook/
+```
+
+After the new backend version and migrations are live, configure the bot profile,
+commands menu, and webhook:
+
+```bash
+docker compose --env-file .env.production exec web \
+  python manage.py configure_telegram_reports_bot --set-webhook
+```
+
+The `telegram_reports` migration creates three Django Q cron schedules in
+`Asia/Tashkent`: daily at `00:05`, weekly on Monday at `00:10`, and monthly on
+the first day at `00:15`. The `qcluster` service must receive the reports bot
+token so scheduled tasks can send messages.
+
 ## Health And Monitoring
 
 Public health endpoints:

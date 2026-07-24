@@ -652,6 +652,21 @@ files = [
 ]
 
 [[package]]
+name = "croniter"
+version = "6.2.4"
+description = "croniter provides iteration for datetime object with cron like format"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "croniter-6.2.4-py3-none-any.whl", hash = "sha256:8ef3d544107a5c05a150a2d78f8bf5a8eb9c5c4d93405a736b824109574e3f4d"},
+    {file = "croniter-6.2.4.tar.gz", hash = "sha256:fc124f751b1b04805c2a04b061898b436b45ab2320b045e1e052ea895de65189"},
+]
+
+[package.dependencies]
+python-dateutil = "*"
+
+[[package]]
 name = "cryptography"
 version = "49.0.0"
 description = "cryptography is a package which provides cryptographic recipes and primitives to Python developers."
@@ -3300,4 +3315,4 @@ testing = ["coverage[toml]", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<4.0"
-content-hash = "7d5e93321894c33b599bf45631ae49ccbd133c6e167d4e6ed45eee3fad49b4df"
+content-hash = "584d3d5a4c4c8bbbaae985998a219ba7b880fee860031b973d46a31261ef03c2"

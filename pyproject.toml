@@ -19,6 +19,7 @@ django-filter = "^25.1"
 django-modeltranslation = "^0.19.16"
 django-nested-inline = "^0.4.6"
 django-q = "1.3.6"
+croniter = "^6.2.4"
 # django-q imports pkg_resources directly; keep its undeclared runtime API available.
 setuptools = ">=80.9,<81"
 djangorestframework = "^3.16.0"

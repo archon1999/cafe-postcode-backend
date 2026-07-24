@@ -5,7 +5,7 @@ from apps.dashboard.services.owner_dashboard_periods import OwnerDashboardPeriod
 from apps.dashboard.services.owner_dashboard_queries import OwnerDashboardQueryMixin
 from apps.dashboard.services.owner_dashboard_rows import OwnerDashboardRowsMixin
 from apps.dashboard.services.owner_dashboard_series import OwnerDashboardSeriesMixin
-from apps.reporting.services import ReportPeriod, get_payment_breakdown_report_queryset
+from apps.reporting.services import CommonReportService, ReportPeriod, get_payment_breakdown_report_queryset
 from apps.sales.helpers import get_order_model
 from common.utils.date import tashkent_now
 
@@ -19,6 +19,7 @@ class OwnerDashboardBaseService(
     OwnerDashboardSeriesMixin,
     OwnerDashboardPeriodMixin,
 ):
+    common_report_service_class = CommonReportService
     overview_top_item_limit = 6
     overview_staff_limit = 5
     overview_open_checks_limit = 5
@@ -28,8 +29,22 @@ class OwnerDashboardBaseService(
 class OwnerDashboardOverviewService(OwnerDashboardBaseService):
     def build(self, *, restaurant, period: ReportPeriod) -> dict:
         previous_period = self.get_previous_period(period)
-        current_summary = self.build_dashboard_summary(restaurant, period)
-        previous_summary = self.build_dashboard_summary(restaurant, previous_period)
+        common_report = self.common_report_service_class().build(
+            restaurant=restaurant,
+            period=period,
+            comparison_period=previous_period,
+            top_item_limit=self.overview_top_item_limit,
+        )
+        current_summary = {
+            **common_report["summary"],
+            "open_checks": self.get_open_checks_queryset(restaurant, period).count(),
+            "active_tables": self.get_active_tables_queryset(restaurant, period).count(),
+        }
+        previous_summary = {
+            **common_report["previous_summary"],
+            "open_checks": self.get_open_checks_queryset(restaurant, previous_period).count(),
+            "active_tables": self.get_active_tables_queryset(restaurant, previous_period).count(),
+        }
         current_expenses = self.build_expense_summary(restaurant, period)
         previous_expenses = self.build_expense_summary(restaurant, previous_period)
         current_summary.update(current_expenses)
@@ -43,9 +58,7 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
             previous_period,
             blueprint=series_blueprint,
         )
-        top_items = self.build_top_items(
-            restaurant, period, limit=self.overview_top_item_limit
-        )
+        top_items = common_report["top_items"]
         waiters = self.get_role_breakdown_rows(restaurant, period, role="waiter")[
             : self.overview_staff_limit
         ]

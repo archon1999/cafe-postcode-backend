@@ -15,6 +15,7 @@ urlpatterns = [
     path(f'{API_PREFIX}i18n/', include('django.conf.urls.i18n')),
     path(f'{API_V1_PREFIX}landing/', include('apps.landing.api.urls')),
     path(f'{API_V1_PREFIX}dashboard/', include('apps.dashboard.api.urls')),
+    path(f'{API_V1_PREFIX}telegram-reports/', include('apps.telegram_reports.api.urls')),
     path(f'{API_V1_PREFIX}admin/auth/', include('apps.users.api.admin.urls.auth')),
     path(f'{API_V1_PREFIX}admin/users/', include('apps.users.api.admin.urls.users')),
     path(f'{API_V1_PREFIX}admin/roles/', include('apps.users.api.admin.urls.roles')),

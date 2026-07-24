@@ -20,6 +20,7 @@ LOCAL_APPS = [
     'apps.billing',
     'apps.kitchen',
     'apps.reporting',
+    'apps.telegram_reports',
     'apps.integrations',
     'apps.landing',
     'apps.local_agents',

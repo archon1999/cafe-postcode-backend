@@ -64,5 +64,12 @@ LOGGING = {
             'level': LOG_LEVEL,
             'propagate': False,
         },
+        # Telegram requires the bot token in the request URL. httpx logs full URLs
+        # at INFO level, so keep transport logs above INFO to avoid leaking tokens.
+        'httpx': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }

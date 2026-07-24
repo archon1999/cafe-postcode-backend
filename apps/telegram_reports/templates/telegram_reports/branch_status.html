@@ -1,0 +1,17 @@
+🏪 <b>{{ branch_name }}</b>
+{% if is_active %}🟢 Shahobcha faol{% else %}🔴 Shahobcha faol emas{% endif %}
+
+📡 POS ulanishi: {% if agent_online %}<b>online</b>{% else %}<b>offline</b>{% endif %}{% if agent_last_seen %}
+Oxirgi signal: {{ agent_last_seen }}{% endif %}
+
+{% if latest_order %}🧾 Oxirgi buyurtma: <b>#{{ latest_order.order_number }}</b>
+{{ latest_order_time }} · {{ latest_order_status }} · {{ latest_order_total }}{% else %}🧾 Hali buyurtma yo‘q{% endif %}
+
+💼 Ochiq smenalar: <b>{{ open_shifts|length }} ta</b>{% for shift in open_shifts %}
+• {{ shift.cash_desk.name }} — {{ shift.opened_at|date:"H:i" }}{% endfor %}
+
+🍽 Ochiq cheklar: <b>{{ open_checks }} ta</b>
+🪑 Faol stollar: <b>{{ active_tables }} ta</b>
+📊 Bugungi tushum: <b>{{ today_sales }}</b>
+
+🕐 Yangilandi: {{ generated_at }}
