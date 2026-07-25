@@ -14,8 +14,8 @@ class TelegramReportFormatterTests(SimpleTestCase):
         self.assertEqual(format_compact_money(39_032), "39 ming so‘m")
         self.assertEqual(format_compact_money(2_960_000), "2,96 mln so‘m")
         self.assertEqual(format_compact_money(2_500_000), "2,5 mln so‘m")
-        self.assertEqual(format_mln_money(500_000, signed=True), "+0,5 mln")
-        self.assertEqual(format_mln_money(-1_000_000, signed=True), "-1 mln")
+        self.assertEqual(format_mln_money(500_000, signed=True), "+0,5")
+        self.assertEqual(format_mln_money(-1_000_000, signed=True), "-1")
 
     def test_weekly_grid_has_three_equal_width_rows(self):
         rows = [
@@ -42,7 +42,7 @@ class TelegramReportFormatterTests(SimpleTestCase):
 
         self.assertEqual(len(lines), 3)
         self.assertEqual(len({len(line) for line in lines}), 1)
-        self.assertIn("2,5 mln", lines[1])
-        self.assertIn("+0,5 mln", lines[2])
-        self.assertIn("-1 mln", lines[2])
+        self.assertIn("2,5", lines[1])
+        self.assertIn("+0,5", lines[2])
+        self.assertIn("-1", lines[2])
 

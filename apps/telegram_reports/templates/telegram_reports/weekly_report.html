@@ -1,9 +1,9 @@
-🏪 <b>{{ branch_name }}</b>
-📅 <b>Haftalik hisobot</b> • {{ period_label }}
+<b>{{ branch_name }}</b>
+<b>Haftalik hisobot</b> • {{ period_label }}
 
 {% include "telegram_reports/blocks/summary.html" %}
 
-📊 <b>Kunma-kun tushum va farq</b>
+<b>Kunma-kun tushum va farq</b> (mln)
 <pre>{{ weekly_grid }}</pre>
 
 {% include "telegram_reports/blocks/top_items.html" %}

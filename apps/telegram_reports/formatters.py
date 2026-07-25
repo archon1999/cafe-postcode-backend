@@ -26,7 +26,7 @@ def format_mln_money(value: int, *, signed: bool = False) -> str:
     value = int(value or 0)
     prefix = "+" if signed and value > 0 else ""
     amount = _decimal_text(Decimal(value) / Decimal(1_000_000))
-    return f"{prefix}{amount} mln"
+    return f"{prefix}{amount}"
 
 
 def format_percent(value: float) -> str:
@@ -41,7 +41,7 @@ def build_weekly_grid(rows: list[dict]) -> str:
     headers = [f"{day_names[row['date'].weekday()]} {row['date'].day:02d}" for row in rows]
     values = [format_mln_money(row["sales_total"]) for row in rows]
     differences = [format_mln_money(row["sales_difference"], signed=True) for row in rows]
-    width = max(9, *(len(value) for value in headers + values + differences))
+    width = max(6, *(len(value) for value in headers + values + differences))
 
     def line(values_to_render: list[str], *, align: str) -> str:
         if align == "right":
@@ -50,7 +50,7 @@ def build_weekly_grid(rows: list[dict]) -> str:
 
     return "\n".join(
         (
-            line(headers, align="left"),
+            line(headers, align="right"),
             line(values, align="right"),
             line(differences, align="right"),
         )

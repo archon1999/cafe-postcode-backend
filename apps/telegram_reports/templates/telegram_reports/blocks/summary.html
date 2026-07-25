@@ -1,5 +1,4 @@
-{% for metric in metrics %}{{ metric.icon }} <b>{{ metric.title }}</b>
-{{ metric.formatted_value }}
+{% for metric in metrics %}<b>{{ metric.title }}</b>: {{ metric.formatted_value }}
 {{ metric.trend_icon }} {{ metric.trend_text }}{% if not forloop.last %}
 
 {% endif %}{% endfor %}

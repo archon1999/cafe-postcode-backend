@@ -64,7 +64,7 @@ class TelegramReportTemplateTests(SimpleTestCase):
 
         self.assertIn("<pre>", text)
         self.assertIn("Du 20", text)
-        self.assertIn("+0,5 mln", text)
+        self.assertIn("+0,5", text)
 
     def test_current_week_period_runs_from_monday_through_today(self):
         period = self.service.build_current_period(
