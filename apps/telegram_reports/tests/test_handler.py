@@ -49,6 +49,32 @@ class TelegramUpdateHandlerTests(TestCase):
         self.assertEqual(sent["reply_markup"], MAIN_KEYBOARD)
         self.assertEqual(MAIN_KEYBOARD["keyboard"], [[{"text": BRANCHES_BUTTON_TEXT}]])
 
+    def test_start_payload_connects_comma_separated_branch_codes(self):
+        second_branch = Restaurant.objects.create(name="Chilonzor", auth_code="X9y8Z7")
+
+        self.handler.handle(self.message("/start A1b2C3,X9y8Z7"))
+
+        account = TelegramAccount.objects.get(telegram_user_id=1234567890123)
+        self.assertCountEqual(
+            account.branch_subscriptions.values_list("restaurant_id", flat=True),
+            [self.branch.id, second_branch.id],
+        )
+        sent = FakeTelegramClient.sent_messages[-1]
+        self.assertIn("Qamish", sent["text"])
+        self.assertIn("Chilonzor", sent["text"])
+        self.assertEqual(sent["reply_markup"], MAIN_KEYBOARD)
+
+    def test_start_payload_accepts_telegram_safe_separators(self):
+        second_branch = Restaurant.objects.create(name="Chilonzor", auth_code="X9y8Z7")
+
+        self.handler.handle(self.message("/start A1b2C3_X9y8Z7"))
+
+        account = TelegramAccount.objects.get(telegram_user_id=1234567890123)
+        self.assertCountEqual(
+            account.branch_subscriptions.values_list("restaurant_id", flat=True),
+            [self.branch.id, second_branch.id],
+        )
+
     def test_connect_prompt_accepts_codes_in_followup_message(self):
         self.handler.handle(self.message("/connect"))
         account = TelegramAccount.objects.get(telegram_user_id=1234567890123)
@@ -79,4 +105,3 @@ class TelegramUpdateHandlerTests(TestCase):
         self.assertFalse(TelegramBranchSubscription.objects.filter(pk=subscription.pk).exists())
         self.assertTrue(Restaurant.objects.filter(pk=self.branch.pk).exists())
         self.assertIn(("callback-1", "Shahobcha uzildi"), FakeTelegramClient.callback_answers)
-

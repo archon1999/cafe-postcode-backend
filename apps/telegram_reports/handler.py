@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from urllib.parse import unquote
 from uuid import UUID
 
 from django.utils import timezone
@@ -45,14 +46,17 @@ class TelegramUpdateHandler:
         command, argument = self.parse_command(text)
 
         if command == "start":
-            account.state = TelegramAccount.State.IDLE
-            account.save(update_fields=("state", "updated_at"))
-            self.send(
-                account,
-                "👋 <b>PosCode Hisobot botiga xush kelibsiz!</b>\n\n"
-                "Shahobcha kodini ulash uchun /connect komandasini yuboring. "
-                "Bir nechta kodni vergul yoki yangi qator bilan yuborishingiz mumkin.",
-            )
+            if argument:
+                self.connect_codes(account, self.normalize_start_payload(argument))
+            else:
+                account.state = TelegramAccount.State.IDLE
+                account.save(update_fields=("state", "updated_at"))
+                self.send(
+                    account,
+                    "👋 <b>PosCode Hisobot botiga xush kelibsiz!</b>\n\n"
+                    "Shahobcha kodini ulash uchun /connect komandasini yuboring. "
+                    "Bir nechta kodni vergul yoki yangi qator bilan yuborishingiz mumkin.",
+                )
         elif command == "connect":
             if argument:
                 self.connect_codes(account, argument)
@@ -130,6 +134,11 @@ class TelegramUpdateHandler:
     def parse_codes(text: str) -> list[str]:
         candidates = re.split(r"[,;\s]+", text.strip())
         return list(dict.fromkeys(value for value in candidates if value))[:20]
+
+    @staticmethod
+    def normalize_start_payload(payload: str) -> str:
+        decoded_payload = unquote(payload.strip())
+        return re.sub(r"[_-]+", ",", decoded_payload)
 
     def looks_like_codes(self, text: str) -> bool:
         codes = self.parse_codes(text)
