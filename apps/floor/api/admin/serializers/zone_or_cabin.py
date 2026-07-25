@@ -5,6 +5,8 @@ from apps.floor.models import ZoneOrCabin
 
 
 class ZoneOrCabinSerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+
     def create(self, validated_data):
         if "sort_order" not in validated_data:
             restaurant = validated_data.get("restaurant")
@@ -18,4 +20,4 @@ class ZoneOrCabinSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ZoneOrCabin
-        fields = ("id", "name", "sort_order", "is_active")
+        fields = ("id", "restaurant_name", "name", "sort_order", "is_active")

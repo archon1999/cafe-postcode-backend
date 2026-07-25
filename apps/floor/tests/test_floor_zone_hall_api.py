@@ -90,6 +90,58 @@ class AdminFloorZoneHallApiTests(TestCase):
             [row["name"] for row in zones_response.data["data"]], ["A zona", "B zona"]
         )
 
+    def test_superuser_without_header_can_read_all_branch_floor_resources(self):
+        local_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant, name="Local zone", sort_order=1
+        )
+        other_zone = ZoneOrCabin.objects.create(
+            restaurant=self.other_restaurant, name="Other zone", sort_order=1
+        )
+        local_hall = Hall.objects.create(zone_or_cabin=local_zone, name="Local hall")
+        other_hall = Hall.objects.create(zone_or_cabin=other_zone, name="Other hall")
+        DiningTable.objects.create(
+            hall=local_hall, zone=local_zone, name="Local table", table_number=1
+        )
+        other_table = DiningTable.objects.create(
+            hall=other_hall, zone=other_zone, name="Other table", table_number=1
+        )
+        self.client.credentials()
+
+        zones_response = self.client.get("/api/v1/admin/floor/zones/")
+        halls_response = self.client.get("/api/v1/admin/floor/halls/")
+        tables_response = self.client.get("/api/v1/admin/floor/tables/")
+        zone_detail_response = self.client.get(
+            f"/api/v1/admin/floor/zones/{other_zone.id}/"
+        )
+        hall_detail_response = self.client.get(
+            f"/api/v1/admin/floor/halls/{other_hall.id}/"
+        )
+        table_detail_response = self.client.get(
+            f"/api/v1/admin/floor/tables/{other_table.id}/"
+        )
+
+        for response in (
+            zones_response,
+            halls_response,
+            tables_response,
+            zone_detail_response,
+            hall_detail_response,
+            table_detail_response,
+        ):
+            self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(
+            {row["restaurant_name"] for row in zones_response.data["data"]},
+            {self.restaurant.name, self.other_restaurant.name},
+        )
+        self.assertEqual(
+            {row["restaurant_name"] for row in halls_response.data["data"]},
+            {self.restaurant.name, self.other_restaurant.name},
+        )
+        self.assertEqual(
+            {row["restaurant_name"] for row in tables_response.data["data"]},
+            {self.restaurant.name, self.other_restaurant.name},
+        )
+
     def test_halls_and_zones_append_reorder_and_delete(self):
         first_zone = ZoneOrCabin.objects.create(
             restaurant=self.restaurant,

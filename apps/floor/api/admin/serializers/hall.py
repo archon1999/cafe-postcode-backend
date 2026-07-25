@@ -10,6 +10,9 @@ from .zone_or_cabin import ZoneOrCabinSerializer
 
 
 class HallSerializer(serializers.ModelSerializer):
+    restaurant_name = serializers.CharField(
+        source="zone_or_cabin.restaurant.name", read_only=True
+    )
     tables = DiningTableSerializer(many=True, read_only=True)
     zone_or_cabin = ZoneOrCabinSerializer(read_only=True)
     zone_or_cabin_id = serializers.PrimaryKeyRelatedField(
@@ -21,6 +24,7 @@ class HallSerializer(serializers.ModelSerializer):
         model = Hall
         fields = (
             "id",
+            "restaurant_name",
             "name",
             "description",
             "grid_columns",

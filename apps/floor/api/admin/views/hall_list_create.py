@@ -3,7 +3,7 @@ from rest_framework import generics, permissions
 from apps.floor.models import Hall
 from apps.floor.api.admin.serializers import HallSerializer
 from common.api.permissions import EndpointRBACPermission
-from common.api.scopes import get_request_restaurant
+from common.api.scope_filters import filter_queryset_by_optional_restaurant
 
 
 class HallListCreateView(generics.ListCreateAPIView):
@@ -11,9 +11,11 @@ class HallListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_queryset(self):
-        restaurant = get_request_restaurant(self.request)
-        return (
-            Hall.objects.filter(zone_or_cabin__restaurant=restaurant)
-            .select_related('zone_or_cabin')
-            .prefetch_related('tables__table_sessions')
+        queryset = Hall.objects.select_related(
+            "zone_or_cabin", "zone_or_cabin__restaurant"
+        ).prefetch_related("tables__table_sessions")
+        return filter_queryset_by_optional_restaurant(
+            queryset,
+            self.request,
+            lookup="zone_or_cabin__restaurant",
         )

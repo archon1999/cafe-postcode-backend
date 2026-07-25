@@ -15,57 +15,73 @@ def get_supported_seat_count(seat_count: int) -> int:
 
 class TableSessionSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
-    table_name = serializers.CharField(source='table.name', read_only=True)
-    table_number = serializers.IntegerField(source='table.table_number', read_only=True)
-    hall_name = serializers.CharField(source='hall.name', read_only=True)
+    restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
+    table_name = serializers.CharField(source="table.name", read_only=True)
+    table_number = serializers.IntegerField(source="table.table_number", read_only=True)
+    hall_name = serializers.CharField(source="hall.name", read_only=True)
 
     class Meta:
         model = TableSession
         fields = (
-            'id',
-            'restaurant',
-            'hall',
-            'hall_name',
-            'table',
-            'table_name',
-            'table_number',
-            'opened_by',
-            'assigned_waiter',
-            'guest_count',
-            'status',
-            'note',
-            'merged_into',
-            'closed_at',
-            'created_at',
-            'updated_at',
+            "id",
+            "restaurant",
+            "restaurant_name",
+            "hall",
+            "hall_name",
+            "table",
+            "table_name",
+            "table_number",
+            "opened_by",
+            "assigned_waiter",
+            "guest_count",
+            "status",
+            "note",
+            "merged_into",
+            "closed_at",
+            "created_at",
+            "updated_at",
         )
-        read_only_fields = ('restaurant', 'hall', 'opened_by', 'closed_at', 'merged_into')
+        read_only_fields = (
+            "restaurant",
+            "hall",
+            "opened_by",
+            "closed_at",
+            "merged_into",
+        )
 
     def validate(self, attrs):
-        table = attrs.get('table') or getattr(self.instance, 'table', None)
-        guest_count = attrs.get('guest_count', getattr(self.instance, 'guest_count', None))
+        table = attrs.get("table") or getattr(self.instance, "table", None)
+        guest_count = attrs.get(
+            "guest_count", getattr(self.instance, "guest_count", None)
+        )
         if table is None:
             return attrs
 
         if table.status == DiningTable.Status.BLOCKED:
-            raise serializers.ValidationError({'table': _('This table is blocked.')})
+            raise serializers.ValidationError({"table": _("This table is blocked.")})
 
         if guest_count is not None and guest_count > int(table.seat_count or 0):
             raise serializers.ValidationError(
                 {
-                    'guest_count': _(
-                        'Guest count cannot exceed this table limit (%(limit)s).'
+                    "guest_count": _(
+                        "Guest count cannot exceed this table limit (%(limit)s)."
                     )
-                    % {'limit': int(table.seat_count or 0)}
+                    % {"limit": int(table.seat_count or 0)}
                 }
             )
-        if guest_count is not None and guest_count > available_seat_count(table, exclude_session=self.instance):
+        if guest_count is not None and guest_count > available_seat_count(
+            table, exclude_session=self.instance
+        ):
             raise serializers.ValidationError(
                 {
-                    'guest_count': _(
-                        'Guest count cannot exceed available seats on this table (%(limit)s).'
+                    "guest_count": _(
+                        "Guest count cannot exceed available seats on this table (%(limit)s)."
                     )
-                    % {'limit': available_seat_count(table, exclude_session=self.instance)}
+                    % {
+                        "limit": available_seat_count(
+                            table, exclude_session=self.instance
+                        )
+                    }
                 }
             )
         return attrs
