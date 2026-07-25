@@ -41,3 +41,26 @@ class AdminReceiptSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+
+class AdminReceiptWithPrintPreviewSerializer(AdminReceiptSerializer):
+    print_document = serializers.UUIDField(source="print_document_id", read_only=True)
+    print_layout = serializers.SerializerMethodField()
+    print_data_snapshot = serializers.SerializerMethodField()
+
+    def get_print_layout(self, obj):
+        if not obj.print_document_id:
+            return None
+        return obj.print_document.template_version.layout
+
+    def get_print_data_snapshot(self, obj):
+        if not obj.print_document_id:
+            return None
+        return obj.print_document.data_snapshot
+
+    class Meta(AdminReceiptSerializer.Meta):
+        fields = AdminReceiptSerializer.Meta.fields + (
+            "print_document",
+            "print_layout",
+            "print_data_snapshot",
+        )

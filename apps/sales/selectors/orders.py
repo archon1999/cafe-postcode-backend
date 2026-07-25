@@ -92,6 +92,12 @@ def admin_order_queryset(request) -> QuerySet:
     )
 
 
+def admin_order_detail_queryset(request) -> QuerySet:
+    return admin_order_queryset(request).prefetch_related(
+        "receipts__print_document__template_version"
+    )
+
+
 def admin_order_item_queryset(request) -> QuerySet:
     return (
         filter_order_queryset_by_scope(

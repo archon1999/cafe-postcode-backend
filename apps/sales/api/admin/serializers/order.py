@@ -3,6 +3,7 @@ from rest_framework import serializers
 from apps.billing.api.admin.serializers import (
     AdminPaymentSerializer,
     AdminReceiptSerializer,
+    AdminReceiptWithPrintPreviewSerializer,
 )
 from apps.sales.helpers import get_order_model
 
@@ -79,3 +80,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
+
+
+class AdminOrderDetailSerializer(AdminOrderSerializer):
+    receipts = AdminReceiptWithPrintPreviewSerializer(many=True, read_only=True)
