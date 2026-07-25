@@ -78,7 +78,11 @@ class TelegramUpdateHandler:
             account.save(update_fields=("notifications_enabled", "updated_at"))
             self.send(account, "🔕 Avtomatik hisobotlar o‘chirildi. /today orqali qo‘lda olishingiz mumkin.")
         elif command == "today":
-            self.send_today_reports(account)
+            self.send_current_reports(account, TelegramReportDelivery.ReportType.DAILY)
+        elif command == "week":
+            self.send_current_reports(account, TelegramReportDelivery.ReportType.WEEKLY)
+        elif command == "month":
+            self.send_current_reports(account, TelegramReportDelivery.ReportType.MONTHLY)
         elif command == "settings":
             self.send_settings(account)
         elif command == "help":
@@ -189,18 +193,18 @@ class TelegramUpdateHandler:
             )
             self.send(account, text)
 
-    def send_today_reports(self, account: TelegramAccount) -> None:
+    def send_current_reports(self, account: TelegramAccount, report_type: str) -> None:
         subscriptions = account.branch_subscriptions.select_related("restaurant").all()
         if not subscriptions:
             self.send(account, "Hisobot olish uchun avval /connect orqali shahobcha ulang.")
             return
         report_service = self.report_service_class()
-        today_period = report_service.build_today_period()
+        period = report_service.build_current_period(report_type)
         for subscription in subscriptions:
             text = report_service.render(
                 restaurant=subscription.restaurant,
-                report_type=TelegramReportDelivery.ReportType.DAILY,
-                period=today_period,
+                report_type=report_type,
+                period=period,
             )
             self.send(account, text)
 
@@ -241,6 +245,8 @@ class TelegramUpdateHandler:
             "/notifications_on — avtomatik hisobotlarni yoqish\n"
             "/notifications_off — avtomatik hisobotlarni o‘chirish\n"
             "/today — bugungi hisobot\n"
+            "/week — joriy hafta hisoboti\n"
+            "/month — joriy oy hisoboti\n"
             "/settings — sozlamalar",
         )
 

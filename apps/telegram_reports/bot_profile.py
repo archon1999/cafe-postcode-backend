@@ -12,7 +12,8 @@ BOT_COMMANDS = [
     {"command": "notifications_on", "description": "Avtomatik hisobotlarni yoqish"},
     {"command": "notifications_off", "description": "Avtomatik hisobotlarni o‘chirish"},
     {"command": "today", "description": "Bugungi hisobotni olish"},
+    {"command": "week", "description": "Joriy hafta hisobotini olish"},
+    {"command": "month", "description": "Joriy oy hisobotini olish"},
     {"command": "settings", "description": "Joriy sozlamalarni ko‘rish"},
     {"command": "help", "description": "Yordam va komandalar"},
 ]
-

@@ -66,3 +66,20 @@ class TelegramReportTemplateTests(SimpleTestCase):
         self.assertIn("Du 20", text)
         self.assertIn("+0,5 mln", text)
 
+    def test_current_week_period_runs_from_monday_through_today(self):
+        period = self.service.build_current_period(
+            TelegramReportDelivery.ReportType.WEEKLY,
+            today=date(2026, 7, 23),
+        )
+
+        self.assertEqual(period.start.date(), date(2026, 7, 20))
+        self.assertEqual(period.end.date(), date(2026, 7, 24))
+
+    def test_current_month_period_uses_current_calendar_month(self):
+        period = self.service.build_current_period(
+            TelegramReportDelivery.ReportType.MONTHLY,
+            today=date(2026, 7, 23),
+        )
+
+        self.assertEqual(period.start.date(), date(2026, 7, 1))
+        self.assertEqual(period.end.date(), date(2026, 8, 1))

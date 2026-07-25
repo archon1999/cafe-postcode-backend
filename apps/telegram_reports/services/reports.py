@@ -50,6 +50,18 @@ class TelegramReportService:
     def build_today_period(self, *, today: date | None = None):
         return self.common_report_service_class().build_day_period(today or tashkent_today())
 
+    def build_current_period(self, report_type: str, *, today: date | None = None):
+        today = as_edate(today or tashkent_today())
+        common = self.common_report_service_class()
+        if report_type == TelegramReportDelivery.ReportType.DAILY:
+            return common.build_day_period(today)
+        if report_type == TelegramReportDelivery.ReportType.WEEKLY:
+            week_start = as_edate(today - timedelta(days=today.weekday()))
+            return common.build_range_period(week_start, today)
+        if report_type == TelegramReportDelivery.ReportType.MONTHLY:
+            return common.build_month_period(today.year, today.month)
+        raise ValueError(f"Unsupported Telegram report type: {report_type}")
+
     def render(self, *, restaurant, report_type: str, period=None) -> str:
         period = period or self.build_scheduled_period(report_type)
         include_daily = report_type == TelegramReportDelivery.ReportType.WEEKLY
@@ -128,4 +140,3 @@ class TelegramReportService:
         if report_type == TelegramReportDelivery.ReportType.MONTHLY:
             return f"{MONTH_NAMES[start.month - 1]} {start.year}"
         return f"{start.day} {MONTH_NAMES[start.month - 1]} – {end.day} {MONTH_NAMES[end.month - 1]} {end.year}"
-

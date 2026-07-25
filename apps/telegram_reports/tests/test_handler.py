@@ -2,7 +2,11 @@ from django.test import TestCase
 
 from apps.restaurants.models import Restaurant
 from apps.telegram_reports.handler import BRANCHES_BUTTON_TEXT, MAIN_KEYBOARD, TelegramUpdateHandler
-from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription
+from apps.telegram_reports.models import (
+    TelegramAccount,
+    TelegramBranchSubscription,
+    TelegramReportDelivery,
+)
 
 
 class FakeTelegramClient:
@@ -18,10 +22,22 @@ class FakeTelegramClient:
         return True
 
 
+class FakeReportService:
+    calls = []
+
+    def build_current_period(self, report_type):
+        return f"current-{report_type}"
+
+    def render(self, *, restaurant, report_type, period):
+        self.__class__.calls.append((restaurant.name, report_type, period))
+        return f"{restaurant.name}: {report_type}"
+
+
 class TelegramUpdateHandlerTests(TestCase):
     def setUp(self):
         FakeTelegramClient.sent_messages = []
         FakeTelegramClient.callback_answers = []
+        FakeReportService.calls = []
         self.handler = TelegramUpdateHandler()
         self.handler.client_class = FakeTelegramClient
         self.branch = Restaurant.objects.create(name="Qamish", auth_code="A1b2C3")
@@ -74,6 +90,26 @@ class TelegramUpdateHandlerTests(TestCase):
             account.branch_subscriptions.values_list("restaurant_id", flat=True),
             [self.branch.id, second_branch.id],
         )
+
+    def test_week_and_month_commands_send_current_reports_for_each_branch(self):
+        second_branch = Restaurant.objects.create(name="Chilonzor", auth_code="X9y8Z7")
+        self.handler.handle(self.message("/connect A1b2C3,X9y8Z7"))
+        self.handler.report_service_class = FakeReportService
+
+        for command, report_type in (
+            ("/week", TelegramReportDelivery.ReportType.WEEKLY),
+            ("/month", TelegramReportDelivery.ReportType.MONTHLY),
+        ):
+            FakeReportService.calls = []
+            self.handler.handle(self.message(command))
+
+            self.assertCountEqual(
+                FakeReportService.calls,
+                [
+                    (self.branch.name, report_type, f"current-{report_type}"),
+                    (second_branch.name, report_type, f"current-{report_type}"),
+                ],
+            )
 
     def test_connect_prompt_accepts_codes_in_followup_message(self):
         self.handler.handle(self.message("/connect"))
