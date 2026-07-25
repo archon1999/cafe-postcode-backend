@@ -17,8 +17,10 @@ class CatalogImageApiTests(APITestCase):
         permission_codes = [
             'catalog_categories.create',
             'catalog_categories.update',
+            'catalog_categories.delete',
             'catalog_items.create',
             'catalog_items.update',
+            'catalog_items.delete',
         ]
         permissions = []
         for code in permission_codes:
@@ -302,3 +304,69 @@ class CatalogImageApiTests(APITestCase):
         self.assertFalse(item.image_file.name)
         self.assertEqual(restore_response.data['image_url'], 'https://mxik.example.com/pizza-new.png')
         self.item_delete_mock.assert_called_with(previous_manual_path)
+
+    def test_category_without_sort_order_appends_and_can_be_reordered(self):
+        response = self.client.post(
+            '/api/v1/admin/catalog/categories/',
+            data={
+                'name': 'Dessert',
+                'mxikCode': '00709001906000006',
+                'mxikName': 'Dessert',
+                'isActive': True,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['sort_order'], 2)
+
+        reorder_response = self.client.patch(
+            f"/api/v1/admin/catalog/categories/{response.data['id']}/",
+            data={'sortOrder': 0},
+            format='json',
+        )
+
+        self.assertEqual(reorder_response.status_code, status.HTTP_200_OK, reorder_response.data)
+        self.assertEqual(reorder_response.data['sort_order'], 0)
+
+    def test_items_append_within_category_and_can_be_deleted(self):
+        first = CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=self.category,
+            name='Existing item',
+            price=1000,
+            sort_order=3,
+        )
+        response = self.client.post(
+            '/api/v1/admin/catalog/items/',
+            data={
+                'name': 'New item',
+                'category': str(self.category.id),
+                'description': '',
+                'price': 2000,
+                'isActive': True,
+                'isStoplisted': False,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(response.data['sort_order'], 4)
+
+        reorder_response = self.client.patch(
+            f"/api/v1/admin/catalog/items/{response.data['id']}/",
+            data={'sortOrder': 0},
+            format='json',
+        )
+        self.assertEqual(reorder_response.status_code, status.HTTP_200_OK, reorder_response.data)
+        self.assertEqual(reorder_response.data['sort_order'], 0)
+
+        delete_response = self.client.delete(f'/api/v1/admin/catalog/items/{first.id}/')
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(CatalogItem.objects.filter(pk=first.id).exists())
+
+    def test_category_can_be_deleted(self):
+        response = self.client.delete(f'/api/v1/admin/catalog/categories/{self.category.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(CatalogCategory.objects.filter(pk=self.category.id).exists())

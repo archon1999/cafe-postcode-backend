@@ -6,7 +6,7 @@ from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
 
-class HallDetailView(generics.RetrieveUpdateAPIView):
+class HallDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = HallSerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
@@ -14,6 +14,6 @@ class HallDetailView(generics.RetrieveUpdateAPIView):
         restaurant = get_request_restaurant(self.request)
         return (
             Hall.objects.filter(zone_or_cabin__restaurant=restaurant)
-            .select_related('zone_or_cabin')
-            .prefetch_related('tables__table_sessions')
+            .select_related("zone_or_cabin")
+            .prefetch_related("tables__table_sessions")
         )

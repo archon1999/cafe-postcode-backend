@@ -1,3 +1,4 @@
+from django.db.models import Max
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
 
@@ -64,6 +65,7 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
             'description_uz_crl',
             'description_ru',
             'price',
+            'sort_order',
             'modifier_groups',
             'clear_modifier_groups',
             'is_active',
@@ -115,10 +117,24 @@ class CatalogItemSerializer(CatalogImageSerializerMixin, MxikCodeValidationMixin
 
     def create(self, validated_data):
         validated_data.pop('clear_modifier_groups', None)
+        if 'sort_order' not in validated_data:
+            restaurant = validated_data.get('restaurant')
+            category = validated_data.get('category')
+            current_max = CatalogItem.objects.filter(restaurant=restaurant, category=category).aggregate(
+                value=Max('sort_order')
+            )['value']
+            validated_data['sort_order'] = (current_max if current_max is not None else -1) + 1
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
         clear_modifier_groups = validated_data.pop('clear_modifier_groups', False)
+        next_category = validated_data.get('category', instance.category)
+        if 'sort_order' not in validated_data and next_category != instance.category:
+            current_max = CatalogItem.objects.filter(
+                restaurant=instance.restaurant,
+                category=next_category,
+            ).aggregate(value=Max('sort_order'))['value']
+            validated_data['sort_order'] = (current_max if current_max is not None else -1) + 1
         instance = super().update(instance, validated_data)
         if clear_modifier_groups:
             instance.modifier_groups.clear()

@@ -26,6 +26,7 @@ ITEM_ORDERING_FIELDS = {
     'categoryName': ('category__name', 'name'),
     'prepStationName': ('prep_station__name', 'name'),
     'price': 'price',
+    'sortOrder': 'sort_order',
     'isActive': 'is_active',
     'isStoplisted': 'is_stoplisted',
 }
@@ -99,4 +100,4 @@ class ItemListFilters:
             queryset = queryset.filter(is_active=self.is_active)
         if self.is_stoplisted is not None:
             queryset = queryset.filter(is_stoplisted=self.is_stoplisted)
-        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('name',))
+        return apply_ordering(queryset.distinct(), self.ordering, default_ordering=('sort_order', 'name'))

@@ -14,7 +14,9 @@ class PosMenuView(generics.ListAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        item_queryset = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related(
+        item_queryset = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).order_by(
+            'sort_order', 'name'
+        ).select_related(
             'category__prep_station',
             'prep_station',
         ).prefetch_related(active_modifier_assignments_prefetch())

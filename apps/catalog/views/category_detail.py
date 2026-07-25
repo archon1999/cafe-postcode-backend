@@ -6,7 +6,7 @@ from apps.catalog.serializers import CatalogCategorySerializer
 from common.api.permissions import EndpointRBACPermission
 
 
-class CategoryDetailView(generics.RetrieveUpdateAPIView):
+class CategoryDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CatalogCategorySerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 

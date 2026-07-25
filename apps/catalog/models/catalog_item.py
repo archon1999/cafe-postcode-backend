@@ -49,6 +49,7 @@ class CatalogItem(BaseModel):
     )
     description = models.TextField(blank=True)
     price = models.PositiveIntegerField(default=0)
+    sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_stoplisted = models.BooleanField(default=False)
     modifier_groups = models.ManyToManyField(
@@ -59,7 +60,7 @@ class CatalogItem(BaseModel):
     )
 
     class Meta:
-        ordering = ('name',)
+        ordering = ('sort_order', 'name')
 
     def __str__(self):
         return self.name
