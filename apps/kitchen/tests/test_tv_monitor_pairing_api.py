@@ -94,6 +94,38 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         self.assertEqual(rotated_response.json()['code'], 'tv_pairing_required')
         self.assertIsNotNone(TvMonitorDevice.objects.get(restaurant=self.restaurant).revoked_at)
 
+    def test_paired_tv_can_send_client_diagnostics(self):
+        pairing = self.create_pairing()
+        self.claim_pairing(pairing)
+
+        with self.assertLogs('apps.kitchen.tv_monitor_diagnostics', level='INFO') as captured_logs:
+            response = self.client.post(
+                '/api/v1/pos/monitor/tv-diagnostics/',
+                {
+                    'event': 'queue_success',
+                    'message': 'Queue rendered',
+                    'context': {'preparing_count': 2, 'ready_count': 1},
+                },
+                format='json',
+                HTTP_X_TV_TOKEN=pairing['pollToken'],
+                HTTP_USER_AGENT='TV test client',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertIn('queue_success', captured_logs.output[0])
+        self.assertIn(str(self.restaurant.id), captured_logs.output[0])
+
+    def test_tv_diagnostics_rejects_an_unknown_device(self):
+        response = self.client.post(
+            '/api/v1/pos/monitor/tv-diagnostics/',
+            {'event': 'page_loaded'},
+            format='json',
+            HTTP_X_TV_TOKEN='unknown-device-token',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.json()['code'], 'tv_pairing_required')
+
     def test_claim_requires_authenticated_employee(self):
         pairing = self.create_pairing()
 
