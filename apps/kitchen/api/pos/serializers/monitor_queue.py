@@ -34,5 +34,6 @@ class KitchenMonitorTicketSerializer(serializers.ModelSerializer):
 
 
 class KitchenMonitorQueueSerializer(serializers.Serializer):
+    monitor_variant = serializers.CharField()
     preparing = KitchenMonitorTicketSerializer(many=True)
     recently_done = KitchenMonitorTicketSerializer(many=True)

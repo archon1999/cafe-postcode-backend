@@ -62,6 +62,7 @@ class MyRestaurantAdminApiTests(APITestCase):
                 'service_fee_percent': '7.50',
                 'vat_enabled': self.second_restaurant.vat_enabled,
                 'vat_percent': self.second_restaurant.vat_percent,
+                'pos_monitor_variant': Restaurant.PosMonitorVariant.LIGHT_COMPACT,
             },
             format='json',
         )
@@ -71,6 +72,7 @@ class MyRestaurantAdminApiTests(APITestCase):
         self.restaurant.refresh_from_db()
         self.assertTrue(self.second_restaurant.service_fee_enabled)
         self.assertEqual(self.second_restaurant.service_fee_percent, Decimal('7.50'))
+        self.assertEqual(self.second_restaurant.pos_monitor_variant, Restaurant.PosMonitorVariant.LIGHT_COMPACT)
         self.assertFalse(self.restaurant.service_fee_enabled)
 
     def test_pos_only_user_cannot_read_admin_restaurant_profile(self):

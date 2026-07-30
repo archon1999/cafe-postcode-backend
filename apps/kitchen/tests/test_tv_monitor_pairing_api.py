@@ -33,6 +33,8 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         )
 
     def test_qr_pairing_links_tv_to_restaurant_and_serves_monitor_queue(self):
+        self.restaurant.pos_monitor_variant = self.restaurant.PosMonitorVariant.LIGHT_COMPACT
+        self.restaurant.save(update_fields=['pos_monitor_variant', 'updated_at'])
         pairing = self.create_pairing()
 
         pending_response = self.pairing_status(pairing)
@@ -46,6 +48,7 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         self.assertEqual(paired_response.status_code, status.HTTP_200_OK)
         self.assertEqual(paired_response.json()['status'], 'paired')
         self.assertEqual(paired_response.json()['restaurantContext']['restaurantId'], str(self.restaurant.id))
+        self.assertEqual(paired_response.json()['restaurantContext']['posMonitorVariant'], 'light_compact')
         self.assertNotIn('authCode', paired_response.json()['restaurantContext'])
 
         order = Order.objects.create(
@@ -70,6 +73,7 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         )
 
         self.assertEqual(queue_response.status_code, status.HTTP_200_OK, queue_response.data)
+        self.assertEqual(queue_response.json()['monitorVariant'], 'light_compact')
         self.assertEqual(queue_response.json()['preparing'][0]['displayName'], '51')
         device = TvMonitorDevice.objects.get(restaurant=self.restaurant)
         self.assertIsNone(device.revoked_at)

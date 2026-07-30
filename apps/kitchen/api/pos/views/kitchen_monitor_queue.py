@@ -31,6 +31,7 @@ def serialize_kitchen_monitor_queue(restaurant):
     ).order_by('-completed_at', '-created_at')
     return KitchenMonitorQueueSerializer(
         {
+            'monitor_variant': restaurant.pos_monitor_variant,
             'preparing': preparing,
             'recently_done': recently_done,
         }
