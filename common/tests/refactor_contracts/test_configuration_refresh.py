@@ -90,6 +90,7 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
                 "vat_enabled": True,
                 "vat_percent": "12.00",
                 "marking_check_enabled": True,
+                "pos_monitor_variant": "default",
             },
         )
         before_publish_template = self.plain_template(before_publish)
@@ -106,4 +107,3 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
         self.assertEqual(after_publish_template["version"]["schemaVersion"], 1)
         self.assertEqual(after_publish_template["version"]["layout"], draft_layout)
         self.assertIn(marker, str(after_publish_template["version"]["layout"]))
-
