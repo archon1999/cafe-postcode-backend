@@ -7,7 +7,7 @@ from apps.kitchen.models import KitchenTicket
 from apps.sales.models import Order, OrderItem
 
 
-CLOSED_ORDER_KITCHEN_GRACE_PERIOD = timedelta(minutes=30)
+CLOSED_ORDER_KITCHEN_GRACE_PERIOD = timedelta(minutes=60)
 
 
 @transaction.atomic
