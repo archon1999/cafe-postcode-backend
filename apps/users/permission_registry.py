@@ -82,6 +82,7 @@ POS_OPEN_CHECKS_VIEW_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_f
 POS_PAYMENT_ORDER_ITEM_CREATE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_ORDER_ITEM_DELETE_ROLES = ('fast_food_cashier', 'fast_food_manager')
 POS_PAYMENT_OPERATION_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
+POS_CASH_SHIFT_VIEW_ROLES = ('manager', 'fast_food_manager')
 POS_CASH_SHIFT_MANAGE_ROLES = ('manager', 'fast_food_manager')
 POS_CASH_EXPENSE_ROLES = ('manager', 'fast_food_manager')
 POS_FISCAL_RECEIPT_SKIP_ROLES = ('cashier', 'manager', 'fast_food_cashier', 'fast_food_manager')
@@ -694,6 +695,16 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/pos/printing/jobs/'),
         ),
         default_roles=POS_PAYMENT_OPERATION_ROLES,
+    ),
+    permission_definition(
+        'pos_cash_shift.view',
+        surface='pos',
+        resource='pos_cash_shift',
+        action='view',
+        ui_visible=True,
+        group_key='payments',
+        name="POS kassa smenasini ko'rish",
+        default_roles=POS_CASH_SHIFT_VIEW_ROLES,
     ),
     permission_definition(
         'pos_cash_shift.manage',
@@ -1398,6 +1409,7 @@ POS_UI_PERMISSION_CODES = frozenset(
         'pos_payment_order_items.create',
         'pos_payment_order_items.delete',
         'pos_payments.create',
+        'pos_cash_shift.view',
         'pos_cash_shift.manage',
         'pos_cash_expenses.create',
         'pos_cash_expenses.void',

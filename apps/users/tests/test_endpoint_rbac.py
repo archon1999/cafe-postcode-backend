@@ -218,6 +218,8 @@ class EndpointRBACPermissionTests(TestCase):
         self.assertTrue(Permission.objects.filter(code="pos_payment_order_items.create").exists())
         self.assertTrue(Permission.objects.filter(code="pos_payment_order_items.delete").exists())
         self.assertTrue(Permission.objects.filter(code="pos_payments.create").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_cash_shift.view").exists())
+        self.assertTrue(Permission.objects.filter(code="pos_cash_shift.manage").exists())
         self.assertTrue(Permission.objects.filter(code="pos_table_reservations.manage").exists())
         self.assertTrue(Permission.objects.filter(code="reports.view").exists())
 
