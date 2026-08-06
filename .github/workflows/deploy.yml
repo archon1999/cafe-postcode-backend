@@ -82,8 +82,11 @@ jobs:
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PASSWORD }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.HOST_FINGERPRINT }}
           port: ${{ secrets.PORT }}
+          timeout: 60s
+          command_timeout: 40m
           script_stop: true
           script: |
             set -e
