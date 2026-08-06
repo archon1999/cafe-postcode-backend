@@ -8,12 +8,11 @@ from apps.dashboard.api.serializers.overview import (
     DashboardStaffSerializer,
     DashboardTopItemSerializer,
 )
-from apps.dashboard.services import OwnerDashboardDetailService
+from apps.dashboard.services import OwnerDashboardDetailService, get_dashboard_restaurant_scope
 from apps.platform.services import FeatureGateService
 from apps.reporting.services import get_report_period
 from common.api.paginations import StandardResultsSetPagination
 from common.api.permissions import require_any_permission_code
-from common.api.scopes import get_request_restaurant
 
 
 class DashboardBaseView(APIView):
@@ -23,9 +22,10 @@ class DashboardBaseView(APIView):
 
     def get_restaurant(self):
         require_any_permission_code(self.request.user, 'dashboard.view')
-        restaurant = get_request_restaurant(self.request)
-        self.feature_gate_service_class().ensure_owner_dashboard_access(restaurant=restaurant)
-        return restaurant
+        scope = get_dashboard_restaurant_scope(self.request)
+        for restaurant in scope.restaurants:
+            self.feature_gate_service_class().ensure_owner_dashboard_access(restaurant=restaurant)
+        return scope.query_scope
 
     def get_period(self):
         return get_report_period(self.request.query_params)

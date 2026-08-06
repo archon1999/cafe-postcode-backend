@@ -2,6 +2,8 @@ from django.contrib.auth import authenticate, get_user_model
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
+from apps.dashboard.services import get_dashboard_accessible_restaurants
+
 User = get_user_model()
 
 
@@ -15,6 +17,8 @@ class OwnerDashboardUserSerializer(serializers.ModelSerializer):
     permission_codes = serializers.ListField(child=serializers.CharField(), read_only=True)
     restaurant_id = serializers.SerializerMethodField()
     restaurant_name = serializers.SerializerMethodField()
+    restaurant_options = serializers.SerializerMethodField()
+    can_view_all_restaurants = serializers.SerializerMethodField()
     is_superuser = serializers.BooleanField(read_only=True)
 
     def get_restaurant_id(self, instance):
@@ -25,6 +29,19 @@ class OwnerDashboardUserSerializer(serializers.ModelSerializer):
         restaurant = instance.get_restaurant_scope()
         return getattr(restaurant, 'name', None)
 
+    def get_restaurant_options(self, instance):
+        return [
+            {
+                'id': restaurant.id,
+                'name': restaurant.name,
+                'is_parent': restaurant.parent_restaurant_id is None,
+            }
+            for restaurant in get_dashboard_accessible_restaurants(instance)
+        ]
+
+    def get_can_view_all_restaurants(self, instance):
+        return get_dashboard_accessible_restaurants(instance).count() > 1
+
     class Meta:
         model = User
         fields = (
@@ -34,6 +51,8 @@ class OwnerDashboardUserSerializer(serializers.ModelSerializer):
             'is_superuser',
             'restaurant_id',
             'restaurant_name',
+            'restaurant_options',
+            'can_view_all_restaurants',
             'role',
             'permission_codes',
         )

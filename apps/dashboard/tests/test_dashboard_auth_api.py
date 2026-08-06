@@ -733,3 +733,103 @@ class DashboardAuthApiTests(APITestCase):
         response = self.client.get('/api/v1/dashboard/open-checks/?period_type=day&date=2026-04-07')
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_parent_user_can_select_branch_and_all_branch_statistics(self):
+        branch = Restaurant.objects.create(
+            name='Chilonzor branch',
+            currency='UZS',
+            parent_restaurant=self.restaurant,
+        )
+        branch_entitlement = RestaurantEntitlement.objects.create(
+            restaurant=branch,
+            is_active=True,
+        )
+        branch_entitlement.permissions.set([self.dashboard_permission])
+        unavailable_branch = Restaurant.objects.create(
+            name='Inactive dashboard branch',
+            currency='UZS',
+            parent_restaurant=self.restaurant,
+        )
+        RestaurantEntitlement.objects.create(
+            restaurant=unavailable_branch,
+            is_active=True,
+        )
+        branch_cash_desk = CashDesk.objects.create(
+            restaurant=branch,
+            name='Branch cash desk',
+        )
+        branch_category = CatalogCategory.objects.create(
+            restaurant=branch,
+            name='Fast food',
+        )
+        branch_item = CatalogItem.objects.create(
+            restaurant=branch,
+            category=branch_category,
+            name='Burger',
+            price=48000,
+        )
+        branch_order = self.create_order(
+            restaurant=branch,
+            order_number=501,
+            created_at=self.dt(2026, 4, 7, 15, 0),
+            closed_at=self.dt(2026, 4, 7, 15, 30),
+            total=48000,
+            opened_by=self.owner_user,
+            cashier=self.owner_user,
+        )
+        self.create_order_item(
+            order=branch_order,
+            catalog_item=branch_item,
+            quantity=1,
+            unit_price=48000,
+        )
+        self.create_payment(
+            order=branch_order,
+            cash_desk=branch_cash_desk,
+            received_by=self.owner_user,
+            amount=48000,
+            method=Payment.Method.CARD,
+            paid_at=self.dt(2026, 4, 7, 15, 31),
+        )
+        self.client.force_authenticate(self.owner_user)
+
+        me_response = self.client.get('/api/v1/dashboard/auth/me/')
+        branch_response = self.client.get(
+            '/api/v1/dashboard/overview/?period_type=day&date=2026-04-07',
+            HTTP_X_DASHBOARD_RESTAURANT_ID=str(branch.id),
+        )
+        all_response = self.client.get(
+            '/api/v1/dashboard/overview/?period_type=day&date=2026-04-07',
+            HTTP_X_DASHBOARD_RESTAURANT_ID='all',
+        )
+        forbidden_response = self.client.get(
+            '/api/v1/dashboard/overview/?period_type=day&date=2026-04-07',
+            HTTP_X_DASHBOARD_RESTAURANT_ID=str(self.other_restaurant.id),
+        )
+        unavailable_response = self.client.get(
+            '/api/v1/dashboard/overview/?period_type=day&date=2026-04-07',
+            HTTP_X_DASHBOARD_RESTAURANT_ID=str(unavailable_branch.id),
+        )
+
+        self.assertEqual(me_response.status_code, status.HTTP_200_OK, me_response.data)
+        self.assertTrue(me_response.data['can_view_all_restaurants'])
+        self.assertEqual(len(me_response.data['restaurant_options']), 2)
+        self.assertEqual(branch_response.status_code, status.HTTP_200_OK, branch_response.data)
+        self.assertEqual(branch_response.data['summary']['sales_total'], 48000)
+        self.assertEqual(
+            branch_response.data['top_items'][0]['quantity'],
+            1,
+            branch_response.data['top_items'],
+        )
+        self.assertEqual(all_response.status_code, status.HTTP_200_OK, all_response.data)
+        self.assertEqual(all_response.data['restaurant']['name'], 'Barcha shahobchalar')
+        self.assertEqual(all_response.data['summary']['sales_total'], 80000)
+        self.assertEqual(all_response.data['top_items'][0]['item_name'], 'Burger')
+        self.assertEqual(
+            all_response.data['top_items'][0]['quantity'],
+            2,
+            all_response.data['top_items'],
+        )
+        self.assertEqual(all_response.data['top_items'][0]['revenue'], 66000)
+        self.assertEqual(forbidden_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(unavailable_response.status_code, status.HTTP_403_FORBIDDEN)

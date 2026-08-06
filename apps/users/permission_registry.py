@@ -871,7 +871,10 @@ PERMISSION_DEFINITIONS.extend(
             ('GET', 'api/v1/admin/platform/restaurants/<uuid:pk>/balance-transactions/'),
         ),
         create_endpoints=merge_endpoint_specs(
-            endpoint_specs(('POST', 'api/v1/admin/restaurants/')),
+            endpoint_specs(
+                ('POST', 'api/v1/admin/restaurants/'),
+                ('POST', 'api/v1/admin/restaurants/<uuid:pk>/branches/'),
+            ),
             endpoint_specs(('GET', 'api/v1/admin/restaurants/lookup/')),
         ),
         update_endpoints=merge_endpoint_specs(

@@ -3,6 +3,7 @@ from .distribution_point import DistributionPointSerializer
 from .prep_station import PrepStationSerializer
 from .setup import RestaurantSetupApplySerializer
 from .restaurant import (
+    RestaurantBranchCreateSerializer,
     RestaurantLookupSerializer,
     RestaurantSelfServiceSerializer,
     RestaurantSerializer,
@@ -15,6 +16,7 @@ __all__ = [
     "PrepStationSerializer",
     "RestaurantSetupApplySerializer",
     "RestaurantDetailSerializer",
+    "RestaurantBranchCreateSerializer",
     "RestaurantLookupSerializer",
     "RestaurantSelfServiceSerializer",
     "RestaurantSerializer",

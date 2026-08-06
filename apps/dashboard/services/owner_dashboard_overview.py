@@ -27,74 +27,82 @@ class OwnerDashboardBaseService(
 
 
 class OwnerDashboardOverviewService(OwnerDashboardBaseService):
-    def build(self, *, restaurant, period: ReportPeriod) -> dict:
+    def build(
+        self,
+        *,
+        restaurant,
+        period: ReportPeriod,
+        restaurant_scope=None,
+        is_all: bool = False,
+    ) -> dict:
+        report_scope = restaurant_scope or restaurant
         previous_period = self.get_previous_period(period)
         common_report = self.common_report_service_class().build(
-            restaurant=restaurant,
+            restaurant=report_scope,
             period=period,
             comparison_period=previous_period,
             top_item_limit=self.overview_top_item_limit,
         )
         current_summary = {
             **common_report["summary"],
-            "open_checks": self.get_open_checks_queryset(restaurant, period).count(),
-            "active_tables": self.get_active_tables_queryset(restaurant, period).count(),
+            "open_checks": self.get_open_checks_queryset(report_scope, period).count(),
+            "active_tables": self.get_active_tables_queryset(report_scope, period).count(),
         }
         previous_summary = {
             **common_report["previous_summary"],
-            "open_checks": self.get_open_checks_queryset(restaurant, previous_period).count(),
-            "active_tables": self.get_active_tables_queryset(restaurant, previous_period).count(),
+            "open_checks": self.get_open_checks_queryset(report_scope, previous_period).count(),
+            "active_tables": self.get_active_tables_queryset(report_scope, previous_period).count(),
         }
-        current_expenses = self.build_expense_summary(restaurant, period)
-        previous_expenses = self.build_expense_summary(restaurant, previous_period)
+        current_expenses = self.build_expense_summary(report_scope, period)
+        previous_expenses = self.build_expense_summary(report_scope, previous_period)
         current_summary.update(current_expenses)
         previous_summary.update(previous_expenses)
         series_blueprint = self.get_series_blueprint(period)
         revenue_series = self.build_revenue_series(
-            restaurant, period, blueprint=series_blueprint
+            report_scope, period, blueprint=series_blueprint
         )
         previous_revenue_series = self.build_revenue_series(
-            restaurant,
+            report_scope,
             previous_period,
             blueprint=series_blueprint,
         )
         top_items = common_report["top_items"]
-        waiters = self.get_role_breakdown_rows(restaurant, period, role="waiter")[
+        waiters = self.get_role_breakdown_rows(report_scope, period, role="waiter")[
             : self.overview_staff_limit
         ]
-        cashiers = self.get_role_breakdown_rows(restaurant, period, role="cashier")[
+        cashiers = self.get_role_breakdown_rows(report_scope, period, role="cashier")[
             : self.overview_staff_limit
         ]
-        managers = self.get_role_breakdown_rows(restaurant, period, role="manager")[
+        managers = self.get_role_breakdown_rows(report_scope, period, role="manager")[
             : self.overview_staff_limit
         ]
         payment_method_breakdown = self.build_choice_breakdown(
-            list(get_payment_breakdown_report_queryset(restaurant, period)),
+            list(get_payment_breakdown_report_queryset(report_scope, period)),
             Payment.Method.choices,
             total_sales=self.get_safe_number(current_summary.get("sales_total")),
         )
         channel_breakdown = self.build_choice_breakdown(
-            list(self.get_channel_breakdown_queryset(restaurant, period)),
+            list(self.get_channel_breakdown_queryset(report_scope, period)),
             Order.Channel.choices,
             total_sales=self.get_safe_number(current_summary.get("sales_total")),
         )
         open_checks_rows = self.build_open_checks_rows(
-            restaurant,
+            report_scope,
             period,
             limit=self.overview_open_checks_limit,
         )
         shift_rows = self.build_shift_rows(
-            restaurant, period, limit=self.overview_shift_limit
+            report_scope, period, limit=self.overview_shift_limit
         )
-        all_shift_rows = self.build_shift_rows(restaurant, period)
+        all_shift_rows = self.build_shift_rows(report_scope, period)
 
         return {
             "generated_at": tashkent_now(),
             "restaurant": {
                 "id": restaurant.id,
-                "name": restaurant.name,
+                "name": "Barcha shahobchalar" if is_all else restaurant.name,
                 "currency": restaurant.currency,
-                "address": restaurant.address,
+                "address": "" if is_all else restaurant.address,
             },
             "period": self.build_period_metadata(period, previous_period),
             "summary": {
@@ -175,9 +183,9 @@ class OwnerDashboardOverviewService(OwnerDashboardBaseService):
                         "total": self.get_safe_number(row.get("total")),
                         "count": self.get_safe_number(row.get("count")),
                     }
-                    for row in self.get_expense_category_breakdown(restaurant, period)
+                    for row in self.get_expense_category_breakdown(report_scope, period)
                 ],
-                "rows": self.build_expense_rows(restaurant, period),
+                "rows": self.build_expense_rows(report_scope, period),
             },
         }
 

@@ -1,9 +1,15 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.platform.services import FakturaClient, FakturaError
-from apps.restaurants.api.admin.serializers import RestaurantDetailSerializer, RestaurantLookupSerializer, RestaurantSerializer
+from apps.restaurants.api.admin.serializers import (
+    RestaurantBranchCreateSerializer,
+    RestaurantDetailSerializer,
+    RestaurantLookupSerializer,
+    RestaurantSerializer,
+)
 from apps.restaurants.selectors.restaurants import RestaurantListFilters, get_restaurants_queryset_for_request
 from common.api.admin_permissions import AdminPermissionRequiredMixin
 
@@ -47,6 +53,28 @@ class RestaurantLookupView(AdminPermissionRequiredMixin, APIView):
         return Response(RestaurantLookupSerializer(payload).data, status=status.HTTP_200_OK)
 
 
+class RestaurantBranchCreateView(AdminPermissionRequiredMixin, generics.CreateAPIView):
+    serializer_class = RestaurantBranchCreateSerializer
+
+    def get_parent_restaurant(self):
+        return get_object_or_404(
+            get_restaurants_queryset_for_request(self.request),
+            pk=self.kwargs['pk'],
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['parent_restaurant'] = self.get_parent_restaurant()
+        return context
+
+    def perform_create(self, serializer):
+        parent = self.get_parent_restaurant()
+        serializer.save(
+            parent_restaurant=parent,
+            business_partner=parent.business_partner,
+        )
+
+
 class RestaurantDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RestaurantSerializer
 
@@ -60,4 +88,10 @@ class RestaurantReadDetailView(AdminPermissionRequiredMixin, generics.RetrieveAP
     def get_queryset(self):
         return get_restaurants_queryset_for_request(self.request)
 
-__all__ = ['RestaurantDetailView', 'RestaurantListCreateView', 'RestaurantLookupView', 'RestaurantReadDetailView']
+__all__ = [
+    'RestaurantBranchCreateView',
+    'RestaurantDetailView',
+    'RestaurantListCreateView',
+    'RestaurantLookupView',
+    'RestaurantReadDetailView',
+]

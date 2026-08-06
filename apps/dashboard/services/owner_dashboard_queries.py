@@ -5,6 +5,7 @@ from apps.billing.helpers import get_cash_expense_model, get_payment_model
 from apps.floor.models import TableSession
 from apps.reporting.services import (
     ReportPeriod,
+    apply_restaurant_scope,
     build_summary_payload,
     get_open_checks_report_queryset,
     get_shift_report_queryset,
@@ -25,12 +26,12 @@ STAFF_ROLE_GROUPS = {
 
 class OwnerDashboardQueryMixin:
     def get_expense_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return CashExpense.objects.filter(
-            restaurant=restaurant,
+        queryset = CashExpense.objects.filter(
             status=CashExpense.Status.POSTED,
             occurred_at__gte=period.start,
             occurred_at__lt=period.end,
         )
+        return apply_restaurant_scope(queryset, 'restaurant', restaurant)
 
     def build_expense_summary(self, restaurant, period: ReportPeriod) -> dict:
         return self.get_expense_queryset(restaurant, period).aggregate(
@@ -50,19 +51,19 @@ class OwnerDashboardQueryMixin:
         )
 
     def get_payment_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return Payment.objects.filter(
-            order__restaurant=restaurant,
+        queryset = Payment.objects.filter(
             status=Payment.Status.SUCCEEDED,
             paid_at__gte=period.start,
             paid_at__lt=period.end,
         )
+        return apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
 
     def get_closed_orders_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return Order.objects.filter(
-            restaurant=restaurant,
+        queryset = Order.objects.filter(
             closed_at__gte=period.start,
             closed_at__lt=period.end,
         ).exclude(status=Order.Status.CANCELLED)
+        return apply_restaurant_scope(queryset, 'restaurant', restaurant)
 
     def get_top_items_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
         return get_top_items_report_queryset(restaurant, period).order_by(
@@ -94,8 +95,7 @@ class OwnerDashboardQueryMixin:
             order__created_at__gte=period.start,
             order__created_at__lt=period.end,
         ).exclude(status=OrderItem.Status.CANCELLED)
-        if restaurant is not None:
-            queryset = queryset.filter(order__restaurant=restaurant)
+        queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
         if role:
             queryset = queryset.filter(
                 created_by__role__code__in=STAFF_ROLE_GROUPS.get(role, ())
@@ -134,12 +134,12 @@ class OwnerDashboardQueryMixin:
         )
 
     def get_active_tables_queryset(self, restaurant, period: ReportPeriod) -> QuerySet:
-        return TableSession.objects.filter(
-            restaurant=restaurant,
+        queryset = TableSession.objects.filter(
             created_at__gte=period.start,
             created_at__lt=period.end,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
+        return apply_restaurant_scope(queryset, 'restaurant', restaurant)
 
     def build_dashboard_summary(self, restaurant, period: ReportPeriod) -> dict:
         summary = build_summary_payload(restaurant, period)

@@ -30,6 +30,7 @@ RESTAURANT_ORDERING_FIELDS = {
 def get_restaurants_queryset_for_request(request):
     queryset = Restaurant.objects.select_related(
         'business_partner',
+        'parent_restaurant',
         'entitlement',
         'entitlement__tariff',
     ).prefetch_related(

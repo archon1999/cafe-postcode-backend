@@ -33,6 +33,13 @@ class Restaurant(BaseModel):
         null=True,
         blank=True,
     )
+    parent_restaurant = models.ForeignKey(
+        'self',
+        on_delete=models.PROTECT,
+        related_name='branches',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=255)
     legal_name = models.CharField(max_length=255, blank=True)
     tax_number = models.CharField(max_length=60, blank=True)
@@ -65,6 +72,12 @@ class Restaurant(BaseModel):
 
     class Meta:
         ordering = ('name',)
+        constraints = [
+            models.CheckConstraint(
+                check=~models.Q(id=models.F('parent_restaurant_id')),
+                name='restaurant_parent_not_self',
+            ),
+        ]
 
     def __str__(self):
         return self.name

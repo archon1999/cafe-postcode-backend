@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime
 
-from django.db.models import Count, F, Q, QuerySet, Sum, Value
+from django.db.models import Count, F, Q, QuerySet, Sum, UUIDField, Value
 from django.db.models.functions import Coalesce
 from django.utils.dateparse import parse_date
 
@@ -42,6 +42,19 @@ class ReportPeriod:
     value: str
     label: str
     file_label: str
+
+
+def apply_restaurant_scope(queryset: QuerySet, field_name: str, restaurant_scope) -> QuerySet:
+    if restaurant_scope is None:
+        return queryset
+    if hasattr(restaurant_scope, 'pk'):
+        return queryset.filter(**{field_name: restaurant_scope})
+
+    restaurant_ids = [
+        getattr(restaurant, 'pk', restaurant)
+        for restaurant in restaurant_scope
+    ]
+    return queryset.filter(**{f'{field_name}__in': restaurant_ids})
 
 
 def get_report_period(query_params) -> ReportPeriod:
@@ -111,24 +124,25 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
         paid_at__gte=period.start,
         paid_at__lt=period.end,
     )
-    if restaurant is not None:
-        succeeded_payments = succeeded_payments.filter(order__restaurant=restaurant)
+    succeeded_payments = apply_restaurant_scope(
+        succeeded_payments, 'order__restaurant', restaurant
+    )
     gross_sales_total = succeeded_payments.aggregate(total=Sum('amount')).get('total') or 0
     succeeded_refunds = PaymentRefund.objects.filter(
         status=PaymentRefund.Status.SUCCEEDED,
         refunded_at__gte=period.start,
         refunded_at__lt=period.end,
     )
-    if restaurant is not None:
-        succeeded_refunds = succeeded_refunds.filter(payment__order__restaurant=restaurant)
+    succeeded_refunds = apply_restaurant_scope(
+        succeeded_refunds, 'payment__order__restaurant', restaurant
+    )
     refunds_total = succeeded_refunds.aggregate(total=Sum('amount')).get('total') or 0
     sales_total = gross_sales_total - refunds_total
     closed_orders = Order.objects.filter(
         closed_at__gte=period.start,
         closed_at__lt=period.end,
     ).exclude(status=Order.Status.CANCELLED)
-    if restaurant is not None:
-        closed_orders = closed_orders.filter(restaurant=restaurant)
+    closed_orders = apply_restaurant_scope(closed_orders, 'restaurant', restaurant)
     orders_count = closed_orders.count()
     average_check = sales_total // orders_count if orders_count else 0
     receipts = Receipt.objects.filter(
@@ -136,8 +150,7 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
         created_at__lt=period.end,
         kind__in=[Receipt.Kind.PLAIN, Receipt.Kind.FISCAL],
     )
-    if restaurant is not None:
-        receipts = receipts.filter(order__restaurant=restaurant)
+    receipts = apply_restaurant_scope(receipts, 'order__restaurant', restaurant)
     receipt_counts = receipts.aggregate(
         prechecks_count=Count('id', filter=Q(kind=Receipt.Kind.PLAIN)),
         receipts_count=Count('id', filter=Q(kind=Receipt.Kind.FISCAL)),
@@ -159,8 +172,7 @@ def get_sales_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         paid_at__gte=period.start,
         paid_at__lt=period.end,
     )
-    if restaurant is not None:
-        queryset = queryset.filter(order__restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
     return queryset.values('method').annotate(count=Count('id'), total=Sum('amount'))
 
 
@@ -168,8 +180,7 @@ def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySe
     queryset = Order.objects.filter(created_at__gte=period.start, created_at__lt=period.end).exclude(
         status__in=[Order.Status.CLOSED, Order.Status.CANCELLED]
     )
-    if restaurant is not None:
-        queryset = queryset.filter(restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'restaurant', restaurant)
     return queryset.values(
         'id',
         'order_number',
@@ -188,8 +199,17 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         order__closed_at__gte=period.start,
         order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
-    if restaurant is not None:
-        queryset = queryset.filter(order__restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
+    if restaurant is not None and not hasattr(restaurant, 'pk'):
+        return queryset.values(
+            catalog_item_name=F('catalog_item__name'),
+            category_name=F('catalog_item__category__name'),
+        ).annotate(
+            catalog_item_id=Value(None, output_field=UUIDField()),
+            category_id=Value(None, output_field=UUIDField()),
+            quantity=Sum('quantity'),
+            revenue=Sum('line_total'),
+        )
     return queryset.values(
         'catalog_item_id',
         catalog_item_name=F('catalog_item__name'),
@@ -204,8 +224,7 @@ def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         order__closed_at__gte=period.start,
         order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
-    if restaurant is not None:
-        queryset = queryset.filter(order__restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
     return queryset.values(
         staff_id=F('created_by__id'),
         staff_name=Coalesce(F('created_by__full_name'), Value("Noma'lum")),
@@ -222,8 +241,7 @@ def get_payment_breakdown_report_queryset(restaurant, period: ReportPeriod) -> Q
 
 def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     queryset = CashShift.objects.filter(opened_at__gte=period.start, opened_at__lt=period.end)
-    if restaurant is not None:
-        queryset = queryset.filter(cash_desk__restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'cash_desk__restaurant', restaurant)
     return queryset.values(
         'id',
         'status',
@@ -259,8 +277,7 @@ def get_receipts_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         created_at__lt=period.end,
         kind__in=[Receipt.Kind.PLAIN, Receipt.Kind.FISCAL],
     )
-    if restaurant is not None:
-        queryset = queryset.filter(order__restaurant=restaurant)
+    queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
     return queryset.values(
         'id',
         'kind',

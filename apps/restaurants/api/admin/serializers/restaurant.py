@@ -1,9 +1,11 @@
 import json
 
+from django.db import transaction
 from rest_framework import serializers
 
 from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_model
 from apps.restaurants.helpers import get_restaurant_model
+from apps.restaurants.services import RestaurantBranchCloneService
 
 from .restaurant_mixins import (
     RestaurantEntitlementFieldsMixin,
@@ -48,11 +50,15 @@ class RestaurantSerializer(
     permission_codes = serializers.SerializerMethodField()
     role_codes = serializers.SerializerMethodField()
     faktura_payload = serializers.JSONField(required=False)
+    parent_id = serializers.UUIDField(source="parent_restaurant_id", read_only=True)
+    parent_name = serializers.CharField(source="parent_restaurant.name", read_only=True)
 
     class Meta:
         model = Restaurant
         fields = (
             "id",
+            "parent_id",
+            "parent_name",
             "name",
             "legal_name",
             "tax_number",
@@ -136,6 +142,7 @@ class RestaurantSerializer(
         entitlement.permissions.clear()
         entitlement.allowed_roles.clear()
 
+    @transaction.atomic
     def create(self, validated_data):
         tariff = validated_data.pop("tariff", serializers.empty)
         validated_data.pop("clear_pos_auth_background_image", False)
@@ -165,6 +172,39 @@ class RestaurantSerializer(
             restaurant, old_image_name, old_image_storage
         )
         return restaurant
+
+
+class RestaurantBranchCreateSerializer(RestaurantSerializer):
+    copy_catalog = serializers.BooleanField(required=False, default=False, write_only=True)
+    copy_settings = serializers.BooleanField(required=False, default=False, write_only=True)
+
+    class Meta(RestaurantSerializer.Meta):
+        fields = RestaurantSerializer.Meta.fields + (
+            "copy_catalog",
+            "copy_settings",
+        )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        parent = self.context["parent_restaurant"]
+        if parent.parent_restaurant_id is not None:
+            raise serializers.ValidationError(
+                {"parentId": "A branch cannot be used as a parent restaurant."}
+            )
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        copy_catalog = validated_data.pop("copy_catalog", False)
+        copy_settings = validated_data.pop("copy_settings", False)
+        branch = super().create(validated_data)
+        RestaurantBranchCloneService().clone(
+            parent=branch.parent_restaurant,
+            branch=branch,
+            copy_catalog=copy_catalog,
+            copy_settings=copy_settings,
+        )
+        return branch
 
 
 class RestaurantSelfServiceSerializer(
