@@ -1,6 +1,6 @@
 from rest_framework import status
 
-from apps.kitchen.models import KitchenTicket, TvMonitorDevice
+from apps.kitchen.models import KitchenAnnouncement, KitchenTicket, TvMonitorDevice
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
@@ -66,6 +66,12 @@ class TvMonitorPairingApiTests(PosAPITestCase):
             prep_station=self.prep_station,
             status=KitchenTicket.Status.NEW,
         )
+        KitchenAnnouncement.objects.create(
+            restaurant=self.restaurant,
+            order=order,
+            display_name='51',
+            kind=KitchenAnnouncement.Kind.AUTO,
+        )
 
         queue_response = self.client.get(
             '/api/v1/pos/monitor/tv-kitchen-queue/',
@@ -75,6 +81,8 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         self.assertEqual(queue_response.status_code, status.HTTP_200_OK, queue_response.data)
         self.assertEqual(queue_response.json()['monitorVariant'], 'light_compact')
         self.assertEqual(queue_response.json()['preparing'][0]['displayName'], '51')
+        self.assertEqual(queue_response.json()['announcements'][0]['displayName'], '51')
+        self.assertEqual(queue_response.json()['announcements'][0]['orderId'], str(order.id))
         device = TvMonitorDevice.objects.get(restaurant=self.restaurant)
         self.assertIsNone(device.revoked_at)
 

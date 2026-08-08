@@ -109,8 +109,13 @@ class OrderTicketSyncService:
         active_items = order.items.exclude(status=OrderItem.Status.CANCELLED)
         if active_items.exists():
             if not active_items.exclude(status=OrderItem.Status.DONE).exists() and order.status != Order.Status.CLOSED:
+                moved_to_ready = order.status != Order.Status.READY
                 order.status = Order.Status.READY
                 order.save(update_fields=['status', 'updated_at'])
+                if moved_to_ready:
+                    from apps.kitchen.services.kitchen_announcements import create_ready_announcement
+
+                    create_ready_announcement(order=order)
                 logger.info('Order moved to ready state', extra={'order_id': str(order.pk)})
             elif order.status == Order.Status.READY and active_items.exclude(status=OrderItem.Status.DONE).exists():
                 order.status = Order.Status.SUBMITTED

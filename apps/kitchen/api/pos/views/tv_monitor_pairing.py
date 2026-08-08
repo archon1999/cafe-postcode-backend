@@ -38,6 +38,10 @@ class TvMonitorDiagnosticSerializer(serializers.Serializer):
             'render_error',
             'window_error',
             'unhandled_rejection',
+            'announcement_play_started',
+            'announcement_play_ended',
+            'announcement_play_blocked',
+            'announcement_play_error',
         )
     )
     message = serializers.CharField(required=False, allow_blank=True, max_length=1000, default='')

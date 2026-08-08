@@ -598,6 +598,7 @@ PERMISSION_DEFINITIONS = [
         name="POS oshxona buyurtmalarini tahrirlash",
         endpoints=endpoint_specs(
             ('POST', 'api/v1/pos/kitchen/tickets/<uuid:pk>/status/'),
+            ('POST', 'api/v1/pos/kitchen/tickets/<uuid:pk>/announce/'),
             ('POST', 'api/v1/pos/kitchen/items/<uuid:pk>/status/'),
         ),
         default_roles=POS_KITCHEN_UPDATE_ROLES,

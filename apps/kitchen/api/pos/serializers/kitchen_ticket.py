@@ -16,6 +16,15 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     table_name = serializers.CharField(source='order.table_session.table.name', read_only=True)
     waiter_name = serializers.CharField(source='order.opened_by.full_name', read_only=True)
     items = serializers.SerializerMethodField()
+    can_announce = serializers.SerializerMethodField()
+
+    def get_can_announce(self, obj):
+        if obj.status != KitchenTicket.Status.DONE:
+            return False
+        prefetched_tickets = getattr(obj.order, '_prefetched_objects_cache', {}).get('kitchen_tickets')
+        if prefetched_tickets is not None:
+            return all(ticket.status == KitchenTicket.Status.DONE for ticket in prefetched_tickets)
+        return not obj.order.kitchen_tickets.exclude(status=KitchenTicket.Status.DONE).exists()
 
     def get_items(self, obj):
         prefetched_items = getattr(obj.order, '_prefetched_objects_cache', {}).get('items')
@@ -53,6 +62,7 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             'table_name',
             'waiter_name',
             'items',
+            'can_announce',
             'completed_at',
             'created_at',
         )

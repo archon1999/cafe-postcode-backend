@@ -97,11 +97,11 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
         self.assertEqual([item['displayName'] for item in payload['recentlyDone']], ['3'])
         self.assertEqual(
             set(payload['preparing'][0].keys()),
-            {'id', 'orderNumber', 'displayName', 'status', 'completedAt'},
+            {'id', 'orderId', 'orderNumber', 'displayName', 'status', 'completedAt'},
         )
         self.assertEqual(
             set(payload['recentlyDone'][0].keys()),
-            {'id', 'orderNumber', 'displayName', 'status', 'completedAt'},
+            {'id', 'orderId', 'orderNumber', 'displayName', 'status', 'completedAt'},
         )
 
     def test_monitor_queue_requires_valid_restaurant_id(self):

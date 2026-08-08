@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 from apps.kitchen.api.pos.serializers.monitor_queue import KitchenMonitorQuerySerializer, KitchenMonitorQueueSerializer
 from apps.kitchen.constants import KITCHEN_MONITOR_RECENTLY_DONE_WINDOW
-from apps.kitchen.models import KitchenTicket
+from apps.kitchen.models import KitchenAnnouncement, KitchenTicket
 from apps.kitchen.services import complete_stale_closed_order_kitchen_work
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
@@ -29,11 +29,17 @@ def serialize_kitchen_monitor_queue(restaurant):
         status=KitchenTicket.Status.DONE,
         completed_at__gte=recent_done_cutoff,
     ).order_by('-completed_at', '-created_at')
+    announcement_cutoff = timezone.now() - timedelta(minutes=10)
+    announcements = KitchenAnnouncement.objects.filter(
+        restaurant=restaurant,
+        created_at__gte=announcement_cutoff,
+    ).select_related('order').order_by('created_at')[:100]
     return KitchenMonitorQueueSerializer(
         {
             'monitor_variant': restaurant.pos_monitor_variant,
             'preparing': preparing,
             'recently_done': recently_done,
+            'announcements': announcements,
         }
     ).data
 

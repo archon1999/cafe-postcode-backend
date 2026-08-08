@@ -32,7 +32,7 @@ class KitchenQueueView(generics.ListAPIView):
             'order__opened_by',
             'order__table_session__hall',
             'order__table_session__table',
-        ).prefetch_related('order__items__catalog_item', 'order__items__prep_station')
+        ).prefetch_related('order__items__catalog_item', 'order__items__prep_station', 'order__kitchen_tickets')
         prep_station_id = self.request.query_params.get('prep_station_id')
         if prep_station_id:
             queryset = queryset.filter(prep_station_id=prep_station_id)

@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
-from apps.kitchen.models import KitchenTicket
+from apps.kitchen.models import KitchenAnnouncement, KitchenTicket
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -119,6 +119,42 @@ class KitchenStatusApiTests(APITestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
         self.assertEqual(self.order.status, Order.Status.READY)
+        announcement = KitchenAnnouncement.objects.get(order=self.order, kind=KitchenAnnouncement.Kind.AUTO)
+        self.assertEqual(announcement.display_name, '17')
+        self.assertEqual(announcement.locale, KitchenAnnouncement.Locale.UZ)
+
+    def test_ready_order_can_be_announced_again_from_kitchen(self):
+        ready_response = self.client.post(
+            f'/api/v1/pos/kitchen/tickets/{self.ticket.id}/status/',
+            {'status': 'done'},
+            format='json',
+        )
+        self.assertEqual(ready_response.status_code, status.HTTP_200_OK)
+
+        replay_response = self.client.post(
+            f'/api/v1/pos/kitchen/tickets/{self.ticket.id}/announce/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(replay_response.status_code, status.HTTP_201_CREATED, replay_response.data)
+        self.assertEqual(replay_response.data['display_name'], '17')
+        self.assertEqual(replay_response.data['kind'], KitchenAnnouncement.Kind.REPLAY)
+        self.assertEqual(KitchenAnnouncement.objects.filter(order=self.order).count(), 2)
+
+    def test_status_retry_does_not_duplicate_automatic_announcement(self):
+        for _attempt in range(2):
+            response = self.client.post(
+                f'/api/v1/pos/kitchen/tickets/{self.ticket.id}/status/',
+                {'status': 'done'},
+                format='json',
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(
+            KitchenAnnouncement.objects.filter(order=self.order, kind=KitchenAnnouncement.Kind.AUTO).count(),
+            1,
+        )
 
     def test_queue_includes_station_without_assigned_cooks(self):
         response = self.client.get('/api/v1/pos/kitchen/queue/')
