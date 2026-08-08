@@ -48,11 +48,32 @@ class OrderPaymentCompletionMixin:
                 receipt_results = self._issue_fiscal_receipts(
                     order=order, payment=payment, opened_by=received_by
                 )
-            for receipt_result in receipt_results or []:
-                receipts.append(
-                    self._create_fiscal_receipt(
-                        order=order, payment=payment, receipt_result=receipt_result
+            # A failed fiscal request must not leave an otherwise successful payment
+            # blocking the cash shift.  When nothing was registered fiscally, retain
+            # the payment as a plain precheck instead.  Partial fiscal registration is
+            # deliberately kept retryable: turning it into a precheck could duplicate
+            # the portion that has already been registered.
+            has_registered_fiscal_receipt = any(
+                result.get("ok") for result in (receipt_results or [])
+            )
+            if has_registered_fiscal_receipt:
+                for receipt_result in receipt_results or []:
+                    receipts.append(
+                        self._create_fiscal_receipt(
+                            order=order, payment=payment, receipt_result=receipt_result
+                        )
                     )
+            else:
+                payment.register_fiscal = False
+                payment.fiscal_adjustment_reason = (
+                    "Fiscal registration failed; stored as precheck."
+                )
+                payment.save(
+                    update_fields=[
+                        "register_fiscal",
+                        "fiscal_adjustment_reason",
+                        "updated_at",
+                    ]
                 )
         if is_fully_paid and not payment.register_fiscal:
             receipts.append(

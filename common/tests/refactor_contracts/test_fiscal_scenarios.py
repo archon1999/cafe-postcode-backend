@@ -45,7 +45,7 @@ class BackendFiscalScenarioTests(PosTestCase):
         "apps.billing.services.order_payment.charge_payment",
         return_value={"ok": True, "provider": "cash", "reference": "fiscal-failure"},
     )
-    def test_provider_failure_keeps_paid_order_closed_with_retryable_failed_receipt(self, charge_payment):
+    def test_provider_failure_converts_paid_order_to_precheck(self, charge_payment):
         order = self._open_order_with_item(order_number=602)
         fiscal_result = self._fiscal_result(
             order=order,
@@ -64,13 +64,15 @@ class BackendFiscalScenarioTests(PosTestCase):
         receipt = Receipt.objects.get(order=order)
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
-        self.assertTrue(payment.register_fiscal)
-        self.assertEqual((receipt.kind, receipt.status), (Receipt.Kind.FISCAL, Receipt.Status.FAILED))
-        self.assertEqual(receipt.fiscal_error_code, "DEVICE_LOCKED")
-        self.assertEqual(receipt.fiscal_error_message, "Fiscal Drive is locked.")
-        self.assertIsNone(receipt.print_document_id)
+        self.assertFalse(payment.register_fiscal)
+        self.assertEqual(
+            payment.fiscal_adjustment_reason,
+            "Fiscal registration failed; stored as precheck.",
+        )
+        self.assertEqual((receipt.kind, receipt.status), (Receipt.Kind.PLAIN, Receipt.Status.CREATED))
+        self.assertIsNotNone(receipt.print_document_id)
         self.assertEqual(result["receipts"], [receipt])
-        self.assertFalse(Receipt.objects.filter(order=order, kind=Receipt.Kind.PLAIN).exists())
+        self.assertFalse(Receipt.objects.filter(order=order, kind=Receipt.Kind.FISCAL).exists())
         charge_payment.assert_called_once()
 
     @patch("apps.billing.services.order_payment.charge_payment")
