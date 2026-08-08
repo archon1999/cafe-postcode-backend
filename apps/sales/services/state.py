@@ -166,7 +166,7 @@ class OrderStateService:
             raise ValidationError(errors)
 
     def submit_order(self, *, order: Order):
-        from apps.kitchen.services import sync_order_tickets
+        from apps.kitchen.services import dispatch_order_tickets, sync_order_tickets
 
         self.ensure_order_mutable(order=order)
         self.ensure_delivery_details(order=order)
@@ -174,8 +174,9 @@ class OrderStateService:
             order.status = Order.Status.SUBMITTED
             order.save(update_fields=['status', 'updated_at'])
 
+        tickets = dispatch_order_tickets(order, created_by=order.opened_by)
         sync_order_tickets(order)
-        return order
+        return tickets
 
     def sync_after_items_changed(self, *, order: Order):
         from apps.kitchen.services import sync_order_tickets
@@ -184,6 +185,26 @@ class OrderStateService:
         order.recalculate_totals()
         if order.status != Order.Status.OPEN:
             sync_order_tickets(order)
+        return order
+
+    def serve_ready_items(self, *, order: Order):
+        from apps.kitchen.models import KitchenTicket
+        from apps.kitchen.services import sync_order_tickets
+
+        self.ensure_order_mutable(order=order)
+        now = timezone.now()
+        served_count = order.items.filter(status='done').update(status='served', updated_at=now)
+        if not served_count:
+            raise ValidationError({'detail': _('There are no ready items to serve.')})
+
+        for ticket in KitchenTicket.objects.filter(order=order, status=KitchenTicket.Status.DONE):
+            has_unserved_items = ticket.lines.exclude(
+                order_item__status__in=['served', 'cancelled'],
+            ).exists()
+            if not has_unserved_items and ticket.handed_off_at is None:
+                ticket.handed_off_at = now
+                ticket.save(update_fields=['handed_off_at', 'updated_at'])
+        sync_order_tickets(order)
         return order
 
     def close_order_after_payment(self, *, order: Order, received_by):

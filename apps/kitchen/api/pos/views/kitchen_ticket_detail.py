@@ -17,4 +17,8 @@ class KitchenTicketDetailView(generics.RetrieveAPIView):
             'order__opened_by',
             'order__table_session__hall',
             'order__table_session__table',
-        ).prefetch_related('order__items__catalog_item', 'order__items__prep_station')
+        ).prefetch_related(
+            'lines__order_item__catalog_item',
+            'lines__order_item__prep_station',
+            'order__kitchen_tickets',
+        )

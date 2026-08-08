@@ -27,7 +27,7 @@ class BackendKitchenScenarioTests(PosAPITestCase):
             price=5000,
         )
 
-    def test_submit_groups_stations_aggregates_items_and_reuses_unchanged_documents(self):
+    def test_submit_groups_stations_aggregates_items_and_retry_does_not_reprint(self):
         self._bind_kitchen_printer()
         order = self._open_order()
         self._add_item(order, self.catalog_item)
@@ -75,10 +75,10 @@ class BackendKitchenScenarioTests(PosAPITestCase):
             {station_id: ticket.print_document_id for station_id, ticket in refreshed.items()},
             first_document_ids,
         )
-        self.assertEqual(replayed_submit["kitchenPrintDocuments"], [str(first_document_ids[self.prep_station.id])])
+        self.assertEqual(replayed_submit["kitchenPrintDocuments"], [])
         self.assertEqual(PrintDocument.objects.filter(source_model="kitchen.kitchenticket").count(), 2)
 
-    def test_submitted_item_add_returns_only_the_changed_printer_revision(self):
+    def test_submitted_item_waits_for_submit_then_creates_an_addition_batch(self):
         self._bind_kitchen_printer()
         order = self._open_order()
         self._add_item(order, self.catalog_item)
@@ -98,16 +98,37 @@ class BackendKitchenScenarioTests(PosAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        tickets = {
-            ticket.prep_station_id: ticket
-            for ticket in KitchenTicket.objects.filter(order=order).select_related("print_document")
-        }
-        kitchen_ticket = tickets[self.prep_station.id]
-        self.assertNotEqual(kitchen_ticket.print_document_id, original_kitchen_document)
-        self.assertEqual(kitchen_ticket.print_document.metadata["revision"], 2)
-        self.assertEqual(tickets[self.bar_station.id].print_document_id, original_bar_document)
-        self.assertEqual(response.data["kitchenPrintDocuments"], [str(kitchen_ticket.print_document_id)])
-        self.assertEqual(kitchen_ticket.print_document.data_snapshot["items"][0]["quantity"], 3)
+        self.assertEqual(response.data["kitchenPrintDocuments"], [])
+        self.assertFalse(response.data["kitchen_dispatched"])
+        self.assertEqual(KitchenTicket.objects.filter(order=order).count(), 2)
+        self.assertEqual(
+            KitchenTicket.objects.get(order=order, prep_station=self.prep_station).print_document_id,
+            original_kitchen_document,
+        )
+        self.assertEqual(
+            KitchenTicket.objects.get(order=order, prep_station=self.bar_station).print_document_id,
+            original_bar_document,
+        )
+
+        submitted = self._submit(order)
+
+        addition_ticket = KitchenTicket.objects.get(
+            order=order,
+            prep_station=self.prep_station,
+            dispatch_number=2,
+        )
+        self.assertEqual(submitted["kitchenPrintDocuments"], [str(addition_ticket.print_document_id)])
+        self.assertEqual(addition_ticket.print_document.data_snapshot["items"][0]["quantity"], 2)
+        self.assertTrue(addition_ticket.print_document.data_snapshot["kitchen"]["isAddition"])
+        self.assertEqual(
+            KitchenTicket.objects.get(
+                order=order,
+                prep_station=self.prep_station,
+                dispatch_number=1,
+            ).print_document.data_snapshot["items"][0]["quantity"],
+            1,
+        )
+        self.assertEqual(KitchenTicket.objects.filter(order=order, prep_station=self.bar_station).count(), 1)
 
     def test_ticket_statuses_drive_item_states_and_order_ready_without_new_document_content(self):
         self._bind_kitchen_printer()

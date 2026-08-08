@@ -239,9 +239,11 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
     order = ticket.order
     restaurant = ticket.restaurant
     table_name, hall_name = _table_parts(order)
+    queryset = order.items.filter(kitchen_ticket_line__ticket=ticket)
+    if not queryset.exists():
+        queryset = order.items.filter(prep_station=ticket.prep_station)
     queryset = (
-        order.items.filter(prep_station=ticket.prep_station)
-        .exclude(status=order.items.model.Status.CANCELLED)
+        queryset.exclude(status=order.items.model.Status.CANCELLED)
         .select_related("catalog_item")
         .prefetch_related("modifiers")
     )
@@ -280,6 +282,8 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
             "ticketNumber": f"K-{str(ticket.id)[-6:].upper()}",
             "prepStation": ticket.prep_station.name,
             "createdAt": _local_datetime(ticket.created_at),
+            "dispatchNumber": ticket.dispatch_number,
+            "isAddition": ticket.dispatch_number > 1,
         },
         "system": {"copyNumber": 1, "isReprint": False},
     }

@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
-from apps.kitchen.models import KitchenAnnouncement, KitchenTicket
+from apps.kitchen.models import KitchenAnnouncement, KitchenTicket, KitchenTicketLine
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -95,6 +95,7 @@ class KitchenStatusApiTests(APITestCase):
             status=KitchenTicket.Status.NEW,
             routed_via=KitchenTicket.RouteMode.DISPLAY,
         )
+        KitchenTicketLine.objects.create(ticket=self.ticket, order_item=self.item)
 
     def test_item_status_update_marks_item_done(self):
         response = self.client.post(

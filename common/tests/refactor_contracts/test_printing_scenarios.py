@@ -227,6 +227,8 @@ class BackendPrintingScenarioTests(PosTestCase):
                 "ticketNumber": "K-00ABC1",
                 "prepStation": "Kitchen",
                 "createdAt": "2026-07-15 10:20:30",
+                "dispatchNumber": 1,
+                "isAddition": False,
             },
         )
 

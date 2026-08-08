@@ -13,6 +13,10 @@ def sync_order_tickets(order):
     OrderTicketSyncService().sync(order=order)
 
 
+def dispatch_order_tickets(order, *, created_by=None):
+    return OrderTicketSyncService().dispatch(order=order, created_by=created_by)
+
+
 __all__ = [
     'OrderTicketSyncService',
     'authenticate_tv_monitor_device',
@@ -21,6 +25,7 @@ __all__ = [
     'create_ready_announcement',
     'create_replay_announcement',
     'create_tv_monitor_pairing',
+    'dispatch_order_tickets',
     'get_tv_monitor_pairing',
     'sync_order_tickets',
 ]

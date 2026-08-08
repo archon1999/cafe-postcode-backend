@@ -1166,7 +1166,18 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         )
         self.assertTrue(paid.data['results'][0]['ok'], paid.data)
         payment = Payment.objects.get(order=order)
-        self.assertTrue(Receipt.objects.filter(payment=payment, status=Receipt.Status.FAILED).exists())
+        payment.refresh_from_db()
+        self.assertFalse(payment.register_fiscal)
+        self.assertTrue(
+            Receipt.objects.filter(
+                payment=payment,
+                kind=Receipt.Kind.PLAIN,
+                status=Receipt.Status.CREATED,
+            ).exists()
+        )
+        self.assertFalse(
+            Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists()
+        )
 
         retry_operation = {
             'operationId': 'edge-local-fiscal-retry-1',

@@ -1,3 +1,4 @@
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -21,6 +22,22 @@ class OrderItemSerializer(serializers.ModelSerializer):
     marking_scanned_count = serializers.SerializerMethodField()
     modifiers = OrderItemModifierSerializer(many=True, read_only=True)
     selected_modifiers = SelectedModifierGroupSerializer(many=True, write_only=True, required=False, default=list)
+    kitchen_dispatched = serializers.SerializerMethodField()
+    kitchen_dispatch_number = serializers.SerializerMethodField()
+
+    @staticmethod
+    def _ticket_line(obj):
+        try:
+            return obj.kitchen_ticket_line
+        except (AttributeError, ObjectDoesNotExist):
+            return None
+
+    def get_kitchen_dispatched(self, obj):
+        return self._ticket_line(obj) is not None
+
+    def get_kitchen_dispatch_number(self, obj):
+        line = self._ticket_line(obj)
+        return line.ticket.dispatch_number if line is not None else None
 
     def get_markings(self, obj):
         markings = getattr(obj, '_prefetched_objects_cache', {}).get('markings')
@@ -66,6 +83,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'marking_scanned_count',
             'modifiers',
             'selected_modifiers',
+            'kitchen_dispatched',
+            'kitchen_dispatch_number',
             'created_at',
         )
         read_only_fields = ('order', 'base_unit_price', 'unit_price', 'line_total', 'prep_station')

@@ -2,11 +2,6 @@ from rest_framework import serializers
 
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.api.admin.serializers import OrderItemSerializer
-from apps.sales.helpers import get_order_item_model
-
-OrderItem = get_order_item_model()
-
-
 class KitchenTicketSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     prep_station_name = serializers.CharField(
@@ -28,24 +23,21 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
 
     def get_items(self, obj):
-        prefetched_items = getattr(obj.order, "_prefetched_objects_cache", {}).get(
-            "items"
-        )
-        if prefetched_items is not None:
+        prefetched_lines = getattr(obj, "_prefetched_objects_cache", {}).get("lines")
+        if prefetched_lines is not None:
+            items = [line.order_item for line in prefetched_lines]
+        else:
             items = [
-                item
-                for item in prefetched_items
-                if item.prep_station_id == obj.prep_station_id
-                and item.status != OrderItem.Status.CANCELLED
+                line.order_item
+                for line in obj.lines.select_related("order_item__catalog_item", "order_item__prep_station")
             ]
-            return OrderItemSerializer(items, many=True).data
-
-        queryset = (
-            obj.order.items.filter(prep_station=obj.prep_station)
-            .exclude(status=OrderItem.Status.CANCELLED)
-            .select_related("catalog_item", "prep_station")
-        )
-        return OrderItemSerializer(queryset, many=True).data
+        if not items:
+            items = list(
+                obj.order.items.filter(prep_station=obj.prep_station)
+                .exclude(status="cancelled")
+                .select_related("catalog_item", "prep_station")
+            )
+        return OrderItemSerializer(items, many=True).data
 
     class Meta:
         model = KitchenTicket
@@ -57,6 +49,7 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             "order_display_name",
             "prep_station",
             "prep_station_name",
+            "dispatch_number",
             "status",
             "routed_via",
             "is_printed",
@@ -66,5 +59,6 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             "waiter_name",
             "items",
             "completed_at",
+            "handed_off_at",
             "created_at",
         )

@@ -25,6 +25,7 @@ class KitchenTicket(BaseModel):
         on_delete=models.CASCADE,
         related_name='kitchen_tickets',
     )
+    dispatch_number = models.PositiveIntegerField(default=1)
     print_document = models.ForeignKey(
         'printing.PrintDocument',
         on_delete=models.PROTECT,
@@ -37,11 +38,36 @@ class KitchenTicket(BaseModel):
     is_printed = models.BooleanField(default=False)
     printed_payload = models.JSONField(default=dict, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    handed_off_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ('-created_at',)
-        unique_together = ('order', 'prep_station')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('order', 'prep_station', 'dispatch_number'),
+                name='kitchen_ticket_order_station_dispatch_uniq',
+            ),
+        ]
         indexes = [
             models.Index(fields=['restaurant', 'status', 'created_at'], name='kt_rest_status_created_idx'),
             models.Index(fields=['restaurant', 'status', 'completed_at'], name='kt_rest_status_done_idx'),
+        ]
+
+
+class KitchenTicketLine(BaseModel):
+    ticket = models.ForeignKey(
+        KitchenTicket,
+        on_delete=models.CASCADE,
+        related_name='lines',
+    )
+    order_item = models.OneToOneField(
+        'sales.OrderItem',
+        on_delete=models.PROTECT,
+        related_name='kitchen_ticket_line',
+    )
+
+    class Meta:
+        ordering = ('created_at',)
+        indexes = [
+            models.Index(fields=('ticket', 'created_at'), name='kt_line_ticket_created_idx'),
         ]

@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
-from apps.kitchen.models import KitchenTicket
+from apps.kitchen.models import KitchenTicket, KitchenTicketLine
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer, OrderItemSerializer
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_item_model
@@ -32,6 +32,18 @@ class KitchenStatusService:
         if not prep_station.cooks.filter(pk=user.pk).exists():
             raise ValidationError({'detail': _('You do not have access to this preparation station.')})
 
+    @staticmethod
+    def _ticket_items(ticket):
+        queryset = OrderItem.objects.filter(kitchen_ticket_line__ticket=ticket)
+        if queryset.exists():
+            return queryset
+        legacy_items = ticket.order.items.filter(prep_station=ticket.prep_station)
+        KitchenTicketLine.objects.bulk_create(
+            [KitchenTicketLine(ticket=ticket, order_item=item) for item in legacy_items],
+            ignore_conflicts=True,
+        )
+        return OrderItem.objects.filter(kitchen_ticket_line__ticket=ticket)
+
     def update_ticket_status(self, *, ticket: KitchenTicket, status: str, user=None):
         from apps.kitchen.services import sync_order_tickets
 
@@ -49,7 +61,7 @@ class KitchenStatusService:
             KitchenTicket.Status.COOKING: OrderItem.Status.COOKING,
             KitchenTicket.Status.DONE: OrderItem.Status.DONE,
         }[status]
-        ticket.order.items.filter(prep_station=ticket.prep_station).exclude(status=OrderItem.Status.CANCELLED).update(
+        self._ticket_items(ticket).exclude(status=OrderItem.Status.CANCELLED).update(
             status=item_status,
             updated_at=timezone.now(),
         )

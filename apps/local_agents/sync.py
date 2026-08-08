@@ -71,6 +71,7 @@ def _order_snapshot(restaurant, now):
         .prefetch_related(
             'items__catalog_item',
             'items__prep_station',
+            'items__kitchen_ticket_line__ticket',
             'items__markings',
             'payments',
             'receipts',

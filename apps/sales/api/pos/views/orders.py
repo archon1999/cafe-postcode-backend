@@ -35,6 +35,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         ).prefetch_related(
             'items__catalog_item',
             'items__prep_station',
+            'items__kitchen_ticket_line__ticket',
             'items__markings',
             'payments',
             'receipts',
@@ -112,6 +113,7 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
         ).prefetch_related(
             'items__catalog_item',
             'items__prep_station',
+            'items__kitchen_ticket_line__ticket',
             'items__markings',
             'payments',
             'receipts',
@@ -174,15 +176,30 @@ class OrderSubmitView(APIView):
         require_any_permission_code(request.user, required_permission)
         if not order.items.exists():
             return Response({'detail': _('Order has no items.')}, status=status.HTTP_400_BAD_REQUEST)
-        self.order_submission_service_class().submit(order)
+        created_tickets = self.order_submission_service_class().submit(order)
+        order.refresh_from_db()
         payload = dict(OrderSerializer(order).data)
         payload['kitchenPrintDocuments'] = [
-            str(document_id)
-            for document_id in order.kitchen_tickets.filter(
-                routed_via__in=['printer', 'both'],
-                print_document__isnull=False,
-            ).values_list('print_document_id', flat=True)
+            str(ticket.print_document_id)
+            for ticket in created_tickets
+            if ticket.routed_via in ['printer', 'both'] and ticket.print_document_id
         ]
+        payload['kitchenDispatchCount'] = len(created_tickets)
         return Response(payload)
 
-__all__ = ['OrderSubmitView', 'PosOrderDetailView', 'PosOrderListCreateView']
+
+class OrderServeReadyView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    state_service_class = OrderStateService
+
+    @transaction.atomic
+    def post(self, request, pk):
+        restaurant = get_request_restaurant(request)
+        order = generics.get_object_or_404(Order, pk=pk, restaurant=restaurant)
+        required_permission = POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
+        require_any_permission_code(request.user, required_permission)
+        self.state_service_class().serve_ready_items(order=order)
+        order.refresh_from_db()
+        return Response(OrderSerializer(order).data)
+
+__all__ = ['OrderServeReadyView', 'OrderSubmitView', 'PosOrderDetailView', 'PosOrderListCreateView']

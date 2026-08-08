@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.sales.helpers import get_order_item_model, get_order_model
+from apps.kitchen.models import KitchenTicketLine
 from apps.sales.serializers import OrderItemSerializer
 from apps.sales.services import OrderStateService
 from common.api.permissions import (
@@ -42,18 +43,10 @@ class OrderItemListCreateView(generics.ListCreateAPIView):
                 POS_TAKEAWAY_MENU_VIEW_PERMISSION,
                 POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION,
             )
-        before_documents = set(order.kitchen_tickets.values_list('print_document_id', flat=True))
         self.state_service_class().ensure_order_mutable(order=order)
         serializer.save(order=order, created_by=self.request.user)
         self.state_service_class().sync_after_items_changed(order=order)
-        self.kitchen_print_documents = [
-            str(document_id)
-            for document_id in order.kitchen_tickets.filter(
-                routed_via__in=['printer', 'both'],
-                print_document__isnull=False,
-            ).values_list('print_document_id', flat=True)
-            if document_id not in before_documents
-        ]
+        self.kitchen_print_documents = []
 
     def create(self, request, *args, **kwargs):
         response = super().create(request, *args, **kwargs)
@@ -96,7 +89,11 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
                 POS_PAYMENT_ORDER_ITEMS_DELETE_PERMISSION,
             )
         self.state_service_class().ensure_order_mutable(order=order)
-        instance.delete()
+        if KitchenTicketLine.objects.filter(order_item=instance).exists():
+            instance.status = OrderItem.Status.CANCELLED
+            instance.save(update_fields=['status', 'updated_at'])
+        else:
+            instance.delete()
         self.state_service_class().sync_after_items_changed(order=order)
         if (
             not order.table_session_id
@@ -138,22 +135,13 @@ class BulkOrderItemCreateView(APIView):
         if errors:
             return Response({'items': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        before_documents = set(order.kitchen_tickets.values_list('print_document_id', flat=True))
         self.state_service_class().ensure_order_mutable(order=order)
         created_items = [serializer.save(order=order, created_by=request.user) for serializer in item_serializers]
         self.state_service_class().sync_after_items_changed(order=order)
-        kitchen_print_documents = [
-            str(document_id)
-            for document_id in order.kitchen_tickets.filter(
-                routed_via__in=['printer', 'both'],
-                print_document__isnull=False,
-            ).values_list('print_document_id', flat=True)
-            if document_id not in before_documents
-        ]
         return Response(
             {
                 'items': OrderItemSerializer(created_items, many=True).data,
-                'kitchenPrintDocuments': kitchen_print_documents,
+                'kitchenPrintDocuments': [],
             },
             status=status.HTTP_201_CREATED,
         )
