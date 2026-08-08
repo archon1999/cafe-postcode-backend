@@ -95,6 +95,38 @@ class OrderItemModifierApiTests(PosAPITestCase):
         self.assertEqual((snapshot.option_name, snapshot.price_delta), ('Pishloqli bort', 27000))
         self.assertEqual(order_item.unit_price, 57000)
 
+    def test_bulk_endpoint_adds_several_configurations_in_one_request(self):
+        order_id = self.create_takeaway_order()
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/bulk/',
+            {
+                'items': [
+                    {
+                        'catalog_item': str(self.catalog_item.id),
+                        'quantity': 3,
+                        'selected_modifiers': [
+                            {'group': str(self.dough_group.id), 'options': [str(self.thin_option.id)]},
+                        ],
+                    },
+                    {
+                        'catalog_item': str(self.catalog_item.id),
+                        'quantity': 2,
+                        'selected_modifiers': [
+                            {'group': str(self.dough_group.id), 'options': [str(self.cheese_option.id)]},
+                        ],
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual([item['quantity'] for item in response.data['items']], [3, 2])
+        self.assertEqual([item['unit_price'] for item in response.data['items']], [30000, 57000])
+        order = Order.objects.get(pk=order_id)
+        self.assertEqual(order.items.count(), 2)
+        self.assertEqual(order.subtotal, 204000)
+
     def test_required_group_is_rejected_when_missing(self):
         order_id = self.create_takeaway_order()
         response = self.client.post(

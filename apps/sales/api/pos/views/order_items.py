@@ -1,5 +1,7 @@
 from django.db import transaction
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.sales.helpers import get_order_item_model, get_order_model
 from apps.sales.serializers import OrderItemSerializer
@@ -105,4 +107,56 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             order.status = Order.Status.CANCELLED
             order.save(update_fields=['status', 'updated_at'])
 
-__all__ = ['OrderItemDetailView', 'OrderItemListCreateView']
+class BulkOrderItemCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    state_service_class = OrderStateService
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        restaurant = get_request_restaurant(request)
+        order = generics.get_object_or_404(Order, pk=order_id, restaurant=restaurant)
+        if order.table_session_id:
+            require_any_permission_code(request.user, POS_TABLES_MANAGE_PERMISSION)
+        else:
+            require_any_permission_code(
+                request.user,
+                POS_TAKEAWAY_MENU_VIEW_PERMISSION,
+                POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION,
+            )
+
+        payloads = request.data.get('items', []) if isinstance(request.data, dict) else []
+        if not isinstance(payloads, list) or not payloads:
+            return Response({'items': ['At least one item is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        if len(payloads) > 100:
+            return Response({'items': ['At most 100 configurations can be added at once.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        item_serializers = [OrderItemSerializer(data=payload, context={'request': request}) for payload in payloads]
+        errors = {}
+        for index, serializer in enumerate(item_serializers):
+            if not serializer.is_valid():
+                errors[index] = serializer.errors
+        if errors:
+            return Response({'items': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        before_documents = set(order.kitchen_tickets.values_list('print_document_id', flat=True))
+        self.state_service_class().ensure_order_mutable(order=order)
+        created_items = [serializer.save(order=order, created_by=request.user) for serializer in item_serializers]
+        self.state_service_class().sync_after_items_changed(order=order)
+        kitchen_print_documents = [
+            str(document_id)
+            for document_id in order.kitchen_tickets.filter(
+                routed_via__in=['printer', 'both'],
+                print_document__isnull=False,
+            ).values_list('print_document_id', flat=True)
+            if document_id not in before_documents
+        ]
+        return Response(
+            {
+                'items': OrderItemSerializer(created_items, many=True).data,
+                'kitchenPrintDocuments': kitchen_print_documents,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+__all__ = ['BulkOrderItemCreateView', 'OrderItemDetailView', 'OrderItemListCreateView']

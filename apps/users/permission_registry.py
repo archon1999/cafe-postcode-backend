@@ -520,6 +520,7 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/'),
+            ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/bulk/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/scan-marking/'),
             ('GET', 'api/v1/pos/sales/orders/<uuid:order_id>/marking-status/'),
             ('PUT', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
@@ -561,6 +562,7 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
             ('POST', 'api/v1/pos/sales/orders/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/'),
+            ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/bulk/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/scan-marking/'),
             ('GET', 'api/v1/pos/sales/orders/<uuid:order_id>/marking-status/'),
             ('PUT', 'api/v1/pos/sales/orders/items/<uuid:pk>/'),
@@ -655,6 +657,7 @@ PERMISSION_DEFINITIONS = [
         name="POS to'lov oynasidan mahsulot qo'shish",
         endpoints=endpoint_specs(
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/'),
+            ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/items/bulk/'),
             ('POST', 'api/v1/pos/sales/orders/<uuid:order_id>/scan-marking/'),
         ),
         default_roles=POS_PAYMENT_ORDER_ITEM_CREATE_ROLES,
@@ -958,11 +961,28 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/items/',
         detail_url='api/v1/admin/catalog/items/<uuid:pk>/',
         default_roles=CATALOG_ADMIN_ROLES,
-        create_endpoints=endpoint_specs(('POST', 'api/v1/admin/catalog/items/')),
+        list_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/catalog/items/'),
+            ('GET', 'api/v1/admin/catalog/item-groups/'),
+        ),
+        view_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+            ('GET', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
+        ),
+        create_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/catalog/items/'),
+            ('POST', 'api/v1/admin/catalog/item-groups/'),
+        ),
         update_endpoints=endpoint_specs(
             ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
             ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
             ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
+            ('PUT', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
+            ('PATCH', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
+        ),
+        delete_endpoints=endpoint_specs(
+            ('DELETE', 'api/v1/admin/catalog/items/<uuid:pk>/'),
+            ('DELETE', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
         ),
     )
 )
