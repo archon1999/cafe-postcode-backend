@@ -44,7 +44,7 @@ class OrderTicketSyncService:
         """Create one immutable kitchen batch for every unsent item in the order."""
         locked_order = (
             Order.objects.select_for_update()
-            .select_related('restaurant', 'opened_by')
+            .select_related('restaurant')
             .get(pk=order.pk)
         )
         pending_items = list(
