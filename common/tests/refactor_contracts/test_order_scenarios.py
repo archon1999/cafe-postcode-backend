@@ -84,7 +84,7 @@ class BackendOrderScenarioTests(PosAPITestCase):
                 self.assertEqual(order.distribution_point.kind, expected_channel)
                 self.assertIsNone(order.table_session_id)
 
-    def test_deleting_final_counter_item_cancels_empty_order(self):
+    def test_deleting_final_counter_item_keeps_order_open_for_reuse(self):
         created = self.create_order_via_api(
             {
                 'distribution_point': str(self.takeaway_distribution.id),
@@ -99,8 +99,15 @@ class BackendOrderScenarioTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         order = Order.objects.get(pk=created['id'])
-        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.status, Order.Status.OPEN)
         self.assertEqual((order.items.count(), order.subtotal, order.total), (0, 0, 0))
+
+        replacement_item = self.add_item_via_api(order.id, quantity=1)
+
+        order.refresh_from_db()
+        self.assertEqual(replacement_item['order'], order.id)
+        self.assertEqual(order.status, Order.Status.OPEN)
+        self.assertEqual((order.items.count(), order.subtotal, order.total), (1, 30000, 33000))
 
     def test_table_order_and_counter_hall_share_channel_but_not_semantics(self):
         table_session = self.create_table_session(guest_count=3)

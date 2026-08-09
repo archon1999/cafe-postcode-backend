@@ -285,7 +285,7 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         takeaway_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{takeaway_item.id}/')
         self.assertEqual(takeaway_success.status_code, status.HTTP_204_NO_CONTENT)
         takeaway_order.refresh_from_db()
-        self.assertEqual(takeaway_order.status, Order.Status.CANCELLED)
+        self.assertEqual(takeaway_order.status, Order.Status.OPEN)
 
         self.client.force_authenticate(self.hall_user)
         hall_manager_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')

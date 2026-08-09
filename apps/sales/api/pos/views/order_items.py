@@ -95,14 +95,7 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
         else:
             instance.delete()
         self.state_service_class().sync_after_items_changed(order=order)
-        if (
-            not order.table_session_id
-            and order.status == Order.Status.OPEN
-            and not order.items.exists()
-            and not order.payments.exists()
-        ):
-            order.status = Order.Status.CANCELLED
-            order.save(update_fields=['status', 'updated_at'])
+
 
 class BulkOrderItemCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
