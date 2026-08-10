@@ -3,9 +3,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.local_agents.services import LocalAgentCommandService, LocalAgentUnavailableError
-from apps.printing.models import PrintDocument
-from common.api.permissions import EndpointRBACPermission
+from apps.printing.models import PrintDocument, PrintTemplate
+from common.api.permissions import require_any_permission_code
 from common.api.scopes import get_request_restaurant
+
+
+KITCHEN_PRINT_PERMISSION_CODES = ('pos_tables.manage', 'pos_takeaway_menu.view', 'pos_payments.create')
+PAYMENT_PRINT_PERMISSION_CODES = ('pos_payments.create',)
 
 
 class PosPrintJobSerializer(serializers.Serializer):
@@ -15,7 +19,7 @@ class PosPrintJobSerializer(serializers.Serializer):
 
 
 class PosPrintJobCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    permission_classes = [permissions.IsAuthenticated]
     command_service_class = LocalAgentCommandService
 
     def post(self, request):
@@ -27,6 +31,10 @@ class PosPrintJobCreateView(APIView):
         ).first()
         if document is None:
             return Response({'detail': 'Print document was not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if document.kind == PrintTemplate.Kind.KITCHEN_TICKET:
+            require_any_permission_code(request.user, *KITCHEN_PRINT_PERMISSION_CODES)
+        else:
+            require_any_permission_code(request.user, *PAYMENT_PRINT_PERMISSION_CODES)
         try:
             result = self.command_service_class().enqueue(
                 restaurant=restaurant,
