@@ -10,6 +10,20 @@ def _report_pair(value) -> tuple[int, int]:
     return (_money(value.get("Sale")), _money(value.get("Refund")))
 
 
+def _report_sale_breakdown(value, *, sale: int, fiscal: bool) -> tuple[int, int]:
+    value = value if isinstance(value, dict) else {}
+    if "Precheck" in value or "Receipt" in value:
+        precheck = _money(value.get("Precheck"))
+        receipt = _money(value.get("Receipt"))
+        if fiscal:
+            return (
+                _scale_fiscal_drive_money(precheck),
+                _scale_fiscal_drive_money(receipt),
+            )
+        return (precheck, receipt)
+    return (0, sale) if fiscal else (sale, 0)
+
+
 def _scale_fiscal_drive_money(value):
     number = Decimal(str(value or 0)) / Decimal("100")
     return int(number) if number == number.to_integral_value() else float(number)
@@ -40,6 +54,12 @@ def build_shift_report_print_snapshot(
         )
         qr_sale, qr_refund = map(_scale_fiscal_drive_money, (qr_sale, qr_refund))
         vat_sale, vat_refund = map(_scale_fiscal_drive_money, (vat_sale, vat_refund))
+    cash_precheck_sale, cash_receipt_sale = _report_sale_breakdown(
+        report.get("TotalCash"), sale=cash_sale, fiscal=fiscal
+    )
+    card_precheck_sale, card_receipt_sale = _report_sale_breakdown(
+        report.get("TotalCard"), sale=card_sale, fiscal=fiscal
+    )
     total_sale = _report_total(
         report,
         "TotalSaleAmount",
@@ -113,6 +133,10 @@ def build_shift_report_print_snapshot(
             "refundCount": _money(report.get("TotalRefundCount")),
             "cashSale": cash_sale,
             "cardSale": card_sale,
+            "cashPrecheckSale": cash_precheck_sale,
+            "cashReceiptSale": cash_receipt_sale,
+            "cardPrecheckSale": card_precheck_sale,
+            "cardReceiptSale": card_receipt_sale,
             "qrSale": qr_sale,
             "vatSale": vat_sale if fiscal else 0,
             "totalSale": total_sale,

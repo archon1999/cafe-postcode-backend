@@ -20,6 +20,12 @@ def build_unikassa_like_report(
 ) -> dict:
     sale_totals = _totals_by_method(rows)
     sale_tender_totals = _tender_totals(rows)
+    precheck_tender_totals = _tender_totals(
+        [row for row in rows if not int(row.get("fiscal_receipt_count") or 0)]
+    )
+    receipt_tender_totals = _tender_totals(
+        [row for row in rows if int(row.get("fiscal_receipt_count") or 0)]
+    )
     refund_totals = _refund_tender_totals(refunds)
     sale_total = sum(sale_totals.values())
     refund_total = sum(refund_totals.values())
@@ -37,10 +43,14 @@ def build_unikassa_like_report(
         "TotalCash": {
             "Sale": sale_tender_totals.get(Payment.Method.CASH, 0),
             "Refund": refund_totals.get(Payment.Method.CASH, 0),
+            "Precheck": precheck_tender_totals.get(Payment.Method.CASH, 0),
+            "Receipt": receipt_tender_totals.get(Payment.Method.CASH, 0),
         },
         "TotalCard": {
             "Sale": sale_tender_totals.get(Payment.Method.CARD, 0),
             "Refund": refund_totals.get(Payment.Method.CARD, 0),
+            "Precheck": precheck_tender_totals.get(Payment.Method.CARD, 0),
+            "Receipt": receipt_tender_totals.get(Payment.Method.CARD, 0),
         },
         "TotalQR": {
             "Sale": sale_tender_totals.get(Payment.Method.QR, 0),

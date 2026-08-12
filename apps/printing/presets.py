@@ -44,8 +44,10 @@ def get_shift_report_layout() -> dict:
                 'type': 'totals',
                 'rows': [
                     {'label': 'Sotuvlar', 'value': '{{report.saleCount}}'},
-                    {'label': 'Naqd', 'value': '{{report.cashSale}}', 'format': 'money'},
-                    {'label': 'Karta', 'value': '{{report.cardSale}}', 'format': 'money'},
+                    {'label': 'Naqd — prechek', 'value': '{{report.cashPrecheckSale}}', 'format': 'money'},
+                    {'label': 'Naqd — chek', 'value': '{{report.cashReceiptSale}}', 'format': 'money'},
+                    {'label': 'Karta — prechek', 'value': '{{report.cardPrecheckSale}}', 'format': 'money'},
+                    {'label': 'Karta — chek', 'value': '{{report.cardReceiptSale}}', 'format': 'money'},
                     {'label': 'QR', 'value': '{{report.qrSale}}', 'format': 'money', 'hideZero': True},
                     {'label': 'QQS', 'value': '{{report.vatSale}}', 'format': 'money', 'hideZero': True},
                     {'label': 'Jami', 'value': '{{report.totalSale}}', 'format': 'money', 'bold': True},

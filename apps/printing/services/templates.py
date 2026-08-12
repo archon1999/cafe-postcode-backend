@@ -12,12 +12,19 @@ DEFAULT_PRESET_KEY = 'legacy_80'
 SHIFT_REPORT_PRESET_KEY = 'internal_shift_report_80'
 
 
-def _shift_report_layout_has_expenses(layout: dict) -> bool:
-    return any(
-        row.get('value') == '{{report.expenseTotal}}'
+def _shift_report_layout_is_current(layout: dict) -> bool:
+    values = {
+        row.get('value')
         for block in layout.get('blocks', [])
         for row in block.get('rows', [])
-    )
+    }
+    return {
+        '{{report.expenseTotal}}',
+        '{{report.cashPrecheckSale}}',
+        '{{report.cashReceiptSale}}',
+        '{{report.cardPrecheckSale}}',
+        '{{report.cardReceiptSale}}',
+    }.issubset(values)
 
 
 @transaction.atomic
@@ -62,7 +69,7 @@ def ensure_shift_report_template(*, restaurant) -> PrintTemplate:
         template.save(update_fields=('published_version', 'updated_at'))
     elif (
         template.published_version.preset_key == SHIFT_REPORT_PRESET_KEY
-        and not _shift_report_layout_has_expenses(template.published_version.layout)
+        and not _shift_report_layout_is_current(template.published_version.layout)
     ):
         template.versions.filter(status=PrintTemplateVersion.Status.PUBLISHED).update(
             status=PrintTemplateVersion.Status.RETIRED,

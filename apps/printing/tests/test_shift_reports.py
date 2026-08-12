@@ -5,11 +5,27 @@ from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class ShiftReportPrintDocumentTests(PosTestCase):
-    def test_upgrades_the_internal_shift_template_with_expense_rows(self):
+    def test_upgrades_the_internal_shift_template_with_current_summary_rows(self):
         template = ensure_shift_report_template(restaurant=self.restaurant)
         old_layout = dict(template.published_version.layout)
         old_layout['blocks'] = [
-            block for block in old_layout['blocks'] if block.get('id') != 'expenses'
+            {
+                **block,
+                'rows': [
+                    row
+                    for row in block.get('rows', [])
+                    if row.get('value')
+                    not in {
+                        '{{report.cashPrecheckSale}}',
+                        '{{report.cashReceiptSale}}',
+                        '{{report.cardPrecheckSale}}',
+                        '{{report.cardReceiptSale}}',
+                    }
+                ],
+            }
+            if block.get('rows')
+            else block
+            for block in old_layout['blocks']
         ]
         template.published_version.layout = old_layout
         template.published_version.save(update_fields=('layout', 'updated_at'))
@@ -22,6 +38,10 @@ class ShiftReportPrintDocumentTests(PosTestCase):
             '{{report.expenseTotal}}',
             str(upgraded.published_version.layout),
         )
+        self.assertIn(
+            '{{report.cashPrecheckSale}}',
+            str(upgraded.published_version.layout),
+        )
 
     def test_creates_fixed_general_and_fiscal_shift_documents(self):
         shift = self.create_cash_shift()
@@ -30,8 +50,8 @@ class ShiftReportPrintDocumentTests(PosTestCase):
             'OpenTime': '2026-07-13 08:00:00',
             'TotalSaleCount': 2,
             'TotalRefundCount': 0,
-            'TotalCash': {'Sale': 50000, 'Refund': 0},
-            'TotalCard': {'Sale': 30000, 'Refund': 0},
+            'TotalCash': {'Sale': 50000, 'Refund': 0, 'Precheck': 20000, 'Receipt': 30000},
+            'TotalCard': {'Sale': 30000, 'Refund': 0, 'Precheck': 10000, 'Receipt': 20000},
             'TotalQR': {'Sale': 10000, 'Refund': 0},
             'TotalVAT': {'Sale': 9055, 'Refund': 0},
             'TotalSaleAmount': 90000,
@@ -64,6 +84,10 @@ class ShiftReportPrintDocumentTests(PosTestCase):
         self.assertEqual(fiscal.kind, PrintTemplate.Kind.SHIFT_REPORT)
         self.assertEqual(general.data_snapshot['report']['firstReceipt'], '10')
         self.assertEqual(general.data_snapshot['report']['vatSale'], 0)
+        self.assertEqual(general.data_snapshot['report']['cashPrecheckSale'], 20000)
+        self.assertEqual(general.data_snapshot['report']['cashReceiptSale'], 30000)
+        self.assertEqual(general.data_snapshot['report']['cardPrecheckSale'], 10000)
+        self.assertEqual(general.data_snapshot['report']['cardReceiptSale'], 20000)
         self.assertEqual(fiscal.data_snapshot['report']['firstReceipt'], '21')
         self.assertEqual(fiscal.data_snapshot['report']['cashSale'], 500)
         self.assertEqual(fiscal.data_snapshot['report']['vatSale'], 90.55)

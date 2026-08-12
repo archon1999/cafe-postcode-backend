@@ -573,6 +573,11 @@ class FiscalBusinessFlowTests(PosTestCase):
             amount=10000,
             register_fiscal=False,
         )
+        Payment.objects.filter(pk=second_payment.pk).update(
+            method=Payment.Method.CARD,
+            cash_amount=0,
+            card_amount=10000,
+        )
         Receipt.objects.create(
             order=first_order,
             payment=first_payment,
@@ -599,7 +604,12 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(payload['report']['all']['total'], 30000)
         self.assertEqual(payload['report']['fiscal_sent']['count'], 1)
         self.assertEqual(payload['report']['pos_report']['TotalSaleCount'], 2)
-        self.assertEqual(payload['report']['pos_report']['TotalCash']['Sale'], 30000)
+        self.assertEqual(payload['report']['pos_report']['TotalCash']['Sale'], 20000)
+        self.assertEqual(payload['report']['pos_report']['TotalCash']['Precheck'], 0)
+        self.assertEqual(payload['report']['pos_report']['TotalCash']['Receipt'], 20000)
+        self.assertEqual(payload['report']['pos_report']['TotalCard']['Sale'], 10000)
+        self.assertEqual(payload['report']['pos_report']['TotalCard']['Precheck'], 10000)
+        self.assertEqual(payload['report']['pos_report']['TotalCard']['Receipt'], 0)
         self.assertEqual(payload['report']['fiscal_sent_report']['FiscalReceiptCount'], 1)
         session.refresh_from_db()
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
