@@ -12,9 +12,16 @@ ACTIVE_ORDER_STATUSES = {
     Order.Status.SUBMITTED,
     Order.Status.READY,
 }
+PREFETCHED_ACTIVE_ORDERS_ATTR = 'serialized_active_orders'
+PREFETCHED_SERVICE_TICKETS_ATTR = 'serialized_service_tickets'
+_MISSING = object()
 
 
-def _get_prefetched_related(instance, relation_name):
+def _get_prefetched_related(instance, relation_name, *, to_attr=None):
+    if to_attr:
+        related = getattr(instance, to_attr, _MISSING)
+        if related is not _MISSING:
+            return related
     return getattr(instance, '_prefetched_objects_cache', {}).get(relation_name)
 
 
@@ -22,7 +29,11 @@ def resolve_service_state(session: TableSession) -> str:
     if session.status == TableSession.Status.PENDING_PAYMENT:
         return 'pending_payment'
 
-    prefetched_orders = _get_prefetched_related(session, 'orders')
+    prefetched_orders = _get_prefetched_related(
+        session,
+        'orders',
+        to_attr=PREFETCHED_ACTIVE_ORDERS_ATTR,
+    )
     if prefetched_orders is None:
         active_orders = session.orders.filter(status__in=ACTIVE_ORDER_STATUSES).order_by('-created_at')
         latest_order = active_orders.first()
@@ -33,7 +44,11 @@ def resolve_service_state(session: TableSession) -> str:
     if latest_order is None:
         return 'done'
 
-    prefetched_tickets = _get_prefetched_related(latest_order, 'kitchen_tickets')
+    prefetched_tickets = _get_prefetched_related(
+        latest_order,
+        'kitchen_tickets',
+        to_attr=PREFETCHED_SERVICE_TICKETS_ATTR,
+    )
     if prefetched_tickets is None:
         tickets = list(latest_order.kitchen_tickets.all())
     else:

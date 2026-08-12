@@ -1,5 +1,7 @@
 from datetime import UTC, timedelta
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -145,6 +147,24 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(self.unwrap_response_items(response)), 3)
 
+    def test_open_status_query_count_does_not_grow_with_order_items(self):
+        self.create_order(status=Order.Status.SUBMITTED)
+        with CaptureQueriesContext(connection) as small_context:
+            small_response = self.client.get(
+                '/api/v1/pos/billing/open-checks/?status=open&limit=all'
+            )
+
+        for _ in range(10):
+            self.create_order(status=Order.Status.SUBMITTED)
+        with CaptureQueriesContext(connection) as large_context:
+            large_response = self.client.get(
+                '/api/v1/pos/billing/open-checks/?status=open&limit=all'
+            )
+
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertLessEqual(len(large_context), len(small_context) + 1)
+
     def test_invalid_limit_returns_validation_error(self):
         response = self.client.get('/api/v1/pos/billing/open-checks/?status=open&limit=bad')
 
@@ -248,6 +268,30 @@ class OpenCheckListApiTests(APITestCase):
         self.assertTrue(payload['payments'][0]['is_refunded'])
         self.assertNotIn('provider_payload', payload['payments'][0])
         self.assertEqual(payload['receipts'][0]['payload']['receiptNumber'], 'R-1')
+
+    def test_closed_status_query_count_does_not_grow_with_payments(self):
+        first_order = self.create_order(
+            status=Order.Status.CLOSED, closed_at=timezone.now()
+        )
+        self.create_success_payment(order=first_order)
+        with CaptureQueriesContext(connection) as small_context:
+            small_response = self.client.get(
+                '/api/v1/pos/billing/open-checks/?status=closed&page_size=100'
+            )
+
+        for _ in range(6):
+            order = self.create_order(
+                status=Order.Status.CLOSED, closed_at=timezone.now()
+            )
+            self.create_success_payment(order=order)
+        with CaptureQueriesContext(connection) as large_context:
+            large_response = self.client.get(
+                '/api/v1/pos/billing/open-checks/?status=closed&page_size=100'
+            )
+
+        self.assertEqual(small_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(large_response.status_code, status.HTTP_200_OK)
+        self.assertLessEqual(len(large_context), len(small_context) + 1)
 
     def test_closed_status_excludes_fiscal_sent_orders(self):
         plain_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())

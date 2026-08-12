@@ -8,6 +8,9 @@ from apps.catalog.serializers.modifier import PosModifierGroupSerializer
 
 
 class PosCatalogItemSerializer(serializers.ModelSerializer):
+    menu_restaurant_context_key = 'pos_menu_restaurant'
+    menu_default_prep_station_context_key = 'pos_menu_default_prep_station'
+
     prep_station = serializers.SerializerMethodField()
     prep_station_name = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
@@ -45,14 +48,32 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     def get_cash_payment_forbidden(obj):
         return is_catalog_item_cash_sale_forbidden(obj)
 
-    @staticmethod
-    def get_prep_station(obj):
-        station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
+    def _resolve_prep_station(self, obj):
+        cache = getattr(self, '_resolved_prep_stations', None)
+        if cache is None:
+            cache = self._resolved_prep_stations = {}
+        cache_key = id(obj)
+        if cache_key in cache:
+            return cache[cache_key]
+
+        kwargs = {
+            'catalog_item': obj,
+            'restaurant': self.context.get(self.menu_restaurant_context_key) or obj.restaurant,
+        }
+        if self.menu_default_prep_station_context_key in self.context:
+            kwargs['default_prep_station'] = self.context[
+                self.menu_default_prep_station_context_key
+            ]
+        station = resolve_order_item_prep_station(**kwargs)
+        cache[cache_key] = station
+        return station
+
+    def get_prep_station(self, obj):
+        station = self._resolve_prep_station(obj)
         return str(station.id) if station is not None else None
 
-    @staticmethod
-    def get_prep_station_name(obj):
-        station = resolve_order_item_prep_station(catalog_item=obj, restaurant=obj.restaurant)
+    def get_prep_station_name(self, obj):
+        station = self._resolve_prep_station(obj)
         return station.name if station is not None else ''
 
     @staticmethod

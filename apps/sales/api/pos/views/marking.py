@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.sales.helpers import get_order_model
+from apps.sales.selectors.orders import pos_order_queryset
 from apps.sales.serializers import OrderSerializer
 from apps.sales.services.marking import OrderMarkingScanService, marking_status
 from common.api.permissions import (
@@ -67,12 +68,9 @@ class OrderScanMarkingView(APIView):
             scanned_by=request.user,
             mode=mode,
         )
-        order.refresh_from_db()
-        order = (
-            Order.objects.filter(pk=order.pk)
-            .select_related('table_session', 'table_session__hall', 'table_session__table', 'opened_by', 'cashier')
-            .prefetch_related('items__catalog_item', 'items__prep_station', 'items__markings', 'payments', 'receipts')
-            .get()
+        order = generics.get_object_or_404(
+            pos_order_queryset(Order.objects.filter(restaurant=restaurant)),
+            pk=order.pk,
         )
         return Response({'order': OrderSerializer(order).data, 'marking_status': marking_status(order)})
 

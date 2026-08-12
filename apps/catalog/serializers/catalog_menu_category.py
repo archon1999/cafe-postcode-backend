@@ -41,13 +41,21 @@ class CatalogMenuCategorySerializer(serializers.ModelSerializer):
     def get_items(self, obj):
         prefetched_items = getattr(obj, 'active_menu_items', None)
         if prefetched_items is not None:
-            return PosCatalogItemSerializer(prefetched_items, many=True).data
+            return PosCatalogItemSerializer(
+                prefetched_items,
+                many=True,
+                context=self.context,
+            ).data
 
         item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related(
             'category__prep_station',
             'prep_station',
         )
-        return PosCatalogItemSerializer(item_queryset, many=True).data
+        return PosCatalogItemSerializer(
+            item_queryset,
+            many=True,
+            context=self.context,
+        ).data
 
     def get_item_groups(self, obj):
         prefetched_groups = getattr(obj, 'active_item_groups', None)
@@ -55,4 +63,8 @@ class CatalogMenuCategorySerializer(serializers.ModelSerializer):
             prefetched_groups = obj.item_groups.filter(is_active=True).prefetch_related(
                 'members__catalog_item'
             )
-        return PosCatalogItemGroupSerializer(prefetched_groups, many=True).data
+        return PosCatalogItemGroupSerializer(
+            prefetched_groups,
+            many=True,
+            context=self.context,
+        ).data

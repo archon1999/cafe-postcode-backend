@@ -1,4 +1,6 @@
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from rest_framework.test import APIClient
 
@@ -154,5 +156,117 @@ class PosHallListViewTests(TestCase):
         self.assertEqual(float(tables_by_number[4]['positionX']), 3.0)
         self.assertEqual(tables_by_number[4]['status'], DiningTable.Status.RESERVED)
         self.assertEqual(tables_by_number[4]['zoneName'], '1-qavat')
+        self.assertIsNone(tables_by_number[4]['activeSession'])
+        self.assertEqual(tables_by_number[4]['activeSessions'], [])
+        self.assertEqual(tables_by_number[4]['activeSessionCount'], 0)
+        self.assertEqual(tables_by_number[4]['occupiedGuestCount'], 0)
+        self.assertEqual(tables_by_number[4]['availableSeatCount'], 4)
         self.assertEqual(tables_by_number[3]['activeSession']['serviceState'], 'new')
+        self.assertEqual(tables_by_number[3]['activeSessionCount'], 1)
+        self.assertEqual(tables_by_number[3]['occupiedGuestCount'], 2)
+        self.assertEqual(tables_by_number[3]['availableSeatCount'], 2)
         self.assertEqual(tables_by_number[7]['activeSession']['serviceState'], 'pending_payment')
+
+    def test_pos_halls_preserves_active_session_filtering_order_and_occupancy(self):
+        table = DiningTable.objects.get(table_number=3)
+        original_session = table.table_sessions.get(status=TableSession.Status.OPEN)
+        original_order = original_session.orders.get(status=Order.Status.SUBMITTED)
+        KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=original_order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.DONE,
+            dispatch_number=2,
+        )
+
+        latest_session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=self.hall,
+            table=table,
+            opened_by=self.user,
+            assigned_waiter=self.user,
+            guest_count=3,
+            status=TableSession.Status.OPEN,
+        )
+        ignored_order = Order.objects.create(
+            restaurant=self.restaurant,
+            table_session=latest_session,
+            distribution_point=self.distribution_point,
+            opened_by=self.user,
+            order_number=2003,
+            channel=Order.Channel.HALL,
+            status=Order.Status.CANCELLED,
+            guest_count=3,
+        )
+        KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=ignored_order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.COOKING,
+        )
+
+        closed_session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=self.hall,
+            table=table,
+            opened_by=self.user,
+            guest_count=20,
+            status=TableSession.Status.CLOSED,
+        )
+        closed_order = Order.objects.create(
+            restaurant=self.restaurant,
+            table_session=closed_session,
+            distribution_point=self.distribution_point,
+            opened_by=self.user,
+            order_number=3003,
+            channel=Order.Channel.HALL,
+            status=Order.Status.CLOSED,
+            guest_count=20,
+        )
+        KitchenTicket.objects.create(
+            restaurant=self.restaurant,
+            order=closed_order,
+            prep_station=self.prep_station,
+            status=KitchenTicket.Status.COOKING,
+        )
+
+        response = self.client.get('/api/v1/pos/floor/halls/')
+
+        self.assertEqual(response.status_code, 200)
+        tables = response.json()['data'][0]['tables']
+        payload = next(row for row in tables if row['tableNumber'] == 3)
+        self.assertEqual(
+            [row['id'] for row in payload['activeSessions']],
+            [str(latest_session.id), str(original_session.id)],
+        )
+        self.assertEqual(
+            [row['serviceState'] for row in payload['activeSessions']],
+            ['done', 'new'],
+        )
+        self.assertEqual(payload['activeSession']['id'], str(latest_session.id))
+        self.assertEqual(payload['activeSessionCount'], 2)
+        self.assertEqual(payload['occupiedGuestCount'], 5)
+        self.assertEqual(payload['availableSeatCount'], 0)
+
+    def test_pos_halls_query_count_is_bounded_as_table_count_grows(self):
+        for table_number in range(10, 22):
+            self._create_active_table(
+                table_number=table_number,
+                position_x=table_number,
+                position_y=1,
+                width=1,
+                height=1,
+                session_status=TableSession.Status.OPEN,
+                order_status=Order.Status.SUBMITTED,
+                ticket_status=KitchenTicket.Status.NEW,
+            )
+
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get('/api/v1/pos/floor/halls/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertLessEqual(
+            len(queries),
+            12,
+            msg='\n'.join(query['sql'] for query in queries.captured_queries),
+        )

@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 
-from django.db.models import Q, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 
+from apps.billing.helpers import get_payment_model, get_payment_refund_model
 from apps.sales.helpers import (
     get_order_item_model,
     get_order_item_note_model,
     get_order_model,
 )
+from apps.sales.models import OrderItemModifier
 from common.api.query_params import (
     apply_ordering,
     get_ordering_query_param,
@@ -18,6 +20,8 @@ from common.api.scope_filters import filter_queryset_by_optional_scope
 Order = get_order_model()
 OrderItem = get_order_item_model()
 OrderItemNote = get_order_item_note_model()
+Payment = get_payment_model()
+PaymentRefund = get_payment_refund_model()
 
 ORDER_STATUS_VALUES = {choice for choice, _label in Order.Status.choices}
 ORDER_CHANNEL_VALUES = {choice for choice, _label in Order.Channel.choices}
@@ -62,6 +66,48 @@ def filter_order_queryset_by_scope(
 ):
     return filter_queryset_by_optional_scope(
         queryset, request, restaurant_lookup=restaurant_lookup
+    )
+
+
+def pos_order_queryset(queryset: QuerySet | None = None) -> QuerySet:
+    """Load the complete relation graph consumed by the POS order serializer."""
+    if queryset is None:
+        queryset = Order.objects.all()
+
+    item_queryset = (
+        OrderItem.objects.select_related(
+            "catalog_item",
+            "prep_station",
+            "kitchen_ticket_line__ticket",
+        )
+        .prefetch_related(
+            "markings",
+            Prefetch(
+                "modifiers",
+                queryset=OrderItemModifier.objects.select_related(
+                    "modifier_option__group"
+                ),
+            ),
+        )
+    )
+    payment_queryset = Payment.objects.prefetch_related(
+        Prefetch(
+            "refunds",
+            queryset=PaymentRefund.objects.select_related("refunded_by"),
+        )
+    )
+
+    return queryset.select_related(
+        "restaurant",
+        "table_session",
+        "table_session__hall",
+        "table_session__table",
+        "opened_by",
+        "cashier",
+    ).prefetch_related(
+        Prefetch("items", queryset=item_queryset),
+        Prefetch("payments", queryset=payment_queryset),
+        "receipts",
     )
 
 

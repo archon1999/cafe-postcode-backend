@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.sales.helpers import get_order_model
+from apps.sales.selectors.orders import pos_order_queryset
 from apps.sales.serializers import OrderSerializer
 from apps.sales.services import OrderStateService, OrderSubmissionService
 from common.api.permissions import (
@@ -26,20 +27,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        queryset = Order.objects.filter(restaurant=restaurant).select_related(
-            'table_session',
-            'table_session__hall',
-            'table_session__table',
-            'opened_by',
-            'cashier',
-        ).prefetch_related(
-            'items__catalog_item',
-            'items__prep_station',
-            'items__kitchen_ticket_line__ticket',
-            'items__markings',
-            'payments',
-            'receipts',
-        )
+        queryset = pos_order_queryset(Order.objects.filter(restaurant=restaurant))
         status_value = self.request.query_params.get('status')
         if status_value:
             queryset = queryset.filter(status=status_value)
@@ -104,20 +92,7 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return Order.objects.filter(restaurant=restaurant).select_related(
-            'table_session',
-            'table_session__hall',
-            'table_session__table',
-            'opened_by',
-            'cashier',
-        ).prefetch_related(
-            'items__catalog_item',
-            'items__prep_station',
-            'items__kitchen_ticket_line__ticket',
-            'items__markings',
-            'payments',
-            'receipts',
-        )
+        return pos_order_queryset(Order.objects.filter(restaurant=restaurant))
 
     def get_required_permission(self, order: Order) -> str:
         return POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
@@ -177,7 +152,10 @@ class OrderSubmitView(APIView):
         if not order.items.exists():
             return Response({'detail': _('Order has no items.')}, status=status.HTTP_400_BAD_REQUEST)
         created_tickets = self.order_submission_service_class().submit(order)
-        order.refresh_from_db()
+        order = generics.get_object_or_404(
+            pos_order_queryset(Order.objects.filter(restaurant=restaurant)),
+            pk=order.pk,
+        )
         payload = dict(OrderSerializer(order).data)
         payload['kitchenPrintDocuments'] = [
             str(ticket.print_document_id)
@@ -199,7 +177,10 @@ class OrderServeReadyView(APIView):
         required_permission = POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         require_any_permission_code(request.user, required_permission)
         self.state_service_class().serve_ready_items(order=order)
-        order.refresh_from_db()
+        order = generics.get_object_or_404(
+            pos_order_queryset(Order.objects.filter(restaurant=restaurant)),
+            pk=order.pk,
+        )
         return Response(OrderSerializer(order).data)
 
 __all__ = ['OrderServeReadyView', 'OrderSubmitView', 'PosOrderDetailView', 'PosOrderListCreateView']
