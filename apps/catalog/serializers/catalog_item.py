@@ -22,6 +22,7 @@ PrepStation = get_prep_station_model()
 class CatalogItemSerializer(
     CatalogImageSerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer
 ):
+    restaurant_id = serializers.UUIDField(source="restaurant.id", read_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     category_name = serializers.CharField(source="category.name", read_only=True)
     prep_station_name = serializers.SerializerMethodField()
@@ -62,6 +63,7 @@ class CatalogItemSerializer(
         model = CatalogItem
         fields = (
             "id",
+            "restaurant_id",
             "restaurant_name",
             "category",
             "category_name",

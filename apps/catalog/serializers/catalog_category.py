@@ -18,6 +18,7 @@ class CatalogCategorySerializer(
     CatalogCategorySerializerMixin, MxikCodeValidationMixin, serializers.ModelSerializer
 ):
     mxik_required = True
+    restaurant_id = serializers.UUIDField(source="restaurant.id", read_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     cash_payment_forbidden = serializers.SerializerMethodField()
     prep_station_name = serializers.CharField(
@@ -72,6 +73,7 @@ class CatalogCategorySerializer(
         model = CatalogCategory
         fields = (
             "id",
+            "restaurant_id",
             "restaurant_name",
             "name",
             "name_uz",

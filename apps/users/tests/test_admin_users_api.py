@@ -156,6 +156,32 @@ class AdminUsersApiTests(APITestCase):
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(detail_response.data['username'], 'restaurant-admin-clone')
 
+    def test_superuser_without_restaurant_header_lists_employees_from_all_branches(self):
+        other_restaurant = Restaurant.objects.create(name='Other Users Test Restaurant')
+        first_employee = User.objects.create_user(
+            username='first-branch-waiter',
+            full_name='First Branch Waiter',
+            restaurant=self.restaurant,
+            role=self.waiter_role,
+        )
+        second_employee = User.objects.create_user(
+            username='second-branch-waiter',
+            full_name='Second Branch Waiter',
+            restaurant=other_restaurant,
+            role=self.waiter_role,
+        )
+        superuser = User.objects.create_superuser(username='all-branches-superuser', password='secret123')
+        self.client.force_authenticate(superuser)
+
+        response = self.client.get('/api/v1/admin/employees/?pageSize=100')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        employees_by_id = {item['id']: item for item in response.data['data']}
+        self.assertIn(str(first_employee.id), employees_by_id)
+        self.assertIn(str(second_employee.id), employees_by_id)
+        self.assertEqual(employees_by_id[str(first_employee.id)]['restaurant_name'], self.restaurant.name)
+        self.assertEqual(employees_by_id[str(second_employee.id)]['restaurant_name'], other_restaurant.name)
+
     def test_employee_create_persists_pin_and_hall_assignments_for_waiter(self):
         response = self.client.post(
             '/api/v1/admin/employees/',

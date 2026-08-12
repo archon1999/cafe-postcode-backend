@@ -64,6 +64,8 @@ class CatalogItemGroupSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         category = attrs.get('category', getattr(self.instance, 'category', None))
+        if self.instance is not None and category.restaurant_id != self.instance.restaurant_id:
+            raise serializers.ValidationError({'category': 'Category belongs to another restaurant.'})
         members = attrs.get('members')
         if members is None:
             return attrs

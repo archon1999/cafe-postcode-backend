@@ -49,12 +49,16 @@ PERMISSION_ORDERING_FIELDS = {
 
 def employee_user_queryset(request) -> QuerySet:
     restaurant = get_optional_request_restaurant(request)
-    if restaurant is None and getattr(request.user, 'is_authenticated', False):
+    if (
+        restaurant is None
+        and getattr(request.user, 'is_authenticated', False)
+        and not getattr(request.user, 'is_superuser', False)
+    ):
         restaurant = request.user.get_restaurant_scope()
-    if restaurant is None:
+    if restaurant is None and not getattr(request.user, 'is_superuser', False):
         return User.objects.none()
 
-    return (
+    queryset = (
         User.objects.select_related(
             'role',
             'restaurant_profile__restaurant',
@@ -63,10 +67,13 @@ def employee_user_queryset(request) -> QuerySet:
             'employee_profile',
         )
         .prefetch_related('restaurant_profile__allowed_halls')
-        .filter(restaurant_profile__restaurant=restaurant)
+        .filter(restaurant_profile__isnull=False)
         .exclude(is_superuser=True)
         .distinct()
     )
+    if restaurant is not None:
+        queryset = queryset.filter(restaurant_profile__restaurant=restaurant)
+    return queryset
 
 
 def system_user_queryset(_request) -> QuerySet:

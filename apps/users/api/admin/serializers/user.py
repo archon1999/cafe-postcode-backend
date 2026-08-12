@@ -28,6 +28,7 @@ class UserSerializer(
         child=serializers.CharField(), read_only=True
     )
     restaurant_id = serializers.SerializerMethodField()
+    restaurant_name = serializers.SerializerMethodField()
     business_partner_id = serializers.SerializerMethodField()
     primary_hall_id = serializers.PrimaryKeyRelatedField(
         source="restaurant_profile.primary_hall",
@@ -82,6 +83,7 @@ class UserSerializer(
             "role",
             "role_id",
             "restaurant_id",
+            "restaurant_name",
             "business_partner_id",
             "hall_switch_permission",
             "primary_hall_id",
@@ -95,7 +97,7 @@ class UserSerializer(
             "kpi_percent",
             "permission_codes",
         )
-        read_only_fields = ("restaurant_id", "business_partner_id")
+        read_only_fields = ("restaurant_id", "restaurant_name", "business_partner_id")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -106,6 +108,10 @@ class UserSerializer(
     def get_restaurant_id(self, instance):
         restaurant = instance.get_restaurant_scope()
         return getattr(restaurant, "id", None)
+
+    def get_restaurant_name(self, instance):
+        restaurant = instance.get_restaurant_scope()
+        return getattr(restaurant, "name", None)
 
     def get_business_partner_id(self, instance):
         business_partner = instance.get_business_partner_scope()

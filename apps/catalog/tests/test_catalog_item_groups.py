@@ -90,3 +90,31 @@ class CatalogItemGroupApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('members', response.data)
+
+    def test_superuser_can_manage_groups_from_all_branches_scope(self):
+        self.client.credentials()
+
+        create_response = self.client.post(
+            '/api/v1/admin/catalog/item-groups/',
+            {
+                'category': str(self.category.id),
+                'name': 'All branches Pepperoni',
+                'members': [
+                    {'catalog_item': str(item.id), 'variant_name': size, 'sort_order': index}
+                    for index, (item, size) in enumerate(zip(self.items[:2], ('S', 'M'), strict=True))
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED, create_response.data)
+        group_id = create_response.data['id']
+        self.assertEqual(CatalogItemGroup.objects.get(pk=group_id).restaurant_id, self.restaurant.id)
+
+        list_response = self.client.get(
+            '/api/v1/admin/catalog/item-groups/',
+            {'category': str(self.category.id)},
+        )
+
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK, list_response.data)
+        self.assertEqual([group['id'] for group in list_response.data], [group_id])
