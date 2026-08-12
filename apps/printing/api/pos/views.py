@@ -10,6 +10,7 @@ from common.api.scopes import get_request_restaurant
 
 KITCHEN_PRINT_PERMISSION_CODES = ('pos_tables.manage', 'pos_takeaway_menu.view', 'pos_payments.create')
 PAYMENT_PRINT_PERMISSION_CODES = ('pos_payments.create',)
+PRECHECK_PRINT_PERMISSION_CODES = ('pos_tables.manage', 'pos_takeaway_menu.view', 'pos_payments.create')
 
 
 class PosPrintJobSerializer(serializers.Serializer):
@@ -33,6 +34,8 @@ class PosPrintJobCreateView(APIView):
             return Response({'detail': 'Print document was not found.'}, status=status.HTTP_404_NOT_FOUND)
         if document.kind == PrintTemplate.Kind.KITCHEN_TICKET:
             require_any_permission_code(request.user, *KITCHEN_PRINT_PERMISSION_CODES)
+        elif document.kind == PrintTemplate.Kind.ORDER_PRECHECK:
+            require_any_permission_code(request.user, *PRECHECK_PRINT_PERMISSION_CODES)
         else:
             require_any_permission_code(request.user, *PAYMENT_PRINT_PERMISSION_CODES)
         try:

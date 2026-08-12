@@ -7,6 +7,7 @@ from common.models import BaseModel
 class PrintTemplate(BaseModel):
     class Kind(models.TextChoices):
         KITCHEN_TICKET = 'kitchen_ticket', 'Kitchen ticket'
+        ORDER_PRECHECK = 'order_precheck', 'Order precheck'
         PAYMENT_RECEIPT_PLAIN = 'payment_receipt_plain', 'Plain payment receipt'
         PAYMENT_RECEIPT_FISCAL = 'payment_receipt_fiscal', 'Fiscal payment receipt'
         SHIFT_REPORT = 'shift_report', 'Shift report'

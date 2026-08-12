@@ -2,9 +2,10 @@ from copy import deepcopy
 
 
 KITCHEN_TICKET = 'kitchen_ticket'
+ORDER_PRECHECK = 'order_precheck'
 PAYMENT_RECEIPT_PLAIN = 'payment_receipt_plain'
 PAYMENT_RECEIPT_FISCAL = 'payment_receipt_fiscal'
-PRINT_KINDS = (KITCHEN_TICKET, PAYMENT_RECEIPT_PLAIN, PAYMENT_RECEIPT_FISCAL)
+PRINT_KINDS = (KITCHEN_TICKET, ORDER_PRECHECK, PAYMENT_RECEIPT_PLAIN, PAYMENT_RECEIPT_FISCAL)
 
 
 def get_shift_report_layout() -> dict:
@@ -141,6 +142,16 @@ PAYMENT_VARIABLES = COMMON_VARIABLES + (
     'totals.total',
 )
 
+PRECHECK_VARIABLES = COMMON_VARIABLES + (
+    'precheck.printedAt',
+    'totals.subtotal',
+    'totals.serviceFee',
+    'totals.vat',
+    'totals.vatPercent',
+    'totals.serviceFeePercent',
+    'totals.total',
+)
+
 FISCAL_VARIABLES = PAYMENT_VARIABLES + (
     'fiscal.receiptNumber',
     'fiscal.terminalId',
@@ -152,6 +163,7 @@ FISCAL_VARIABLES = PAYMENT_VARIABLES + (
 
 VARIABLES_BY_KIND = {
     KITCHEN_TICKET: KITCHEN_VARIABLES,
+    ORDER_PRECHECK: PRECHECK_VARIABLES,
     PAYMENT_RECEIPT_PLAIN: PAYMENT_VARIABLES,
     PAYMENT_RECEIPT_FISCAL: FISCAL_VARIABLES,
 }
@@ -161,6 +173,7 @@ VARIABLE_GROUPS = (
     {'key': 'order', 'label': 'Buyurtma'},
     {'key': 'item', 'label': 'Pozitsiya'},
     {'key': 'kitchen', 'label': 'Oshxona'},
+    {'key': 'precheck', 'label': 'Prechek'},
     {'key': 'payment', 'label': "To'lov"},
     {'key': 'totals', 'label': 'Jami'},
     {'key': 'fiscal', 'label': 'Fiskal'},
@@ -211,6 +224,7 @@ SAMPLE_DATA = {
         },
     ],
     'kitchen': {'ticketNumber': 'K-1042', 'prepStation': 'Issiq oshxona', 'createdAt': '10.07.2026 15:43'},
+    'precheck': {'printedAt': '10.07.2026 16:10'},
     'payment': {
         'method': 'Naqd',
         'amount': 82500,
@@ -370,13 +384,52 @@ def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
     return blocks
 
 
+def _precheck_blocks() -> list[dict]:
+    return [
+        {'id': 'totals-divider', 'type': 'divider'},
+        {
+            'id': 'totals',
+            'type': 'totals',
+            'role': 'totals',
+            'rows': [
+                {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
+                {'label': 'Xizmat haqi', 'value': '{{totals.serviceFee}}', 'format': 'money', 'hideZero': True},
+                {
+                    'label': 'Sh.j. QQS ({{totals.vatPercent}}%)',
+                    'value': '{{totals.vat}}',
+                    'format': 'money',
+                    'hideZero': True,
+                },
+                {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
+            ],
+        },
+        {
+            'id': 'precheck-meta',
+            'type': 'metadata',
+            'rows': [{'label': 'Chiqarildi', 'value': '{{precheck.printedAt}}'}],
+        },
+    ]
+
+
 def build_layout(*, kind: str, detailed: bool, kitchen_large: bool = False) -> dict:
     if kind not in PRINT_KINDS:
         raise KeyError(kind)
 
     is_kitchen = kind == KITCHEN_TICKET
+    is_precheck = kind == ORDER_PRECHECK
     is_fiscal = kind == PAYMENT_RECEIPT_FISCAL
     blocks = _header_blocks(detailed=detailed)
+    if is_precheck:
+        blocks.append(
+            {
+                'id': 'precheck-title',
+                'type': 'text',
+                'text': 'PRECHEK',
+                'align': 'center',
+                'bold': True,
+                'size': 'large',
+            }
+        )
     blocks.extend(_order_blocks(kitchen=is_kitchen, detailed=detailed))
     blocks.append(_items_block(show_price=not is_kitchen, large=kitchen_large, show_vat=is_fiscal))
     if is_kitchen:
@@ -386,12 +439,19 @@ def build_layout(*, kind: str, detailed: bool, kitchen_large: bool = False) -> d
                 {'id': 'order-note', 'type': 'text', 'text': '{{order.note}}', 'bold': True},
             ]
         )
+    elif is_precheck:
+        blocks.extend(_precheck_blocks())
     else:
         blocks.extend(_payment_blocks(fiscal=is_fiscal, detailed=detailed))
     blocks.extend(
         [
             {'id': 'footer-divider', 'type': 'divider'},
-            {'id': 'footer', 'type': 'text', 'text': 'Xaridingiz uchun rahmat!', 'align': 'center'},
+            {
+                'id': 'footer',
+                'type': 'text',
+                'text': 'Bu fiskal chek emas' if is_precheck else 'Xaridingiz uchun rahmat!',
+                'align': 'center',
+            },
             {'id': 'feed', 'type': 'feed', 'lines': 2},
             {'id': 'cut', 'type': 'cut'},
         ]
@@ -405,6 +465,7 @@ def build_legacy_layout(kind: str) -> dict:
         raise KeyError(kind)
 
     is_kitchen = kind == KITCHEN_TICKET
+    is_precheck = kind == ORDER_PRECHECK
     is_fiscal = kind == PAYMENT_RECEIPT_FISCAL
     blocks = [
         {
@@ -417,6 +478,20 @@ def build_legacy_layout(kind: str) -> dict:
             'size': 'large',
         },
         {'id': 'header-divider', 'type': 'divider'},
+        *(
+            [
+                {
+                    'id': 'precheck-title',
+                    'type': 'text',
+                    'text': 'PRECHEK',
+                    'align': 'center',
+                    'bold': True,
+                    'size': 'large',
+                }
+            ]
+            if is_precheck
+            else []
+        ),
         {
             'id': 'order-number',
             'type': 'text',
@@ -489,6 +564,9 @@ def build_legacy_layout(kind: str) -> dict:
                 {'id': 'order-note', 'type': 'metadata', 'rows': [{'label': 'Izoh', 'value': '{{order.note}}'}]},
             ]
         )
+    elif is_precheck:
+        blocks.extend(_precheck_blocks())
+        blocks.append({'id': 'order-note', 'type': 'metadata', 'rows': [{'label': 'Izoh', 'value': '{{order.note}}'}]})
     else:
         blocks.extend(
             [
@@ -556,7 +634,7 @@ def build_legacy_layout(kind: str) -> dict:
                 },
             ]
         )
-    if not is_kitchen:
+    if not is_kitchen and not is_precheck:
         blocks.append({'id': 'order-note', 'type': 'metadata', 'rows': [{'label': 'Izoh', 'value': '{{order.note}}'}]})
     blocks.extend(
         [
@@ -564,7 +642,7 @@ def build_legacy_layout(kind: str) -> dict:
             {
                 'id': 'footer-thanks',
                 'type': 'text',
-                'text': 'Buyurtmangiz uchun rahmat!',
+                'text': 'Bu fiskal chek emas' if is_precheck else 'Buyurtmangiz uchun rahmat!',
                 'align': 'center',
             },
             {'id': 'footer-appetite', 'type': 'text', 'text': 'Yoqimli ishtaha!', 'align': 'center'},

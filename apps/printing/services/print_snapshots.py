@@ -235,6 +235,60 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     }
 
 
+def build_order_precheck_print_snapshot(*, order) -> dict:
+    restaurant = order.restaurant
+    table_name, hall_name = _table_parts(order)
+    active_items = order.items.exclude(
+        status=order.items.model.Status.CANCELLED
+    ).select_related("catalog_item").prefetch_related("modifiers")
+    total = _money(order.total)
+    subtotal = _money(order.subtotal)
+    vat_enabled = bool(getattr(restaurant, "vat_enabled", False))
+    vat_percent = getattr(restaurant, "vat_percent", 0) or 0
+
+    return {
+        "restaurant": {
+            "name": restaurant.name,
+            "legalName": restaurant.legal_name or restaurant.name,
+            "address": restaurant.address,
+            "phone": restaurant.phone,
+            "social": getattr(restaurant, "social", ""),
+            "taxNumber": restaurant.tax_number,
+        },
+        "order": {
+            "id": str(order.id),
+            "displayNumber": str(order.display_name or order.order_number),
+            "channel": order.channel,
+            "channelLabel": _channel_label(order),
+            "table": table_name,
+            "hall": hall_name,
+            "guestCount": int(order.guest_count or 0),
+            "openedAt": _local_datetime(order.created_at),
+            "waiter": order.opened_by.full_name if order.opened_by_id and order.opened_by else "",
+            "cashier": order.cashier.full_name if order.cashier_id and order.cashier else "",
+            "note": order.note or "",
+            "deliveryPhone": order.delivery_phone or "",
+            "deliveryAddress": order.delivery_address or "",
+        },
+        "items": _aggregate_print_items(
+            active_items,
+            vat_enabled=vat_enabled,
+            vat_percent=vat_percent,
+            include_vat=True,
+        ),
+        "precheck": {"printedAt": _local_datetime(timezone.now())},
+        "totals": {
+            "subtotal": subtotal,
+            "serviceFee": _money(getattr(order, "service_fee", 0)) or max(total - subtotal, 0),
+            "serviceFeePercent": _json_number(getattr(restaurant, "service_fee_percent", 0)),
+            "vat": _included_vat(amount=total, percent=vat_percent) if vat_enabled else 0,
+            "vatPercent": _json_number(vat_percent),
+            "total": total,
+        },
+        "system": {"copyNumber": 1, "isReprint": False},
+    }
+
+
 def build_kitchen_print_snapshot(*, ticket) -> dict:
     order = ticket.order
     restaurant = ticket.restaurant

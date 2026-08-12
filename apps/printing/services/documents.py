@@ -11,6 +11,7 @@ from .print_snapshots import (
     _channel_label as _channel_label,
     _payment_method_label as _payment_method_label,
     build_kitchen_print_snapshot,
+    build_order_precheck_print_snapshot,
     build_payment_print_snapshot,
 )
 from .receipt_payloads import build_legacy_receipt_payload
@@ -126,6 +127,32 @@ def create_receipt_print_document(
             "Print document idempotency key already exists with different content."
         )
     return document, snapshot
+
+
+@transaction.atomic
+def create_order_precheck_print_document(*, order, cash_desk=None, created_by=None):
+    ensure_restaurant_templates(restaurant=order.restaurant)
+    template = PrintTemplate.objects.select_related("published_version").get(
+        restaurant=order.restaurant,
+        kind=PrintTemplate.Kind.ORDER_PRECHECK,
+    )
+    snapshot = build_order_precheck_print_snapshot(order=order)
+    content_hash = _hash_document(
+        snapshot=snapshot, template_version_id=template.published_version_id
+    )
+    return PrintDocument.objects.create(
+        restaurant=order.restaurant,
+        kind=PrintTemplate.Kind.ORDER_PRECHECK,
+        operation_type=PrintDocument.OperationType.SALE,
+        idempotency_key=f"order-precheck:{order.id}:{uuid.uuid4().hex}",
+        source_model="sales.order",
+        source_id=order.id,
+        data_snapshot=snapshot,
+        template_version=template.published_version,
+        content_hash=content_hash,
+        metadata={"cashDeskId": str(cash_desk.id) if cash_desk else None},
+        created_by=created_by,
+    )
 
 
 def attach_receipt_print_document(

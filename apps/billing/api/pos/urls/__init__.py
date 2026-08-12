@@ -22,6 +22,7 @@ from apps.billing.api.pos.views.expenses import (
     PosCashExpenseVoidView,
     PosExpenseCategoryListView,
 )
+from apps.billing.api.pos.views.prechecks import OrderPrecheckPrintDocumentView
 
 urlpatterns = [
     path('context/', CashierContextView.as_view()),
@@ -34,6 +35,7 @@ urlpatterns = [
     path('fiscal-shifts/open/', FiscalShiftOpenView.as_view()),
     path('fiscal-shifts/close/', FiscalShiftCloseView.as_view()),
     path('open-checks/', OpenCheckListView.as_view()),
+    path('orders/<uuid:pk>/precheck/print-document/', OrderPrecheckPrintDocumentView.as_view()),
     path('orders/<uuid:pk>/pay/', PaymentCreateView.as_view()),
     path('orders/<uuid:pk>/card-payments/initiate/', MartaCardPaymentInitiateView.as_view()),
     path('payments/<uuid:pk>/terminal-result/', MartaTerminalResultView.as_view()),

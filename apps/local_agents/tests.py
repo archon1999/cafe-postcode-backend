@@ -384,6 +384,18 @@ class POSRemotePrintTests(PosAPITestCase):
             template_version=kitchen_template.published_version,
             content_hash='e' * 64,
         )
+        precheck_template = PrintTemplate.objects.select_related('published_version').get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.ORDER_PRECHECK,
+        )
+        self.precheck_document = PrintDocument.objects.create(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.ORDER_PRECHECK,
+            idempotency_key='remote-precheck-document',
+            data_snapshot={},
+            template_version=precheck_template.published_version,
+            content_hash='f' * 64,
+        )
 
     @patch('apps.printing.api.pos.views.LocalAgentCommandService.enqueue')
     def test_remote_pos_print_queues_document_for_restaurants_agent(self, enqueue):
@@ -423,6 +435,42 @@ class POSRemotePrintTests(PosAPITestCase):
             {
                 'operation_id': 'pos:waiter-kitchen-123',
                 'document_id': str(self.kitchen_document.id),
+                'copies': 1,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
+        enqueue.assert_called_once()
+
+    @patch('apps.printing.api.pos.views.LocalAgentCommandService.enqueue')
+    def test_waiter_can_queue_precheck_without_payment_permission(self, enqueue):
+        enqueue.return_value = {'accepted': True, 'commandId': 'command-precheck', 'commandStatus': 'pending'}
+        self.role.permissions.set(Permission.objects.filter(code='pos_tables.manage'))
+
+        response = self.client.post(
+            '/api/v1/pos/printing/jobs/',
+            {
+                'operation_id': 'pos:waiter-precheck-123',
+                'document_id': str(self.precheck_document.id),
+                'copies': 1,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED, response.data)
+        enqueue.assert_called_once()
+
+    @patch('apps.printing.api.pos.views.LocalAgentCommandService.enqueue')
+    def test_cashier_can_queue_precheck_with_payment_permission(self, enqueue):
+        enqueue.return_value = {'accepted': True, 'commandId': 'command-precheck', 'commandStatus': 'pending'}
+        self.role.permissions.set(Permission.objects.filter(code='pos_payments.create'))
+
+        response = self.client.post(
+            '/api/v1/pos/printing/jobs/',
+            {
+                'operation_id': 'pos:cashier-precheck-123',
+                'document_id': str(self.precheck_document.id),
                 'copies': 1,
             },
             format='json',

@@ -22,14 +22,15 @@ class PrintTemplateAdminApiTests(APITestCase):
         self.client.force_authenticate(self.superuser)
         self.client.credentials(HTTP_X_ADMIN_RESTAURANT_ID=str(self.restaurant.id))
 
-    def test_restaurant_creation_provisions_exactly_three_published_templates(self):
+    def test_restaurant_creation_provisions_all_published_templates(self):
         templates = PrintTemplate.objects.filter(restaurant=self.restaurant).select_related('published_version')
 
-        self.assertEqual(templates.count(), 3)
+        self.assertEqual(templates.count(), 4)
         self.assertSetEqual(
             set(templates.values_list('kind', flat=True)),
             {
                 PrintTemplate.Kind.KITCHEN_TICKET,
+                PrintTemplate.Kind.ORDER_PRECHECK,
                 PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
                 PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL,
             },
@@ -45,7 +46,7 @@ class PrintTemplateAdminApiTests(APITestCase):
         response = self.client.get('/api/v1/admin/printing/templates/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(len(response.data), 3)
+        self.assertEqual(len(response.data), 4)
         returned_ids = {item['id'] for item in response.data}
         own_ids = {str(value) for value in PrintTemplate.objects.filter(restaurant=self.restaurant).values_list('id', flat=True)}
         self.assertSetEqual(returned_ids, own_ids)
@@ -60,12 +61,14 @@ class PrintTemplateAdminApiTests(APITestCase):
                 set(preset['templates']),
                 {
                     PrintTemplate.Kind.KITCHEN_TICKET,
+                    PrintTemplate.Kind.ORDER_PRECHECK,
                     PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
                     PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL,
                 },
             )
         self.assertIn('variablesByKind', response.data)
         self.assertIn('sampleData', response.data)
+        self.assertIn('precheck.printedAt', response.data['variablesByKind'][PrintTemplate.Kind.ORDER_PRECHECK])
         self.assertIn('item.vat', response.data['variablesByKind'][PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL])
         for preset in response.data['presets']:
             plain_blocks = preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN]['blocks']

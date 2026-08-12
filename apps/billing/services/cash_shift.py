@@ -50,6 +50,43 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             .order_by("name")
         )
 
+    def get_precheck_print_cash_desk(self, *, restaurant, user):
+        active_shift = self.get_active_shift(restaurant=restaurant, user=user)
+        if active_shift is not None and self._cash_desk_has_enabled_printer(active_shift.cash_desk):
+            return active_shift.cash_desk
+
+        printer_shift = (
+            CashShift.objects.select_related("cash_desk", "cash_desk__printer_integration")
+            .filter(
+                cash_desk__restaurant=restaurant,
+                cash_desk__is_active=True,
+                status=CashShift.Status.OPEN,
+                cash_desk__printer_integration__kind="printer",
+                cash_desk__printer_integration__is_enabled=True,
+            )
+            .order_by("-opened_at")
+            .first()
+        )
+        if printer_shift is not None:
+            return printer_shift.cash_desk
+
+        return (
+            CashDesk.objects.select_related("printer_integration")
+            .filter(
+                restaurant=restaurant,
+                is_active=True,
+                printer_integration__kind="printer",
+                printer_integration__is_enabled=True,
+            )
+            .order_by("created_at")
+            .first()
+        )
+
+    @staticmethod
+    def _cash_desk_has_enabled_printer(cash_desk):
+        printer = getattr(cash_desk, "printer_integration", None)
+        return bool(printer and printer.kind == "printer" and printer.is_enabled)
+
     def get_available_cashiers(self, *, restaurant):
         return list(
             User.objects.filter(

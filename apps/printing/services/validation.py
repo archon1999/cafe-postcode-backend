@@ -8,6 +8,7 @@ VARIABLE_PATTERN = re.compile(r'{{\s*([a-zA-Z][a-zA-Z0-9_.]*)\s*}}')
 ALLOWED_BLOCK_TYPES = frozenset({'text', 'two_column_row', 'divider', 'spacer', 'items_table', 'totals', 'metadata', 'qr', 'logo', 'feed', 'cut'})
 REQUIRED_ROLES_BY_KIND = {
     'kitchen_ticket': frozenset({'restaurant_header', 'order_header', 'items'}),
+    'order_precheck': frozenset({'restaurant_header', 'order_header', 'items', 'totals'}),
     'payment_receipt_plain': frozenset({'restaurant_header', 'order_header', 'items', 'totals', 'payment'}),
     'payment_receipt_fiscal': frozenset(
         {'restaurant_header', 'order_header', 'items', 'totals', 'payment', 'fiscal', 'fiscal_qr'}
