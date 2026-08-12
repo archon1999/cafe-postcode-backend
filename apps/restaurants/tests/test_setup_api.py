@@ -134,7 +134,7 @@ class RestaurantSetupApiTests(APITestCase):
         self.assertEqual(PrepStation.objects.filter(restaurant=self.restaurant).count(), 1)
         self.assertEqual(IntegrationConfig.objects.filter(restaurant=self.restaurant).count(), 4)
         self.assertEqual(DistributionPoint.objects.filter(restaurant=self.restaurant).count(), 2)
-        self.assertEqual(PrintTemplate.objects.filter(restaurant=self.restaurant).count(), 3)
+        self.assertEqual(PrintTemplate.objects.filter(restaurant=self.restaurant).count(), 4)
         primary = CashDesk.objects.get(restaurant=self.restaurant, name='Kassa 1')
         self.assertEqual(primary.printer_integration.name, 'Kassa 1 printer')
         self.assertEqual(primary.payment_integration.name, 'MARTA main')
