@@ -39,6 +39,10 @@ def _kitchen_print_document_ids(order, *, exclude=None):
 
 def _payment_request_payload(request):
     payload = request.data.copy()
+    if 'finalTotal' in payload and 'final_total' not in payload:
+        payload['final_total'] = payload.pop('finalTotal')
+    if 'totalOverrideReason' in payload and 'total_override_reason' not in payload:
+        payload['total_override_reason'] = payload.pop('totalOverrideReason')
     header_operation_id = str(request.headers.get('X-Edge-Operation-ID') or '').strip()
     if not header_operation_id:
         return payload
@@ -121,6 +125,10 @@ class MartaCardPaymentInitiateView(APIView):
         result = self.order_payment_service_class().initiate_marta_card_payment(
             order=order,
             amount=request.data.get('amount'),
+            final_total=request.data.get('final_total', request.data.get('finalTotal')),
+            total_override_reason=request.data.get(
+                'total_override_reason', request.data.get('totalOverrideReason', '')
+            ),
             register_fiscal=bool(request.data.get('register_fiscal', True)),
             received_by=request.user,
             cash_shift=cash_shift,

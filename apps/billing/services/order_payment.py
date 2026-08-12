@@ -94,6 +94,17 @@ class OrderPaymentService(
         edge_fiscal_results_json = serializer.validated_data.pop(
             "edge_fiscal_results_json", None
         )
+        final_total = serializer.validated_data.pop("final_total", None)
+        total_override_reason = serializer.validated_data.pop(
+            "total_override_reason", ""
+        )
+        total_override_prepared = self._apply_total_override(
+            order=order,
+            final_total=final_total,
+            reason=total_override_reason,
+            overridden_by=received_by,
+            save=False,
+        )
         if edge_provider_result is not None and not trusted_edge_replay:
             raise ValidationError(
                 {
@@ -184,6 +195,8 @@ class OrderPaymentService(
                 card_amount=serializer.validated_data["card_amount"],
                 edge_operation_id=edge_operation_id,
             )
+        if total_override_prepared:
+            self._save_total_override(order=order)
         payment = serializer.save(
             order=order,
             received_by=received_by,

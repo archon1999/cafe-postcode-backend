@@ -60,6 +60,7 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
         self.restaurant.vat_enabled = True
         self.restaurant.vat_percent = 12
         self.restaurant.marking_check_enabled = True
+        self.restaurant.payment_total_mode = self.restaurant.PaymentTotalMode.CASHIER_EDITABLE
         self.restaurant.save(
             update_fields=[
                 "name",
@@ -71,6 +72,7 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
                 "vat_enabled",
                 "vat_percent",
                 "marking_check_enabled",
+                "payment_total_mode",
                 "updated_at",
             ]
         )
@@ -91,6 +93,7 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
                 "vat_percent": "12.00",
                 "marking_check_enabled": True,
                 "pos_monitor_variant": "default",
+                "payment_total_mode": "cashier_editable",
             },
         )
         before_publish_template = self.plain_template(before_publish)

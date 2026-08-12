@@ -52,6 +52,7 @@ class AdminOrderItemSerializer(serializers.ModelSerializer):
             "table_name",
             "hall_name",
             "quantity",
+            "sale_unit",
             "unit_price",
             "line_total",
             "status",

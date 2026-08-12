@@ -25,6 +25,7 @@ SAFE_RESTAURANT_SETTING_FIELDS = (
     'vat_percent',
     'marking_check_enabled',
     'pos_monitor_variant',
+    'payment_total_mode',
 )
 
 

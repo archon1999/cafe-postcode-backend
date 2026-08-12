@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.conf import settings
 from django.db import models
 
@@ -5,6 +7,10 @@ from common.models import BaseModel
 
 
 class OrderItem(BaseModel):
+    class SaleUnit(models.TextChoices):
+        PIECE = 'piece', 'Piece'
+        KILOGRAM = 'kg', 'Kilogram'
+
     class Status(models.TextChoices):
         NEW = 'new', 'New'
         COOKING = 'cooking', 'Cooking'
@@ -28,7 +34,8 @@ class OrderItem(BaseModel):
         null=True,
         blank=True,
     )
-    quantity = models.PositiveIntegerField(default=1)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('1'))
+    sale_unit = models.CharField(max_length=16, choices=SaleUnit.choices, default=SaleUnit.PIECE)
     base_unit_price = models.PositiveIntegerField(default=0)
     unit_price = models.PositiveIntegerField(default=0)
     line_total = models.PositiveIntegerField(default=0)
@@ -43,5 +50,6 @@ class OrderItem(BaseModel):
         ]
 
     def save(self, *args, **kwargs):
-        self.line_total = (self.quantity or 0) * (self.unit_price or 0)
+        raw_total = Decimal(self.quantity or 0) * Decimal(self.unit_price or 0)
+        self.line_total = int(raw_total.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
         super().save(*args, **kwargs)

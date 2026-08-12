@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
@@ -5,12 +7,20 @@ from rest_framework import serializers
 from apps.catalog.utils.marking import item_requires_marking
 from apps.sales.helpers import get_order_item_model
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
-from apps.catalog.models import CatalogItemModifierGroup
+from apps.catalog.models import CatalogItem, CatalogItemModifierGroup
 from apps.sales.models import OrderItemModifier
 
 from .order_item_modifier import OrderItemModifierSerializer, SelectedModifierGroupSerializer
 
 OrderItem = get_order_item_model()
+
+
+class QuantityDecimalField(serializers.DecimalField):
+    def to_representation(self, value):
+        quantity = Decimal(value or 0)
+        if quantity == quantity.to_integral_value():
+            return int(quantity)
+        return float(quantity.normalize())
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
@@ -24,6 +34,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     selected_modifiers = SelectedModifierGroupSerializer(many=True, write_only=True, required=False, default=list)
     kitchen_dispatched = serializers.SerializerMethodField()
     kitchen_dispatch_number = serializers.SerializerMethodField()
+    quantity = QuantityDecimalField(max_digits=12, decimal_places=3)
 
     @staticmethod
     def _ticket_line(obj):
@@ -58,7 +69,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     def get_marking_required_count(self, obj):
         if not obj.catalog_item_id or not item_requires_marking(obj.catalog_item):
             return 0
-        return obj.quantity
+        return int(obj.quantity)
 
     def get_marking_scanned_count(self, obj):
         return len(self.get_markings(obj))
@@ -73,6 +84,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'prep_station',
             'prep_station_name',
             'quantity',
+            'sale_unit',
             'base_unit_price',
             'unit_price',
             'line_total',
@@ -87,7 +99,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'kitchen_dispatch_number',
             'created_at',
         )
-        read_only_fields = ('order', 'base_unit_price', 'unit_price', 'line_total', 'prep_station')
+        read_only_fields = ('order', 'sale_unit', 'base_unit_price', 'unit_price', 'line_total', 'prep_station')
 
     def validate(self, attrs):
         catalog_item = attrs.get('catalog_item') or getattr(self.instance, 'catalog_item', None)
@@ -95,6 +107,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'catalog_item': _('This menu item is inactive.')})
         if catalog_item and catalog_item.is_stoplisted:
             raise serializers.ValidationError({'catalog_item': _('This menu item is in stoplist.')})
+        quantity = attrs.get('quantity', getattr(self.instance, 'quantity', Decimal('1')))
+        sale_unit = getattr(catalog_item, 'sale_unit', CatalogItem.SaleUnit.PIECE)
+        if quantity is None or quantity <= 0:
+            raise serializers.ValidationError({'quantity': _('Quantity must be greater than zero.')})
+        if sale_unit == CatalogItem.SaleUnit.PIECE and quantity != quantity.to_integral_value():
+            raise serializers.ValidationError({'quantity': _('Piece products require a whole-number quantity.')})
+        if sale_unit == CatalogItem.SaleUnit.KILOGRAM and item_requires_marking(catalog_item):
+            raise serializers.ValidationError({'catalog_item': _('Marked products cannot be sold by kilogram.')})
         if self.instance is not None:
             if 'selected_modifiers' in attrs and attrs['selected_modifiers']:
                 raise serializers.ValidationError({'selected_modifiers': _('Modifiers cannot be changed after adding the item.')})
@@ -162,6 +182,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
         base_unit_price = int(catalog_item.price or 0)
         validated_data['base_unit_price'] = base_unit_price
         validated_data['unit_price'] = base_unit_price + sum(int(option.price_delta or 0) for _, option in resolved_modifiers)
+        validated_data['sale_unit'] = catalog_item.sale_unit
         order = validated_data.get('order')
         validated_data['prep_station'] = resolve_order_item_prep_station(
             catalog_item=catalog_item,

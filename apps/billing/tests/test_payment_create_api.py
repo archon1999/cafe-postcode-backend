@@ -137,6 +137,86 @@ class PaymentCreateApiTests(APITestCase):
 
         self.assertEqual(self.order.subtotal, 30000)
         self.assertEqual(self.order.total, 33000)
+        self.assertEqual(self.order.calculated_total, 33000)
+
+    @patch(
+        'apps.billing.services.order_payment.charge_payment',
+        return_value={'ok': True, 'provider': 'cash', 'reference': ''},
+    )
+    def test_cashier_editable_total_keeps_original_item_total(self, _charge_payment):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        self.restaurant.payment_total_mode = Restaurant.PaymentTotalMode.CASHIER_EDITABLE
+        self.restaurant.save(update_fields=['payment_total_mode', 'updated_at'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 15000,
+                'finalTotal': 15000,
+                'totalOverrideReason': 'Mijoz bilan kelishilgan narx',
+                'register_fiscal': False,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.order.refresh_from_db()
+        item = self.order.items.get()
+        self.assertEqual(item.line_total, 30000)
+        self.assertEqual(self.order.subtotal, 30000)
+        self.assertEqual(self.order.calculated_total, 33000)
+        self.assertEqual(self.order.total, 15000)
+        self.assertEqual(self.order.total_override, 15000)
+        self.assertEqual(self.order.total_overridden_by_id, self.user.id)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(response.data['payment']['amount'], 15000)
+
+    def test_fixed_total_mode_rejects_cashier_override(self):
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 15000,
+                'finalTotal': 15000,
+                'totalOverrideReason': 'Chegirma',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn('finalTotal', response.data)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.total, 33000)
+        self.assertIsNone(self.order.total_override)
+
+    def test_invalid_payment_does_not_persist_prepared_total_override(self):
+        self.restaurant.payment_total_mode = Restaurant.PaymentTotalMode.CASHIER_EDITABLE
+        self.restaurant.save(update_fields=["payment_total_mode", "updated_at"])
+        self.cash_desk.enabled_payment_methods = [Payment.Method.CASH]
+        self.cash_desk.save(update_fields=["enabled_payment_methods", "updated_at"])
+
+        response = self.client.post(
+            f"/api/v1/pos/billing/orders/{self.order.id}/pay/",
+            {
+                "method": Payment.Method.CARD,
+                "amount": 15000,
+                "finalTotal": 15000,
+                "totalOverrideReason": "Chegirma",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("method", response.data)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.total, 33000)
+        self.assertIsNone(self.order.total_override)
 
     def test_rejects_qr_payment_method_for_new_pos_flow(self):
         response = self.client.post(

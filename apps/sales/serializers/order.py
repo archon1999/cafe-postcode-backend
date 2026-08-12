@@ -28,6 +28,7 @@ class OrderSerializer(serializers.ModelSerializer):
     vat_enabled = serializers.SerializerMethodField()
     vat_percent = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
+    payment_total_editable = serializers.SerializerMethodField()
 
     def validate_display_name(self, value: str) -> str:
         return value.strip()
@@ -43,8 +44,12 @@ class OrderSerializer(serializers.ModelSerializer):
 
     def get_service_fee(self, obj):
         subtotal = obj.subtotal or 0
-        total = obj.total or 0
+        total = obj.calculated_total or 0
         return max(total - subtotal, 0)
+
+    @staticmethod
+    def get_payment_total_editable(obj):
+        return getattr(obj.restaurant, 'payment_total_mode', 'fixed') == 'cashier_editable'
 
     def get_service_fee_percent(self, obj):
         if not self.get_service_fee_enabled(obj):
@@ -108,6 +113,11 @@ class OrderSerializer(serializers.ModelSerializer):
             'delivery_phone',
             'delivery_address',
             'subtotal',
+            'calculated_total',
+            'total_override',
+            'total_override_reason',
+            'total_overridden_at',
+            'payment_total_editable',
             'service_fee',
             'service_fee_enabled',
             'service_fee_percent',
@@ -122,4 +132,15 @@ class OrderSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         )
-        read_only_fields = ('opened_by', 'cashier', 'order_number', 'subtotal', 'total', 'closed_at')
+        read_only_fields = (
+            'opened_by',
+            'cashier',
+            'order_number',
+            'subtotal',
+            'calculated_total',
+            'total_override',
+            'total_override_reason',
+            'total_overridden_at',
+            'total',
+            'closed_at',
+        )

@@ -199,6 +199,31 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(payload['Items'][1]['VATPercent'], 12)
         self.assertEqual(payload['Items'][1]['VAT'], 32143)
 
+    def test_issue_receipt_allocates_cashier_override_without_mutating_order_items(self):
+        self.order.total = 15000
+        self.order.total_override = 15000
+        self.order.total_override_reason = 'Kelishilgan narx'
+        self.order.save(update_fields=['total', 'total_override', 'total_override_reason', 'updated_at'])
+        self.payment.amount = 15000
+        self.payment.cash_amount = 15000
+        self.payment.fiscal_cash_amount = 15000
+        self.payment.fiscal_card_amount = 0
+        self.payment.save(
+            update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'fiscal_card_amount', 'updated_at']
+        )
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        payload = result['request']['receipt']
+        self.assertEqual(payload['ReceivedCash'], 1500000)
+        self.assertEqual(sum(item['Price'] for item in payload['Items']), 1500000)
+        self.assertEqual(self.order.items.get().line_total, 30000)
+
     def test_issue_receipt_uses_units_and_barcode_from_mxik_payload(self):
         self.catalog_item.mxik_payload = {
             'commonUnitCode': 715,

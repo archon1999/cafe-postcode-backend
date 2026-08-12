@@ -88,6 +88,7 @@ class CatalogItemSerializer(
             "description_uz_crl",
             "description_ru",
             "price",
+            "sale_unit",
             "sort_order",
             "modifier_groups",
             "clear_modifier_groups",
@@ -134,6 +135,14 @@ class CatalogItemSerializer(
         if payload is None and self.instance is not None:
             payload = getattr(self.instance, "mxik_payload", None)
         attrs["requires_marking"] = payload_requires_marking(payload)
+        sale_unit = attrs.get(
+            "sale_unit",
+            getattr(self.instance, "sale_unit", CatalogItem.SaleUnit.PIECE),
+        )
+        if sale_unit == CatalogItem.SaleUnit.KILOGRAM and attrs["requires_marking"]:
+            raise serializers.ValidationError(
+                {"sale_unit": _("Marked products cannot be sold by kilogram.")}
+            )
         if not attrs.get("marking_gtin"):
             payload_item = type(
                 "PayloadItem",

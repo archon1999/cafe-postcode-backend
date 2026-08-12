@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from decimal import Decimal
 
 from apps.catalog.models import CatalogItemModifierGroup, ModifierGroup, ModifierOption
 from apps.catalog.serializers import CatalogItemSerializer
@@ -163,3 +164,45 @@ class OrderItemModifierApiTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn('selected_modifiers', response.data)
+
+    def test_kilogram_item_accepts_decimal_quantity_and_uses_per_kg_price(self):
+        self.catalog_item.sale_unit = self.catalog_item.SaleUnit.KILOGRAM
+        self.catalog_item.price = 100000
+        self.catalog_item.save(update_fields=['sale_unit', 'price', 'updated_at'])
+        order_id = self.create_takeaway_order()
+
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/',
+            {
+                'catalog_item': str(self.catalog_item.id),
+                'quantity': '1.400',
+                'selected_modifiers': [
+                    {'group': str(self.dough_group.id), 'options': [str(self.thin_option.id)]},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['sale_unit'], 'kg')
+        self.assertEqual(Decimal(str(response.data['quantity'])), Decimal('1.4'))
+        self.assertEqual(response.data['unit_price'], 100000)
+        self.assertEqual(response.data['line_total'], 140000)
+
+    def test_piece_item_rejects_fractional_quantity(self):
+        order_id = self.create_takeaway_order()
+
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/',
+            {
+                'catalog_item': str(self.catalog_item.id),
+                'quantity': '1.400',
+                'selected_modifiers': [
+                    {'group': str(self.dough_group.id), 'options': [str(self.thin_option.id)]},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('quantity', response.data)

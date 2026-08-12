@@ -22,6 +22,10 @@ def restaurant_auth_background_upload_to(instance, filename: str) -> str:
 
 
 class Restaurant(BaseModel):
+    class PaymentTotalMode(models.TextChoices):
+        FIXED = 'fixed', 'Fixed'
+        CASHIER_EDITABLE = 'cashier_editable', 'Cashier editable'
+
     class PosMonitorVariant(models.TextChoices):
         DEFAULT = 'default', 'Default'
         LIGHT_COMPACT = 'light_compact', 'Light Compact'
@@ -58,6 +62,11 @@ class Restaurant(BaseModel):
         max_length=32,
         choices=PosMonitorVariant.choices,
         default=PosMonitorVariant.DEFAULT,
+    )
+    payment_total_mode = models.CharField(
+        max_length=32,
+        choices=PaymentTotalMode.choices,
+        default=PaymentTotalMode.FIXED,
     )
     pos_auth_background_image = models.ImageField(
         blank=True,

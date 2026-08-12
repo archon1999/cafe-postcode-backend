@@ -98,7 +98,9 @@ def _aggregate_print_items(
                 ],
             },
         )
-        current["quantity"] += int(item.quantity or 0)
+        current["quantity"] = _json_number(
+            Decimal(str(current["quantity"])) + Decimal(item.quantity or 0)
+        )
         current["lineTotal"] += _money(item.line_total)
         if include_vat:
             current["vat"] = current.get("vat", 0) + (
@@ -128,6 +130,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     card_amount = _money(paid.get("card"))
     total = _money(order.total)
     subtotal = _money(order.subtotal)
+    calculated_total = _money(order.calculated_total)
     vat_enabled = bool(getattr(restaurant, "vat_enabled", False))
     vat_percent = getattr(restaurant, "vat_percent", 0) or 0
     result = dict(fiscal_result or receipt.payload or {})
@@ -188,7 +191,15 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
         },
         "totals": {
             "subtotal": subtotal,
-            "serviceFee": max(total - subtotal, 0),
+            "serviceFee": max(calculated_total - subtotal, 0),
+            **(
+                {
+                    "calculatedTotal": calculated_total,
+                    "totalAdjustment": total - calculated_total,
+                }
+                if total != calculated_total
+                else {}
+            ),
             "serviceFeePercent": _json_number(
                 getattr(restaurant, "service_fee_percent", 0)
             ),
@@ -243,6 +254,7 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
     ).select_related("catalog_item").prefetch_related("modifiers")
     total = _money(order.total)
     subtotal = _money(order.subtotal)
+    calculated_total = _money(order.calculated_total)
     vat_enabled = bool(getattr(restaurant, "vat_enabled", False))
     vat_percent = getattr(restaurant, "vat_percent", 0) or 0
 
@@ -279,7 +291,15 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
         "precheck": {"printedAt": _local_datetime(timezone.now())},
         "totals": {
             "subtotal": subtotal,
-            "serviceFee": _money(getattr(order, "service_fee", 0)) or max(total - subtotal, 0),
+            "serviceFee": _money(getattr(order, "service_fee", 0)) or max(calculated_total - subtotal, 0),
+            **(
+                {
+                    "calculatedTotal": calculated_total,
+                    "totalAdjustment": total - calculated_total,
+                }
+                if total != calculated_total
+                else {}
+            ),
             "serviceFeePercent": _json_number(getattr(restaurant, "service_fee_percent", 0)),
             "vat": _included_vat(amount=total, percent=vat_percent) if vat_enabled else 0,
             "vatPercent": _json_number(vat_percent),

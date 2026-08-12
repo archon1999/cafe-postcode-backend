@@ -122,6 +122,7 @@ def admin_order_queryset(request) -> QuerySet:
             "distribution_point",
             "opened_by",
             "cashier",
+            "total_overridden_by",
         )
         .prefetch_related(
             "items__catalog_item",

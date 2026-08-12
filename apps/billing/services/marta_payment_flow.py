@@ -26,6 +26,8 @@ class MartaPaymentFlowMixin:
         *,
         order: Order,
         amount,
+        final_total=None,
+        total_override_reason='',
         register_fiscal=True,
         received_by,
         cash_shift=None,
@@ -55,9 +57,18 @@ class MartaPaymentFlowMixin:
                 "method": Payment.Method.CARD,
                 "amount": amount,
                 "register_fiscal": register_fiscal,
+                "final_total": final_total,
+                "total_override_reason": total_override_reason,
             }
         )
         serializer.is_valid(raise_exception=True)
+        total_override_prepared = self._apply_total_override(
+            order=order,
+            final_total=serializer.validated_data.pop("final_total", None),
+            reason=serializer.validated_data.pop("total_override_reason", ""),
+            overridden_by=received_by,
+            save=False,
+        )
         amount = serializer.validated_data["amount"]
 
         cash_desk = cash_shift.cash_desk
@@ -103,6 +114,8 @@ class MartaPaymentFlowMixin:
                 {"detail": _("MARTA SoftPOS endpoint URL is not configured.")}
             )
 
+        if total_override_prepared:
+            self._save_total_override(order=order)
         payment = serializer.save(
             order=order,
             received_by=received_by,

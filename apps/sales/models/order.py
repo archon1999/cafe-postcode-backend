@@ -59,7 +59,18 @@ class Order(BaseModel):
     delivery_phone = models.CharField(max_length=20, blank=True, default='')
     delivery_address = models.TextField(blank=True, default='')
     subtotal = models.PositiveIntegerField(default=0)
+    calculated_total = models.PositiveIntegerField(default=0)
     total = models.PositiveIntegerField(default=0)
+    total_override = models.PositiveIntegerField(null=True, blank=True)
+    total_override_reason = models.CharField(max_length=255, blank=True, default='')
+    total_overridden_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='total_overridden_orders',
+        null=True,
+        blank=True,
+    )
+    total_overridden_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -92,7 +103,7 @@ class Order(BaseModel):
     def branch(self, value):
         self.restaurant = value
 
-    def recalculate_totals(self):
+    def recalculate_totals(self, *, preserve_override=False):
         from .order_item import OrderItem
 
         active_items = self.items.exclude(status=OrderItem.Status.CANCELLED)
@@ -103,6 +114,26 @@ class Order(BaseModel):
             percent = getattr(self.restaurant, 'service_fee_percent', self.DEFAULT_HALL_SERVICE_FEE_PERCENT) or 0
             service_fee = round(subtotal * percent / 100)
 
+        calculated_total = subtotal + service_fee
         self.subtotal = subtotal
-        self.total = subtotal + service_fee
-        self.save(update_fields=['subtotal', 'total', 'updated_at'])
+        self.calculated_total = calculated_total
+        if preserve_override and self.total_override is not None:
+            self.total = self.total_override
+            update_fields = ['subtotal', 'calculated_total', 'total', 'updated_at']
+        else:
+            self.total = calculated_total
+            self.total_override = None
+            self.total_override_reason = ''
+            self.total_overridden_by = None
+            self.total_overridden_at = None
+            update_fields = [
+                'subtotal',
+                'calculated_total',
+                'total',
+                'total_override',
+                'total_override_reason',
+                'total_overridden_by',
+                'total_overridden_at',
+                'updated_at',
+            ]
+        self.save(update_fields=update_fields)

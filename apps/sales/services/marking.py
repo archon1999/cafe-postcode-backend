@@ -76,7 +76,7 @@ def marking_status(order):
     rows = []
     missing_total = 0
     for item in items:
-        required = item.quantity if item_requires_marking(item.catalog_item) else 0
+        required = int(item.quantity) if item_requires_marking(item.catalog_item) else 0
         scanned = item.markings.count() if required else 0
         missing = max(required - scanned, 0)
         if required or scanned:
@@ -208,7 +208,6 @@ class OrderMarkingScanService:
 
         if order_item.quantity > 1:
             order_item.quantity -= 1
-            order_item.line_total = int(order_item.quantity) * int(order_item.unit_price or 0)
             order_item.save(update_fields=['quantity', 'line_total', 'updated_at'])
             return order_item
 

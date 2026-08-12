@@ -14,6 +14,10 @@ def catalog_item_image_upload_to(instance, filename: str) -> str:
 
 
 class CatalogItem(BaseModel):
+    class SaleUnit(models.TextChoices):
+        PIECE = 'piece', 'Piece'
+        KILOGRAM = 'kg', 'Kilogram'
+
     class ImageSource(models.TextChoices):
         MXIK_CACHE = 'mxik-cache', 'MXIK cache'
         MANUAL = 'manual', 'Manual'
@@ -49,6 +53,7 @@ class CatalogItem(BaseModel):
     )
     description = models.TextField(blank=True)
     price = models.PositiveIntegerField(default=0)
+    sale_unit = models.CharField(max_length=16, choices=SaleUnit.choices, default=SaleUnit.PIECE)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_stoplisted = models.BooleanField(default=False)

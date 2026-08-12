@@ -27,6 +27,9 @@ class AdminOrderSerializer(serializers.ModelSerializer):
     )
     opened_by_name = serializers.CharField(source="opened_by.full_name", read_only=True)
     cashier_name = serializers.CharField(source="cashier.full_name", read_only=True)
+    total_overridden_by_name = serializers.CharField(
+        source="total_overridden_by.full_name", read_only=True
+    )
     service_fee = serializers.SerializerMethodField()
     items_count = serializers.SerializerMethodField()
     payments_count = serializers.SerializerMethodField()
@@ -34,7 +37,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
 
     def get_service_fee(self, obj):
         subtotal = obj.subtotal or 0
-        total = obj.total or 0
+        total = obj.calculated_total or 0
         return max(total - subtotal, 0)
 
     def get_items_count(self, obj):
@@ -68,6 +71,12 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "guest_count",
             "note",
             "subtotal",
+            "calculated_total",
+            "total_override",
+            "total_override_reason",
+            "total_overridden_by",
+            "total_overridden_by_name",
+            "total_overridden_at",
             "service_fee",
             "total",
             "closed_at",

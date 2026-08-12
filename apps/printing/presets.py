@@ -136,6 +136,8 @@ PAYMENT_VARIABLES = COMMON_VARIABLES + (
     'payment.operationType',
     'totals.subtotal',
     'totals.serviceFee',
+    'totals.calculatedTotal',
+    'totals.totalAdjustment',
     'totals.vat',
     'totals.vatPercent',
     'totals.serviceFeePercent',
@@ -146,6 +148,8 @@ PRECHECK_VARIABLES = COMMON_VARIABLES + (
     'precheck.printedAt',
     'totals.subtotal',
     'totals.serviceFee',
+    'totals.calculatedTotal',
+    'totals.totalAdjustment',
     'totals.vat',
     'totals.vatPercent',
     'totals.serviceFeePercent',
@@ -328,6 +332,7 @@ def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
     total_rows = [
         {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
         {'label': 'Xizmat haqi', 'value': '{{totals.serviceFee}}', 'format': 'money'},
+        {'label': 'Narx tuzatishi', 'value': '{{totals.totalAdjustment}}', 'format': 'money', 'hideZero': True},
         {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
     ]
     if fiscal:
@@ -394,6 +399,12 @@ def _precheck_blocks() -> list[dict]:
             'rows': [
                 {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
                 {'label': 'Xizmat haqi', 'value': '{{totals.serviceFee}}', 'format': 'money', 'hideZero': True},
+                {
+                    'label': 'Narx tuzatishi',
+                    'value': '{{totals.totalAdjustment}}',
+                    'format': 'money',
+                    'hideZero': True,
+                },
                 {
                     'label': 'Sh.j. QQS ({{totals.vatPercent}}%)',
                     'value': '{{totals.vat}}',
@@ -577,6 +588,12 @@ def build_legacy_layout(kind: str) -> dict:
                     'role': 'totals',
                     'rows': [
                         {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
+                        {
+                            'label': 'NARX TUZATISHI',
+                            'value': '{{totals.totalAdjustment}}',
+                            'format': 'money',
+                            'hideZero': True,
+                        },
                         *(
                             [
                                 {

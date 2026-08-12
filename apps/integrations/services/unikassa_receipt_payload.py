@@ -8,6 +8,7 @@ from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
 from apps.sales.models import OrderItem
 
 from .unikassa_types import FiscalReceiptPart, UnikassaFiscalError
+from .fiscal_total_allocation import allocate_fiscal_totals
 
 
 class UnikassaReceiptPayloadMixin:
@@ -51,23 +52,23 @@ class UnikassaReceiptPayloadMixin:
                 )
             ]
         if not normal:
-            restricted_total = sum(int(item.line_total or 0) for item in restricted) + self._service_fee(order=order)
             return [
                 FiscalReceiptPart(
                     restricted,
                     self._service_fee(order=order),
                     'card',
                     'cash_forbidden_category',
-                    0,
-                    restricted_total,
+                    fiscal_cash,
+                    fiscal_card,
                 )
             ]
 
         normal_fee, restricted_fee = self._split_service_fee(order=order, normal_items=normal, restricted_items=restricted)
         normal_total = sum(int(item.line_total or 0) for item in normal) + normal_fee
         restricted_total = sum(int(item.line_total or 0) for item in restricted) + restricted_fee
-        normal_cash = min(fiscal_cash, normal_total)
-        normal_card = max(normal_total - normal_cash, 0)
+        restricted_paid = min(restricted_total, fiscal_card)
+        normal_cash = fiscal_cash
+        normal_card = max(fiscal_card - restricted_paid, 0)
         return [
             FiscalReceiptPart(
                 normal,
@@ -77,7 +78,7 @@ class UnikassaReceiptPayloadMixin:
                 normal_cash,
                 normal_card,
             ),
-            FiscalReceiptPart(restricted, restricted_fee, 'card', 'cash_forbidden_category', 0, restricted_total),
+            FiscalReceiptPart(restricted, restricted_fee, 'card', 'cash_forbidden_category', 0, restricted_paid),
         ]
 
     def _pay_type(self, payment) -> str:
@@ -106,7 +107,7 @@ class UnikassaReceiptPayloadMixin:
 
     @staticmethod
     def _service_fee(*, order) -> int:
-        return max(int(order.total or 0) - int(order.subtotal or 0), 0)
+        return max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
 
     def _split_service_fee(self, *, order, normal_items: list, restricted_items: list) -> tuple[int, int]:
         service_fee = self._service_fee(order=order)
@@ -121,7 +122,13 @@ class UnikassaReceiptPayloadMixin:
         return normal_fee, service_fee - normal_fee
 
     def _build_sale_receipt(self, *, order, payment, part: FiscalReceiptPart, memory_info: dict | None) -> dict:
-        items = self._build_sale_items(order=order, items=part.items, service_fee=part.service_fee)
+        target_total = int(part.received_cash or 0) + int(part.received_card or 0)
+        items = self._build_sale_items(
+            order=order,
+            items=part.items,
+            service_fee=part.service_fee,
+            target_total=target_total,
+        )
         total = sum(int(item['Price'] or 0) for item in items)
         received_cash = self._money_to_fiscal(part.received_cash) if part.received_cash is not None else total if part.pay_type == 'cash' else 0
         received_card = self._money_to_fiscal(part.received_card) if part.received_card is not None else 0 if part.pay_type == 'cash' else total
@@ -142,18 +149,29 @@ class UnikassaReceiptPayloadMixin:
             receipt_payload['ExtraInfo'] = extra_info
         return receipt_payload
 
-    def _build_sale_items(self, *, order, items: list, service_fee: int) -> list[dict]:
+    def _build_sale_items(self, *, order, items: list, service_fee: int, target_total: int | None = None) -> list[dict]:
         payload_items = []
         vat_percent = self._vat_percent(order=order)
-        for item in items:
+        adjusted_totals = allocate_fiscal_totals(
+            [
+                *(int(item.line_total or 0) for item in items),
+                *([service_fee] if service_fee else []),
+            ],
+            target_total=sum(int(item.line_total or 0) for item in items) + service_fee
+            if target_total is None
+            else target_total,
+        )
+        for item, fiscal_line_total in zip(items, adjusted_totals):
             labels = self._extract_labels(item=item)
             if labels:
-                unit_price = int((Decimal(item.line_total or 0) / Decimal(max(int(item.quantity or 1), 1))).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
-                for label in labels:
+                label_totals = allocate_fiscal_totals(
+                    [1] * len(labels), target_total=fiscal_line_total
+                )
+                for label, label_total in zip(labels, label_totals):
                     item_payload = {
                         'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],
                         'Amount': 1000,
-                        'Price': self._money_to_fiscal(unit_price),
+                        'Price': self._money_to_fiscal(label_total),
                         'Discount': 0,
                         'Other': 0,
                         'OwnerType': 0,
@@ -163,15 +181,15 @@ class UnikassaReceiptPayloadMixin:
                         'VAT': 0,
                         'VATPercent': 0,
                     }
-                    self._apply_vat(item_payload, amount=unit_price, percent=vat_percent)
+                    self._apply_vat(item_payload, amount=label_total, percent=vat_percent)
                     self._apply_item_classification(item_payload, item=item)
                     payload_items.append(item_payload)
                 continue
 
             item_payload = {
                 'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],
-                'Amount': int(item.quantity or 0) * 1000,
-                'Price': self._money_to_fiscal(item.line_total),
+                'Amount': int(Decimal(item.quantity or 0) * 1000),
+                'Price': self._money_to_fiscal(fiscal_line_total),
                 'Discount': 0,
                 'Other': 0,
                 'OwnerType': 0,
@@ -181,15 +199,16 @@ class UnikassaReceiptPayloadMixin:
                 'VAT': 0,
                 'VATPercent': 0,
             }
-            self._apply_vat(item_payload, amount=item.line_total, percent=vat_percent)
+            self._apply_vat(item_payload, amount=fiscal_line_total, percent=vat_percent)
             self._apply_item_classification(item_payload, item=item)
             payload_items.append(item_payload)
 
-        if service_fee:
+        fiscal_service_fee = adjusted_totals[-1] if service_fee and adjusted_totals else 0
+        if fiscal_service_fee:
             service_payload = {
                 'Name': 'Xizmat haqi',
                 'Amount': 1000,
-                'Price': self._money_to_fiscal(service_fee),
+                'Price': self._money_to_fiscal(fiscal_service_fee),
                 'Discount': 0,
                 'Other': 0,
                 'OwnerType': 0,
@@ -203,7 +222,7 @@ class UnikassaReceiptPayloadMixin:
             units = self._default_unit_code()
             if units is not None:
                 service_payload['Units'] = units
-            self._apply_vat(service_payload, amount=service_fee, percent=vat_percent)
+            self._apply_vat(service_payload, amount=fiscal_service_fee, percent=vat_percent)
             payload_items.append(service_payload)
         return payload_items
 
@@ -380,4 +399,3 @@ class UnikassaReceiptPayloadMixin:
             'QRPaymentProvider': 0,
             'TIN': str(tax_number).strip(),
         }
-

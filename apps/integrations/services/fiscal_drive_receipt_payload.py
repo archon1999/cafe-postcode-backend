@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from apps.sales.models import OrderItem
 
 from .fiscal_drive_types import FiscalDriveError
+from .fiscal_total_allocation import allocate_fiscal_totals
 
 
 class FiscalDriveReceiptPayloadMixin:
@@ -42,13 +43,22 @@ class FiscalDriveReceiptPayloadMixin:
             .select_related('catalog_item', 'catalog_item__category')
             .order_by('created_at', 'id')
         )
-        for item in order_items:
+        order_items = list(order_items)
+        service_fee = max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
+        adjusted_totals = allocate_fiscal_totals(
+            [
+                *(int(item.line_total or 0) for item in order_items),
+                *([service_fee] if service_fee else []),
+            ],
+            target_total=int(order.total or 0),
+        )
+        for item, fiscal_line_total in zip(order_items, adjusted_totals):
             item_payload = {
                 'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],
-                'Amount': int(item.quantity or 0) * 1000,
-                'Price': self._money_to_fiscal(item.line_total),
+                'Amount': int(Decimal(item.quantity or 0) * 1000),
+                'Price': self._money_to_fiscal(fiscal_line_total),
             }
-            self._apply_vat(item_payload, amount=item.line_total, percent=vat_percent)
+            self._apply_vat(item_payload, amount=fiscal_line_total, percent=vat_percent)
             spic = str(
                 getattr(item.catalog_item, 'mxik_code', '')
                 or getattr(getattr(item.catalog_item, 'category', None), 'mxik_code', '')
@@ -67,10 +77,10 @@ class FiscalDriveReceiptPayloadMixin:
                 item_payload['Labels'] = labels
             items.append(item_payload)
 
-        service_fee = max(int(order.total or 0) - int(order.subtotal or 0), 0)
-        if service_fee:
-            service_payload = {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': self._money_to_fiscal(service_fee)}
-            self._apply_vat(service_payload, amount=service_fee, percent=vat_percent)
+        fiscal_service_fee = adjusted_totals[-1] if service_fee and adjusted_totals else 0
+        if fiscal_service_fee:
+            service_payload = {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': self._money_to_fiscal(fiscal_service_fee)}
+            self._apply_vat(service_payload, amount=fiscal_service_fee, percent=vat_percent)
             items.append(service_payload)
 
         if not items:
@@ -238,4 +248,3 @@ class FiscalDriveReceiptPayloadMixin:
             'DateTime': self._format_refund_datetime(date_time),
             'FiscalSign': fiscal_sign,
         }
-

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 
 from apps.reporting.selectors.reporting import (
     REPORT_PERIOD_DAY,
@@ -91,11 +92,16 @@ class CommonReportService:
                 "item_name": row.get("catalog_item_name") or "Noma'lum",
                 "category_id": row.get("category_id"),
                 "category_name": row.get("category_name"),
-                "quantity": int(row.get("quantity") or 0),
+                "quantity": CommonReportService._json_quantity(row.get("quantity")),
                 "revenue": int(row.get("revenue") or 0),
             }
             for row in queryset
         ]
+
+    @staticmethod
+    def _json_quantity(value) -> int | float:
+        quantity = Decimal(str(value or 0))
+        return int(quantity) if quantity == quantity.to_integral_value() else float(quantity)
 
     def build_comparisons(self, summary: dict, previous_summary: dict) -> dict:
         comparisons = {}

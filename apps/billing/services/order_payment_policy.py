@@ -1,6 +1,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Sum
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
@@ -11,6 +12,70 @@ Payment = get_payment_model()
 
 
 class OrderPaymentPolicyMixin:
+    _TOTAL_OVERRIDE_UPDATE_FIELDS = [
+        "total",
+        "total_override",
+        "total_override_reason",
+        "total_overridden_by",
+        "total_overridden_at",
+        "updated_at",
+    ]
+
+    def _apply_total_override(
+        self, *, order, final_total, reason, overridden_by, save=True
+    ):
+        if final_total is None:
+            return False
+        if (
+            getattr(order.restaurant, "payment_total_mode", "fixed")
+            != "cashier_editable"
+        ):
+            raise ValidationError(
+                {
+                    "finalTotal": _(
+                        "This restaurant does not allow cashier-edited totals."
+                    )
+                }
+            )
+        if order.payments.filter(status=Payment.Status.SUCCEEDED).exists():
+            raise ValidationError(
+                {
+                    "finalTotal": _(
+                        "The total cannot be changed after a successful payment."
+                    )
+                }
+            )
+
+        final_total = int(final_total)
+        calculated_total = int(order.calculated_total or order.total or 0)
+        if final_total == calculated_total:
+            order.total = calculated_total
+            order.total_override = None
+            order.total_override_reason = ""
+            order.total_overridden_by = None
+            order.total_overridden_at = None
+        else:
+            normalized_reason = str(reason or "").strip()
+            if not normalized_reason:
+                raise ValidationError(
+                    {
+                        "totalOverrideReason": _(
+                            "Enter a reason for changing the final total."
+                        )
+                    }
+                )
+            order.total = final_total
+            order.total_override = final_total
+            order.total_override_reason = normalized_reason
+            order.total_overridden_by = overridden_by
+            order.total_overridden_at = timezone.now()
+        if save:
+            self._save_total_override(order=order)
+        return True
+
+    def _save_total_override(self, *, order):
+        order.save(update_fields=self._TOTAL_OVERRIDE_UPDATE_FIELDS)
+
     def _validate_shift(self, *, order, cash_shift):
         if cash_shift is None:
             raise ValidationError(
@@ -96,7 +161,7 @@ class OrderPaymentPolicyMixin:
         if not restricted_items:
             return 0
         restricted_total = sum(int(item.line_total or 0) for item in restricted_items)
-        service_fee = max(int(order.total or 0) - int(order.subtotal or 0), 0)
+        service_fee = max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
         if service_fee <= 0:
             return restricted_total
         subtotal = sum(int(item.line_total or 0) for item in order_items)

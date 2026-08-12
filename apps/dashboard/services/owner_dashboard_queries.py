@@ -1,4 +1,4 @@
-from django.db.models import Count, F, IntegerField, QuerySet, Sum, Value
+from django.db.models import Count, DecimalField, F, IntegerField, QuerySet, Sum, Value
 from django.db.models.functions import Coalesce
 
 from apps.billing.helpers import get_cash_expense_model, get_payment_model
@@ -106,7 +106,9 @@ class OwnerDashboardQueryMixin:
         ).annotate(
             orders_count=Count("order_id", distinct=True),
             items_count=Coalesce(
-                Sum("quantity"), Value(0), output_field=IntegerField()
+                Sum("quantity"),
+                Value(0),
+                output_field=DecimalField(max_digits=20, decimal_places=3),
             ),
             sales_total=Coalesce(
                 Sum("line_total"), Value(0), output_field=IntegerField()
