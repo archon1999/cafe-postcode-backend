@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from django.db.models import Prefetch, Q, QuerySet
 
 from apps.billing.helpers import get_payment_model, get_payment_refund_model
+from apps.floor.services import annotate_zone_name_visibility
 from apps.sales.helpers import (
     get_order_item_model,
     get_order_item_note_model,
@@ -97,10 +98,11 @@ def pos_order_queryset(queryset: QuerySet | None = None) -> QuerySet:
         )
     )
 
-    return queryset.select_related(
+    return annotate_zone_name_visibility(queryset).select_related(
         "restaurant",
         "table_session",
         "table_session__hall",
+        "table_session__hall__zone_or_cabin",
         "table_session__table",
         "opened_by",
         "cashier",

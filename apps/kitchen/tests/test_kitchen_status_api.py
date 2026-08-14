@@ -163,6 +163,7 @@ class KitchenStatusApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['data']), 1)
         self.assertEqual(str(response.data['data'][0]['id']), str(self.ticket.id))
+        self.assertEqual(response.data['data'][0]['items'][0]['sale_unit'], 'piece')
         self.assertEqual(response.data['data'][0]['display_name'], '17')
         self.assertEqual(response.data['data'][0]['channel'], Order.Channel.HALL)
 

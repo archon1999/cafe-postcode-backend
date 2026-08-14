@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from apps.floor.services import restaurant_has_multiple_active_zones
 from apps.kitchen.models import KitchenTicket
 from .order_item import OrderItemSerializer
 class KitchenTicketSerializer(serializers.ModelSerializer):
@@ -9,6 +10,9 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     channel = serializers.CharField(source='order.channel', read_only=True)
     hall_name = serializers.CharField(source='order.table_session.hall.name', read_only=True)
     table_name = serializers.CharField(source='order.table_session.table.name', read_only=True)
+    table_number = serializers.IntegerField(source='order.table_session.table.table_number', read_only=True)
+    zone_name = serializers.CharField(source='order.table_session.hall.zone_or_cabin.name', read_only=True)
+    show_zone_name = serializers.SerializerMethodField()
     waiter_name = serializers.CharField(source='order.opened_by.full_name', read_only=True)
     items = serializers.SerializerMethodField()
     can_announce = serializers.SerializerMethodField()
@@ -16,6 +20,18 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
 
     def get_is_addition(self, obj):
         return obj.dispatch_number > 1
+
+    def get_show_zone_name(self, obj):
+        annotated_value = getattr(obj, 'has_multiple_active_zones', None)
+        if annotated_value is not None:
+            return bool(annotated_value)
+        restaurant_id = getattr(obj, 'restaurant_id', None)
+        cache = getattr(self, '_zone_visibility_cache', None)
+        if cache is None:
+            cache = self._zone_visibility_cache = {}
+        if restaurant_id not in cache:
+            cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
+        return cache[restaurant_id]
 
     def get_can_announce(self, obj):
         if obj.status != KitchenTicket.Status.DONE:
@@ -61,6 +77,9 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
             'print_document',
             'hall_name',
             'table_name',
+            'table_number',
+            'zone_name',
+            'show_zone_name',
             'waiter_name',
             'items',
             'can_announce',

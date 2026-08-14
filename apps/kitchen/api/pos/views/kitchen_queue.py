@@ -7,6 +7,7 @@ from rest_framework import generics, permissions
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.services import complete_stale_closed_order_kitchen_work
+from apps.floor.services import annotate_zone_name_visibility
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
 from common.api.permissions import (
@@ -27,10 +28,13 @@ class KitchenQueueView(generics.ListAPIView):
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
         complete_stale_closed_order_kitchen_work(restaurant=restaurant)
 
-        queryset = KitchenTicket.objects.filter(restaurant=restaurant).select_related(
+        queryset = annotate_zone_name_visibility(
+            KitchenTicket.objects.filter(restaurant=restaurant)
+        ).select_related(
             'prep_station',
             'order__opened_by',
             'order__table_session__hall',
+            'order__table_session__hall__zone_or_cabin',
             'order__table_session__table',
         ).prefetch_related(
             'lines__order_item__catalog_item',

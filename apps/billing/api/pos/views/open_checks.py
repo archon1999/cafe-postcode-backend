@@ -11,6 +11,7 @@ from apps.billing.helpers import (
     get_payment_refund_model,
     get_receipt_model,
 )
+from apps.floor.services import annotate_zone_name_visibility
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_item_model, get_order_model
 from common.api.permissions import EndpointRBACPermission
@@ -126,6 +127,7 @@ class OpenCheckListView(generics.ListAPIView):
             "prep_station__name_uz_crl",
             "prep_station__name_ru",
             "quantity",
+            "sale_unit",
             "unit_price",
             "line_total",
             "status",
@@ -133,11 +135,14 @@ class OpenCheckListView(generics.ListAPIView):
             "created_at",
         )
         queryset = (
-            Order.objects.filter(restaurant=restaurant)
+            annotate_zone_name_visibility(
+                Order.objects.filter(restaurant=restaurant)
+            )
             .select_related(
                 "restaurant",
                 "table_session",
                 "table_session__hall",
+                "table_session__hall__zone_or_cabin",
                 "table_session__table",
                 "distribution_point",
                 "opened_by",
@@ -156,8 +161,14 @@ class OpenCheckListView(generics.ListAPIView):
                 "table_session__hall__name_uz",
                 "table_session__hall__name_uz_crl",
                 "table_session__hall__name_ru",
+                "table_session__hall__zone_or_cabin_id",
+                "table_session__hall__zone_or_cabin__name",
+                "table_session__hall__zone_or_cabin__name_uz",
+                "table_session__hall__zone_or_cabin__name_uz_crl",
+                "table_session__hall__zone_or_cabin__name_ru",
                 "table_session__table_id",
                 "table_session__table__name",
+                "table_session__table__table_number",
                 "distribution_point_id",
                 "opened_by_id",
                 "opened_by__full_name",

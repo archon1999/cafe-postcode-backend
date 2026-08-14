@@ -3,6 +3,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import serializers
 
 from apps.billing.helpers import get_payment_model, get_receipt_model
+from apps.floor.services import restaurant_has_multiple_active_zones
 from apps.sales.helpers import get_order_item_model, get_order_model
 
 Order = get_order_model()
@@ -25,6 +26,7 @@ class OpenCheckOrderItemSerializer(serializers.ModelSerializer):
             'prep_station',
             'prep_station_name',
             'quantity',
+            'sale_unit',
             'unit_price',
             'line_total',
             'status',
@@ -83,7 +85,10 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     receipts = serializers.SerializerMethodField()
     table_id = serializers.UUIDField(source='table_session.table_id', read_only=True)
     table_name = serializers.CharField(source='table_session.table.name', read_only=True)
+    table_number = serializers.IntegerField(source='table_session.table.table_number', read_only=True)
     hall_name = serializers.CharField(source='table_session.hall.name', read_only=True)
+    zone_name = serializers.CharField(source='table_session.hall.zone_or_cabin.name', read_only=True)
+    show_zone_name = serializers.SerializerMethodField()
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True)
     service_fee = serializers.SerializerMethodField()
@@ -105,6 +110,18 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
         if not self.include_billing():
             return []
         return OpenCheckReceiptSerializer(obj.receipts.all(), many=True).data
+
+    def get_show_zone_name(self, obj):
+        annotated_value = getattr(obj, 'has_multiple_active_zones', None)
+        if annotated_value is not None:
+            return bool(annotated_value)
+        restaurant_id = getattr(obj, 'restaurant_id', None)
+        cache = getattr(self, '_zone_visibility_cache', None)
+        if cache is None:
+            cache = self._zone_visibility_cache = {}
+        if restaurant_id not in cache:
+            cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
+        return cache[restaurant_id]
 
     @staticmethod
     def get_service_fee(obj):
@@ -154,7 +171,10 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             'table_session',
             'table_id',
             'table_name',
+            'table_number',
             'hall_name',
+            'zone_name',
+            'show_zone_name',
             'distribution_point',
             'opened_by',
             'opened_by_name',

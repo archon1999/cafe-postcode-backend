@@ -100,7 +100,10 @@ COMMON_VARIABLES = (
     'order.channel',
     'order.channelLabel',
     'order.table',
+    'order.tableNumber',
     'order.hall',
+    'order.zone',
+    'order.zoneDisplay',
     'order.guestCount',
     'order.openedAt',
     'order.waiter',
@@ -198,7 +201,10 @@ SAMPLE_DATA = {
         'channel': 'hall',
         'channelLabel': 'Zal',
         'table': '12-stol',
+        'tableNumber': 12,
         'hall': 'Asosiy zal',
+        'zone': 'VIP kabina',
+        'zoneDisplay': 'VIP kabina',
         'guestCount': 3,
         'openedAt': '10.07.2026 15:42',
         'waiter': 'Aziza Karimova',
@@ -285,6 +291,7 @@ def _order_blocks(*, kitchen: bool, detailed: bool) -> list[dict]:
         {'label': 'Buyurtma', 'value': '{{order.displayNumber}}'},
         {'label': 'Turi', 'value': '{{order.channelLabel}}'},
         {'label': 'Stol', 'value': '{{order.table}}'},
+        {'label': 'Hudud', 'value': '{{order.zoneDisplay}}'},
     ]
     if detailed:
         rows.extend(
@@ -530,6 +537,7 @@ def build_legacy_layout(kind: str) -> dict:
                 {'label': 'Buyurtma vaqti', 'value': '{{order.openedAt}}'},
                 {'label': 'Buyurtma turi', 'value': '{{order.channelLabel}}'},
                 {'label': 'Stol', 'value': '{{order.table}}'},
+                {'label': 'Hudud', 'value': '{{order.zoneDisplay}}'},
                 {'label': 'Zal', 'value': '{{order.hall}}'},
                 {'label': 'Ofitsiant', 'value': '{{order.waiter}}'},
                 {'label': 'Kassir', 'value': '{{order.cashier}}'},

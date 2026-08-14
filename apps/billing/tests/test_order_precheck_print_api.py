@@ -2,7 +2,7 @@ from rest_framework import status
 
 from apps.integrations.models import IntegrationConfig
 from apps.billing.models import Payment, Receipt
-from apps.floor.models import TableSession
+from apps.floor.models import Hall, TableSession, ZoneOrCabin
 from apps.printing.models import PrintDocument, PrintTemplate
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
@@ -41,6 +41,9 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertEqual(str(document.source_id), self.order['id'])
         self.assertEqual(document.metadata['cashDeskId'], str(self.cash_desk.id))
         self.assertEqual(document.data_snapshot['order']['table'], self.table.name)
+        self.assertEqual(document.data_snapshot['order']['tableNumber'], self.table.table_number)
+        self.assertEqual(document.data_snapshot['order']['zone'], self.zone.name)
+        self.assertEqual(document.data_snapshot['order']['zoneDisplay'], '')
         self.assertEqual(document.data_snapshot['items'][0]['quantity'], 2)
         self.assertEqual(document.data_snapshot['totals']['total'], 66000)
         self.assertIn('printedAt', document.data_snapshot['precheck'])
@@ -50,6 +53,25 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertEqual(self.table_session.status, TableSession.Status.OPEN)
         self.assertFalse(Payment.objects.filter(order=order).exists())
         self.assertFalse(Receipt.objects.filter(order=order).exists())
+
+    def test_precheck_includes_zone_display_when_restaurant_has_multiple_active_zones(self):
+        second_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name='VIP kabina',
+            sort_order=2,
+        )
+        Hall.objects.create(zone_or_cabin=second_zone, name='VIP zal')
+
+        response = self.client.post(
+            f"/api/v1/pos/billing/orders/{self.order['id']}/precheck/print-document/",
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        document = PrintDocument.objects.get(id=response.data['printDocument'])
+        self.assertEqual(document.data_snapshot['order']['zone'], self.zone.name)
+        self.assertEqual(document.data_snapshot['order']['zoneDisplay'], self.zone.name)
 
     def test_closed_order_cannot_create_a_precheck_document(self):
         Order.objects.filter(id=self.order['id']).update(status=Order.Status.CLOSED)

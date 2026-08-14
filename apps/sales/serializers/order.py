@@ -4,6 +4,7 @@ import re
 from rest_framework import serializers
 
 from apps.billing.serializers import PaymentSerializer, ReceiptSerializer
+from apps.floor.services import restaurant_has_multiple_active_zones
 from apps.sales.helpers import get_order_model
 
 from .order_item import OrderItemSerializer
@@ -19,7 +20,10 @@ class OrderSerializer(serializers.ModelSerializer):
     receipts = ReceiptSerializer(many=True, read_only=True)
     table_id = serializers.UUIDField(source='table_session.table_id', read_only=True)
     table_name = serializers.CharField(source='table_session.table.name', read_only=True)
+    table_number = serializers.IntegerField(source='table_session.table.table_number', read_only=True)
     hall_name = serializers.CharField(source='table_session.hall.name', read_only=True)
+    zone_name = serializers.CharField(source='table_session.hall.zone_or_cabin.name', read_only=True)
+    show_zone_name = serializers.SerializerMethodField()
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True)
     service_fee = serializers.SerializerMethodField()
@@ -29,6 +33,18 @@ class OrderSerializer(serializers.ModelSerializer):
     vat_percent = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
     payment_total_editable = serializers.SerializerMethodField()
+
+    def get_show_zone_name(self, obj):
+        annotated_value = getattr(obj, 'has_multiple_active_zones', None)
+        if annotated_value is not None:
+            return bool(annotated_value)
+        restaurant_id = getattr(obj, 'restaurant_id', None)
+        cache = getattr(self, '_zone_visibility_cache', None)
+        if cache is None:
+            cache = self._zone_visibility_cache = {}
+        if restaurant_id not in cache:
+            cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
+        return cache[restaurant_id]
 
     def validate_display_name(self, value: str) -> str:
         return value.strip()
@@ -98,7 +114,10 @@ class OrderSerializer(serializers.ModelSerializer):
             'table_session',
             'table_id',
             'table_name',
+            'table_number',
             'hall_name',
+            'zone_name',
+            'show_zone_name',
             'distribution_point',
             'opened_by',
             'opened_by_name',

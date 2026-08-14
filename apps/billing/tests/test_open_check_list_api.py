@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 from apps.users.models import Permission, Role, User
 from apps.billing.models import Payment, PaymentRefund, Receipt
 from apps.catalog.models import CatalogCategory, CatalogItem
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import DistributionPoint, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -73,10 +74,11 @@ class OpenCheckListApiTests(APITestCase):
             return response.data['data']
         return response.data
 
-    def create_order(self, *, status: str, closed_at=None):
+    def create_order(self, *, status: str, closed_at=None, table_session=None):
         order = Order.objects.create(
             restaurant=self.restaurant,
             distribution_point=self.distribution_point,
+            table_session=table_session,
             opened_by=self.user,
             cashier=self.user if status == Order.Status.CLOSED else None,
             order_number=1000 + Order.objects.count(),
@@ -106,6 +108,29 @@ class OpenCheckListApiTests(APITestCase):
         order.recalculate_totals()
         return order
 
+    def create_table_session(self, *, zone_name='Asosiy zona', hall_name='Asosiy zal', table_number=1):
+        zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name=zone_name,
+            sort_order=ZoneOrCabin.objects.filter(restaurant=self.restaurant).count() + 1,
+        )
+        hall = Hall.objects.create(zone_or_cabin=zone, name=hall_name)
+        table = DiningTable.objects.create(
+            hall=hall,
+            zone=zone,
+            name=f'{table_number}-stol',
+            table_number=table_number,
+            seat_count=4,
+        )
+        return TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=hall,
+            table=table,
+            opened_by=self.user,
+            assigned_waiter=self.user,
+            guest_count=2,
+        )
+
     def create_success_payment(self, *, order, register_fiscal=False):
         return Payment.objects.create(
             order=order,
@@ -126,6 +151,34 @@ class OpenCheckListApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
         self.assertEqual(returned_ids, {str(submitted_order.id), str(ready_order.id)})
+
+    def test_table_location_exposes_zone_only_when_restaurant_has_multiple_active_zones(self):
+        first_session = self.create_table_session(zone_name='Asosiy zona', table_number=23)
+        first_order = self.create_order(status=Order.Status.SUBMITTED, table_session=first_session)
+
+        single_zone_response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
+        single_zone_order = next(
+            item for item in self.unwrap_response_items(single_zone_response) if item['id'] == str(first_order.id)
+        )
+        self.assertEqual(single_zone_order['table_number'], 23)
+        self.assertEqual(single_zone_order['zone_name'], 'Asosiy zona')
+        self.assertFalse(single_zone_order['show_zone_name'])
+
+        second_session = self.create_table_session(
+            zone_name='VIP kabina',
+            hall_name='VIP zal',
+            table_number=23,
+        )
+        second_order = self.create_order(status=Order.Status.SUBMITTED, table_session=second_session)
+
+        multiple_zone_response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
+        orders = {
+            item['id']: item for item in self.unwrap_response_items(multiple_zone_response)
+        }
+        self.assertTrue(orders[str(first_order.id)]['show_zone_name'])
+        self.assertTrue(orders[str(second_order.id)]['show_zone_name'])
+        self.assertEqual(orders[str(second_order.id)]['zone_name'], 'VIP kabina')
+        self.assertEqual(orders[str(second_order.id)]['table_number'], 23)
 
     def test_open_status_respects_limit(self):
         self.create_order(status=Order.Status.SUBMITTED)
@@ -216,6 +269,7 @@ class OpenCheckListApiTests(APITestCase):
         payload = next(item for item in self.unwrap_response_items(response) if item['id'] == str(order.id))
         statuses = {item['status'] for item in payload['items']}
         self.assertIn(OrderItem.Status.CANCELLED, statuses)
+        self.assertTrue(all(item['sale_unit'] == 'piece' for item in payload['items']))
 
     def test_open_status_omits_billing_details(self):
         order = self.create_order(status=Order.Status.SUBMITTED)

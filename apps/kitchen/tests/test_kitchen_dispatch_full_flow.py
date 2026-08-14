@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from apps.catalog.models import CatalogItem
+from apps.floor.models import Hall, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.sales.models import OrderItem
@@ -21,6 +22,12 @@ class KitchenDispatchFullFlowTests(PosAPITestCase):
         )
         self.prep_station.printer_integration = printer
         self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
+        second_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name='VIP kabina',
+            sort_order=2,
+        )
+        Hall.objects.create(zone_or_cabin=second_zone, name='VIP zal')
         self.tea = CatalogItem.objects.create(
             restaurant=self.restaurant,
             category=self.category,
@@ -63,6 +70,7 @@ class KitchenDispatchFullFlowTests(PosAPITestCase):
         first_document_id = str(first_ticket.print_document_id)
         self.assertEqual(first_submit['kitchenPrintDocuments'], [first_document_id])
         self.assertEqual([row['name'] for row in first_ticket.print_document.data_snapshot['items']], ['Osh'])
+        self.assertEqual(first_ticket.print_document.data_snapshot['order']['zoneDisplay'], self.zone.name)
         self._enqueue_print_document(first_document_id, 'auto:first-kitchen')
 
         ready_response = self.client.post(
@@ -109,6 +117,9 @@ class KitchenDispatchFullFlowTests(PosAPITestCase):
             row for row in queue_response.data['data'] if str(row['id']) == str(addition_ticket.id)
         )
         self.assertTrue(addition_row['is_addition'])
+        self.assertEqual(addition_row['zone_name'], self.zone.name)
+        self.assertTrue(addition_row['show_zone_name'])
+        self.assertEqual(addition_row['table_number'], self.table.table_number)
         self.assertEqual([row['catalog_item_name'] for row in addition_row['items']], ['Choy'])
 
         retry_submit = self.submit_order_via_api(self.order['id'])

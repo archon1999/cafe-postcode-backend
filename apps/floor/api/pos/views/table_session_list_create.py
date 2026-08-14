@@ -2,7 +2,7 @@ from rest_framework import generics, permissions
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.api.admin.serializers import TableSessionSerializer
-from apps.floor.services import sync_table_status
+from apps.floor.services import annotate_zone_name_visibility, sync_table_status
 from apps.platform.services import FeatureGateService
 from common.api.permissions import (
     EndpointRBACPermission,
@@ -21,9 +21,12 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
-        queryset = TableSession.objects.filter(restaurant=restaurant).select_related(
+        queryset = annotate_zone_name_visibility(
+            TableSession.objects.filter(restaurant=restaurant)
+        ).select_related(
             'table',
             'hall',
+            'hall__zone_or_cabin',
             'opened_by',
             'assigned_waiter',
         )

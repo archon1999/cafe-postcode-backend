@@ -182,7 +182,13 @@ def create_kitchen_ticket_print_document(*, ticket, created_by=None):
     ticket = (
         type(ticket)
         .objects.select_for_update()
-        .select_related("restaurant", "order", "prep_station")
+        .select_related(
+            "restaurant",
+            "order",
+            "order__table_session__hall__zone_or_cabin",
+            "order__table_session__table",
+            "prep_station",
+        )
         .get(pk=ticket.pk)
     )
     ensure_restaurant_templates(restaurant=ticket.restaurant)

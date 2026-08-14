@@ -7,6 +7,7 @@ from rest_framework.test import APITestCase
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.billing.models import CashShift, Payment, Receipt
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintTemplate
@@ -346,6 +347,55 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(receipt.print_document.template_version.status, 'published')
         charge_payment.assert_called_once()
         issue_fiscal_receipts.assert_not_called()
+
+    def test_plain_receipt_includes_zone_for_a_multi_zone_hall_order(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'POS fiscal receipts skip', 'description': 'POS fiscal receipts skip permission'},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        primary_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name='Asosiy zona',
+            sort_order=1,
+        )
+        second_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name='VIP kabina',
+            sort_order=2,
+        )
+        hall = Hall.objects.create(zone_or_cabin=primary_zone, name='Asosiy zal')
+        Hall.objects.create(zone_or_cabin=second_zone, name='VIP zal')
+        table = DiningTable.objects.create(
+            hall=hall,
+            zone=primary_zone,
+            name='23-stol',
+            table_number=23,
+            seat_count=4,
+        )
+        table_session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=hall,
+            table=table,
+            opened_by=self.user,
+            guest_count=1,
+        )
+        self.order.table_session = table_session
+        self.order.channel = Order.Channel.HALL
+        self.order.save(update_fields=('table_session', 'channel', 'updated_at'))
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        snapshot = Receipt.objects.get(order=self.order).print_document.data_snapshot['order']
+        self.assertEqual(snapshot['tableNumber'], 23)
+        self.assertEqual(snapshot['zone'], 'Asosiy zona')
+        self.assertEqual(snapshot['zoneDisplay'], 'Asosiy zona')
 
     def test_payment_returns_kitchen_document_for_configured_station_printer(self):
         skip_permission = Permission.objects.get_or_create(

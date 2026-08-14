@@ -1,3 +1,7 @@
+from copy import deepcopy
+from importlib import import_module
+
+from django.apps import apps as django_apps
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -69,8 +73,17 @@ class PrintTemplateAdminApiTests(APITestCase):
         self.assertIn('variablesByKind', response.data)
         self.assertIn('sampleData', response.data)
         self.assertIn('precheck.printedAt', response.data['variablesByKind'][PrintTemplate.Kind.ORDER_PRECHECK])
+        self.assertIn('order.zoneDisplay', response.data['variablesByKind'][PrintTemplate.Kind.ORDER_PRECHECK])
         self.assertIn('item.vat', response.data['variablesByKind'][PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL])
         for preset in response.data['presets']:
+            for layout in preset['templates'].values():
+                self.assertTrue(
+                    any(
+                        row.get('value') == '{{order.zoneDisplay}}'
+                        for block in layout['blocks']
+                        for row in block.get('rows', [])
+                    )
+                )
             plain_blocks = preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN]['blocks']
             plain_items = next(block for block in plain_blocks if block['type'] == 'items_table')
             self.assertFalse(plain_items.get('showVat', False))
@@ -121,6 +134,31 @@ class PrintTemplateAdminApiTests(APITestCase):
         self.assertEqual(str(template.published_version_id), version_id)
         self.assertEqual(old_version.status, PrintTemplateVersion.Status.RETIRED)
         self.assertEqual(template.published_version.status, PrintTemplateVersion.Status.PUBLISHED)
+
+    def test_zone_location_migration_preserves_layout_and_publishes_a_new_revision(self):
+        template = PrintTemplate.objects.get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
+        previous = template.published_version
+        legacy_layout = deepcopy(previous.layout)
+        for block in legacy_layout['blocks']:
+            if isinstance(block.get('rows'), list):
+                block['rows'] = [
+                    row for row in block['rows'] if row.get('value') != '{{order.zoneDisplay}}'
+                ]
+        previous.layout = legacy_layout
+        previous.save(update_fields=('layout', 'updated_at'))
+        self.assertNotIn('{{order.zoneDisplay}}', str(previous.layout))
+
+        migration = import_module('apps.printing.migrations.0007_publish_order_zone_location')
+        migration.publish_order_zone_location(django_apps, None)
+
+        template.refresh_from_db()
+        previous.refresh_from_db()
+        self.assertNotEqual(template.published_version_id, previous.id)
+        self.assertEqual(previous.status, PrintTemplateVersion.Status.RETIRED)
+        self.assertIn('{{order.zoneDisplay}}', str(template.published_version.layout))
 
     def test_invalid_layout_is_rejected_before_a_draft_is_created(self):
         template = PrintTemplate.objects.get(

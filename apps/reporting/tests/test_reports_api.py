@@ -297,6 +297,7 @@ class ReportsApiTests(PosAPITestCase):
         rows = response.data['data']
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['quantity'], 1)
+        self.assertEqual(rows[0]['sale_unit'], 'piece')
         self.assertEqual(rows[0]['revenue'], self.closed_order.subtotal)
 
     def test_top_staff_report_labels_unknown_item_creator(self):

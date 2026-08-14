@@ -2,6 +2,7 @@ from rest_framework import generics, permissions
 
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
+from apps.floor.services import annotate_zone_name_visibility
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
@@ -12,10 +13,13 @@ class KitchenTicketDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
-        return KitchenTicket.objects.filter(restaurant=restaurant).select_related(
+        return annotate_zone_name_visibility(
+            KitchenTicket.objects.filter(restaurant=restaurant)
+        ).select_related(
             'prep_station',
             'order__opened_by',
             'order__table_session__hall',
+            'order__table_session__hall__zone_or_cabin',
             'order__table_session__table',
         ).prefetch_related(
             'lines__order_item__catalog_item',

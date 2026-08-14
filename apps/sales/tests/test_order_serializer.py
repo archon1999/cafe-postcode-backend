@@ -1,10 +1,41 @@
 from apps.sales.models import Order, OrderItem
 from apps.billing.models import Payment, Receipt
+from apps.floor.models import ZoneOrCabin
 from apps.sales.serializers import OrderSerializer
 from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class OrderSerializerTests(PosTestCase):
+    def test_serializer_includes_conditional_zone_context_for_payment_order(self):
+        table_session = self.create_table_session()
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            table_session=table_session,
+            distribution_point=self.hall_distribution,
+            opened_by=self.user,
+            order_number=1,
+            channel=Order.Channel.HALL,
+            status=Order.Status.SUBMITTED,
+            guest_count=2,
+        )
+
+        single_zone_data = OrderSerializer(order).data
+
+        self.assertEqual(single_zone_data['table_number'], self.table.table_number)
+        self.assertEqual(single_zone_data['zone_name'], self.zone.name)
+        self.assertFalse(single_zone_data['show_zone_name'])
+
+        ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name='VIP zona',
+            sort_order=2,
+        )
+
+        multi_zone_data = OrderSerializer(order).data
+
+        self.assertTrue(multi_zone_data['show_zone_name'])
+
     def test_serializer_includes_service_fee_percent_payments_and_receipts(self):
         self.restaurant.vat_enabled = True
         self.restaurant.vat_percent = 12

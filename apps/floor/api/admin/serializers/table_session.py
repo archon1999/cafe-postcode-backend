@@ -2,7 +2,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, TableSession
-from apps.floor.services import available_seat_count
+from apps.floor.services import available_seat_count, restaurant_has_multiple_active_zones
 
 
 def get_supported_seat_count(seat_count: int) -> int:
@@ -19,6 +19,20 @@ class TableSessionSerializer(serializers.ModelSerializer):
     table_name = serializers.CharField(source="table.name", read_only=True)
     table_number = serializers.IntegerField(source="table.table_number", read_only=True)
     hall_name = serializers.CharField(source="hall.name", read_only=True)
+    zone_name = serializers.CharField(source="hall.zone_or_cabin.name", read_only=True)
+    show_zone_name = serializers.SerializerMethodField()
+
+    def get_show_zone_name(self, obj):
+        annotated_value = getattr(obj, 'has_multiple_active_zones', None)
+        if annotated_value is not None:
+            return bool(annotated_value)
+        restaurant_id = getattr(obj, 'restaurant_id', None)
+        cache = getattr(self, '_zone_visibility_cache', None)
+        if cache is None:
+            cache = self._zone_visibility_cache = {}
+        if restaurant_id not in cache:
+            cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
+        return cache[restaurant_id]
 
     class Meta:
         model = TableSession
@@ -28,6 +42,8 @@ class TableSessionSerializer(serializers.ModelSerializer):
             "restaurant_name",
             "hall",
             "hall_name",
+            "zone_name",
+            "show_zone_name",
             "table",
             "table_name",
             "table_number",

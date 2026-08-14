@@ -3,6 +3,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db.models import Sum
 from django.utils import timezone
 
+from apps.floor.services import restaurant_has_multiple_active_zones, table_session_zone_name
+
 
 def _money(value) -> int:
     return int(value or 0)
@@ -31,11 +33,23 @@ def _channel_label(order) -> str:
     return labels.get(str(order.channel or ""), str(order.channel or ""))
 
 
-def _table_parts(order) -> tuple[str, str]:
+def _table_parts(order) -> tuple[str, int | None, str, str, str]:
     session = getattr(order, "table_session", None)
     table = getattr(session, "table", None) if session is not None else None
     hall = getattr(session, "hall", None) if session is not None else None
-    return (str(getattr(table, "name", "") or ""), str(getattr(hall, "name", "") or ""))
+    zone_name = table_session_zone_name(session)
+    zone_display = (
+        zone_name
+        if restaurant_has_multiple_active_zones(getattr(order, "restaurant_id", None))
+        else ""
+    )
+    return (
+        str(getattr(table, "name", "") or ""),
+        getattr(table, "table_number", None),
+        str(getattr(hall, "name", "") or ""),
+        zone_name,
+        zone_display,
+    )
 
 
 def _payment_method(*, cash_amount: int, card_amount: int, fallback: str) -> str:
@@ -116,7 +130,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     order = receipt.order
     payment = receipt.payment
     restaurant = order.restaurant
-    table_name, hall_name = _table_parts(order)
+    table_name, table_number, hall_name, zone_name, zone_display = _table_parts(order)
     active_items = order.items.exclude(
         status=order.items.model.Status.CANCELLED
     ).select_related("catalog_item").prefetch_related("modifiers")
@@ -159,7 +173,10 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
             "channel": order.channel,
             "channelLabel": _channel_label(order),
             "table": table_name,
+            "tableNumber": table_number,
             "hall": hall_name,
+            "zone": zone_name,
+            "zoneDisplay": zone_display,
             "guestCount": int(order.guest_count or 0),
             "openedAt": _local_datetime(order.created_at),
             "waiter": order.opened_by.full_name
@@ -248,7 +265,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
 
 def build_order_precheck_print_snapshot(*, order) -> dict:
     restaurant = order.restaurant
-    table_name, hall_name = _table_parts(order)
+    table_name, table_number, hall_name, zone_name, zone_display = _table_parts(order)
     active_items = order.items.exclude(
         status=order.items.model.Status.CANCELLED
     ).select_related("catalog_item").prefetch_related("modifiers")
@@ -273,7 +290,10 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
             "channel": order.channel,
             "channelLabel": _channel_label(order),
             "table": table_name,
+            "tableNumber": table_number,
             "hall": hall_name,
+            "zone": zone_name,
+            "zoneDisplay": zone_display,
             "guestCount": int(order.guest_count or 0),
             "openedAt": _local_datetime(order.created_at),
             "waiter": order.opened_by.full_name if order.opened_by_id and order.opened_by else "",
@@ -312,7 +332,7 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
 def build_kitchen_print_snapshot(*, ticket) -> dict:
     order = ticket.order
     restaurant = ticket.restaurant
-    table_name, hall_name = _table_parts(order)
+    table_name, table_number, hall_name, zone_name, zone_display = _table_parts(order)
     queryset = order.items.filter(kitchen_ticket_line__ticket=ticket)
     if not queryset.exists():
         queryset = order.items.filter(prep_station=ticket.prep_station)
@@ -337,7 +357,10 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
             "channel": order.channel,
             "channelLabel": _channel_label(order),
             "table": table_name,
+            "tableNumber": table_number,
             "hall": hall_name,
+            "zone": zone_name,
+            "zoneDisplay": zone_display,
             "guestCount": int(order.guest_count or 0),
             "openedAt": _local_datetime(order.created_at),
             "waiter": order.opened_by.full_name

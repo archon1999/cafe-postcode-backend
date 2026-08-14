@@ -20,13 +20,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'prep_station',
             'prep_station_name',
             'quantity',
+            'sale_unit',
             'unit_price',
             'line_total',
             'status',
             'note',
             'created_at',
         )
-        read_only_fields = ('order', 'unit_price', 'line_total', 'prep_station')
+        read_only_fields = ('order', 'sale_unit', 'unit_price', 'line_total', 'prep_station')
 
     def validate(self, attrs):
         catalog_item = attrs.get('catalog_item') or getattr(self.instance, 'catalog_item', None)
