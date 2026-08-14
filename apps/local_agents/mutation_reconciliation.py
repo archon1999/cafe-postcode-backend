@@ -13,6 +13,7 @@ MUTATION_PATHS = (
     re.compile(r"^/api/v1/pos/sales/orders/$"),
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/$"),
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/items/$"),
+    re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/items/bulk/$"),
     re.compile(r"^/api/v1/pos/sales/orders/items/[0-9a-f-]+/$"),
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/submit/$"),
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/serve-ready/$"),
