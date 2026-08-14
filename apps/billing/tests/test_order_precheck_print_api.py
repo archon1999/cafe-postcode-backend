@@ -39,6 +39,11 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertEqual(document.kind, PrintTemplate.Kind.ORDER_PRECHECK)
         self.assertEqual(document.source_model, 'sales.order')
         self.assertEqual(str(document.source_id), self.order['id'])
+        self.assertLessEqual(
+            len(document.idempotency_key),
+            PrintDocument._meta.get_field('idempotency_key').max_length,
+        )
+        self.assertTrue(document.idempotency_key.startswith('order-precheck:'))
         self.assertEqual(document.metadata['cashDeskId'], str(self.cash_desk.id))
         self.assertEqual(document.data_snapshot['order']['table'], self.table.name)
         self.assertEqual(document.data_snapshot['order']['tableNumber'], self.table.table_number)

@@ -144,7 +144,7 @@ def create_order_precheck_print_document(*, order, cash_desk=None, created_by=No
         restaurant=order.restaurant,
         kind=PrintTemplate.Kind.ORDER_PRECHECK,
         operation_type=PrintDocument.OperationType.SALE,
-        idempotency_key=f"order-precheck:{order.id}:{uuid.uuid4().hex}",
+        idempotency_key=f"order-precheck:{uuid.uuid4().hex}",
         source_model="sales.order",
         source_id=order.id,
         data_snapshot=snapshot,
