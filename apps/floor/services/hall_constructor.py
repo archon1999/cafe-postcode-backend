@@ -26,7 +26,14 @@ class _Placement:
 
 
 class HallConstructorService:
-    def validate_layout(self, *, hall: Hall, grid_columns: int, tables_payload: list[dict], deleted_table_ids: Iterable[str]):
+    def validate_layout(
+        self,
+        *,
+        hall: Hall,
+        grid_columns: int,
+        tables_payload: list[dict],
+        deleted_table_ids: Iterable[str],
+    ):
         existing_tables = {str(table.id): table for table in hall.tables.all()}
         deleted_table_ids = {str(table_id) for table_id in deleted_table_ids}
         payload_ids = {str(item['id']) for item in tables_payload if item.get('id')}
@@ -36,7 +43,9 @@ class HallConstructorService:
             raise ValidationError({'deleted_table_ids': _('One or more tables do not belong to this hall.')})
 
         if payload_ids & deleted_table_ids:
-            raise ValidationError({'deleted_table_ids': _('The same table cannot be updated and deleted at the same time.')})
+            raise ValidationError(
+                {'deleted_table_ids': _('The same table cannot be updated and deleted at the same time.')}
+            )
 
         missing_existing_ids = set(existing_tables.keys()) - deleted_table_ids - payload_ids
         if missing_existing_ids:
@@ -76,7 +85,16 @@ class HallConstructorService:
             placements.append(placement)
 
     @transaction.atomic
-    def save_layout(self, *, hall: Hall, grid_columns: int, tables_payload: list[dict], deleted_table_ids: Iterable[str]):
+    def save_layout(
+        self,
+        *,
+        hall: Hall,
+        grid_columns: int,
+        service_fee_enabled: bool,
+        service_fee_percent,
+        tables_payload: list[dict],
+        deleted_table_ids: Iterable[str],
+    ):
         deleted_table_ids = {str(table_id) for table_id in deleted_table_ids}
         self.validate_layout(
             hall=hall,
@@ -103,6 +121,8 @@ class HallConstructorService:
                 'width': item['width'],
                 'height': item['height'],
                 'rotation': 0,
+                'service_fee_enabled': item.get('service_fee_enabled', False),
+                'service_fee_percent': item.get('service_fee_percent', 0),
                 'is_active': item.get('is_active', True),
             }
 
@@ -120,7 +140,16 @@ class HallConstructorService:
             table.save()
 
         hall.grid_columns = grid_columns
-        hall.save(update_fields=['grid_columns', 'updated_at'])
+        hall.service_fee_enabled = service_fee_enabled
+        hall.service_fee_percent = service_fee_percent
+        hall.save(
+            update_fields=[
+                'grid_columns',
+                'service_fee_enabled',
+                'service_fee_percent',
+                'updated_at',
+            ]
+        )
         hall.refresh_from_db()
         return hall
 

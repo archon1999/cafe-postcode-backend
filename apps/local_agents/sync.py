@@ -87,7 +87,7 @@ def _table_session_snapshot(restaurant):
             restaurant=restaurant,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
-        .select_related('table', 'hall', 'opened_by', 'assigned_waiter')
+        .select_related('restaurant', 'table', 'hall', 'opened_by', 'assigned_waiter')
         .order_by('created_at')
     )
     return TableSessionSerializer(sessions, many=True).data

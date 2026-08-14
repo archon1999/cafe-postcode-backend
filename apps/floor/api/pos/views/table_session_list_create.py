@@ -21,9 +21,8 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
-        queryset = annotate_zone_name_visibility(
-            TableSession.objects.filter(restaurant=restaurant)
-        ).select_related(
+        queryset = annotate_zone_name_visibility(TableSession.objects.filter(restaurant=restaurant)).select_related(
+            'restaurant',
             'table',
             'hall',
             'hall__zone_or_cabin',

@@ -1,3 +1,5 @@
+from decimal import Decimal, ROUND_HALF_UP
+
 from django.conf import settings
 from django.db import models
 
@@ -71,6 +73,9 @@ class Order(BaseModel):
         blank=True,
     )
     total_overridden_at = models.DateTimeField(null=True, blank=True)
+    restaurant_service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    hall_service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    table_service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     closed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
@@ -95,6 +100,74 @@ class Order(BaseModel):
     def __str__(self):
         return f'Order #{self.order_number}'
 
+    @staticmethod
+    def _enabled_service_fee_percent(source) -> Decimal:
+        if source is None or not getattr(source, 'service_fee_enabled', False):
+            return Decimal('0')
+        return max(Decimal(str(getattr(source, 'service_fee_percent', 0) or 0)), Decimal('0'))
+
+    @staticmethod
+    def calculate_service_fee_amount(subtotal: int, percent) -> int:
+        rate = max(Decimal(str(percent or 0)), Decimal('0'))
+        if subtotal <= 0 or rate <= 0:
+            return 0
+        return int((Decimal(subtotal) * rate / Decimal('100')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
+    def capture_service_fee_snapshot(self):
+        self.restaurant_service_fee_percent = self._enabled_service_fee_percent(self.restaurant)
+        hall = None
+        table = None
+        if self.table_session_id:
+            hall = self.table_session.hall
+            table = self.table_session.table
+        self.hall_service_fee_percent = self._enabled_service_fee_percent(hall)
+        self.table_service_fee_percent = self._enabled_service_fee_percent(table)
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.capture_service_fee_snapshot()
+        return super().save(*args, **kwargs)
+
+    @property
+    def service_fee_percent(self) -> Decimal:
+        return sum(
+            (
+                self.restaurant_service_fee_percent or Decimal('0'),
+                self.hall_service_fee_percent or Decimal('0'),
+                self.table_service_fee_percent or Decimal('0'),
+            ),
+            Decimal('0'),
+        )
+
+    @property
+    def service_fee_enabled(self) -> bool:
+        return self.service_fee_percent > 0
+
+    def get_service_fee_components(self) -> list[dict]:
+        table_session = self.table_session if self.table_session_id else None
+        hall = getattr(table_session, 'hall', None)
+        table = getattr(table_session, 'table', None)
+        component_specs = (
+            ('restaurant', self.restaurant_service_fee_percent, self.restaurant),
+            ('hall', self.hall_service_fee_percent, hall),
+            ('table', self.table_service_fee_percent, table),
+        )
+        components = []
+        for scope, percent, source in component_specs:
+            percent = percent or Decimal('0')
+            if percent <= 0:
+                continue
+            json_percent = int(percent) if percent == percent.to_integral_value() else float(percent)
+            components.append(
+                {
+                    'scope': scope,
+                    'source_name': getattr(source, 'name', ''),
+                    'percent': json_percent,
+                    'amount': self.calculate_service_fee_amount(int(self.subtotal or 0), percent),
+                }
+            )
+        return components
+
     @property
     def branch(self):
         return self.restaurant
@@ -108,11 +181,14 @@ class Order(BaseModel):
 
         active_items = self.items.exclude(status=OrderItem.Status.CANCELLED)
         subtotal = active_items.aggregate(total=models.Sum('line_total')).get('total') or 0
-        service_fee = 0
-
-        if getattr(self.restaurant, 'service_fee_enabled', False):
-            percent = getattr(self.restaurant, 'service_fee_percent', self.DEFAULT_HALL_SERVICE_FEE_PERCENT) or 0
-            service_fee = round(subtotal * percent / 100)
+        service_fee = sum(
+            self.calculate_service_fee_amount(subtotal, percent)
+            for percent in (
+                self.restaurant_service_fee_percent,
+                self.hall_service_fee_percent,
+                self.table_service_fee_percent,
+            )
+        )
 
         calculated_total = subtotal + service_fee
         self.subtotal = subtotal

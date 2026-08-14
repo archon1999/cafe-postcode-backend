@@ -135,9 +135,7 @@ class OpenCheckListView(generics.ListAPIView):
             "created_at",
         )
         queryset = (
-            annotate_zone_name_visibility(
-                Order.objects.filter(restaurant=restaurant)
-            )
+            annotate_zone_name_visibility(Order.objects.filter(restaurant=restaurant))
             .select_related(
                 "restaurant",
                 "table_session",
@@ -151,6 +149,10 @@ class OpenCheckListView(generics.ListAPIView):
             .only(
                 "id",
                 "restaurant_id",
+                "restaurant__name",
+                "restaurant__name_uz",
+                "restaurant__name_uz_crl",
+                "restaurant__name_ru",
                 "restaurant__service_fee_enabled",
                 "restaurant__service_fee_percent",
                 "restaurant__vat_enabled",
@@ -181,6 +183,10 @@ class OpenCheckListView(generics.ListAPIView):
                 "guest_count",
                 "note",
                 "subtotal",
+                "calculated_total",
+                "restaurant_service_fee_percent",
+                "hall_service_fee_percent",
+                "table_service_fee_percent",
                 "total",
                 "closed_at",
                 "created_at",

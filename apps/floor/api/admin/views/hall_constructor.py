@@ -32,6 +32,8 @@ class HallConstructorView(AdminPermissionRequiredMixin, views.APIView):
         hall = self.constructor_service_class().save_layout(
             hall=hall,
             grid_columns=serializer.validated_data['grid_columns'],
+            service_fee_enabled=serializer.validated_data['service_fee_enabled'],
+            service_fee_percent=serializer.validated_data['service_fee_percent'],
             tables_payload=serializer.validated_data['tables'],
             deleted_table_ids=serializer.validated_data.get('deleted_table_ids', []),
         )

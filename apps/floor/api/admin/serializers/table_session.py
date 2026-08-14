@@ -2,7 +2,14 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, TableSession
-from apps.floor.services import available_seat_count, restaurant_has_multiple_active_zones
+from apps.floor.services import (
+    available_seat_count,
+    restaurant_has_multiple_active_zones,
+)
+from apps.sales.helpers import get_order_model
+
+
+Order = get_order_model()
 
 
 def get_supported_seat_count(seat_count: int) -> int:
@@ -21,18 +28,46 @@ class TableSessionSerializer(serializers.ModelSerializer):
     hall_name = serializers.CharField(source="hall.name", read_only=True)
     zone_name = serializers.CharField(source="hall.zone_or_cabin.name", read_only=True)
     show_zone_name = serializers.SerializerMethodField()
+    service_fee_percent = serializers.SerializerMethodField()
+    service_fee_components = serializers.SerializerMethodField()
 
     def get_show_zone_name(self, obj):
-        annotated_value = getattr(obj, 'has_multiple_active_zones', None)
+        annotated_value = getattr(obj, "has_multiple_active_zones", None)
         if annotated_value is not None:
             return bool(annotated_value)
-        restaurant_id = getattr(obj, 'restaurant_id', None)
-        cache = getattr(self, '_zone_visibility_cache', None)
+        restaurant_id = getattr(obj, "restaurant_id", None)
+        cache = getattr(self, "_zone_visibility_cache", None)
         if cache is None:
             cache = self._zone_visibility_cache = {}
         if restaurant_id not in cache:
             cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
         return cache[restaurant_id]
+
+    @staticmethod
+    def get_service_fee_components(obj):
+        component_specs = (
+            ("restaurant", obj.restaurant, obj.restaurant.name),
+            ("hall", obj.hall, obj.hall.name),
+            ("table", obj.table, obj.table.name),
+        )
+        return [
+            {
+                "scope": scope,
+                "source_name": source_name,
+                "percent": percent,
+            }
+            for scope, source, source_name in component_specs
+            if (percent := Order._enabled_service_fee_percent(source)) > 0
+        ]
+
+    def get_service_fee_percent(self, obj):
+        return sum(
+            (
+                component["percent"]
+                for component in self.get_service_fee_components(obj)
+            ),
+            0,
+        )
 
     class Meta:
         model = TableSession
@@ -44,6 +79,8 @@ class TableSessionSerializer(serializers.ModelSerializer):
             "hall_name",
             "zone_name",
             "show_zone_name",
+            "service_fee_percent",
+            "service_fee_components",
             "table",
             "table_name",
             "table_number",

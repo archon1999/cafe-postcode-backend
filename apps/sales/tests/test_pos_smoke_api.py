@@ -8,6 +8,36 @@ from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
 class PosSmokeApiTests(PosAPITestCase):
+    def test_stacked_service_fee_survives_hall_order_and_payment_flow(self):
+        self.hall.service_fee_enabled = True
+        self.hall.service_fee_percent = 3
+        self.hall.save(update_fields=['service_fee_enabled', 'service_fee_percent'])
+        self.table.service_fee_enabled = True
+        self.table.service_fee_percent = 2
+        self.table.save(update_fields=['service_fee_enabled', 'service_fee_percent'])
+        session = self.create_table_session()
+
+        order_data = self.create_order_via_api({'table_session': str(session.id), 'channel': Order.Channel.HALL})
+        self.add_item_via_api(order_data['id'])
+
+        order_response = self.client.get(f'/api/v1/pos/sales/orders/{order_data["id"]}/')
+        self.assertEqual(order_response.status_code, status.HTTP_200_OK, order_response.data)
+        self.assertEqual(order_response.data['service_fee_percent'], 15)
+        self.assertEqual(order_response.data['service_fee'], 4500)
+        self.assertEqual(
+            [component['scope'] for component in order_response.data['service_fee_components']],
+            ['restaurant', 'hall', 'table'],
+        )
+
+        self.submit_order_via_api(order_data['id'])
+        payment_data = self.pay_order_via_api(order_data['id'], amount=34500)
+
+        self.assertEqual(payment_data['order']['service_fee'], 4500)
+        self.assertEqual(payment_data['order']['service_fee_percent'], 15)
+        self.assertEqual(
+            [component['amount'] for component in payment_data['order']['service_fee_components']],
+            [3000, 900, 600],
+        )
 
     def test_hall_order_lifecycle_smoke(self):
         session = TableSession.objects.create(
@@ -44,11 +74,15 @@ class PosSmokeApiTests(PosAPITestCase):
         self.assertEqual(ticket.status, KitchenTicket.Status.NEW)
 
         item_status_response = self.client.post(
-            f"/api/v1/pos/kitchen/items/{item_data['id']}/status/",
+            f'/api/v1/pos/kitchen/items/{item_data["id"]}/status/',
             {'status': 'done'},
             format='json',
         )
-        self.assertEqual(item_status_response.status_code, status.HTTP_200_OK, item_status_response.data)
+        self.assertEqual(
+            item_status_response.status_code,
+            status.HTTP_200_OK,
+            item_status_response.data,
+        )
 
         order.refresh_from_db()
         ticket.refresh_from_db()
@@ -64,9 +98,7 @@ class PosSmokeApiTests(PosAPITestCase):
         self.assertEqual(open_checks_response.status_code, status.HTTP_200_OK)
         self.assertTrue(
             any(
-                item['id'] == str(order_id)
-                and item['service_fee_enabled']
-                and item['service_fee_percent'] == 10
+                item['id'] == str(order_id) and item['service_fee_enabled'] and item['service_fee_percent'] == 10
                 for item in open_checks_response.data
             )
         )
@@ -100,7 +132,10 @@ class PosSmokeApiTests(PosAPITestCase):
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PRINTER,
             provider='windows-raw',
-            settings={'connection_type': 'system_printer', 'printer_name': 'Kitchen Printer'},
+            settings={
+                'connection_type': 'system_printer',
+                'printer_name': 'Kitchen Printer',
+            },
         )
         self.prep_station.printer_integration = printer
         self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
@@ -123,7 +158,10 @@ class PosSmokeApiTests(PosAPITestCase):
         submitted = self.submit_order_via_api(order_id)
         self.assertEqual(submitted['status'], Order.Status.SUBMITTED)
         self.assertEqual(len(submitted['kitchenPrintDocuments']), 1)
-        self.assertEqual(KitchenTicket.objects.filter(order_id=order_id, prep_station=self.prep_station).count(), 1)
+        self.assertEqual(
+            KitchenTicket.objects.filter(order_id=order_id, prep_station=self.prep_station).count(),
+            1,
+        )
 
         open_checks_response = self.client.get('/api/v1/pos/billing/open-checks/?status=open')
         self.assertEqual(open_checks_response.status_code, status.HTTP_200_OK)
@@ -159,4 +197,3 @@ class PosSmokeApiTests(PosAPITestCase):
                 for item in closed_checks_response.data['data']
             )
         )
-

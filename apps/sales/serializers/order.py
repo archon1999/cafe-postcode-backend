@@ -29,6 +29,7 @@ class OrderSerializer(serializers.ModelSerializer):
     service_fee = serializers.SerializerMethodField()
     service_fee_enabled = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
+    service_fee_components = serializers.SerializerMethodField()
     vat_enabled = serializers.SerializerMethodField()
     vat_percent = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
@@ -68,12 +69,13 @@ class OrderSerializer(serializers.ModelSerializer):
         return getattr(obj.restaurant, 'payment_total_mode', 'fixed') == 'cashier_editable'
 
     def get_service_fee_percent(self, obj):
-        if not self.get_service_fee_enabled(obj):
-            return 0
-        return getattr(obj.restaurant, 'service_fee_percent', 10) or 0
+        return obj.service_fee_percent
 
     def get_service_fee_enabled(self, obj):
-        return bool(getattr(obj.restaurant, 'service_fee_enabled', False))
+        return obj.service_fee_enabled
+
+    def get_service_fee_components(self, obj):
+        return obj.get_service_fee_components()
 
     @staticmethod
     def _included_vat_amount(*, amount: int, percent) -> int:
@@ -140,6 +142,10 @@ class OrderSerializer(serializers.ModelSerializer):
             'service_fee',
             'service_fee_enabled',
             'service_fee_percent',
+            'service_fee_components',
+            'restaurant_service_fee_percent',
+            'hall_service_fee_percent',
+            'table_service_fee_percent',
             'vat_enabled',
             'vat_percent',
             'vat_amount',

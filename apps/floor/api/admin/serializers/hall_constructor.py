@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, Hall
@@ -21,6 +23,8 @@ class HallConstructorTableReadSerializer(serializers.ModelSerializer):
             'position_y',
             'width',
             'height',
+            'service_fee_enabled',
+            'service_fee_percent',
             'is_active',
         )
 
@@ -32,7 +36,14 @@ class HallConstructorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Hall
-        fields = ('hall_id', 'hall_name', 'grid_columns', 'tables')
+        fields = (
+            'hall_id',
+            'hall_name',
+            'grid_columns',
+            'service_fee_enabled',
+            'service_fee_percent',
+            'tables',
+        )
 
     def get_tables(self, obj):
         tables = sorted(obj.tables.all(), key=lambda table: (table.table_number, table.name))
@@ -49,11 +60,29 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
     position_y = serializers.IntegerField(min_value=0)
     width = serializers.IntegerField(min_value=1)
     height = serializers.IntegerField(min_value=1)
+    service_fee_enabled = serializers.BooleanField(required=False, default=False)
+    service_fee_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal('0'),
+        max_value=Decimal('99'),
+        required=False,
+        default=Decimal('0'),
+    )
     is_active = serializers.BooleanField(required=False, default=True)
 
 
 class HallConstructorUpdateSerializer(serializers.Serializer):
     grid_columns = serializers.IntegerField(min_value=1, max_value=24)
+    service_fee_enabled = serializers.BooleanField(required=False, default=False)
+    service_fee_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal('0'),
+        max_value=Decimal('99'),
+        required=False,
+        default=Decimal('0'),
+    )
     tables = HallConstructorTableWriteSerializer(many=True)
     deleted_table_ids = serializers.ListField(
         child=serializers.UUIDField(),

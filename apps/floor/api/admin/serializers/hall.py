@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.utils.translation import gettext_lazy as _
 from django.db.models import Max
 from rest_framework import serializers
@@ -28,6 +30,8 @@ class HallSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "grid_columns",
+            "service_fee_enabled",
+            "service_fee_percent",
             "sort_order",
             "is_active",
             "zone_or_cabin_id",
@@ -35,6 +39,13 @@ class HallSerializer(serializers.ModelSerializer):
             "tables",
         )
         validators = []
+
+    def validate_service_fee_percent(self, value):
+        if value < Decimal("0") or value > Decimal("99"):
+            raise serializers.ValidationError(
+                _("Service fee percent must be between 0 and 99.")
+            )
+        return value
 
     def validate(self, attrs):
         zone_or_cabin = attrs.get("zone_or_cabin")

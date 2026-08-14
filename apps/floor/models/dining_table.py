@@ -69,6 +69,8 @@ class DiningTable(BaseModel):
     width = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     height = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     rotation = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    service_fee_enabled = models.BooleanField(default=False)
+    service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -92,6 +94,10 @@ class DiningTable(BaseModel):
 
     @classmethod
     def infer_shape_from_variant(cls, shape_variant: str):
-        if shape_variant in {cls.ShapeVariant.SEAT2_VERTICAL, cls.ShapeVariant.SEAT3_TRIANGLE, cls.ShapeVariant.SEAT4_SQUARE}:
+        if shape_variant in {
+            cls.ShapeVariant.SEAT2_VERTICAL,
+            cls.ShapeVariant.SEAT3_TRIANGLE,
+            cls.ShapeVariant.SEAT4_SQUARE,
+        }:
             return cls.Shape.SQUARE
         return cls.Shape.RECTANGLE

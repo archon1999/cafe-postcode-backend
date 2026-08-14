@@ -27,9 +27,11 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         )
         self.add_item_via_api(self.order['id'], quantity=2, note='Piyozsiz')
 
-    def test_waiter_creates_an_immutable_precheck_document_for_the_receipt_printer(self):
+    def test_waiter_creates_an_immutable_precheck_document_for_the_receipt_printer(
+        self,
+    ):
         response = self.client.post(
-            f"/api/v1/pos/billing/orders/{self.order['id']}/precheck/print-document/",
+            f'/api/v1/pos/billing/orders/{self.order["id"]}/precheck/print-document/',
             {},
             format='json',
         )
@@ -59,7 +61,9 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertFalse(Payment.objects.filter(order=order).exists())
         self.assertFalse(Receipt.objects.filter(order=order).exists())
 
-    def test_precheck_includes_zone_display_when_restaurant_has_multiple_active_zones(self):
+    def test_precheck_includes_zone_display_when_restaurant_has_multiple_active_zones(
+        self,
+    ):
         second_zone = ZoneOrCabin.objects.create(
             restaurant=self.restaurant,
             name='VIP kabina',
@@ -68,7 +72,7 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         Hall.objects.create(zone_or_cabin=second_zone, name='VIP zal')
 
         response = self.client.post(
-            f"/api/v1/pos/billing/orders/{self.order['id']}/precheck/print-document/",
+            f'/api/v1/pos/billing/orders/{self.order["id"]}/precheck/print-document/',
             {},
             format='json',
         )
@@ -78,11 +82,38 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertEqual(document.data_snapshot['order']['zone'], self.zone.name)
         self.assertEqual(document.data_snapshot['order']['zoneDisplay'], self.zone.name)
 
+    def test_precheck_renders_restaurant_hall_and_table_service_fees_separately(self):
+        order = Order.objects.get(id=self.order['id'])
+        order.hall_service_fee_percent = 3
+        order.table_service_fee_percent = 2
+        order.save(
+            update_fields=[
+                'hall_service_fee_percent',
+                'table_service_fee_percent',
+                'updated_at',
+            ]
+        )
+        order.recalculate_totals()
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{self.order["id"]}/precheck/print-document/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        totals = PrintDocument.objects.get(id=response.data['printDocument']).data_snapshot['totals']
+        self.assertEqual(totals['serviceFee'], 9000)
+        self.assertEqual(totals['restaurantServiceFee'], 6000)
+        self.assertEqual(totals['hallServiceFee'], 1800)
+        self.assertEqual(totals['tableServiceFee'], 1200)
+        self.assertEqual(totals['serviceFeePercent'], 15)
+
     def test_closed_order_cannot_create_a_precheck_document(self):
         Order.objects.filter(id=self.order['id']).update(status=Order.Status.CLOSED)
 
         response = self.client.post(
-            f"/api/v1/pos/billing/orders/{self.order['id']}/precheck/print-document/",
+            f'/api/v1/pos/billing/orders/{self.order["id"]}/precheck/print-document/',
             {},
             format='json',
         )
@@ -100,7 +131,7 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.role.permissions.set([payment_permission])
 
         response = self.client.post(
-            f"/api/v1/pos/billing/orders/{self.order['id']}/precheck/print-document/",
+            f'/api/v1/pos/billing/orders/{self.order["id"]}/precheck/print-document/',
             {},
             format='json',
         )

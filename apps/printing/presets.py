@@ -144,6 +144,12 @@ PAYMENT_VARIABLES = COMMON_VARIABLES + (
     'totals.vat',
     'totals.vatPercent',
     'totals.serviceFeePercent',
+    'totals.restaurantServiceFee',
+    'totals.restaurantServiceFeePercent',
+    'totals.hallServiceFee',
+    'totals.hallServiceFeePercent',
+    'totals.tableServiceFee',
+    'totals.tableServiceFeePercent',
     'totals.total',
 )
 
@@ -156,6 +162,12 @@ PRECHECK_VARIABLES = COMMON_VARIABLES + (
     'totals.vat',
     'totals.vatPercent',
     'totals.serviceFeePercent',
+    'totals.restaurantServiceFee',
+    'totals.restaurantServiceFeePercent',
+    'totals.hallServiceFee',
+    'totals.hallServiceFeePercent',
+    'totals.tableServiceFee',
+    'totals.tableServiceFeePercent',
     'totals.total',
 )
 
@@ -248,6 +260,12 @@ SAMPLE_DATA = {
         'subtotal': 75000,
         'serviceFee': 7500,
         'serviceFeePercent': 10,
+        'restaurantServiceFee': 3750,
+        'restaurantServiceFeePercent': 5,
+        'hallServiceFee': 1875,
+        'hallServiceFeePercent': 2.5,
+        'tableServiceFee': 1875,
+        'tableServiceFeePercent': 2.5,
         'vat': 8839,
         'vatPercent': 12,
         'total': 82500,
@@ -338,7 +356,24 @@ def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = Fals
 def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
     total_rows = [
         {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
-        {'label': 'Xizmat haqi', 'value': '{{totals.serviceFee}}', 'format': 'money'},
+        {
+            'label': 'Restoran xizmati ({{totals.restaurantServiceFeePercent}}%)',
+            'value': '{{totals.restaurantServiceFee}}',
+            'format': 'money',
+            'hideZero': True,
+        },
+        {
+            'label': 'Zal xizmati ({{totals.hallServiceFeePercent}}%)',
+            'value': '{{totals.hallServiceFee}}',
+            'format': 'money',
+            'hideZero': True,
+        },
+        {
+            'label': 'Stol xizmati ({{totals.tableServiceFeePercent}}%)',
+            'value': '{{totals.tableServiceFee}}',
+            'format': 'money',
+            'hideZero': True,
+        },
         {'label': 'Narx tuzatishi', 'value': '{{totals.totalAdjustment}}', 'format': 'money', 'hideZero': True},
         {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
     ]
@@ -405,7 +440,24 @@ def _precheck_blocks() -> list[dict]:
             'role': 'totals',
             'rows': [
                 {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
-                {'label': 'Xizmat haqi', 'value': '{{totals.serviceFee}}', 'format': 'money', 'hideZero': True},
+                {
+                    'label': 'Restoran xizmati ({{totals.restaurantServiceFeePercent}}%)',
+                    'value': '{{totals.restaurantServiceFee}}',
+                    'format': 'money',
+                    'hideZero': True,
+                },
+                {
+                    'label': 'Zal xizmati ({{totals.hallServiceFeePercent}}%)',
+                    'value': '{{totals.hallServiceFee}}',
+                    'format': 'money',
+                    'hideZero': True,
+                },
+                {
+                    'label': 'Stol xizmati ({{totals.tableServiceFeePercent}}%)',
+                    'value': '{{totals.tableServiceFee}}',
+                    'format': 'money',
+                    'hideZero': True,
+                },
                 {
                     'label': 'Narx tuzatishi',
                     'value': '{{totals.totalAdjustment}}',
@@ -614,7 +666,24 @@ def build_legacy_layout(kind: str) -> dict:
                             if is_fiscal
                             else []
                         ),
-                        {'label': 'XIZMAT HAQI', 'value': '{{totals.serviceFee}}', 'format': 'money', 'hideZero': True},
+                        {
+                            'label': 'RESTORAN XIZMATI ({{totals.restaurantServiceFeePercent}}%)',
+                            'value': '{{totals.restaurantServiceFee}}',
+                            'format': 'money',
+                            'hideZero': True,
+                        },
+                        {
+                            'label': 'ZAL XIZMATI ({{totals.hallServiceFeePercent}}%)',
+                            'value': '{{totals.hallServiceFee}}',
+                            'format': 'money',
+                            'hideZero': True,
+                        },
+                        {
+                            'label': 'STOL XIZMATI ({{totals.tableServiceFeePercent}}%)',
+                            'value': '{{totals.tableServiceFee}}',
+                            'format': 'money',
+                            'hideZero': True,
+                        },
                     ],
                 },
                 {'id': 'total-bottom-divider', 'type': 'divider', 'character': '='},

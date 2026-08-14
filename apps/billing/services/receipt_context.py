@@ -17,7 +17,8 @@ def build_receipt_payload(*, order, receipt_result: dict) -> dict:
     payload['restaurant_address'] = order.restaurant.address
     payload['restaurant_phone'] = order.restaurant.phone
     payload['restaurant_social'] = getattr(order.restaurant, 'social', '')
-    payload['service_fee_percent'] = str(getattr(order.restaurant, 'service_fee_percent', 0) or 0)
+    payload['service_fee_percent'] = str(order.service_fee_percent)
+    payload['service_fee_components'] = order.get_service_fee_components()
     payload['table_label'] = order_table_label(order)
     payload['cashier_name'] = order.cashier.full_name if order.cashier_id and order.cashier else ''
     payload['cashier_id'] = str(order.cashier_id or '')

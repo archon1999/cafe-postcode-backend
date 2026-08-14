@@ -23,6 +23,31 @@ def _included_vat(*, amount: int, percent) -> int:
     return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _service_fee_totals(order) -> dict:
+    components = order.get_service_fee_components()
+    by_scope = {component["scope"]: component for component in components}
+
+    def value(scope: str, field: str, default=0):
+        return by_scope.get(scope, {}).get(field, default)
+
+    return {
+        "serviceFeePercent": _json_number(order.service_fee_percent),
+        "serviceFeeComponents": [
+            {
+                **component,
+                "percent": _json_number(component["percent"]),
+            }
+            for component in components
+        ],
+        "restaurantServiceFee": value("restaurant", "amount"),
+        "restaurantServiceFeePercent": _json_number(value("restaurant", "percent")),
+        "hallServiceFee": value("hall", "amount"),
+        "hallServiceFeePercent": _json_number(value("hall", "percent")),
+        "tableServiceFee": value("table", "amount"),
+        "tableServiceFeePercent": _json_number(value("table", "percent")),
+    }
+
+
 def _channel_label(order) -> str:
     labels = {
         "hall": "Zal",
@@ -209,6 +234,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
         "totals": {
             "subtotal": subtotal,
             "serviceFee": max(calculated_total - subtotal, 0),
+            **_service_fee_totals(order),
             **(
                 {
                     "calculatedTotal": calculated_total,
@@ -216,9 +242,6 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
                 }
                 if total != calculated_total
                 else {}
-            ),
-            "serviceFeePercent": _json_number(
-                getattr(restaurant, "service_fee_percent", 0)
             ),
             "vat": _included_vat(amount=total, percent=vat_percent)
             if vat_enabled
@@ -312,6 +335,7 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
         "totals": {
             "subtotal": subtotal,
             "serviceFee": _money(getattr(order, "service_fee", 0)) or max(calculated_total - subtotal, 0),
+            **_service_fee_totals(order),
             **(
                 {
                     "calculatedTotal": calculated_total,
@@ -320,7 +344,6 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
                 if total != calculated_total
                 else {}
             ),
-            "serviceFeePercent": _json_number(getattr(restaurant, "service_fee_percent", 0)),
             "vat": _included_vat(amount=total, percent=vat_percent) if vat_enabled else 0,
             "vatPercent": _json_number(vat_percent),
             "total": total,

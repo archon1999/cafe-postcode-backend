@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -7,9 +9,9 @@ from apps.floor.services import ACTIVE_SESSION_STATUSES
 from .active_session_summary import ActiveSessionSummarySerializer
 
 
-PREFETCHED_ACTIVE_SESSIONS_ATTR = 'serialized_active_sessions'
-_SERIALIZER_ACTIVE_SESSIONS_CACHE_ATTR = '_serializer_active_sessions'
-_SERIALIZER_OCCUPIED_GUEST_COUNT_CACHE_ATTR = '_serializer_occupied_guest_count'
+PREFETCHED_ACTIVE_SESSIONS_ATTR = "serialized_active_sessions"
+_SERIALIZER_ACTIVE_SESSIONS_CACHE_ATTR = "_serializer_active_sessions"
+_SERIALIZER_OCCUPIED_GUEST_COUNT_CACHE_ATTR = "_serializer_occupied_guest_count"
 _MISSING = object()
 
 
@@ -43,6 +45,8 @@ class DiningTableSerializer(serializers.ModelSerializer):
             "width",
             "height",
             "rotation",
+            "service_fee_enabled",
+            "service_fee_percent",
             "is_active",
             "active_session",
             "active_sessions",
@@ -134,6 +138,13 @@ class DiningTableSerializer(serializers.ModelSerializer):
         if value not in DiningTable.get_supported_seat_counts():
             raise serializers.ValidationError(
                 _("Only 2, 3, 4, 5, or 6 seat tables are supported.")
+            )
+        return value
+
+    def validate_service_fee_percent(self, value):
+        if value < Decimal("0") or value > Decimal("99"):
+            raise serializers.ValidationError(
+                _("Service fee percent must be between 0 and 99.")
             )
         return value
 

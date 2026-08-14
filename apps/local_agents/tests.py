@@ -607,6 +607,36 @@ class LocalAgentBootstrapTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_bootstrap_includes_hall_table_and_effective_session_service_fees(self):
+        self.hall.service_fee_enabled = True
+        self.hall.service_fee_percent = 3
+        self.hall.save(update_fields=['service_fee_enabled', 'service_fee_percent'])
+        self.table.service_fee_enabled = True
+        self.table.service_fee_percent = 2
+        self.table.save(update_fields=['service_fee_enabled', 'service_fee_percent'])
+        table_session = self.create_table_session()
+
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        hall = next(row for row in response.data['halls'] if str(row['id']) == str(self.hall.id))
+        table = next(row for row in hall['tables'] if str(row['id']) == str(self.table.id))
+        session = next(
+            row for row in response.data['tableSessions'] if str(row['id']) == str(table_session.id)
+        )
+        self.assertTrue(hall['service_fee_enabled'])
+        self.assertEqual(str(hall['service_fee_percent']), '3.00')
+        self.assertTrue(table['service_fee_enabled'])
+        self.assertEqual(str(table['service_fee_percent']), '2.00')
+        self.assertEqual(session['service_fee_percent'], 15)
+        self.assertEqual(
+            [component['scope'] for component in session['service_fee_components']],
+            ['restaurant', 'hall', 'table'],
+        )
+
     def test_bootstrap_excludes_stale_kitchen_ticket_for_closed_order(self):
         order = Order.objects.create(
             restaurant=self.restaurant,

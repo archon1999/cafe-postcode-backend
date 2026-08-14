@@ -31,6 +31,8 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         source="total_overridden_by.full_name", read_only=True
     )
     service_fee = serializers.SerializerMethodField()
+    service_fee_percent = serializers.SerializerMethodField()
+    service_fee_components = serializers.SerializerMethodField()
     items_count = serializers.SerializerMethodField()
     payments_count = serializers.SerializerMethodField()
     receipts_count = serializers.SerializerMethodField()
@@ -39,6 +41,12 @@ class AdminOrderSerializer(serializers.ModelSerializer):
         subtotal = obj.subtotal or 0
         total = obj.calculated_total or 0
         return max(total - subtotal, 0)
+
+    def get_service_fee_percent(self, obj):
+        return obj.service_fee_percent
+
+    def get_service_fee_components(self, obj):
+        return obj.get_service_fee_components()
 
     def get_items_count(self, obj):
         return obj.items.count()
@@ -78,6 +86,11 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "total_overridden_by_name",
             "total_overridden_at",
             "service_fee",
+            "service_fee_percent",
+            "service_fee_components",
+            "restaurant_service_fee_percent",
+            "hall_service_fee_percent",
+            "table_service_fee_percent",
             "total",
             "closed_at",
             "items_count",
