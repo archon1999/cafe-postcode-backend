@@ -65,7 +65,7 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         )
         self.assertTrue(response.data['restaurant_context']['service_fee_enabled'])
         self.assertEqual(response.data['restaurant_context']['service_fee_percent'], '10.00')
-        self.assertFalse(response.data['restaurant_context']['vat_enabled'])
+        self.assertTrue(response.data['restaurant_context']['vat_enabled'])
         self.assertEqual(response.data['restaurant_context']['vat_percent'], '12.00')
 
     def test_pos_restaurant_code_returns_background_image_url(self):

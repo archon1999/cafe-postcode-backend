@@ -138,7 +138,16 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(len(payload['Items']), 2)
         self.assertEqual(payload['Items'][0]['Price'], 3000000)
         self.assertEqual(payload['Items'][0]['SPIC'], self.catalog_item.mxik_code)
-        self.assertEqual(payload['Items'][1], {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': 300000})
+        self.assertEqual(
+            payload['Items'][1],
+            {
+                'Name': 'Xizmat haqi',
+                'Amount': 1000,
+                'Price': 300000,
+                'VATPercent': 12,
+                'VAT': 32143,
+            },
+        )
 
     def test_get_shift_report_reads_current_z_report_info(self):
         report = {

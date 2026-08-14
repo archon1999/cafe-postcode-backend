@@ -55,7 +55,7 @@ class Restaurant(BaseModel):
     auth_code = models.CharField(max_length=6, unique=True, default=generate_restaurant_auth_code)
     service_fee_enabled = models.BooleanField(default=False)
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    vat_enabled = models.BooleanField(default=False)
+    vat_enabled = models.BooleanField(default=True)
     vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=12)
     marking_check_enabled = models.BooleanField(default=False)
     pos_monitor_variant = models.CharField(

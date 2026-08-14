@@ -66,6 +66,8 @@ class RestaurantAuthBackgroundSerializerTests(TestCase):
         self.assertIsNone(data['pos_auth_background_image_url'])
         self.assertFalse(data['service_fee_enabled'])
         self.assertEqual(data['service_fee_percent'], '0.00')
+        self.assertTrue(data['vat_enabled'])
+        self.assertEqual(data['vat_percent'], '12.00')
         self.assertEqual(data['pos_monitor_variant'], Restaurant.PosMonitorVariant.DEFAULT)
 
     def test_update_persists_pos_monitor_variant(self):

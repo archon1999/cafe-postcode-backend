@@ -73,7 +73,7 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(context_response.data['current_shift']['cash_refund_total'], 0)
         self.assertEqual(context_response.data['current_shift']['card_refund_total'], 0)
         self.assertEqual(context_response.data['current_shift']['qr_refund_total'], 0)
-        self.assertEqual(context_response.data['current_shift']['vat_sale_total'], 0)
+        self.assertEqual(context_response.data['current_shift']['vat_sale_total'], 4286)
         self.assertEqual(context_response.data['current_shift']['vat_refund_total'], 0)
         self.assertEqual(context_response.data['current_shift']['first_receipt'], '77')
         self.assertEqual(context_response.data['current_shift']['last_receipt'], '77')

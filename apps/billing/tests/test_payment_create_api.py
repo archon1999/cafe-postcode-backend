@@ -459,7 +459,7 @@ class PaymentCreateApiTests(APITestCase):
                     'note': '',
                     'modifierText': '',
                     'modifiers': [],
-                    'vat': 0,
+                    'vat': 9643,
                     'vatPercent': 12,
                 }
             ],
