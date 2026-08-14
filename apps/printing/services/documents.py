@@ -181,7 +181,7 @@ def attach_receipt_print_document(
 def create_kitchen_ticket_print_document(*, ticket, created_by=None):
     ticket = (
         type(ticket)
-        .objects.select_for_update()
+        .objects.select_for_update(of=("self",))
         .select_related(
             "restaurant",
             "order",
