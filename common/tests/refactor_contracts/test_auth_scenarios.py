@@ -106,7 +106,7 @@ class RemotePosAuthCharacterizationTests(PosTestDataMixin, APITestCase):
                 "backgroundUrl": None,
                 "serviceFeeEnabled": True,
                 "serviceFeePercent": "10.00",
-                "vatEnabled": False,
+                "vatEnabled": True,
                 "vatPercent": "12.00",
                 "markingCheckEnabled": False,
             },
