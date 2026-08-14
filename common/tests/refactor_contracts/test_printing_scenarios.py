@@ -139,6 +139,20 @@ class BackendPrintingScenarioTests(PosTestCase):
                     "subtotal": 60000,
                     "serviceFee": 6000,
                     "serviceFeePercent": 10,
+                    "serviceFeeComponents": [
+                        {
+                            "scope": "restaurant",
+                            "source_name": "Qamish Gamburg",
+                            "percent": 10,
+                            "amount": 6000,
+                        }
+                    ],
+                    "restaurantServiceFee": 6000,
+                    "restaurantServiceFeePercent": 10,
+                    "hallServiceFee": 0,
+                    "hallServiceFeePercent": 0,
+                    "tableServiceFee": 0,
+                    "tableServiceFeePercent": 0,
                     "vat": 7071,
                     "vatPercent": 12,
                     "total": 66000,
