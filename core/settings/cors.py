@@ -1,5 +1,7 @@
 import os
 
+from corsheaders.defaults import default_headers
+
 
 def parse_csv_env(name: str) -> list[str]:
     value = os.getenv(name, '')
@@ -41,23 +43,16 @@ CORS_ALLOWED_ORIGIN_REGEXES = []
 CORS_ALLOWED_ORIGIN_REGEXES.extend(parse_csv_env('CORS_ALLOWED_ORIGIN_REGEXES'))
 
 CORS_ALLOW_HEADERS = [
+    *default_headers,
     'django-language',
     'accept-language',
     'x-language',
-    "accept",
-    "accept-encoding",
-    "authorization",
-    "content-type",
-    "dnt",
-    "origin",
-    "user-agent",
-    "x-csrftoken",
-    "x-requested-with",
-    "x-admin-restaurant-id",
-    "x-edge-operation-id",
-    "x-edge-token",
-    "x-tv-pairing-token",
-    "x-tv-token",
+    'x-admin-restaurant-id',
+    'x-dashboard-restaurant-id',
+    'x-edge-operation-id',
+    'x-edge-token',
+    'x-tv-pairing-token',
+    'x-tv-token',
 ]
 
 CORS_EXPOSE_HEADERS = [

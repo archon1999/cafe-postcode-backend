@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from apps.users.models import User
-from apps.floor.models import DiningTable, Hall, ZoneOrCabin
+from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.restaurants.models import Restaurant
 
 
@@ -248,6 +248,124 @@ class AdminFloorZoneHallApiTests(TestCase):
         table = DiningTable.objects.get(pk=response.data["id"])
         self.assertEqual(table.zone_id, zone.id)
         self.assertEqual(str(response.data["zone"]), str(zone.id))
+
+    def test_table_create_rejects_hall_and_zone_from_other_restaurant(self):
+        local_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name="Local table zone",
+        )
+        local_hall = Hall.objects.create(
+            zone_or_cabin=local_zone,
+            name="Local table hall",
+        )
+        other_zone = ZoneOrCabin.objects.create(
+            restaurant=self.other_restaurant,
+            name="Foreign table zone",
+        )
+        other_hall = Hall.objects.create(
+            zone_or_cabin=other_zone,
+            name="Foreign table hall",
+        )
+        payload = {
+            "name": "Scoped table",
+            "tableNumber": 51,
+            "seatCount": 4,
+            "shapeVariant": "seat4_square",
+            "status": "available",
+            "positionX": 0,
+            "positionY": 0,
+            "width": 1,
+            "height": 1,
+            "rotation": 0,
+            "isActive": True,
+        }
+
+        foreign_hall_response = self.client.post(
+            "/api/v1/admin/floor/tables/",
+            {
+                **payload,
+                "hall": str(other_hall.id),
+                "zone": str(local_zone.id),
+            },
+            format="json",
+        )
+        foreign_zone_response = self.client.post(
+            "/api/v1/admin/floor/tables/",
+            {
+                **payload,
+                "hall": str(local_hall.id),
+                "zone": str(other_zone.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(
+            foreign_hall_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertIn("hall", foreign_hall_response.data)
+        self.assertEqual(
+            foreign_zone_response.status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertIn("zone", foreign_zone_response.data)
+        self.assertFalse(DiningTable.objects.filter(name="Scoped table").exists())
+
+    def test_table_location_cannot_change_while_active_session_exists(self):
+        source_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name="Source zone",
+        )
+        target_zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name="Target zone",
+        )
+        source_hall = Hall.objects.create(
+            zone_or_cabin=source_zone,
+            name="Source hall",
+        )
+        target_hall = Hall.objects.create(
+            zone_or_cabin=target_zone,
+            name="Target hall",
+        )
+        table = DiningTable.objects.create(
+            hall=source_hall,
+            zone=source_zone,
+            name="Occupied table",
+            table_number=1,
+            seat_count=4,
+            status=DiningTable.Status.OCCUPIED,
+        )
+        session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=source_hall,
+            table=table,
+            opened_by=self.superuser,
+            assigned_waiter=self.superuser,
+            guest_count=2,
+            status=TableSession.Status.OPEN,
+        )
+
+        response = self.client.patch(
+            f"/api/v1/admin/floor/tables/{table.id}/",
+            {
+                "hall": str(target_hall.id),
+                "zone": str(target_zone.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("hall", response.data)
+        self.assertIn("zone", response.data)
+        table.refresh_from_db()
+        session.refresh_from_db()
+        self.assertEqual(table.hall_id, source_hall.id)
+        self.assertEqual(table.zone_id, source_zone.id)
+        self.assertEqual(table.status, DiningTable.Status.OCCUPIED)
+        self.assertEqual(session.table_id, table.id)
+        self.assertEqual(session.hall_id, source_hall.id)
+        self.assertEqual(session.status, TableSession.Status.OPEN)
 
     def test_hall_update_rejects_zone_from_other_restaurant(self):
         zone = ZoneOrCabin.objects.create(

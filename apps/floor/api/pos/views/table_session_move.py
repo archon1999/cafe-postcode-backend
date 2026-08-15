@@ -21,7 +21,11 @@ class TableSessionMoveView(APIView):
             restaurant=restaurant,
             status__in=[TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT],
         )
-        target_table = generics.get_object_or_404(DiningTable.objects.select_related('hall'), pk=request.data.get('target_table_id'))
+        target_table = generics.get_object_or_404(
+            DiningTable.objects.select_related('hall'),
+            pk=request.data.get('target_table_id'),
+            hall__zone_or_cabin__restaurant=restaurant,
+        )
         if session.guest_count > available_seat_count(target_table):
             return Response({'detail': _('Target table does not have enough available seats.')}, status=status.HTTP_400_BAD_REQUEST)
 

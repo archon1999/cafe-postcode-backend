@@ -346,6 +346,7 @@ PERMISSION_DEFINITIONS = [
             ('POST', 'api/v1/admin/local-agents/bulk-action/'),
             ('GET', 'api/v1/admin/local-agents/<uuid:pk>/diagnostics/'),
             ('GET', 'api/v1/admin/local-agents/<uuid:pk>/logs/'),
+            ('POST', 'api/v1/admin/local-agents/<uuid:pk>/outbox/<str:operation_id>/'),
             ('POST', 'api/v1/admin/local-agents/<uuid:pk>/update-now/'),
         ),
         default_roles=PRODUCT_OWNER_ROLES,

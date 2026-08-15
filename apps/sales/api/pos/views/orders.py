@@ -46,6 +46,10 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
         else:
             required_permissions = (POS_TAKEAWAY_MENU_VIEW_PERMISSION,)
         require_any_permission_code(self.request.user, *required_permissions)
+        state_service.ensure_table_session_matches_restaurant(
+            table_session=table_session,
+            restaurant=restaurant,
+        )
         state_service.ensure_session_accepts_new_order(table_session=table_session)
         distribution_point = serializer.validated_data.get('distribution_point')
         state_service.ensure_distribution_point_matches_order(
@@ -81,6 +85,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
             guest_count=table_session.guest_count if table_session else serializer.validated_data.get('guest_count', 1),
             order_number=order_number,
             display_name=display_name or str(order_number),
+            status=Order.Status.OPEN,
         )
 
 
@@ -111,17 +116,43 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
         if order.status != Order.Status.OPEN or order.payments.exists():
             raise ValidationError({'channel': [_('Only unpaid open counter orders can change channel.')]})
 
+    @transaction.atomic
     def perform_update(self, serializer):
-        channel = serializer.validated_data.get('channel', serializer.instance.channel)
+        locked_order = (
+            Order.objects.select_for_update()
+            .select_related('restaurant')
+            .get(pk=serializer.instance.pk, restaurant_id=serializer.instance.restaurant_id)
+        )
+        serializer.instance = locked_order
+        require_any_permission_code(self.request.user, self.get_required_permission(locked_order))
+        self.ensure_order_can_update_display_name(self.request, locked_order)
+        self.ensure_order_can_update_channel(self.request, locked_order)
+        state_service = self.state_service_class()
+        state_service.ensure_order_mutable(order=locked_order)
+        channel = serializer.validated_data.get('channel', locked_order.channel)
+        table_session = locked_order.table_session
+        state_service.ensure_table_session_matches_restaurant(
+            table_session=table_session,
+            restaurant=locked_order.restaurant,
+        )
         updates = {}
-        if channel != serializer.instance.channel:
-            updates['distribution_point'] = self.state_service_class().resolve_distribution_point(
-                restaurant=serializer.instance.restaurant,
+        if channel != locked_order.channel:
+            updates['distribution_point'] = state_service.resolve_distribution_point(
+                restaurant=locked_order.restaurant,
                 channel=channel,
             )
             if channel != Order.Channel.DELIVERY:
                 updates['delivery_phone'] = ''
                 updates['delivery_address'] = ''
+        else:
+            state_service.ensure_distribution_point_matches_order(
+                distribution_point=serializer.validated_data.get(
+                    'distribution_point',
+                    locked_order.distribution_point,
+                ),
+                restaurant=locked_order.restaurant,
+                channel=channel,
+            )
         serializer.save(**updates)
 
     def update(self, request, *args, **kwargs):
@@ -129,13 +160,10 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
         require_any_permission_code(request.user, self.get_required_permission(order))
         self.ensure_order_can_update_display_name(request, order)
         self.ensure_order_can_update_channel(request, order)
+        self.state_service_class().ensure_order_mutable(order=order)
         return super().update(request, *args, **kwargs)
 
     def partial_update(self, request, *args, **kwargs):
-        order = self.get_object()
-        require_any_permission_code(request.user, self.get_required_permission(order))
-        self.ensure_order_can_update_display_name(request, order)
-        self.ensure_order_can_update_channel(request, order)
         return super().partial_update(request, *args, **kwargs)
 
 

@@ -11,6 +11,7 @@ from apps.catalog.serializers import PosCatalogItemSerializer
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking, normalized_gtin_candidates
 from apps.sales.helpers import get_order_item_marking_model, get_order_item_model
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
+from apps.sales.services.state import OrderStateService
 
 OrderItem = get_order_item_model()
 OrderItemMarking = get_order_item_marking_model()
@@ -72,7 +73,11 @@ def serialize_catalog_scan(*, restaurant, raw_code: str):
 
 
 def marking_status(order):
-    items = order.items.select_related('catalog_item').prefetch_related('markings')
+    items = (
+        order.items.exclude(status=OrderItem.Status.CANCELLED)
+        .select_related('catalog_item')
+        .prefetch_related('markings')
+    )
     rows = []
     missing_total = 0
     for item in items:
@@ -116,8 +121,11 @@ def validate_order_markings(order):
 
 
 class OrderMarkingScanService:
+    state_service_class = OrderStateService
+
     @transaction.atomic
     def scan(self, *, order, raw_code: str, scanned_by, mode: str = 'add'):
+        order = type(order).objects.select_for_update().select_related('restaurant').get(pk=order.pk)
         if order.status not in {order.Status.OPEN, order.Status.SUBMITTED, order.Status.READY}:
             raise ValidationError({'detail': _('This order cannot be changed.')})
 
@@ -130,13 +138,24 @@ class OrderMarkingScanService:
         normalized_mode = str(mode or 'add').strip().lower()
 
         if normalized_mode == 'remove':
-            order_item = self._remove_matching_order_item(order=order, catalog_item=catalog_item, raw_code=parsed.raw_code)
+            order_item, kitchen_tickets, kitchen_print_documents = self._remove_matching_order_item(
+                order=order,
+                catalog_item=catalog_item,
+                raw_code=parsed.raw_code,
+                scanned_by=scanned_by,
+            )
             order.recalculate_totals()
 
             from apps.kitchen.services import sync_order_tickets
 
             sync_order_tickets(order)
-            return {'order_item': order_item, 'marking': None, 'status': marking_status(order)}
+            return {
+                'order_item': order_item,
+                'marking': None,
+                'status': marking_status(order),
+                'kitchen_tickets': kitchen_tickets,
+                'kitchen_print_documents': kitchen_print_documents,
+            }
 
         if OrderItemMarking.objects.filter(order_item__order__restaurant=order.restaurant, raw_code=parsed.raw_code).exists():
             raise ValidationError({'rawCode': _('This marking code has already been scanned.')})
@@ -150,13 +169,15 @@ class OrderMarkingScanService:
                 raise ValidationError({'rawCode': _('This marked product is not present in the order or is already fully scanned.')})
 
         if order_item is None:
+            base_unit_price = int(catalog_item.price or 0)
             order_item = OrderItem.objects.create(
                 order=order,
                 catalog_item=catalog_item,
                 created_by=scanned_by,
                 quantity=1,
-                unit_price=int(catalog_item.price or 0),
-                line_total=int(catalog_item.price or 0),
+                sale_unit=catalog_item.sale_unit,
+                base_unit_price=base_unit_price,
+                unit_price=base_unit_price,
                 prep_station=resolve_order_item_prep_station(catalog_item=catalog_item, restaurant=order.restaurant),
             )
 
@@ -175,41 +196,97 @@ class OrderMarkingScanService:
         from apps.kitchen.services import sync_order_tickets
 
         sync_order_tickets(order)
-        return {'order_item': order_item, 'marking': marking, 'status': marking_status(order)}
+        return {
+            'order_item': order_item,
+            'marking': marking,
+            'status': marking_status(order),
+            'kitchen_tickets': [],
+            'kitchen_print_documents': [],
+        }
 
     @staticmethod
     def _find_missing_order_item(*, order, catalog_item):
-        candidates = order.items.filter(catalog_item=catalog_item).prefetch_related('markings').order_by('created_at')
+        candidates = (
+            order.items.select_for_update()
+            .filter(catalog_item=catalog_item)
+            .exclude(status=OrderItem.Status.CANCELLED)
+            .prefetch_related('markings')
+            .order_by('created_at')
+        )
         for item in candidates:
             if item.markings.count() < item.quantity:
                 return item
         return None
 
-    @staticmethod
-    def _remove_matching_order_item(*, order, catalog_item, raw_code: str):
+    def _remove_matching_order_item(self, *, order, catalog_item, raw_code: str, scanned_by):
+        from apps.kitchen.models import KitchenTicket, KitchenTicketLine
+
         matching_marking = (
-            OrderItemMarking.objects.filter(order_item__order=order, catalog_item=catalog_item, raw_code=raw_code)
+            OrderItemMarking.objects.select_for_update()
+            .filter(order_item__order=order, catalog_item=catalog_item, raw_code=raw_code)
+            .exclude(order_item__status=OrderItem.Status.CANCELLED)
             .select_related('order_item')
             .first()
         )
         if matching_marking is not None:
-            order_item = matching_marking.order_item
+            order_item = order.items.select_for_update().get(pk=matching_marking.order_item_id)
             matching_marking.delete()
         else:
-            order_item = (
-                order.items.filter(catalog_item=catalog_item)
+            candidates = (
+                order.items.select_for_update()
+                .filter(catalog_item=catalog_item)
                 .exclude(status=OrderItem.Status.CANCELLED)
+                .prefetch_related('markings')
                 .order_by('-created_at')
-                .first()
+            )
+            order_item = next(
+                (
+                    candidate
+                    for candidate in candidates
+                    if candidate.markings.count() < candidate.quantity
+                ),
+                None,
             )
 
         if order_item is None:
             raise ValidationError({'rawCode': _('This marked product is not present in the order.')})
 
-        if order_item.quantity > 1:
-            order_item.quantity -= 1
-            order_item.save(update_fields=['quantity', 'line_total', 'updated_at'])
-            return order_item
+        original_ticket_line = (
+            KitchenTicketLine.objects.select_for_update()
+            .select_related('ticket')
+            .filter(order_item=order_item)
+            .first()
+        )
+        original_order_item_id = order_item.pk
+        active_order_item = self.state_service_class().remove_order_item(
+            order_item=order_item,
+            one_unit=True,
+        )
+        kitchen_tickets = []
+        if active_order_item.pk != original_order_item_id:
+            from apps.kitchen.services import dispatch_order_tickets
 
-        order_item.delete()
-        return order_item
+            kitchen_tickets = dispatch_order_tickets(
+                order,
+                created_by=scanned_by or active_order_item.created_by or order.opened_by,
+                order_item_ids=[active_order_item.pk],
+                create_sale_print_documents=False,
+            )
+
+        kitchen_print_documents = []
+        if (
+            original_ticket_line is not None
+            and original_ticket_line.ticket.routed_via
+            in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
+        ):
+            from apps.printing.services import create_kitchen_cancellation_print_document
+
+            cancellation_document, _snapshot = create_kitchen_cancellation_print_document(
+                ticket=original_ticket_line.ticket,
+                order_item=order_item,
+                quantity_delta=-1,
+                created_by=scanned_by or order_item.created_by or order.opened_by,
+            )
+            kitchen_print_documents.append(cancellation_document)
+
+        return active_order_item, kitchen_tickets, kitchen_print_documents

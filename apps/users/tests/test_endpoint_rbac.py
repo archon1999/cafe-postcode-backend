@@ -316,6 +316,10 @@ class EndpointRBACPermissionTests(TestCase):
             ("POST", "api/v1/admin/local-agents/bulk-action/"): "platform.product_owner.view",
             ("GET", "api/v1/admin/local-agents/<uuid:pk>/diagnostics/"): "platform.product_owner.view",
             ("GET", "api/v1/admin/local-agents/<uuid:pk>/logs/"): "platform.product_owner.view",
+            (
+                "POST",
+                "api/v1/admin/local-agents/<uuid:pk>/outbox/<str:operation_id>/",
+            ): "platform.product_owner.view",
             ("POST", "api/v1/admin/local-agents/<uuid:pk>/update-now/"): "platform.product_owner.view",
             ("GET", "api/v1/local-agent/logs/"): "integration_configs.view",
         }

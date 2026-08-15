@@ -24,7 +24,7 @@ from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintDocument, PrintTemplate
 from apps.printing.services import ensure_restaurant_templates
 from apps.restaurants.models import CashDesk, PrepStation, Restaurant
-from apps.sales.models import Order
+from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 from apps.users.models import Permission, User
 
@@ -784,6 +784,95 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertFalse(first.data['results'][0]['replayed'])
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(Order.objects.filter(id=order_id, restaurant=self.restaurant).count(), 1)
+
+    def test_trusted_edge_create_preserves_ids_but_cannot_override_initial_status(self):
+        order_id = uuid.uuid4()
+        item_id = uuid.uuid4()
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [
+                    {
+                        'operationId': 'edge-explicit-order-id',
+                        'userId': str(self.user.id),
+                        'method': 'POST',
+                        'path': '/api/v1/pos/sales/orders/',
+                        'body': {
+                            'id': str(order_id),
+                            'channel': Order.Channel.TAKEAWAY,
+                            'guestCount': 1,
+                        },
+                    },
+                    {
+                        'operationId': 'edge-explicit-item-id',
+                        'userId': str(self.user.id),
+                        'method': 'POST',
+                        'path': f'/api/v1/pos/sales/orders/{order_id}/items/',
+                        'body': {
+                            'id': str(item_id),
+                            'catalogItem': str(self.catalog_item.id),
+                            'quantity': 1,
+                        },
+                    },
+                ]
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(
+            [result['status'] for result in response.data['results']],
+            [status.HTTP_201_CREATED, status.HTTP_201_CREATED],
+            response.data,
+        )
+        self.assertTrue(Order.objects.filter(pk=order_id, status=Order.Status.OPEN).exists())
+        self.assertTrue(OrderItem.objects.filter(pk=item_id, order_id=order_id, status=OrderItem.Status.NEW).exists())
+
+        malicious_order_id = uuid.uuid4()
+        malicious_item_id = uuid.uuid4()
+        malicious = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [
+                    {
+                        'operationId': 'edge-malicious-order-status',
+                        'userId': str(self.user.id),
+                        'method': 'POST',
+                        'path': '/api/v1/pos/sales/orders/',
+                        'body': {
+                            'id': str(malicious_order_id),
+                            'channel': Order.Channel.TAKEAWAY,
+                            'guestCount': 1,
+                            'status': Order.Status.CLOSED,
+                        },
+                    },
+                    {
+                        'operationId': 'edge-malicious-item-status',
+                        'userId': str(self.user.id),
+                        'method': 'POST',
+                        'path': f'/api/v1/pos/sales/orders/{order_id}/items/',
+                        'body': {
+                            'id': str(malicious_item_id),
+                            'catalogItem': str(self.catalog_item.id),
+                            'quantity': 1,
+                            'status': OrderItem.Status.DONE,
+                        },
+                    },
+                ]
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(malicious.status_code, status.HTTP_200_OK, malicious.data)
+        self.assertEqual(
+            [result['status'] for result in malicious.data['results']],
+            [status.HTTP_400_BAD_REQUEST, status.HTTP_400_BAD_REQUEST],
+            malicious.data,
+        )
+        self.assertFalse(Order.objects.filter(pk=malicious_order_id).exists())
+        self.assertFalse(OrderItem.objects.filter(pk=malicious_item_id).exists())
 
     def test_offline_order_numbers_advance_canonical_shift_counter(self):
         shift = self.create_cash_shift(cash_desk=self.cash_desk, opened_by=self.user)

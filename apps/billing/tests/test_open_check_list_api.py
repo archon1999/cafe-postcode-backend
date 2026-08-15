@@ -383,6 +383,14 @@ class OpenCheckListApiTests(APITestCase):
         returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
         self.assertEqual(returned_ids, {str(matched_order.id)})
 
+    def test_closed_status_invalid_page_returns_validation_error(self):
+        response = self.client.get(
+            '/api/v1/pos/billing/open-checks/?status=closed&page=invalid'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('page', response.data)
+
     def test_fiscal_closed_status_returns_fiscal_sent_orders(self):
         plain_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
         fiscal_order = self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())

@@ -7,6 +7,10 @@ from apps.floor.services import (
     restaurant_has_multiple_active_zones,
 )
 from apps.sales.helpers import get_order_model
+from common.api.scopes import (
+    get_optional_request_restaurant,
+    get_request_restaurant,
+)
 
 
 Order = get_order_model()
@@ -21,6 +25,14 @@ def get_supported_seat_count(seat_count: int) -> int:
 
 
 class TableSessionSerializer(serializers.ModelSerializer):
+    GENERIC_UPDATE_FORBIDDEN_FIELDS = (
+        "id",
+        "table",
+        "status",
+        "closed_at",
+        "merged_into",
+    )
+
     id = serializers.UUIDField(required=False)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     table_name = serializers.CharField(source="table.name", read_only=True)
@@ -30,6 +42,18 @@ class TableSessionSerializer(serializers.ModelSerializer):
     show_zone_name = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     service_fee_components = serializers.SerializerMethodField()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is None:
+            return
+
+        restaurant = get_optional_request_restaurant(request)
+        if restaurant is not None:
+            self.fields["table"].queryset = DiningTable.objects.filter(
+                hall__zone_or_cabin__restaurant=restaurant,
+            )
 
     def get_show_zone_name(self, obj):
         annotated_value = getattr(obj, "has_multiple_active_zones", None)
@@ -98,17 +122,44 @@ class TableSessionSerializer(serializers.ModelSerializer):
             "restaurant",
             "hall",
             "opened_by",
+            "status",
             "closed_at",
             "merged_into",
         )
 
     def validate(self, attrs):
+        if self.instance is not None:
+            forbidden_update_errors = {
+                field_name: _("This field can only be set during creation.")
+                for field_name in self.GENERIC_UPDATE_FORBIDDEN_FIELDS
+                if field_name in self.initial_data
+            }
+            if "table" in forbidden_update_errors:
+                forbidden_update_errors["table"] = _(
+                    "Use the table-session move action to change tables."
+                )
+            for field_name in ("status", "closed_at", "merged_into"):
+                if field_name in forbidden_update_errors:
+                    forbidden_update_errors[field_name] = _(
+                        "Use the explicit table-session lifecycle action."
+                    )
+            if forbidden_update_errors:
+                raise serializers.ValidationError(forbidden_update_errors)
+
         table = attrs.get("table") or getattr(self.instance, "table", None)
         guest_count = attrs.get(
             "guest_count", getattr(self.instance, "guest_count", None)
         )
         if table is None:
             return attrs
+
+        request = self.context.get("request")
+        if request is not None:
+            restaurant = get_request_restaurant(request)
+            if table.hall.restaurant_id != restaurant.id:
+                raise serializers.ValidationError(
+                    {"table": _("Selected table does not belong to this restaurant.")}
+                )
 
         if table.status == DiningTable.Status.BLOCKED:
             raise serializers.ValidationError({"table": _("This table is blocked.")})

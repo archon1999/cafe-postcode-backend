@@ -1,3 +1,3 @@
-from .open_checks import OpenCheckOrderSerializer
+from .open_checks import OpenCheckOrderSerializer, OpenCheckPaginationQuerySerializer
 
-__all__ = ['OpenCheckOrderSerializer']
+__all__ = ['OpenCheckOrderSerializer', 'OpenCheckPaginationQuerySerializer']

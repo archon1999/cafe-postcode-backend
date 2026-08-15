@@ -13,8 +13,19 @@ def sync_order_tickets(order):
     OrderTicketSyncService().sync(order=order)
 
 
-def dispatch_order_tickets(order, *, created_by=None):
-    return OrderTicketSyncService().dispatch(order=order, created_by=created_by)
+def dispatch_order_tickets(
+    order,
+    *,
+    created_by=None,
+    order_item_ids=None,
+    create_sale_print_documents=True,
+):
+    return OrderTicketSyncService().dispatch(
+        order=order,
+        created_by=created_by,
+        order_item_ids=order_item_ids,
+        create_sale_print_documents=create_sale_print_documents,
+    )
 
 
 __all__ = [

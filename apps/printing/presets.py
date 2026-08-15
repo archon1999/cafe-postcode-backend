@@ -118,6 +118,9 @@ COMMON_VARIABLES = (
     'item.vat',
     'item.vatPercent',
     'item.note',
+    'item.isCancellation',
+    'item.operationLabel',
+    'item.quantityDelta',
     'system.copyNumber',
     'system.isReprint',
 )
@@ -126,6 +129,11 @@ KITCHEN_VARIABLES = COMMON_VARIABLES + (
     'kitchen.ticketNumber',
     'kitchen.prepStation',
     'kitchen.createdAt',
+    'kitchen.isCancellation',
+    'kitchen.operation',
+    'kitchen.operationLabel',
+    'kitchen.originalTicketNumber',
+    'kitchen.quantityDelta',
     'totals.total',
 )
 
@@ -245,7 +253,16 @@ SAMPLE_DATA = {
             'note': 'Piyozsiz',
         },
     ],
-    'kitchen': {'ticketNumber': 'K-1042', 'prepStation': 'Issiq oshxona', 'createdAt': '10.07.2026 15:43'},
+    'kitchen': {
+        'ticketNumber': 'K-1042',
+        'prepStation': 'Issiq oshxona',
+        'createdAt': '10.07.2026 15:43',
+        'isCancellation': False,
+        'operation': 'sale',
+        'operationLabel': '',
+        'originalTicketNumber': '',
+        'quantityDelta': 0,
+    },
     'precheck': {'printedAt': '10.07.2026 16:10'},
     'payment': {
         'method': 'Naqd',

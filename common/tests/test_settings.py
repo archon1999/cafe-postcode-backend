@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.test import SimpleTestCase
+from corsheaders.defaults import default_headers
 
 from common.utils.settings import coerce_bool, coerce_int, get_setting
 
@@ -12,6 +13,10 @@ class ConfigSettingsUtilsTests(SimpleTestCase):
     def test_tv_pairing_headers_are_allowed_cross_origin(self):
         self.assertIn('x-tv-pairing-token', settings.CORS_ALLOW_HEADERS)
         self.assertIn('x-tv-token', settings.CORS_ALLOW_HEADERS)
+
+    def test_dashboard_restaurant_header_is_allowed_cross_origin(self):
+        self.assertTrue(set(default_headers).issubset(settings.CORS_ALLOW_HEADERS))
+        self.assertIn('x-dashboard-restaurant-id', settings.CORS_ALLOW_HEADERS)
 
     def test_get_setting_uses_first_non_empty_alias(self):
         settings = {'endpoint_url': '', 'endpointUrl': 'http://127.0.0.1:8090'}

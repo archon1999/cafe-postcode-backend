@@ -5,6 +5,10 @@ from rest_framework import serializers
 
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.services import ACTIVE_SESSION_STATUSES
+from common.api.scopes import (
+    get_optional_request_restaurant,
+    get_request_restaurant,
+)
 
 from .active_session_summary import ActiveSessionSummarySerializer
 
@@ -25,6 +29,23 @@ class DiningTableSerializer(serializers.ModelSerializer):
     occupied_guest_count = serializers.SerializerMethodField()
     available_seat_count = serializers.SerializerMethodField()
     zone_name = serializers.SerializerMethodField()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        if request is None:
+            return
+
+        restaurant = get_optional_request_restaurant(request)
+        if restaurant is None:
+            return
+
+        self.fields["hall"].queryset = self.fields["hall"].queryset.filter(
+            zone_or_cabin__restaurant=restaurant,
+        )
+        self.fields["zone"].queryset = self.fields["zone"].queryset.filter(
+            restaurant=restaurant,
+        )
 
     class Meta:
         model = DiningTable
@@ -150,6 +171,47 @@ class DiningTableSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         hall = attrs.get("hall", getattr(self.instance, "hall", None))
+        zone = attrs.get("zone")
+
+        request = self.context.get("request")
+        if request is not None:
+            restaurant = get_request_restaurant(request)
+            if hall is not None and hall.restaurant_id != restaurant.id:
+                raise serializers.ValidationError(
+                    {"hall": _("Selected hall does not belong to this restaurant.")}
+                )
+            if zone is not None and zone.restaurant_id != restaurant.id:
+                raise serializers.ValidationError(
+                    {"zone": _("Selected zone does not belong to this restaurant.")}
+                )
+
+        if self.instance is not None:
+            hall_changed = (
+                "hall" in attrs
+                and getattr(attrs["hall"], "pk", None) != self.instance.hall_id
+            )
+            zone_changed = (
+                "zone" in attrs
+                and getattr(attrs["zone"], "pk", None) != self.instance.zone_id
+            )
+            if (
+                hall_changed or zone_changed
+            ) and self.instance.table_sessions.filter(
+                status__in=ACTIVE_SESSION_STATUSES
+            ).exists():
+                error = _(
+                    "Close or move active table sessions before changing the table location."
+                )
+                raise serializers.ValidationError(
+                    {
+                        field_name: error
+                        for field_name, changed in (
+                            ("hall", hall_changed),
+                            ("zone", zone_changed),
+                        )
+                        if changed
+                    }
+                )
 
         if hall is not None:
             attrs["zone"] = hall.zone_or_cabin

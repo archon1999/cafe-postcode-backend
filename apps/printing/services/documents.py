@@ -10,6 +10,7 @@ from apps.printing.models import PrintDocument, PrintTemplate
 from .print_snapshots import (
     _channel_label as _channel_label,
     _payment_method_label as _payment_method_label,
+    build_kitchen_cancellation_print_snapshot,
     build_kitchen_print_snapshot,
     build_order_precheck_print_snapshot,
     build_payment_print_snapshot,
@@ -242,5 +243,99 @@ def create_kitchen_ticket_print_document(*, ticket, created_by=None):
     if not created and document.content_hash != content_hash:
         raise ValueError(
             "Kitchen print document idempotency key already exists with different content."
+        )
+    return document, snapshot
+
+
+@transaction.atomic
+def create_kitchen_cancellation_print_document(
+    *, ticket, order_item, quantity_delta, created_by=None
+):
+    ticket = (
+        type(ticket)
+        .objects.select_for_update(of=("self",))
+        .select_related(
+            "restaurant",
+            "order",
+            "order__table_session__hall__zone_or_cabin",
+            "order__table_session__table",
+            "prep_station",
+        )
+        .get(pk=ticket.pk)
+    )
+    order_item = (
+        type(order_item)
+        .objects.select_for_update(of=("self",))
+        .select_related("catalog_item")
+        .prefetch_related("modifiers")
+        .get(pk=order_item.pk)
+    )
+    if (
+        ticket.order_id != order_item.order_id
+        or ticket.prep_station_id != order_item.prep_station_id
+        or not ticket.lines.filter(order_item=order_item).exists()
+    ):
+        raise ValueError("Kitchen cancellation must reference the original dispatched ticket line.")
+
+    idempotency_key = f"kitchen-cancellation:{order_item.id}"
+    existing = (
+        PrintDocument.objects.select_for_update()
+        .filter(
+            restaurant=ticket.restaurant,
+            idempotency_key=idempotency_key,
+        )
+        .first()
+    )
+    if existing is not None:
+        if (
+            existing.kind != PrintTemplate.Kind.KITCHEN_TICKET
+            or existing.operation_type != PrintDocument.OperationType.REFUND
+            or existing.source_model != "sales.orderitem"
+            or existing.source_id != order_item.id
+            or existing.metadata.get("prepStationId") != str(ticket.prep_station_id)
+        ):
+            raise ValueError("Kitchen cancellation idempotency key has conflicting scope.")
+        return existing, existing.data_snapshot
+
+    ensure_restaurant_templates(restaurant=ticket.restaurant)
+    template = PrintTemplate.objects.select_related("published_version").get(
+        restaurant=ticket.restaurant,
+        kind=PrintTemplate.Kind.KITCHEN_TICKET,
+    )
+    snapshot = build_kitchen_cancellation_print_snapshot(
+        ticket=ticket,
+        order_item=order_item,
+        quantity_delta=quantity_delta,
+    )
+    content_hash = _hash_document(
+        snapshot=snapshot,
+        template_version_id=template.published_version_id,
+    )
+    document, created = PrintDocument.objects.get_or_create(
+        restaurant=ticket.restaurant,
+        idempotency_key=idempotency_key,
+        defaults={
+            "kind": PrintTemplate.Kind.KITCHEN_TICKET,
+            "operation_type": PrintDocument.OperationType.REFUND,
+            "source_model": "sales.orderitem",
+            "source_id": order_item.id,
+            "data_snapshot": snapshot,
+            "template_version": template.published_version,
+            "content_hash": content_hash,
+            "metadata": {
+                "prepStationId": str(ticket.prep_station_id),
+                "orderId": str(ticket.order_id),
+                "orderItemId": str(order_item.id),
+                "originalKitchenTicketId": str(ticket.id),
+                "originalDispatchNumber": ticket.dispatch_number,
+                "kitchenOperation": "cancellation",
+                "quantityDelta": snapshot["kitchen"]["quantityDelta"],
+            },
+            "created_by": created_by,
+        },
+    )
+    if not created and document.content_hash != content_hash:
+        raise ValueError(
+            "Kitchen cancellation document already exists with different content."
         )
     return document, snapshot

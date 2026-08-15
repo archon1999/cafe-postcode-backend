@@ -12,6 +12,11 @@ Payment = get_payment_model()
 Receipt = get_receipt_model()
 
 
+class OpenCheckPaginationQuerySerializer(serializers.Serializer):
+    page = serializers.IntegerField(required=False, default=1)
+    page_size = serializers.IntegerField(required=False, default=25)
+
+
 class OpenCheckOrderItemSerializer(serializers.ModelSerializer):
     catalog_item_name = serializers.CharField(source='catalog_item.name', read_only=True)
     prep_station_name = serializers.CharField(source='prep_station.name', read_only=True)

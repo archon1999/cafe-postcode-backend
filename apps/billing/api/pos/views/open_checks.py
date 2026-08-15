@@ -5,7 +5,10 @@ from rest_framework import generics, permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from apps.billing.api.pos.serializers import OpenCheckOrderSerializer
+from apps.billing.api.pos.serializers import (
+    OpenCheckOrderSerializer,
+    OpenCheckPaginationQuerySerializer,
+)
 from apps.billing.helpers import (
     get_payment_model,
     get_payment_refund_model,
@@ -53,9 +56,8 @@ class OpenCheckListView(generics.ListAPIView):
             "fiscal_closed",
             "fiscal_unresolved",
         }:
-            page_size = self.get_page_size()
+            page_number, page_size = self.get_pagination_params()
             paginator = Paginator(queryset, page_size)
-            page_number = max(1, int(request.query_params.get("page") or 1))
             page = paginator.get_page(page_number)
             serializer = self.get_serializer(page.object_list, many=True)
             return Response(
@@ -69,19 +71,22 @@ class OpenCheckListView(generics.ListAPIView):
             )
         return super().list(request, *args, **kwargs)
 
-    def get_page_size(self):
-        raw_page_size = (
-            self.request.query_params.get("page_size")
-            or self.request.query_params.get("pageSize")
-            or 25
+    def get_pagination_params(self):
+        query_serializer = OpenCheckPaginationQuerySerializer(
+            data={
+                "page": self.request.query_params.get("page") or 1,
+                "page_size": (
+                    self.request.query_params.get("page_size")
+                    or self.request.query_params.get("pageSize")
+                    or 25
+                ),
+            }
         )
-        try:
-            page_size = int(raw_page_size)
-        except (TypeError, ValueError) as exc:
-            raise ValidationError(
-                {"page_size": "Page size must be a positive integer."}
-            ) from exc
-        return min(max(page_size, 1), 100)
+        query_serializer.is_valid(raise_exception=True)
+        return (
+            max(1, query_serializer.validated_data["page"]),
+            min(max(query_serializer.validated_data["page_size"], 1), 100),
+        )
 
     def get_limit(self):
         raw_limit = self.request.query_params.get("limit")

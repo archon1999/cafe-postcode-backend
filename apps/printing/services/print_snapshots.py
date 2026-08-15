@@ -102,40 +102,52 @@ def _local_datetime(value) -> str:
     return timezone.localtime(value).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _print_item_values(item) -> tuple[dict, tuple, str]:
+    name = item.catalog_item.name if item.catalog_item_id else item.name_snapshot
+    unit_price = _money(item.unit_price)
+    modifier_rows = list(item.modifiers.all())
+    modifier_signature = tuple(
+        (str(row.modifier_option_id or ""), row.group_name, row.option_name, _money(row.price_delta))
+        for row in modifier_rows
+    )
+    modifier_text = " · ".join(f"{row.group_name}: {row.option_name}" for row in modifier_rows)
+    item_note = item.note or ""
+    note = " · ".join(value for value in (modifier_text, item_note) if value)
+    return (
+        {
+            "name": name,
+            "unitPrice": unit_price,
+            "note": note,
+            "modifierText": modifier_text,
+            "modifiers": [
+                {
+                    "groupName": row.group_name,
+                    "optionName": row.option_name,
+                    "priceDelta": _money(row.price_delta),
+                }
+                for row in modifier_rows
+            ],
+        },
+        modifier_signature,
+        item_note,
+    )
+
+
 def _aggregate_print_items(
     queryset, *, vat_enabled=False, vat_percent=0, include_vat=False
 ) -> list[dict]:
     aggregated = {}
     for item in queryset.order_by("created_at"):
-        name = item.catalog_item.name if item.catalog_item_id else item.name_snapshot
-        unit_price = _money(item.unit_price)
-        modifier_rows = list(item.modifiers.all())
-        modifier_signature = tuple(
-            (str(row.modifier_option_id or ''), row.group_name, row.option_name, _money(row.price_delta))
-            for row in modifier_rows
+        values, modifier_signature, item_note = _print_item_values(item)
+        key = (
+            str(item.catalog_item_id or values["name"]),
+            modifier_signature,
+            item_note,
+            values["unitPrice"],
         )
-        modifier_text = " · ".join(f"{row.group_name}: {row.option_name}" for row in modifier_rows)
-        item_note = item.note or ""
-        note = " · ".join(value for value in (modifier_text, item_note) if value)
-        key = (str(item.catalog_item_id or name), modifier_signature, item_note, unit_price)
         current = aggregated.setdefault(
             key,
-            {
-                "name": name,
-                "quantity": 0,
-                "unitPrice": unit_price,
-                "lineTotal": 0,
-                "note": note,
-                "modifierText": modifier_text,
-                "modifiers": [
-                    {
-                        "groupName": row.group_name,
-                        "optionName": row.option_name,
-                        "priceDelta": _money(row.price_delta),
-                    }
-                    for row in modifier_rows
-                ],
-            },
+            {**values, "quantity": 0, "lineTotal": 0},
         )
         current["quantity"] = _json_number(
             Decimal(str(current["quantity"])) + Decimal(item.quantity or 0)
@@ -352,19 +364,18 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
     }
 
 
-def build_kitchen_print_snapshot(*, ticket) -> dict:
+def _build_kitchen_print_snapshot(*, ticket, items: list[dict], kitchen: dict | None = None) -> dict:
     order = ticket.order
     restaurant = ticket.restaurant
     table_name, table_number, hall_name, zone_name, zone_display = _table_parts(order)
-    queryset = order.items.filter(kitchen_ticket_line__ticket=ticket)
-    if not queryset.exists():
-        queryset = order.items.filter(prep_station=ticket.prep_station)
-    queryset = (
-        queryset.exclude(status=order.items.model.Status.CANCELLED)
-        .select_related("catalog_item")
-        .prefetch_related("modifiers")
-    )
-    items = _aggregate_print_items(queryset)
+    kitchen_snapshot = {
+        "ticketNumber": f"K-{str(ticket.id)[-6:].upper()}",
+        "prepStation": ticket.prep_station.name,
+        "createdAt": _local_datetime(ticket.created_at),
+        "dispatchNumber": ticket.dispatch_number,
+        "isAddition": ticket.dispatch_number > 1,
+    }
+    kitchen_snapshot.update(kitchen or {})
     return {
         "restaurant": {
             "name": restaurant.name,
@@ -398,12 +409,68 @@ def build_kitchen_print_snapshot(*, ticket) -> dict:
         },
         "items": items,
         "totals": {"total": sum(_money(item["lineTotal"]) for item in items)},
-        "kitchen": {
-            "ticketNumber": f"K-{str(ticket.id)[-6:].upper()}",
-            "prepStation": ticket.prep_station.name,
-            "createdAt": _local_datetime(ticket.created_at),
-            "dispatchNumber": ticket.dispatch_number,
-            "isAddition": ticket.dispatch_number > 1,
-        },
+        "kitchen": kitchen_snapshot,
         "system": {"copyNumber": 1, "isReprint": False},
     }
+
+
+def build_kitchen_print_snapshot(*, ticket) -> dict:
+    order = ticket.order
+    queryset = order.items.filter(kitchen_ticket_line__ticket=ticket)
+    if not queryset.exists():
+        queryset = order.items.filter(prep_station=ticket.prep_station)
+    queryset = (
+        queryset.exclude(status=order.items.model.Status.CANCELLED)
+        .select_related("catalog_item")
+        .prefetch_related("modifiers")
+    )
+    return _build_kitchen_print_snapshot(
+        ticket=ticket,
+        items=_aggregate_print_items(queryset),
+    )
+
+
+def build_kitchen_cancellation_print_snapshot(
+    *, ticket, order_item, quantity_delta
+) -> dict:
+    quantity_delta = Decimal(str(quantity_delta))
+    if quantity_delta >= 0 or -quantity_delta > Decimal(order_item.quantity or 0):
+        raise ValueError(
+            "Kitchen cancellation quantity delta must remove part or all of the order item."
+        )
+    normalized_quantity_delta = _json_number(quantity_delta)
+    line_total_delta = (
+        -_money(order_item.line_total)
+        if -quantity_delta == Decimal(order_item.quantity or 0)
+        else int(
+            (quantity_delta * Decimal(order_item.unit_price or 0)).quantize(
+                Decimal("1"),
+                rounding=ROUND_HALF_UP,
+            )
+        )
+    )
+    item, _modifier_signature, _item_note = _print_item_values(order_item)
+    item.update(
+        {
+            "name": f"BEKOR QILISH: {item['name']}",
+            "quantity": normalized_quantity_delta,
+            "lineTotal": line_total_delta,
+            "isCancellation": True,
+            "operationLabel": "BEKOR QILISH",
+            "quantityDelta": normalized_quantity_delta,
+        }
+    )
+    return _build_kitchen_print_snapshot(
+        ticket=ticket,
+        items=[item],
+        kitchen={
+            "ticketNumber": f"C-{str(ticket.id)[-6:].upper()}",
+            "createdAt": _local_datetime(order_item.updated_at),
+            "isAddition": False,
+            "isCancellation": True,
+            "operation": "cancellation",
+            "operationLabel": "BEKOR QILISH",
+            "quantityDelta": normalized_quantity_delta,
+            "originalTicketNumber": f"K-{str(ticket.id)[-6:].upper()}",
+        },
+    )

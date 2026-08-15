@@ -3,8 +3,9 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.kitchen.models import KitchenTicket
+from apps.printing.services import create_kitchen_cancellation_print_document
 from apps.sales.helpers import get_order_item_model, get_order_model
-from apps.kitchen.models import KitchenTicketLine
 from apps.sales.serializers import OrderItemSerializer
 from apps.sales.services import OrderStateService
 from common.api.permissions import (
@@ -34,7 +35,11 @@ class OrderItemListCreateView(generics.ListCreateAPIView):
     @transaction.atomic
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
-        order = generics.get_object_or_404(Order, pk=self.kwargs['order_id'], restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_for_update(),
+            pk=self.kwargs['order_id'],
+            restaurant=restaurant,
+        )
         if order.table_session_id:
             require_any_permission_code(self.request.user, POS_TABLES_MANAGE_PERMISSION)
         else:
@@ -43,9 +48,18 @@ class OrderItemListCreateView(generics.ListCreateAPIView):
                 POS_TAKEAWAY_MENU_VIEW_PERMISSION,
                 POS_PAYMENT_ORDER_ITEMS_CREATE_PERMISSION,
             )
-        self.state_service_class().ensure_order_mutable(order=order)
-        serializer.save(order=order, created_by=self.request.user)
-        self.state_service_class().sync_after_items_changed(order=order)
+        state_service = self.state_service_class()
+        state_service.ensure_order_mutable(order=order)
+        state_service.ensure_catalog_item_matches_order(
+            catalog_item=serializer.validated_data.get('catalog_item'),
+            order=order,
+        )
+        serializer.save(
+            order=order,
+            created_by=self.request.user,
+            status=OrderItem.Status.NEW,
+        )
+        state_service.sync_after_items_changed(order=order)
         self.kitchen_print_documents = []
 
     def create(self, request, *args, **kwargs):
@@ -67,19 +81,50 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     @transaction.atomic
     def perform_update(self, serializer):
+        order = (
+            Order.objects.select_for_update()
+            .select_related('restaurant')
+            .get(pk=serializer.instance.order_id)
+        )
+        locked_item = (
+            OrderItem.objects.select_for_update()
+            .select_related('catalog_item', 'order')
+            .get(pk=serializer.instance.pk, order=order)
+        )
+        serializer.instance = locked_item
         required_permission = (
             POS_TABLES_MANAGE_PERMISSION
-            if serializer.instance.order.table_session_id
+            if order.table_session_id
             else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         )
         require_any_permission_code(self.request.user, required_permission)
-        self.state_service_class().ensure_order_mutable(order=serializer.instance.order)
+        state_service = self.state_service_class()
+        state_service.ensure_order_mutable(order=order)
+        serializer.validate_update_constraints(
+            instance=locked_item,
+            attrs=serializer.validated_data,
+        )
+        state_service.ensure_catalog_item_matches_order(
+            catalog_item=serializer.validated_data.get(
+                'catalog_item',
+                locked_item.catalog_item,
+            ),
+            order=order,
+        )
         instance = serializer.save()
-        self.state_service_class().sync_after_items_changed(order=instance.order)
+        state_service.sync_after_items_changed(order=order)
 
     @transaction.atomic
     def perform_destroy(self, instance):
-        order = instance.order
+        order = (
+            Order.objects.select_for_update()
+            .get(pk=instance.order_id)
+        )
+        instance = (
+            OrderItem.objects.select_for_update()
+            .select_related('order')
+            .get(pk=instance.pk, order=order)
+        )
         if order.table_session_id:
             require_any_permission_code(self.request.user, POS_TABLES_MANAGE_PERMISSION)
         else:
@@ -88,13 +133,42 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
                 POS_TAKEAWAY_MENU_VIEW_PERMISSION,
                 POS_PAYMENT_ORDER_ITEMS_DELETE_PERMISSION,
             )
-        self.state_service_class().ensure_order_mutable(order=order)
-        if KitchenTicketLine.objects.filter(order_item=instance).exists():
-            instance.status = OrderItem.Status.CANCELLED
-            instance.save(update_fields=['status', 'updated_at'])
-        else:
-            instance.delete()
-        self.state_service_class().sync_after_items_changed(order=order)
+        state_service = self.state_service_class()
+        state_service.ensure_order_mutable(order=order)
+        original_ticket = (
+            KitchenTicket.objects.select_for_update()
+            .filter(lines__order_item=instance)
+            .first()
+        )
+        requires_cancellation_print = bool(
+            original_ticket
+            and original_ticket.routed_via
+            in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
+        )
+        state_service.remove_order_item(order_item=instance)
+        state_service.sync_after_items_changed(order=order)
+        self.kitchen_print_documents = []
+        if requires_cancellation_print:
+            document, _snapshot = create_kitchen_cancellation_print_document(
+                ticket=original_ticket,
+                order_item=instance,
+                quantity_delta=-instance.quantity,
+                created_by=self.request.user,
+            )
+            self.kitchen_print_documents.append(str(document.id))
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        self.perform_destroy(instance)
+        documents = getattr(self, 'kitchen_print_documents', [])
+        if not documents:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {
+                'kitchenPrintDocuments': documents,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class BulkOrderItemCreateView(APIView):
@@ -104,7 +178,11 @@ class BulkOrderItemCreateView(APIView):
     @transaction.atomic
     def post(self, request, order_id):
         restaurant = get_request_restaurant(request)
-        order = generics.get_object_or_404(Order, pk=order_id, restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_for_update(),
+            pk=order_id,
+            restaurant=restaurant,
+        )
         if order.table_session_id:
             require_any_permission_code(request.user, POS_TABLES_MANAGE_PERMISSION)
         else:
@@ -128,9 +206,22 @@ class BulkOrderItemCreateView(APIView):
         if errors:
             return Response({'items': errors}, status=status.HTTP_400_BAD_REQUEST)
 
-        self.state_service_class().ensure_order_mutable(order=order)
-        created_items = [serializer.save(order=order, created_by=request.user) for serializer in item_serializers]
-        self.state_service_class().sync_after_items_changed(order=order)
+        state_service = self.state_service_class()
+        state_service.ensure_order_mutable(order=order)
+        for serializer in item_serializers:
+            state_service.ensure_catalog_item_matches_order(
+                catalog_item=serializer.validated_data.get('catalog_item'),
+                order=order,
+            )
+        created_items = [
+            serializer.save(
+                order=order,
+                created_by=request.user,
+                status=OrderItem.Status.NEW,
+            )
+            for serializer in item_serializers
+        ]
+        state_service.sync_after_items_changed(order=order)
         return Response(
             {
                 'items': OrderItemSerializer(created_items, many=True).data,

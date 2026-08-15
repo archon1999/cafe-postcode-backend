@@ -94,6 +94,23 @@ class OrderStateService:
             )
             raise ValidationError({'table_session': _('This table session already has an active order.')})
 
+    @staticmethod
+    def ensure_table_session_matches_restaurant(*, table_session, restaurant: Restaurant):
+        if table_session is None:
+            return
+
+        session_restaurant_id = table_session.restaurant_id
+        hall_restaurant_id = table_session.hall.restaurant_id
+        table_hall_id = table_session.table.hall_id
+        if (
+            session_restaurant_id != restaurant.id
+            or hall_restaurant_id != restaurant.id
+            or table_hall_id != table_session.hall_id
+        ):
+            raise ValidationError(
+                {'table_session': _('Table session does not belong to this restaurant.')}
+            )
+
     def resolve_distribution_point(self, *, restaurant: Restaurant, channel: str, table_session=None):
         if table_session is not None:
             channel = Order.Channel.HALL
@@ -132,6 +149,79 @@ class OrderStateService:
             raise ValidationError({'distribution_point': _('Distribution point does not belong to this restaurant.')})
         if distribution_point.kind != channel:
             raise ValidationError({'distribution_point': _('Distribution point kind must match order channel.')})
+
+    @staticmethod
+    def ensure_catalog_item_matches_order(*, catalog_item, order: Order):
+        if catalog_item is None:
+            return
+        if catalog_item.restaurant_id != order.restaurant_id:
+            raise ValidationError(
+                {'catalog_item': _('Catalog item does not belong to this restaurant.')}
+            )
+
+    @staticmethod
+    @transaction.atomic
+    def remove_order_item(*, order_item, one_unit: bool = False):
+        from apps.kitchen.models import KitchenTicketLine
+
+        order_item = (
+            type(order_item).objects.select_for_update()
+            .select_related('order')
+            .get(pk=order_item.pk)
+        )
+        if one_unit and order_item.status == order_item.Status.CANCELLED:
+            raise ValidationError({'detail': _('Cancelled order items cannot be modified.')})
+        if KitchenTicketLine.objects.filter(order_item=order_item).exists():
+            if one_unit and order_item.quantity > 1:
+                return OrderStateService._replace_dispatched_item_remainder(
+                    order_item=order_item,
+                )
+            order_item.status = order_item.Status.CANCELLED
+            order_item.save(update_fields=['status', 'updated_at'])
+            return order_item
+
+        if one_unit and order_item.quantity > 1:
+            order_item.quantity -= 1
+            order_item.save(update_fields=['quantity', 'line_total', 'updated_at'])
+            return order_item
+
+        order_item.delete()
+        return order_item
+
+    @staticmethod
+    def _replace_dispatched_item_remainder(*, order_item):
+        from apps.sales.models import OrderItemModifier
+
+        modifier_snapshots = list(order_item.modifiers.all())
+        replacement = type(order_item).objects.create(
+            order_id=order_item.order_id,
+            catalog_item_id=order_item.catalog_item_id,
+            prep_station_id=order_item.prep_station_id,
+            created_by_id=order_item.created_by_id,
+            quantity=order_item.quantity - 1,
+            sale_unit=order_item.sale_unit,
+            base_unit_price=order_item.base_unit_price,
+            unit_price=order_item.unit_price,
+            status=order_item.status,
+            note=order_item.note,
+        )
+        OrderItemModifier.objects.bulk_create(
+            [
+                OrderItemModifier(
+                    order_item=replacement,
+                    modifier_option_id=modifier.modifier_option_id,
+                    group_name=modifier.group_name,
+                    option_name=modifier.option_name,
+                    price_delta=modifier.price_delta,
+                    sort_order=modifier.sort_order,
+                )
+                for modifier in modifier_snapshots
+            ]
+        )
+        order_item.markings.update(order_item=replacement)
+        order_item.status = order_item.Status.CANCELLED
+        order_item.save(update_fields=['status', 'updated_at'])
+        return replacement
 
     def ensure_order_mutable(self, *, order: Order):
         if order.status in {Order.Status.CLOSED, Order.Status.CANCELLED}:

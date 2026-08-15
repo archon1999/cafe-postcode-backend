@@ -62,7 +62,7 @@ class OrderScanMarkingView(APIView):
         )
         mode = str(request.data.get('mode') or 'add').strip().lower()
         self._require_mode_permission(request=request, order=order, mode=mode)
-        self.scan_service_class().scan(
+        scan_result = self.scan_service_class().scan(
             order=order,
             raw_code=request.data.get('raw_code') or request.data.get('rawCode') or '',
             scanned_by=request.user,
@@ -72,7 +72,19 @@ class OrderScanMarkingView(APIView):
             pos_order_queryset(Order.objects.filter(restaurant=restaurant)),
             pk=order.pk,
         )
-        return Response({'order': OrderSerializer(order).data, 'marking_status': marking_status(order)})
+        created_tickets = scan_result.get('kitchen_tickets', [])
+        kitchen_print_documents = scan_result.get('kitchen_print_documents', [])
+        return Response(
+            {
+                'order': OrderSerializer(order).data,
+                'marking_status': marking_status(order),
+                'kitchenPrintDocuments': [
+                    str(document.id)
+                    for document in kitchen_print_documents
+                ],
+                'kitchenDispatchCount': len(created_tickets),
+            }
+        )
 
 
 class OrderMarkingStatusView(APIView):

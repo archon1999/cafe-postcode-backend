@@ -40,16 +40,27 @@ class OrderTicketSyncService:
         return station
 
     @transaction.atomic
-    def dispatch(self, order: Order, *, created_by=None) -> list[KitchenTicket]:
+    def dispatch(
+        self,
+        order: Order,
+        *,
+        created_by=None,
+        order_item_ids=None,
+        create_sale_print_documents: bool = True,
+    ) -> list[KitchenTicket]:
         """Create one immutable kitchen batch for every unsent item in the order."""
         locked_order = (
             Order.objects.select_for_update()
             .select_related('restaurant')
             .get(pk=order.pk)
         )
+        pending_queryset = locked_order.items.exclude(status=OrderItem.Status.CANCELLED).filter(
+            kitchen_ticket_line__isnull=True,
+        )
+        if order_item_ids is not None:
+            pending_queryset = pending_queryset.filter(pk__in=order_item_ids)
         pending_items = list(
-            locked_order.items.exclude(status=OrderItem.Status.CANCELLED)
-            .filter(kitchen_ticket_line__isnull=True)
+            pending_queryset
             .select_related(
                 'prep_station',
                 'catalog_item__category__prep_station',
@@ -88,21 +99,35 @@ class OrderTicketSyncService:
             KitchenTicketLine.objects.bulk_create(
                 [KitchenTicketLine(ticket=ticket, order_item=item) for item in station_items]
             )
-            document, _snapshot = create_kitchen_ticket_print_document(
-                ticket=ticket,
-                created_by=created_by or locked_order.opened_by,
-            )
-            ticket.print_document = document
-            ticket.printed_payload = {
-                'status': (
-                    'queued'
-                    if route_mode in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
-                    else 'display_only'
-                ),
-                'print_document_id': str(document.id),
-                'dispatch_number': dispatch_number,
-            }
-            ticket.save(update_fields=['print_document', 'printed_payload', 'updated_at'])
+            document = None
+            if create_sale_print_documents:
+                document, _snapshot = create_kitchen_ticket_print_document(
+                    ticket=ticket,
+                    created_by=created_by or locked_order.opened_by,
+                )
+                ticket.print_document = document
+                ticket.printed_payload = {
+                    'status': (
+                        'queued'
+                        if route_mode in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
+                        else 'display_only'
+                    ),
+                    'print_document_id': str(document.id),
+                    'dispatch_number': dispatch_number,
+                }
+                ticket.save(update_fields=['print_document', 'printed_payload', 'updated_at'])
+            else:
+                ticket.printed_payload = {
+                    'status': (
+                        'correction_only'
+                        if route_mode in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
+                        else 'display_only'
+                    ),
+                    'print_document_id': None,
+                    'dispatch_number': dispatch_number,
+                    'sale_print_suppressed': True,
+                }
+                ticket.save(update_fields=['printed_payload', 'updated_at'])
             created_tickets.append(ticket)
             logger.info(
                 'Kitchen dispatch ticket created',
@@ -111,7 +136,8 @@ class OrderTicketSyncService:
                     'order_id': str(locked_order.pk),
                     'dispatch_number': dispatch_number,
                     'item_count': len(station_items),
-                    'print_document_id': str(document.id),
+                    'print_document_id': str(document.id) if document is not None else None,
+                    'sale_print_suppressed': not create_sale_print_documents,
                 },
             )
 
