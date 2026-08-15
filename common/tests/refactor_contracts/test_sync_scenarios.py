@@ -93,6 +93,11 @@ class BackendMutationSyncScenarioTests(PosAPITestCase):
                 "status": status.HTTP_409_CONFLICT,
                 "error": "operationId already belongs to another mutation.",
                 "retryable": False,
+                "classification": "quarantined",
+                "code": "OPERATION_ID_CONFLICT",
+                "resolutionHint": (
+                    "Check the Local Agent/backend contract before retrying this operation."
+                ),
             },
         )
         self.assertTrue(Order.objects.filter(id=first_order_id).exists())

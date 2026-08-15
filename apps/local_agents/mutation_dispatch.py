@@ -18,6 +18,11 @@ from apps.local_agents.mutation_reconciliation import (
     reconciled_fully_paid_order,
     reconciled_order_item_delete,
 )
+from apps.local_agents.mutation_results import (
+    CLASSIFICATION_QUARANTINED,
+    mutation_error_result,
+    mutation_result_metadata,
+)
 
 
 class LocalAgentMutationDispatchMixin:
@@ -45,13 +50,13 @@ class LocalAgentMutationDispatchMixin:
                     .first()
                 )
                 if shift is None:
-                    return dispatch_path, {
-                        "operationId": operation_id,
-                        "ok": False,
-                        "status": 409,
-                        "error": "Cashier shift is not synchronized yet.",
-                        "retryable": True,
-                    }
+                    return dispatch_path, mutation_error_result(
+                        operation_id=operation_id,
+                        response_status=409,
+                        error="Cashier shift is not synchronized yet.",
+                        retryable=True,
+                        code="CASH_SHIFT_NOT_SYNCHRONIZED",
+                    )
                 body["cashShiftId"] = str(shift.id)
         if re.fullmatch(r"/api/v1/pos/kitchen/tickets/[0-9a-f-]+/status/", path):
             edge_order_id = body.pop("edgeOrderId", body.pop("edge_order_id", None))
@@ -65,13 +70,13 @@ class LocalAgentMutationDispatchMixin:
                     prep_station_id=prep_station_id,
                 ).first()
                 if ticket is None:
-                    return dispatch_path, {
-                        "operationId": operation_id,
-                        "ok": False,
-                        "status": 409,
-                        "error": "Kitchen ticket is not synchronized yet.",
-                        "retryable": True,
-                    }
+                    return dispatch_path, mutation_error_result(
+                        operation_id=operation_id,
+                        response_status=409,
+                        error="Kitchen ticket is not synchronized yet.",
+                        retryable=True,
+                        code="KITCHEN_TICKET_NOT_SYNCHRONIZED",
+                    )
                 dispatch_path = f"/api/v1/pos/kitchen/tickets/{ticket.id}/status/"
         return dispatch_path, None
 
@@ -81,13 +86,13 @@ class LocalAgentMutationDispatchMixin:
         try:
             match = resolve(dispatch_path)
         except Resolver404:
-            return {
-                "operationId": operation_id,
-                "ok": False,
-                "status": 404,
-                "error": "Mutation endpoint was not found.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=404,
+                error="Mutation endpoint was not found.",
+                code="MUTATION_ENDPOINT_NOT_FOUND",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
 
         factory = self.request_factory_class()
         internal_request = factory.generic(
@@ -135,7 +140,7 @@ class LocalAgentMutationDispatchMixin:
                 response_status=response_status,
                 response_body=response_body if response_body is not None else {},
             )
-        return {
+        result = {
             "operationId": operation_id,
             "ok": 200 <= response_status < 300,
             "status": response_status,
@@ -145,6 +150,15 @@ class LocalAgentMutationDispatchMixin:
             or reconciled_payment is not None,
             "retryable": response_status >= 500,
         }
+        result.update(
+            mutation_result_metadata(
+                response_status=response_status,
+                response_body=response_body,
+                retryable=response_status >= 500,
+                reconciled=result["reconciled"],
+            )
+        )
+        return result
 
     @staticmethod
     def _reconcile_open_shift(*, agent, user, operation_id, method, path, digest, body):
@@ -190,7 +204,7 @@ class LocalAgentMutationDispatchMixin:
             response_status=response_status,
             response_body=response_body,
         )
-        return {
+        result = {
             "operationId": operation_id,
             "ok": True,
             "status": response_status,
@@ -199,3 +213,11 @@ class LocalAgentMutationDispatchMixin:
             "reconciled": True,
             "retryable": False,
         }
+        result.update(
+            mutation_result_metadata(
+                response_status=response_status,
+                response_body=response_body,
+                reconciled=True,
+            )
+        )
+        return result

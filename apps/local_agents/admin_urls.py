@@ -5,6 +5,7 @@ from apps.local_agents.admin_views import (
     LocalAgentFleetBulkActionView,
     LocalAgentFleetListView,
     LocalAgentFleetLogsView,
+    LocalAgentFleetOutboxActionView,
     LocalAgentFleetUpdateView,
 )
 
@@ -13,5 +14,6 @@ urlpatterns = [
     path('bulk-action/', LocalAgentFleetBulkActionView.as_view()),
     path('<uuid:pk>/diagnostics/', LocalAgentFleetDiagnosticsView.as_view()),
     path('<uuid:pk>/logs/', LocalAgentFleetLogsView.as_view()),
+    path('<uuid:pk>/outbox/<str:operation_id>/', LocalAgentFleetOutboxActionView.as_view()),
     path('<uuid:pk>/update-now/', LocalAgentFleetUpdateView.as_view()),
 ]

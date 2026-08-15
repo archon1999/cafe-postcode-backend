@@ -31,6 +31,10 @@ REMOTE_ACTIONS = {
     'refresh_context': ('agent.refresh_context', 'context_refresh', 30),
     'restart': ('agent.restart', 'remote_restart', 8),
 }
+OUTBOX_ACTIONS = {
+    'retry': 'agent.outbox.retry',
+    'resolve': 'agent.outbox.dismiss_failed',
+}
 
 
 class LocalAgentFleetListView(generics.ListAPIView):
@@ -148,6 +152,60 @@ class LocalAgentFleetLogsView(LocalAgentFleetActionView):
         except (LocalAgentUnavailableError, LocalAgentCommandError) as error:
             return self.command_error_response(error)
         return Response({'ok': True, **sanitize_remote_logs_result(result)})
+
+
+class LocalAgentFleetOutboxActionView(LocalAgentFleetActionView):
+    def post(self, request, pk, operation_id):
+        agent = self.get_agent(pk)
+        if not agent.is_online():
+            return Response(
+                {'detail': 'Local agent is offline.', 'code': 'LOCAL_AGENT_OFFLINE'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        if 'outbox_management' not in (agent.capabilities or []):
+            return Response(
+                {
+                    'detail': 'Installed Local Agent does not support outbox management.',
+                    'code': 'OUTBOX_MANAGEMENT_UNSUPPORTED',
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        operation_id = str(operation_id or '').strip()
+        if not operation_id or len(operation_id) > 128:
+            return Response(
+                {'operationId': ['Invalid operation ID.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        action = str(request.data.get('action') or '').strip().lower()
+        reason = str(request.data.get('reason') or '').strip()
+        if action not in OUTBOX_ACTIONS:
+            return Response({'action': ['Unsupported action.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not reason:
+            return Response({'reason': ['Reason is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        if len(reason) > 500:
+            return Response(
+                {'reason': ['Reason must not exceed 500 characters.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = self.command_service_class().execute(
+                restaurant=agent.restaurant,
+                command_type=OUTBOX_ACTIONS[action],
+                payload={'operationId': operation_id, 'reason': reason},
+                timeout_seconds=8,
+            )
+        except (LocalAgentUnavailableError, LocalAgentCommandError) as error:
+            return self.command_error_response(error)
+        return Response(
+            {
+                'ok': True,
+                'action': action,
+                'operationId': operation_id,
+                'result': result,
+            }
+        )
 
 
 class LocalAgentFleetBulkActionView(LocalAgentFleetActionView):

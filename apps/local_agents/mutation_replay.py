@@ -6,6 +6,11 @@ from apps.local_agents.mutation_reconciliation import (
     reconciled_fully_paid_order,
     reconciled_order_item_delete,
 )
+from apps.local_agents.mutation_results import (
+    CLASSIFICATION_QUARANTINED,
+    mutation_error_result,
+    mutation_result_metadata,
+)
 
 
 class LocalAgentMutationReplayMixin:
@@ -17,13 +22,13 @@ class LocalAgentMutationReplayMixin:
             existing.restaurant_id != agent.restaurant_id
             or existing.request_hash != digest
         ):
-            return {
-                "operationId": operation_id,
-                "ok": False,
-                "status": 409,
-                "error": "operationId already belongs to another mutation.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=409,
+                error="operationId already belongs to another mutation.",
+                code="OPERATION_ID_CONFLICT",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
         reconciled_delete = reconciled_order_item_delete(
             method=method,
             path=path,
@@ -36,7 +41,7 @@ class LocalAgentMutationReplayMixin:
             existing.save(
                 update_fields=["response_status", "response_body", "updated_at"]
             )
-            return {
+            result = {
                 "operationId": operation_id,
                 "ok": True,
                 "status": status.HTTP_204_NO_CONTENT,
@@ -45,6 +50,14 @@ class LocalAgentMutationReplayMixin:
                 "reconciled": True,
                 "retryable": False,
             }
+            result.update(
+                mutation_result_metadata(
+                    response_status=status.HTTP_204_NO_CONTENT,
+                    response_body=reconciled_delete,
+                    reconciled=True,
+                )
+            )
+            return result
         reconciled_payment = reconciled_fully_paid_order(
             agent=agent,
             method=method,
@@ -58,7 +71,7 @@ class LocalAgentMutationReplayMixin:
             existing.save(
                 update_fields=["response_status", "response_body", "updated_at"]
             )
-            return {
+            result = {
                 "operationId": operation_id,
                 "ok": True,
                 "status": status.HTTP_200_OK,
@@ -67,6 +80,14 @@ class LocalAgentMutationReplayMixin:
                 "reconciled": True,
                 "retryable": False,
             }
+            result.update(
+                mutation_result_metadata(
+                    response_status=status.HTTP_200_OK,
+                    response_body=reconciled_payment,
+                    reconciled=True,
+                )
+            )
+            return result
         recoverable_shift_conflict = (
             path == "/api/v1/pos/billing/shifts/open/"
             and existing.response_status == status.HTTP_400_BAD_REQUEST
@@ -86,7 +107,7 @@ class LocalAgentMutationReplayMixin:
         if recoverable_shift_conflict or recoverable_implicit_cashier:
             existing.delete()
             return None
-        return {
+        result = {
             "operationId": operation_id,
             "ok": 200 <= existing.response_status < 300,
             "status": existing.response_status,
@@ -94,3 +115,10 @@ class LocalAgentMutationReplayMixin:
             "replayed": True,
             "retryable": False,
         }
+        result.update(
+            mutation_result_metadata(
+                response_status=existing.response_status,
+                response_body=existing.response_body,
+            )
+        )
+        return result

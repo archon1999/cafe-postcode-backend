@@ -13,6 +13,7 @@ from apps.local_agents.admin_views import (
     LocalAgentFleetBulkActionView,
     LocalAgentFleetDiagnosticsView,
     LocalAgentFleetLogsView,
+    LocalAgentFleetOutboxActionView,
     LocalAgentFleetUpdateView,
 )
 from apps.local_agents.models import LocalAgent
@@ -126,6 +127,7 @@ class LocalAgentAdminMonitoringTests(APITestCase):
             'context_refresh',
             'remote_restart',
             'remote_logs',
+            'outbox_management',
         ]
         self.agent.save(update_fields=['status', 'last_seen_at', 'capabilities', 'updated_at'])
         self.admin = User.objects.create_superuser(
@@ -305,6 +307,42 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertEqual(response.data['lines'][0], 'normal log')
         self.assertNotIn('cpa_super-secret', response.data['lines'][1])
         self.assertIn('[REDACTED]', response.data['lines'][1])
+
+    def test_superuser_can_retry_and_resolve_actionable_outbox_operation(self):
+        service = _SuccessfulAgentCommandService()
+        url = f'/api/v1/admin/local-agents/{self.agent.id}/outbox/failed-payment/'
+        with patch.object(LocalAgentFleetOutboxActionView, 'command_service_class', return_value=service):
+            retried = self.client.post(
+                url,
+                {'action': 'retry', 'reason': 'Cashier corrected the payment amount.'},
+                format='json',
+            )
+            resolved = self.client.post(
+                url,
+                {'action': 'resolve', 'reason': 'The order was already closed on the server.'},
+                format='json',
+            )
+
+        self.assertEqual(retried.status_code, status.HTTP_200_OK, retried.data)
+        self.assertEqual(resolved.status_code, status.HTTP_200_OK, resolved.data)
+        self.assertEqual(
+            [call['command_type'] for call in service.calls],
+            ['agent.outbox.retry', 'agent.outbox.dismiss_failed'],
+        )
+        self.assertEqual(service.calls[0]['payload']['operationId'], 'failed-payment')
+        self.assertEqual(service.calls[1]['payload']['reason'], 'The order was already closed on the server.')
+
+    def test_outbox_action_requires_operator_reason(self):
+        service = _SuccessfulAgentCommandService()
+        with patch.object(LocalAgentFleetOutboxActionView, 'command_service_class', return_value=service):
+            response = self.client.post(
+                f'/api/v1/admin/local-agents/{self.agent.id}/outbox/failed-payment/',
+                {'action': 'resolve', 'reason': '  '},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertEqual(service.calls, [])
 
     def test_superuser_can_run_bulk_agent_action(self):
         service = _SuccessfulAgentCommandService()

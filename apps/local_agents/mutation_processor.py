@@ -5,6 +5,11 @@ from apps.local_agents.models import LocalAgentMutationReceipt
 from apps.local_agents.mutation_dispatch import LocalAgentMutationDispatchMixin
 from apps.local_agents.mutation_reconciliation import allowed_mutation, request_hash
 from apps.local_agents.mutation_replay import LocalAgentMutationReplayMixin
+from apps.local_agents.mutation_results import (
+    CLASSIFICATION_ACTION_REQUIRED,
+    CLASSIFICATION_QUARANTINED,
+    mutation_error_result,
+)
 from apps.users.models import User
 
 
@@ -17,12 +22,12 @@ class LocalAgentMutationProcessor(
 
     def process(self, *, agent, operation):
         if not isinstance(operation, dict):
-            return {
-                "ok": False,
-                "status": 400,
-                "error": "Operation must be an object.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                response_status=400,
+                error="Operation must be an object.",
+                code="INVALID_MUTATION_OBJECT",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
 
         operation_id = str(
             operation.get("operationId") or operation.get("operation_id") or ""
@@ -32,21 +37,21 @@ class LocalAgentMutationProcessor(
         path = str(operation.get("path") or "").strip()
         body = operation.get("body") if isinstance(operation.get("body"), dict) else {}
         if not operation_id or len(operation_id) > 128:
-            return {
-                "operationId": operation_id,
-                "ok": False,
-                "status": 400,
-                "error": "Invalid operationId.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=400,
+                error="Invalid operationId.",
+                code="INVALID_OPERATION_ID",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
         if not allowed_mutation(method, path):
-            return {
-                "operationId": operation_id,
-                "ok": False,
-                "status": 403,
-                "error": "Mutation path is not allowed.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=403,
+                error="Mutation path is not allowed.",
+                code="MUTATION_PATH_NOT_ALLOWED",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
 
         digest = request_hash(user_id=user_id, method=method, path=path, body=body)
         existing = LocalAgentMutationReceipt.objects.filter(
@@ -76,13 +81,16 @@ class LocalAgentMutationProcessor(
             .first()
         )
         if user is None or not user.can_access_pos_ui:
-            return {
-                "operationId": operation_id,
-                "ok": False,
-                "status": 403,
-                "error": "POS user is invalid.",
-                "retryable": False,
-            }
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=403,
+                error="POS user is invalid.",
+                code="POS_USER_INVALID",
+                classification=CLASSIFICATION_ACTION_REQUIRED,
+                resolution_hint=(
+                    "Restore the POS user or resolve this operation as obsolete."
+                ),
+            )
 
         if path == "/api/v1/pos/billing/shifts/open/":
             self._drop_implicit_invalid_cashier(body, user)
