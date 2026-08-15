@@ -141,12 +141,84 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(
             payload['Items'][1],
             {
-                'Name': 'Xizmat haqi',
+                'Name': 'Restoran xizmat haqi',
                 'Amount': 1000,
                 'Price': 300000,
+                'SPIC': '10202002003000001',
+                'Units': 796,
                 'VATPercent': 12,
                 'VAT': 32143,
             },
+        )
+
+    def test_issue_receipt_sends_each_service_fee_component_as_separate_mxik_item(self):
+        self.order.hall_service_fee_percent = 3
+        self.order.table_service_fee_percent = 2
+        self.order.save(update_fields=['hall_service_fee_percent', 'table_service_fee_percent', 'updated_at'])
+        self.order.refresh_from_db()
+        self.order.recalculate_totals()
+        self.payment.amount = self.order.total
+        self.payment.cash_amount = self.order.total
+        self.payment.fiscal_cash_amount = self.order.total
+        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'updated_at'])
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        payload = result['request']['receipt']
+        self.assertEqual(payload['ReceivedCash'], 3450000)
+        self.assertEqual(len(payload['Items']), 4)
+        fee_items = payload['Items'][1:]
+        self.assertEqual(
+            [(item['Name'], item['Price']) for item in fee_items],
+            [
+                ('Restoran xizmat haqi', 300000),
+                ('Zal xizmat haqi', 90000),
+                ('Stol xizmat haqi', 60000),
+            ],
+        )
+        for item in fee_items:
+            self.assertEqual(item['SPIC'], '10202002003000001')
+            self.assertEqual(item['Units'], 796)
+
+    def test_issue_receipt_sends_hall_and_table_fees_without_restaurant_fee(self):
+        self.order.restaurant_service_fee_percent = 0
+        self.order.hall_service_fee_percent = 3
+        self.order.table_service_fee_percent = 2
+        self.order.save(
+            update_fields=[
+                'restaurant_service_fee_percent',
+                'hall_service_fee_percent',
+                'table_service_fee_percent',
+                'updated_at',
+            ]
+        )
+        self.order.refresh_from_db()
+        self.order.recalculate_totals()
+        self.payment.amount = self.order.total
+        self.payment.cash_amount = self.order.total
+        self.payment.fiscal_cash_amount = self.order.total
+        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'updated_at'])
+        assertions = {}
+
+        def client_factory(*args, **kwargs):
+            return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+        service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+        result = service.issue_receipt(order=self.order, payment=self.payment)
+
+        payload = result['request']['receipt']
+        self.assertEqual(payload['ReceivedCash'], 3150000)
+        self.assertEqual(
+            [(item['Name'], item['Price'], item.get('SPIC')) for item in payload['Items'][1:]],
+            [
+                ('Zal xizmat haqi', 90000, '10202002003000001'),
+                ('Stol xizmat haqi', 60000, '10202002003000001'),
+            ],
         )
 
     def test_get_shift_report_reads_current_z_report_info(self):

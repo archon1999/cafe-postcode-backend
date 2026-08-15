@@ -13,7 +13,7 @@ class Hall(BaseModel):
     description = models.CharField(max_length=255, blank=True)
     grid_columns = models.PositiveIntegerField(default=8)
     service_fee_enabled = models.BooleanField(default=False)
-    service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    service_fee_percent = models.PositiveSmallIntegerField(default=0)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

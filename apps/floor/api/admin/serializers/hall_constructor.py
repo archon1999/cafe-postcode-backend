@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, Hall
@@ -61,13 +59,11 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
     width = serializers.IntegerField(min_value=1)
     height = serializers.IntegerField(min_value=1)
     service_fee_enabled = serializers.BooleanField(required=False, default=False)
-    service_fee_percent = serializers.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        min_value=Decimal('0'),
-        max_value=Decimal('99'),
+    service_fee_percent = serializers.IntegerField(
+        min_value=0,
+        max_value=99,
         required=False,
-        default=Decimal('0'),
+        default=0,
     )
     is_active = serializers.BooleanField(required=False, default=True)
 
@@ -75,13 +71,11 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
 class HallConstructorUpdateSerializer(serializers.Serializer):
     grid_columns = serializers.IntegerField(min_value=1, max_value=24)
     service_fee_enabled = serializers.BooleanField(required=False, default=False)
-    service_fee_percent = serializers.DecimalField(
-        max_digits=5,
-        decimal_places=2,
-        min_value=Decimal('0'),
-        max_value=Decimal('99'),
+    service_fee_percent = serializers.IntegerField(
+        min_value=0,
+        max_value=99,
         required=False,
-        default=Decimal('0'),
+        default=0,
     )
     tables = HallConstructorTableWriteSerializer(many=True)
     deleted_table_ids = serializers.ListField(

@@ -70,7 +70,7 @@ class DiningTable(BaseModel):
     height = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     rotation = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     service_fee_enabled = models.BooleanField(default=False)
-    service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    service_fee_percent = models.PositiveSmallIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:

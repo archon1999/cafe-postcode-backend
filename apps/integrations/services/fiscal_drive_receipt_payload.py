@@ -6,6 +6,14 @@ from .fiscal_drive_types import FiscalDriveError
 from .fiscal_total_allocation import allocate_fiscal_totals
 
 
+SERVICE_FEE_SPIC = '10202002003000001'
+SERVICE_FEE_NAMES = {
+    'restaurant': 'Restoran xizmat haqi',
+    'hall': 'Zal xizmat haqi',
+    'table': 'Stol xizmat haqi',
+}
+
+
 class FiscalDriveReceiptPayloadMixin:
     def _build_sale_receipt(self, *, order, payment, memory_info: dict | None) -> dict:
         total = int(order.total or 0)
@@ -45,10 +53,17 @@ class FiscalDriveReceiptPayloadMixin:
         )
         order_items = list(order_items)
         service_fee = max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
+        service_fee_components = [
+            component
+            for component in order.get_service_fee_components()
+            if int(component.get('amount') or 0) > 0
+        ]
+        if service_fee and not service_fee_components:
+            service_fee_components = [{'scope': 'service', 'amount': service_fee}]
         adjusted_totals = allocate_fiscal_totals(
             [
                 *(int(item.line_total or 0) for item in order_items),
-                *([service_fee] if service_fee else []),
+                *(int(component['amount']) for component in service_fee_components),
             ],
             target_total=int(order.total or 0),
         )
@@ -77,9 +92,18 @@ class FiscalDriveReceiptPayloadMixin:
                 item_payload['Labels'] = labels
             items.append(item_payload)
 
-        fiscal_service_fee = adjusted_totals[-1] if service_fee and adjusted_totals else 0
-        if fiscal_service_fee:
-            service_payload = {'Name': 'Xizmat haqi', 'Amount': 1000, 'Price': self._money_to_fiscal(fiscal_service_fee)}
+        adjusted_service_fees = adjusted_totals[len(order_items):]
+        for component, fiscal_service_fee in zip(service_fee_components, adjusted_service_fees):
+            if fiscal_service_fee <= 0:
+                continue
+            service_payload = {
+                'Name': SERVICE_FEE_NAMES.get(component.get('scope'), 'Xizmat haqi'),
+                'Amount': 1000,
+                'Price': self._money_to_fiscal(fiscal_service_fee),
+                'SPIC': SERVICE_FEE_SPIC,
+            }
+            if units := self._default_unit_code():
+                service_payload['Units'] = units
             self._apply_vat(service_payload, amount=fiscal_service_fee, percent=vat_percent)
             items.append(service_payload)
 

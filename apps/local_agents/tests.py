@@ -628,9 +628,9 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             row for row in response.data['tableSessions'] if str(row['id']) == str(table_session.id)
         )
         self.assertTrue(hall['service_fee_enabled'])
-        self.assertEqual(str(hall['service_fee_percent']), '3.00')
+        self.assertEqual(hall['service_fee_percent'], 3)
         self.assertTrue(table['service_fee_enabled'])
-        self.assertEqual(str(table['service_fee_percent']), '2.00')
+        self.assertEqual(table['service_fee_percent'], 2)
         self.assertEqual(session['service_fee_percent'], 15)
         self.assertEqual(
             [component['scope'] for component in session['service_fee_components']],

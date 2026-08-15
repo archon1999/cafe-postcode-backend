@@ -115,7 +115,7 @@ class AdminHallConstructorApiTests(APITestCase):
             {
                 'grid_columns': 10,
                 'service_fee_enabled': True,
-                'service_fee_percent': '3.50',
+                'service_fee_percent': 4,
                 'tables': [
                     {
                         'id': str(self.table_one.id),
@@ -128,7 +128,7 @@ class AdminHallConstructorApiTests(APITestCase):
                         'width': 1,
                         'height': 2,
                         'service_fee_enabled': True,
-                        'service_fee_percent': '2.00',
+                        'service_fee_percent': 2,
                         'is_active': True,
                     },
                     {
@@ -141,7 +141,7 @@ class AdminHallConstructorApiTests(APITestCase):
                         'width': 2,
                         'height': 1,
                         'service_fee_enabled': True,
-                        'service_fee_percent': '5.00',
+                        'service_fee_percent': 5,
                         'is_active': True,
                     },
                 ],
@@ -156,19 +156,51 @@ class AdminHallConstructorApiTests(APITestCase):
         self.table_one.refresh_from_db()
         self.assertEqual(self.hall.grid_columns, 10)
         self.assertTrue(self.hall.service_fee_enabled)
-        self.assertEqual(str(self.hall.service_fee_percent), '3.50')
+        self.assertEqual(self.hall.service_fee_percent, 4)
         self.assertEqual(self.table_one.position_x, 2)
         self.assertEqual(self.table_one.position_y, 1)
         self.assertEqual(self.table_one.height, 2)
         self.assertEqual(self.table_one.shape_variant, DiningTable.ShapeVariant.SEAT4_VERTICAL)
         self.assertTrue(self.table_one.service_fee_enabled)
-        self.assertEqual(str(self.table_one.service_fee_percent), '2.00')
+        self.assertEqual(self.table_one.service_fee_percent, 2)
 
         self.assertFalse(DiningTable.objects.filter(pk=self.table_two.pk).exists())
         self.assertFalse(TableSession.objects.filter(pk=session.pk).exists())
         created_table = DiningTable.objects.get(hall=self.hall, table_number=12)
         self.assertTrue(created_table.service_fee_enabled)
-        self.assertEqual(str(created_table.service_fee_percent), '5.00')
+        self.assertEqual(created_table.service_fee_percent, 5)
+
+    def test_put_rejects_fractional_hall_and_table_service_fee_percent(self):
+        self.authenticate()
+
+        response = self.client.put(
+            f'/api/v1/admin/floor/halls/{self.hall.id}/constructor/',
+            {
+                'grid_columns': 8,
+                'service_fee_enabled': True,
+                'service_fee_percent': 3.5,
+                'tables': [
+                    {
+                        'id': str(self.table_one.id),
+                        'name': self.table_one.name,
+                        'table_number': self.table_one.table_number,
+                        'seat_count': self.table_one.seat_count,
+                        'shape_variant': self.table_one.shape_variant,
+                        'position_x': 0,
+                        'position_y': 0,
+                        'width': 1,
+                        'height': 1,
+                        'service_fee_enabled': True,
+                        'service_fee_percent': 2.5,
+                        'is_active': True,
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('service_fee_percent', response.data)
 
     def test_put_rejects_overlapping_tables(self):
         self.authenticate()
