@@ -73,13 +73,19 @@ class PosMenuPrepStationTests(APITestCase):
     def _get_menu_category(self):
         response = self.client.get(self.menu_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        payload = response.data.get('data', response.data)
+        payload = self._menu_payload(response)
         return next(row for row in payload if row['id'] == str(self.category.id))
 
     def _get_menu_response(self, **headers):
         response = self.client.get(self.menu_url, **headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         return response
+
+    @staticmethod
+    def _menu_payload(response):
+        if isinstance(response.data, dict):
+            return response.data.get('data', response.data)
+        return response.data
 
     def _serialize_reference_menu(self):
         """Serialize the same graph without the request-level fallback shortcut."""
@@ -106,6 +112,24 @@ class PosMenuPrepStationTests(APITestCase):
         return sum(
             ' from "restaurants_prepstation"' in query['sql'].lower()
             for query in captured_queries
+        )
+
+    def test_menu_returns_complete_unpaginated_snapshot_beyond_default_page_size(self):
+        extra_categories = [
+            CatalogCategory.objects.create(
+                restaurant=self.restaurant,
+                name=f'Additional category {index}',
+            )
+            for index in range(25)
+        ]
+
+        response = self._get_menu_response()
+
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 1 + len(extra_categories))
+        self.assertEqual(
+            {row['id'] for row in response.data},
+            {str(self.category.id), *(str(category.id) for category in extra_categories)},
         )
 
     def test_menu_fallback_semantics_for_zero_one_and_multiple_active_stations(self):
@@ -247,7 +271,7 @@ class PosMenuPrepStationTests(APITestCase):
             with self.subTest(language=language):
                 response = self._get_menu_response(HTTP_ACCEPT_LANGUAGE=language)
                 self.assertEqual(
-                    response.data.get('data', response.data),
+                    self._menu_payload(response),
                     self._serialize_reference_menu(),
                 )
 

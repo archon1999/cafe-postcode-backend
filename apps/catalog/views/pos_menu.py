@@ -12,6 +12,7 @@ from common.api.scopes import get_request_restaurant
 class PosMenuView(generics.ListAPIView):
     serializer_class = CatalogMenuCategorySerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    pagination_class = None
 
     def get_restaurant(self):
         if not hasattr(self, '_restaurant'):
