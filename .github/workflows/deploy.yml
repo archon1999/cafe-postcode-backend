@@ -70,10 +70,7 @@ jobs:
           poetry run pip-audit --local --progress-spinner off
 
       - name: Compile translations
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes gettext
-          poetry run python manage.py compilemessages
+        run: poetry run python ops/compile_translations.py
 
       - name: Run Ruff correctness checks
         run: poetry run ruff check .
@@ -132,9 +129,18 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install PostgreSQL client
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes postgresql-client
+          set -Eeuo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get update \
+              --option Acquire::Retries=2 \
+              --option Acquire::http::Timeout=15 \
+              --option Acquire::https::Timeout=15
+            sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get install \
+              --yes --no-install-recommends postgresql-client
+          fi
+          psql --version
 
       - name: Provision and verify runtime database role
         env:

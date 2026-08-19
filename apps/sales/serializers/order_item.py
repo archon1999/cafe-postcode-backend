@@ -25,7 +25,7 @@ class QuantityDecimalField(serializers.DecimalField):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
-    COMMAND_ONLY_UPDATE_FIELDS = ('id', 'catalog_item', 'status')
+    COMMAND_ONLY_UPDATE_FIELDS = ('id', 'catalog_item', 'status', 'manual_price')
     DISPATCHED_SNAPSHOT_FIELDS = ('catalog_item', 'quantity', 'status', 'note', 'selected_modifiers')
 
     id = serializers.UUIDField(required=False)

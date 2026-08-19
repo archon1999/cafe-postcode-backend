@@ -86,13 +86,12 @@ def get_restaurant_tariff_change_preview(*, restaurant, target_tariff):
 @transaction.atomic
 def change_restaurant_tariff(*, restaurant, target_tariff, role_mappings):
     locked_users = list(
-        User.objects.select_for_update()
+        User.objects.select_for_update(of=('self',))
         .filter(
             restaurant_profile__restaurant=restaurant,
             is_superuser=False,
         )
         .select_related('role')
-        .distinct()
     )
     source_role_ids = {user.role_id for user in locked_users}
 

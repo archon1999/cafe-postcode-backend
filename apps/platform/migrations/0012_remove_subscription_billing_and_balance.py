@@ -5,17 +5,13 @@ EXPIRY_SCHEDULE_NAME = 'platform.expire_restaurant_entitlements'
 
 
 def remove_expiry_schedule(apps, schema_editor):
-    try:
-        from django_q.models import Schedule
-
-        Schedule.objects.filter(name=EXPIRY_SCHEDULE_NAME).delete()
-    except Exception:
-        # The schedule table may not exist in lightweight/test environments.
-        return
+    Schedule = apps.get_model('django_q', 'Schedule')
+    Schedule.objects.filter(name=EXPIRY_SCHEDULE_NAME).delete()
 
 
 class Migration(migrations.Migration):
     dependencies = [
+        ('django_q', '0019_alter_task_options_alter_ormq_key_alter_ormq_lock_and_more'),
         ('platform', '0011_add_expense_permissions_to_access'),
     ]
 

@@ -289,7 +289,7 @@ class OrderStateService:
         from apps.sales.models import OrderItem
 
         order = (
-            Order.objects.select_for_update()
+            Order.objects.select_for_update(of=('self',))
             .select_related('restaurant', 'table_session__table')
             .get(pk=order.pk)
         )

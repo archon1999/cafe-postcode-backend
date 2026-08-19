@@ -280,7 +280,7 @@ class AdminApiTests(APITestCase):
         usernames = {row['username'] for row in users_response.data['data']}
         self.assertIn(self.admin_user.username, usernames)
 
-    def test_restaurant_update_can_bind_tariff_capability(self):
+    def test_restaurant_update_rejects_direct_tariff_change(self):
         self.authenticate(self.superuser)
 
         response = self.client.patch(
@@ -289,12 +289,8 @@ class AdminApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['tariff']['id'], str(self.tariff.id))
-        self.assertIn(self.admin_role.code, response.data['role_codes'])
-        self.assertIn('reports.view', response.data['permission_codes'])
-        self.restaurant.refresh_from_db()
-        self.assertEqual(self.restaurant.entitlement.tariff_id, self.tariff.id)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('tariffId', response.data)
 
     def test_restaurant_create_works_without_slug(self):
         self.authenticate(self.superuser)

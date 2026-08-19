@@ -61,3 +61,23 @@ class ServiceManualPriceSerializerTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('manual_price', serializer.errors)
+
+    def test_manual_price_cannot_change_after_item_is_added(self):
+        create_serializer = OrderItemSerializer(
+            data={
+                'catalog_item': str(self.service.id),
+                'quantity': 1,
+                'manual_price': 75000,
+            }
+        )
+        self.assertTrue(create_serializer.is_valid(), create_serializer.errors)
+        order_item = create_serializer.save(order=self.order)
+
+        update_serializer = OrderItemSerializer(
+            order_item,
+            data={'manual_price': 90000},
+            partial=True,
+        )
+
+        self.assertFalse(update_serializer.is_valid())
+        self.assertIn('manual_price', update_serializer.errors)
