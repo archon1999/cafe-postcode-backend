@@ -1,11 +1,11 @@
 from rest_framework import generics
 
 from apps.users.api.admin.serializers import UserSerializer
+from apps.users.api.admin.permissions import PlatformPermissionRequiredMixin
 from apps.users.selectors.users import AdminUserQuerysetMixin
-from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 
-class UserListCreateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.ListCreateAPIView):
+class UserListCreateView(PlatformPermissionRequiredMixin, AdminUserQuerysetMixin, generics.ListCreateAPIView):
     serializer_class = UserSerializer
     user_surface = 'system'
 
@@ -21,7 +21,7 @@ class UserListCreateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, g
         serializer.save()
 
 
-class UserRetrieveUpdateView(AdminPermissionRequiredMixin, AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView):
+class UserRetrieveUpdateView(PlatformPermissionRequiredMixin, AdminUserQuerysetMixin, generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
     user_surface = 'system'
 

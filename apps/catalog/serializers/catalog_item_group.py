@@ -49,9 +49,16 @@ class CatalogItemGroupSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
         restaurant = get_optional_request_restaurant(request) if request else None
-        if restaurant is not None:
-            self.fields['category'].queryset = restaurant.catalog_categories.all()
-            self.fields['members'].child.fields['catalog_item'].queryset = restaurant.catalog_items.all()
+        if request is None:
+            return
+        if restaurant is None:
+            if getattr(request.user, 'is_superuser', False):
+                return
+            self.fields['category'].queryset = self.fields['category'].queryset.none()
+            self.fields['members'].child.fields['catalog_item'].queryset = CatalogItem.objects.none()
+            return
+        self.fields['category'].queryset = restaurant.catalog_categories.all()
+        self.fields['members'].child.fields['catalog_item'].queryset = restaurant.catalog_items.all()
 
     def validate_members(self, members):
         if len(members) < 2:

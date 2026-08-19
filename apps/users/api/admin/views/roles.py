@@ -1,11 +1,14 @@
 from rest_framework import generics
 
 from apps.users.api.admin.serializers import RoleSerializer
+from apps.users.api.admin.permissions import (
+    PlatformPermissionRequiredMixin,
+    RoleCollectionPermissionRequiredMixin,
+)
 from apps.users.selectors.users import RoleListFilters, prevent_system_role_delete, scoped_role_queryset
-from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 
-class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
+class RoleListCreateView(RoleCollectionPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = RoleSerializer
 
     def get_queryset(self):
@@ -21,7 +24,7 @@ class RoleListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIVie
         serializer.save(is_system=False)
 
 
-class RoleRetrieveUpdateDestroyView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
+class RoleRetrieveUpdateDestroyView(PlatformPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RoleSerializer
 
     def get_queryset(self):

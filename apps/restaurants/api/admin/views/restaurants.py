@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.platform.services import FakturaClient, FakturaError
+from apps.platform.api.admin.permissions import NonRestaurantPermissionRequiredMixin
 from apps.restaurants.api.admin.serializers import (
     RestaurantBranchCreateSerializer,
     RestaurantDetailSerializer,
@@ -14,7 +15,7 @@ from apps.restaurants.selectors.restaurants import RestaurantListFilters, get_re
 from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 
-class RestaurantListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
+class RestaurantListCreateView(NonRestaurantPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = RestaurantSerializer
 
     def get_queryset(self):
@@ -53,7 +54,7 @@ class RestaurantLookupView(AdminPermissionRequiredMixin, APIView):
         return Response(RestaurantLookupSerializer(payload).data, status=status.HTTP_200_OK)
 
 
-class RestaurantBranchCreateView(AdminPermissionRequiredMixin, generics.CreateAPIView):
+class RestaurantBranchCreateView(NonRestaurantPermissionRequiredMixin, generics.CreateAPIView):
     serializer_class = RestaurantBranchCreateSerializer
 
     def get_parent_restaurant(self):
@@ -75,14 +76,14 @@ class RestaurantBranchCreateView(AdminPermissionRequiredMixin, generics.CreateAP
         )
 
 
-class RestaurantDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
+class RestaurantDetailView(NonRestaurantPermissionRequiredMixin, generics.RetrieveUpdateDestroyAPIView):
     serializer_class = RestaurantSerializer
 
     def get_queryset(self):
         return get_restaurants_queryset_for_request(self.request)
 
 
-class RestaurantReadDetailView(AdminPermissionRequiredMixin, generics.RetrieveAPIView):
+class RestaurantReadDetailView(NonRestaurantPermissionRequiredMixin, generics.RetrieveAPIView):
     serializer_class = RestaurantDetailSerializer
 
     def get_queryset(self):

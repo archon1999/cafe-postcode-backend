@@ -1,8 +1,9 @@
 from datetime import timedelta
 
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db.models import Max
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.billing.models import CashShift, Payment, Receipt
@@ -10,13 +11,17 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.platform.models import BusinessPartner, Tariff
-from apps.platform.services import add_billing_period
 from apps.restaurants.models import Restaurant
 from apps.sales.models import Order
 from apps.users.models import User
 
 
 class BootstrapRestaurantDemoCommandTests(TestCase):
+    @override_settings(DJANGO_PRODUCTION=True)
+    def test_command_is_hard_blocked_in_production(self):
+        with self.assertRaisesMessage(CommandError, 'run_seeder is disabled'):
+            call_command('run_seeder')
+
     def test_command_reuses_legacy_demo_restaurant_without_delete(self):
         legacy_restaurant = Restaurant.objects.create(
             name='Postcode Restaurant',
@@ -80,17 +85,6 @@ class BootstrapRestaurantDemoCommandTests(TestCase):
         self.assertEqual(fast_food.tax_number, '304459113')
         self.assertTrue(User.objects.filter(restaurant_profile__restaurant=restaurant, role__code='restaurant_admin').exists())
         self.assertTrue(User.objects.filter(restaurant_profile__restaurant=fast_food, role__code='fast_food_admin').exists())
-        self.assertEqual(restaurant.entitlement.starts_on, timezone.localdate())
-        self.assertEqual(fast_food.entitlement.starts_on, timezone.localdate())
-        self.assertEqual(
-            restaurant.entitlement.expires_on,
-            add_billing_period(restaurant.entitlement.starts_on, restaurant.entitlement.billing_period),
-        )
-        self.assertEqual(
-            fast_food.entitlement.expires_on,
-            add_billing_period(fast_food.entitlement.starts_on, fast_food.entitlement.billing_period),
-        )
-
         self.assertEqual(restaurant.zones.count(), 3)
         self.assertEqual(Hall.objects.filter(zone_or_cabin__restaurant=restaurant).count(), 5)
         self.assertEqual(restaurant.catalog_categories.count(), 7)

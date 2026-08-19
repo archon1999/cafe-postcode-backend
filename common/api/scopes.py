@@ -2,6 +2,7 @@ from apps.restaurants.models import Restaurant
 from common.exceptions import NotFoundError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 
 ADMIN_RESTAURANT_HEADER = 'X-Admin-Restaurant-Id'
@@ -9,13 +10,24 @@ ADMIN_SCOPED_PATH_PREFIXES = (
     '/api/v1/admin/',
     '/api/v1/local-agent/',
 )
+ADMIN_SCOPED_EXACT_PATHS = frozenset(
+    {
+        # The POS status route is also rendered inside the superadmin restaurant
+        # context.  It is outside the admin URL prefix, but must honor the same
+        # explicit branch selector for an authenticated superuser.
+        '/api/v1/system/status/',
+    }
+)
 
 
 def _is_admin_superuser_request(request) -> bool:
     return bool(
         getattr(request.user, 'is_authenticated', False)
         and getattr(request.user, 'is_superuser', False)
-        and request.path.startswith(ADMIN_SCOPED_PATH_PREFIXES)
+        and (
+            request.path.startswith(ADMIN_SCOPED_PATH_PREFIXES)
+            or request.path in ADMIN_SCOPED_EXACT_PATHS
+        )
     )
 
 
@@ -51,11 +63,12 @@ def get_request_restaurant(request) -> Restaurant:
             {'restaurantId': _('Restaurant selection is required for superuser admin requests.')}
         )
 
-    user_restaurant = getattr(request.user, 'get_restaurant_scope', lambda: None)()
-    if user_restaurant is not None:
-        return user_restaurant
+    # A tenant-aware API must never guess a restaurant.  The historical
+    # fallback to the first row meant that an authenticated account without a
+    # profile could operate on an unrelated tenant if an endpoint permission
+    # was ever assigned by mistake.  Explicit superuser selection is handled
+    # above; every other caller must carry a real restaurant scope.
+    if getattr(request.user, 'is_authenticated', False):
+        raise PermissionDenied(_('Restaurant access is not available for this account.'))
 
-    restaurant = Restaurant.objects.order_by('created_at').first()
-    if restaurant is None:
-        raise NotFoundError('Restaurant is not configured yet.')
-    return restaurant
+    raise NotFoundError('Restaurant is not configured for this request.')

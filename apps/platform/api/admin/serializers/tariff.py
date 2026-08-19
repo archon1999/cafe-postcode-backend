@@ -41,8 +41,6 @@ class TariffSerializer(TariffReadMixin, serializers.ModelSerializer):
             'id',
             'name',
             'description',
-            'monthly_price',
-            'yearly_price',
             'is_active',
             'allowed_role_ids',
             'permission_ids',
@@ -105,8 +103,6 @@ class TariffOptionSerializer(TariffReadMixin, serializers.ModelSerializer):
             'id',
             'name',
             'description',
-            'monthly_price',
-            'yearly_price',
             'permissions',
             'allowed_roles',
         )

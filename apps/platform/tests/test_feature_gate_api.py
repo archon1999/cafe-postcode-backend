@@ -52,8 +52,6 @@ class TariffCapabilityApiTests(PosAPITestCase):
         second_tariff = Tariff.objects.create(
             name='Second restaurant restricted tariff',
             description='Restricted hall access',
-            monthly_price=0,
-            yearly_price=0,
             is_active=True,
         )
         second_tariff.permissions.set(Permission.objects.filter(code__in={'pos_kitchen_orders.view', 'pos_payments.create'}))

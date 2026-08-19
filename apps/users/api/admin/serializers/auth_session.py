@@ -10,3 +10,8 @@ class AuthSessionSerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
     revoked_at = serializers.DateTimeField(read_only=True, allow_null=True)
     last_seen_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    locked_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    mfa_verified_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    refresh_family_id = serializers.UUIDField(read_only=True, allow_null=True)
+    device_id = serializers.UUIDField(read_only=True, allow_null=True)
+    restaurant_id = serializers.UUIDField(read_only=True, allow_null=True)

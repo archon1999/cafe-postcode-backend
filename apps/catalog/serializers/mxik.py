@@ -3,11 +3,13 @@ import re
 
 from rest_framework import serializers
 
+from common.api.fields import SecureImageField
+
 MXIK_CODE_PATTERN = re.compile(r'^\d{17}$')
 
 
 class CatalogImageSerializerMixin(serializers.Serializer):
-    image_file = serializers.ImageField(required=False, allow_null=True, write_only=True)
+    image_file = SecureImageField(required=False, allow_null=True, write_only=True)
     clear_image = serializers.BooleanField(required=False, default=False, write_only=True)
     restore_mxik_image = serializers.BooleanField(required=False, default=False, write_only=True)
 

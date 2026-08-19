@@ -141,6 +141,22 @@ class CatalogCategorySerializerTests(SimpleTestCase):
 
 
 class CatalogItemSerializerTests(SimpleTestCase):
+    def test_service_forces_zero_catalog_price_and_piece_unit(self):
+        serializer = CatalogItemSerializer(
+            data={
+                'name': 'Yetkazib berish',
+                'item_type': CatalogItem.ItemType.SERVICE,
+                'price': 45000,
+                'sale_unit': CatalogItem.SaleUnit.KILOGRAM,
+                'is_active': True,
+                'is_stoplisted': False,
+            },
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data['price'], 0)
+        self.assertEqual(serializer.validated_data['sale_unit'], CatalogItem.SaleUnit.PIECE)
+
     def test_update_keeps_manual_source_when_mxik_code_removed(self):
         instance = CatalogItem(
             name='Lavash',

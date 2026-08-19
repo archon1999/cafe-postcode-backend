@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.users.helpers import get_user_model
+from apps.users.permission_registry import RESTAURANT_ADMIN_UI_ROLES
 from apps.users.selectors.users import (
     role_is_allowed_for_employee_surface,
     role_requires_login_credentials,
@@ -63,6 +64,7 @@ class UserValidationMixin:
         attrs = super().validate(attrs)
         request = self.context.get("request")
         request_data = getattr(request, "data", {}) or {}
+        actor = getattr(request, "user", None)
         pin = request_data.get("pin")
         password = request_data.get("password")
         restaurant = self._get_target_restaurant()
@@ -149,7 +151,7 @@ class UserValidationMixin:
         if (
             restaurant is not None
             and role is not None
-            and not getattr(getattr(request, "user", None), "is_superuser", False)
+            and not getattr(actor, "is_superuser", False)
         ):
             entitlement = getattr(restaurant, "entitlement", None)
             allowed_role_ids = set()
@@ -164,6 +166,36 @@ class UserValidationMixin:
             if role.id not in allowed_role_ids:
                 raise serializers.ValidationError(
                     {"roleId": _("Selected role is not available for this restaurant.")}
+                )
+
+            actor_role_code = getattr(actor, "role_code", None)
+            actor_is_restaurant_admin = (
+                actor_role_code in RESTAURANT_ADMIN_UI_ROLES
+            )
+            assigns_different_admin_role = (
+                actor_is_restaurant_admin
+                and role_requires_login_credentials(role)
+                and role.code != actor_role_code
+            )
+            target_permission_codes = set(
+                role.permissions.values_list("code", flat=True)
+            )
+            if entitlement is not None:
+                target_permission_codes.intersection_update(
+                    entitlement.get_effective_permission_codes()
+                )
+            actor_permission_codes = set(getattr(actor, "permission_codes", ()))
+            exceeds_actor_permissions = (
+                not actor_is_restaurant_admin
+                and not target_permission_codes.issubset(actor_permission_codes)
+            )
+            if assigns_different_admin_role or exceeds_actor_permissions:
+                raise serializers.ValidationError(
+                    {
+                        "roleId": _(
+                            "You cannot assign a role with permissions you do not have."
+                        )
+                    }
                 )
 
         if pin in (None, ""):

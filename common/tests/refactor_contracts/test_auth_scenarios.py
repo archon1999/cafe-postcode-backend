@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+import os
+import time
 from datetime import timedelta
 
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, APITestCase
 
+from apps.devices.crypto import device_request_message, sha256_hex
+from apps.devices.models import Device
+from apps.devices.tests.test_device_platform import TestKey as DeviceTestKey
+from apps.devices.tests.test_device_platform import b64url
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import Restaurant
 from apps.sales.tests.support.pos_api import PosTestDataMixin
@@ -16,7 +23,6 @@ from .scenarios import (
     auth_scenario,
     canonical_error,
     canonical_pin_session,
-    canonical_restaurant,
 )
 
 
@@ -66,6 +72,73 @@ class RemotePosAuthCharacterizationTests(PosTestDataMixin, APITestCase):
             HTTP_USER_AGENT="Canonical POS Test",
         )
 
+    def _paired_pos_device(self):
+        key = DeviceTestKey()
+        now = timezone.now()
+        device = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name="Characterization POS",
+            platform="test",
+            app_version="1.0.0",
+            public_key_algorithm=key.algorithm,
+            public_key=key.public_key,
+            public_key_fingerprint=key.fingerprint,
+            capabilities=["pos"],
+            paired_at=now,
+            lease_expires_at=now + timedelta(days=1),
+            last_seen_at=now,
+        )
+        return key, device
+
+    def _signed_device_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        key,
+        device,
+        payload=None,
+        token: str | None = None,
+        ip: str = "192.0.2.41",
+    ):
+        body = (
+            b""
+            if payload is None
+            else json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+        )
+        timestamp = int(time.time())
+        nonce = b64url(os.urandom(32))
+        body_hash = sha256_hex(body)
+        signature = key.sign(
+            device_request_message(
+                method=method,
+                request_target=path,
+                device_id=device.pk,
+                timestamp=timestamp,
+                nonce=nonce,
+                body_sha256=body_hash,
+            )
+        )
+        headers = {
+            "HTTP_X_DEVICE_ID": str(device.pk),
+            "HTTP_X_DEVICE_TIMESTAMP": str(timestamp),
+            "HTTP_X_DEVICE_NONCE": nonce,
+            "HTTP_X_DEVICE_CONTENT_SHA256": body_hash,
+            "HTTP_X_DEVICE_SIGNATURE": signature,
+            "HTTP_USER_AGENT": "Canonical POS Test",
+            "REMOTE_ADDR": ip,
+        }
+        if token:
+            headers["HTTP_AUTHORIZATION"] = f"Token {token}"
+        return self.client.generic(
+            method,
+            path,
+            data=body,
+            content_type="application/json",
+            **headers,
+        )
+
     def _refs(self, *, users=None, restaurants=None):
         return {
             "user_refs": {
@@ -82,76 +155,13 @@ class RemotePosAuthCharacterizationTests(PosTestDataMixin, APITestCase):
             "tariff_refs": {str(self.tariff.id): "tariff:pos-test"},
         }
 
-    def test_restaurant_code_selects_only_the_intended_restaurant(self):
+    def test_restaurant_code_route_is_fail_closed_outside_the_migration_window(self):
         response = self.client.post(
             "/api/v1/pos/auth/restaurant-code/",
-            {"code": self.restaurant.auth_code},
+            {"code": "LEGACY"},
             format="json",
         )
-        actual = auth_scenario(
-            "auth.remote.restaurant-code.valid",
-            canonical_restaurant(
-                response.status_code,
-                response.data,
-                restaurant_refs={str(self.restaurant.id): "restaurant:primary"},
-            ),
-        )
-
-        self.assertEqual(
-            actual,
-            {
-                "httpStatus": 200,
-                "restaurantRef": "restaurant:primary",
-                "restaurantName": "Test restaurant",
-                "backgroundUrl": None,
-                "serviceFeeEnabled": True,
-                "serviceFeePercent": "10.00",
-                "vatEnabled": True,
-                "vatPercent": "12.00",
-                "markingCheckEnabled": False,
-            },
-        )
-
-    def test_restaurant_code_denials_preserve_status_field_and_message(self):
-        inactive = Restaurant.objects.create(
-            name="Inactive auth restaurant", is_active=False
-        )
-        cases = [
-            (
-                "not-found",
-                {"code": "ZZZZZZ"},
-                400,
-                {"code": ["Restaurant code is invalid."]},
-            ),
-            (
-                "inactive",
-                {"code": inactive.auth_code},
-                400,
-                {"code": ["Restaurant code is invalid."]},
-            ),
-            (
-                "too-short",
-                {"code": "SHORT"},
-                400,
-                {"code": ["Ensure this field has at least 6 characters."]},
-            ),
-            (
-                "too-long",
-                {"code": "TOOLONG"},
-                400,
-                {"code": ["Ensure this field has no more than 6 characters."]},
-            ),
-        ]
-        for case_id, payload, http_status, body in cases:
-            with self.subTest(case=case_id):
-                response = self.client.post(
-                    "/api/v1/pos/auth/restaurant-code/", payload, format="json"
-                )
-                actual = auth_scenario(
-                    f"auth.remote.restaurant-code.{case_id}",
-                    canonical_error(response.status_code, response.data),
-                )
-                self.assertEqual(actual, {"httpStatus": http_status, "body": body})
+        self.assertEqual(response.status_code, status.HTTP_410_GONE)
 
     def test_successful_pin_login_preserves_authority_and_session_contract(self):
         response = self._post_pin(self.restaurant, "1111")
@@ -253,17 +263,41 @@ class RemotePosAuthCharacterizationTests(PosTestDataMixin, APITestCase):
         self.assertEqual(other["restaurant"]["restaurantRef"], "restaurant:other")
 
     def test_pos_session_expiry_logout_and_surface_isolation(self):
-        first = self._post_pin(self.restaurant, "1111", ip="192.0.2.61").data["token"]
-        second = self._post_pin(self.restaurant, "1111", ip="192.0.2.62").data["token"]
-        auth = lambda token: {"HTTP_AUTHORIZATION": f"Token {token}"}
+        key, device = self._paired_pos_device()
+        first = self._signed_device_request(
+            "POST",
+            "/api/v1/pos/auth/pin-login/",
+            key=key,
+            device=device,
+            payload={"pin": "1111"},
+            ip="192.0.2.61",
+        ).data["token"]
+        second = self._signed_device_request(
+            "POST",
+            "/api/v1/pos/auth/pin-login/",
+            key=key,
+            device=device,
+            payload={"pin": "1111"},
+            ip="192.0.2.62",
+        ).data["token"]
         before = [
-            self.client.get("/api/v1/pos/auth/me/", **auth(first)).status_code,
-            self.client.get("/api/v1/pos/auth/me/", **auth(second)).status_code,
+            self._signed_device_request(
+                "GET", "/api/v1/pos/auth/me/", key=key, device=device, token=first
+            ).status_code,
+            self._signed_device_request(
+                "GET", "/api/v1/pos/auth/me/", key=key, device=device, token=second
+            ).status_code,
         ]
-        logout = self.client.post("/api/v1/pos/auth/logout/", **auth(first)).status_code
+        logout = self._signed_device_request(
+            "POST", "/api/v1/pos/auth/logout/", key=key, device=device, token=first
+        ).status_code
         after_logout = [
-            self.client.get("/api/v1/pos/auth/me/", **auth(first)).status_code,
-            self.client.get("/api/v1/pos/auth/me/", **auth(second)).status_code,
+            self._signed_device_request(
+                "GET", "/api/v1/pos/auth/me/", key=key, device=device, token=first
+            ).status_code,
+            self._signed_device_request(
+                "GET", "/api/v1/pos/auth/me/", key=key, device=device, token=second
+            ).status_code,
         ]
         active_pos_sessions_after_logout = AuthSession.objects.filter(
             user=self.user,
@@ -276,13 +310,27 @@ class RemotePosAuthCharacterizationTests(PosTestDataMixin, APITestCase):
             surface="admin",
         )
         cross_surface = [
-            self.client.get("/api/v1/pos/auth/me/", **auth(admin_token)).status_code,
-            self.client.get("/api/v1/admin/auth/me/", **auth(second)).status_code,
+            self._signed_device_request(
+                "GET",
+                "/api/v1/pos/auth/me/",
+                key=key,
+                device=device,
+                token=admin_token,
+            ).status_code,
+            self._signed_device_request(
+                "GET",
+                "/api/v1/admin/auth/me/",
+                key=key,
+                device=device,
+                token=second,
+            ).status_code,
         ]
         AuthSession.objects.filter(
             token_key_hash=AuthSession.build_token_key_hash(second)
         ).update(expires_at=timezone.now() - timedelta(seconds=1))
-        expired = self.client.get("/api/v1/pos/auth/me/", **auth(second)).status_code
+        expired = self._signed_device_request(
+            "GET", "/api/v1/pos/auth/me/", key=key, device=device, token=second
+        ).status_code
 
         actual = auth_scenario(
             "auth.remote.session.lifecycle",

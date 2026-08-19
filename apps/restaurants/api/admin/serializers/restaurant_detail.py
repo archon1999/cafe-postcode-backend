@@ -1,7 +1,6 @@
 from rest_framework import serializers
 
 from apps.integrations.models import IntegrationConfig
-from apps.platform.services import get_restaurant_balance_summary
 from apps.users.helpers import get_employee_profile_model, get_user_model
 from common.utils.settings import get_setting
 
@@ -40,28 +39,14 @@ class RestaurantSoliqIntegrationSerializer(serializers.Serializer):
     endpoint_url = serializers.CharField(allow_null=True)
 
 
-class RestaurantBalanceSummarySerializer(serializers.Serializer):
-    current_balance = serializers.DecimalField(max_digits=12, decimal_places=2)
-    next_charge_amount = serializers.DecimalField(
-        max_digits=12, decimal_places=2, allow_null=True
-    )
-    next_charge_on = serializers.DateField(allow_null=True)
-    next_period_status = serializers.ChoiceField(
-        choices=("active", "inactive"), allow_null=True
-    )
-    last_top_up_at = serializers.DateTimeField(allow_null=True)
-
-
 class RestaurantDetailSerializer(RestaurantSerializer):
     active_users = serializers.SerializerMethodField()
     soliq_integration = serializers.SerializerMethodField()
-    balance = serializers.SerializerMethodField()
 
     class Meta(RestaurantSerializer.Meta):
         fields = RestaurantSerializer.Meta.fields + (
             "active_users",
             "soliq_integration",
-            "balance",
         )
 
     def get_active_users(self, instance):
@@ -100,8 +85,3 @@ class RestaurantDetailSerializer(RestaurantSerializer):
             "endpoint_url": get_setting(config.settings, "endpoint_url", "endpointUrl"),
         }
         return RestaurantSoliqIntegrationSerializer(payload).data
-
-    def get_balance(self, instance):
-        return RestaurantBalanceSummarySerializer(
-            get_restaurant_balance_summary(instance)
-        ).data

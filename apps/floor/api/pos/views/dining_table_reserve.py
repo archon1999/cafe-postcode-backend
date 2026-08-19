@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -12,10 +13,14 @@ class DiningTableReserveView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
+    @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
-        table = DiningTable.objects.filter(pk=pk, hall__zone_or_cabin__restaurant=restaurant).first()
+        table = DiningTable.objects.select_for_update(of=('self',)).filter(
+            pk=pk,
+            hall__zone_or_cabin__restaurant=restaurant,
+        ).first()
         if table is None:
             return Response({'detail': 'Table was not found.'}, status=status.HTTP_404_NOT_FOUND)
 

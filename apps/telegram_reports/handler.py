@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import html
-import re
 from urllib.parse import unquote
 from uuid import UUID
 
 from django.utils import timezone
 
 from apps.reporting.services import CommonReportService
-from apps.restaurants.models import Restaurant
+from apps.devices.models import SecurityEvent
+from apps.devices.security import record_security_event
 from apps.telegram_reports.client import TelegramBotClient
-from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription, TelegramReportDelivery
+from apps.telegram_reports.models import (
+    TelegramAccount,
+    TelegramBranchSubscription,
+    TelegramLinkToken,
+    TelegramReportDelivery,
+)
 from apps.telegram_reports.services import TelegramBranchStatusService, TelegramReportService
 
 
@@ -20,9 +25,6 @@ MAIN_KEYBOARD = {
     "resize_keyboard": True,
     "is_persistent": True,
 }
-CODE_PATTERN = re.compile(r"^[A-Za-z0-9]{6}$")
-
-
 class TelegramUpdateHandler:
     client_class = TelegramBotClient
     report_service_class = TelegramReportService
@@ -47,26 +49,24 @@ class TelegramUpdateHandler:
 
         if command == "start":
             if argument:
-                self.connect_codes(account, self.normalize_start_payload(argument))
+                self.connect_link_token(account, self.normalize_start_payload(argument))
             else:
                 account.state = TelegramAccount.State.IDLE
                 account.save(update_fields=("state", "updated_at"))
                 self.send(
                     account,
                     "👋 <b>PosCode Hisobot botiga xush kelibsiz!</b>\n\n"
-                    "Shahobcha kodini ulash uchun /connect komandasini yuboring. "
-                    "Bir nechta kodni vergul yoki yangi qator bilan yuborishingiz mumkin.",
+                    "Shahobchani ulash uchun Cafe Postcode boshqaruv panelidan "
+                    "bir martalik Telegram havolasini oling.",
                 )
         elif command == "connect":
-            if argument:
-                self.connect_codes(account, argument)
-            else:
-                account.state = TelegramAccount.State.AWAITING_CONNECT
-                account.save(update_fields=("state", "updated_at"))
-                self.send(
-                    account,
-                    "🔗 Shahobcha kodini yuboring.\n\nMasalan: <code>A1b2C3, X9y8Z7</code>",
-                )
+            account.state = TelegramAccount.State.IDLE
+            account.save(update_fields=("state", "updated_at"))
+            self.send(
+                account,
+                "🔐 Shahobchani ulash uchun Cafe Postcode boshqaruv panelida "
+                "yaratilgan 5 daqiqalik bir martalik havoladan foydalaning.",
+            )
         elif command == "disconnect":
             self.show_disconnect_menu(account)
         elif command == "notifications_on":
@@ -89,8 +89,6 @@ class TelegramUpdateHandler:
             self.send_help(account)
         elif text == BRANCHES_BUTTON_TEXT:
             self.send_branches(account)
-        elif account.state == TelegramAccount.State.AWAITING_CONNECT or self.looks_like_codes(text):
-            self.connect_codes(account, text)
         else:
             self.send(account, "Komanda tushunilmadi. /help orqali komandalarni ko‘ring.")
 
@@ -135,47 +133,40 @@ class TelegramUpdateHandler:
         return command, argument.strip()
 
     @staticmethod
-    def parse_codes(text: str) -> list[str]:
-        candidates = re.split(r"[,;\s]+", text.strip())
-        return list(dict.fromkeys(value for value in candidates if value))[:20]
-
-    @staticmethod
     def normalize_start_payload(payload: str) -> str:
-        decoded_payload = unquote(payload.strip())
-        return re.sub(r"[_-]+", ",", decoded_payload)
+        return unquote(payload.strip())
 
-    def looks_like_codes(self, text: str) -> bool:
-        codes = self.parse_codes(text)
-        return bool(codes) and all(CODE_PATTERN.fullmatch(code) for code in codes)
-
-    def connect_codes(self, account: TelegramAccount, raw_codes: str) -> None:
-        codes = self.parse_codes(raw_codes)
+    def connect_link_token(self, account: TelegramAccount, raw_token: str) -> None:
         account.state = TelegramAccount.State.IDLE
         account.save(update_fields=("state", "updated_at"))
-        if not codes:
-            self.send(account, "Kod topilmadi. Masalan: <code>A1b2C3, X9y8Z7</code>")
+        token, created = TelegramLinkToken.consume(raw_token=raw_token, account=account)
+        if token is None:
+            record_security_event(
+                event_type='TELEGRAM_LINK_TOKEN_REJECTED',
+                severity=SecurityEvent.Severity.MEDIUM,
+                result='DENIED',
+                metadata={'telegramAccountId': str(account.pk)},
+            )
+            self.send(
+                account,
+                "❌ Havola yaroqsiz, ishlatilgan yoki muddati tugagan. "
+                "Boshqaruv panelidan yangi havola yarating.",
+            )
             return
 
-        restaurants = {
-            restaurant.auth_code: restaurant
-            for restaurant in Restaurant.objects.filter(auth_code__in=codes)
-        }
-        lines = []
-        for code in codes:
-            if not CODE_PATTERN.fullmatch(code):
-                lines.append(f"❌ <code>{html.escape(code)}</code> — kod 6 ta harf yoki raqamdan iborat bo‘lishi kerak")
-                continue
-            restaurant = restaurants.get(code)
-            if restaurant is None:
-                lines.append(f"❌ <code>{html.escape(code)}</code> — kod topilmadi")
-                continue
-            _, created = TelegramBranchSubscription.objects.get_or_create(
-                account=account,
-                restaurant=restaurant,
-            )
-            status_text = "ulandi" if created else "avval ulangan"
-            lines.append(f"✅ <b>{html.escape(restaurant.name)}</b> — {status_text}")
-        self.send(account, "\n".join(lines))
+        status_text = "ulandi" if created else "avval ulangan edi"
+        record_security_event(
+            event_type='TELEGRAM_SUBSCRIPTION_LINKED',
+            severity=SecurityEvent.Severity.INFO,
+            restaurant=token.restaurant,
+            result='SUCCESS',
+            metadata={
+                'telegramAccountId': str(account.pk),
+                'linkArtifactId': str(token.pk),
+                'created': created,
+            },
+        )
+        self.send(account, f"✅ <b>{html.escape(token.restaurant.name)}</b> — {status_text}")
 
     def send_branches(self, account: TelegramAccount) -> None:
         subscriptions = account.branch_subscriptions.select_related("restaurant").all()
@@ -240,7 +231,7 @@ class TelegramUpdateHandler:
         self.send(
             account,
             "ℹ️ <b>Komandalar</b>\n\n"
-            "/connect — shahobcha ulash\n"
+            "/connect — xavfsiz ulash bo‘yicha yo‘riqnoma\n"
             "/disconnect — shahobchani uzish\n"
             "/notifications_on — avtomatik hisobotlarni yoqish\n"
             "/notifications_off — avtomatik hisobotlarni o‘chirish\n"

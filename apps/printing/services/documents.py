@@ -135,7 +135,7 @@ def create_order_precheck_print_document(*, order, cash_desk=None, created_by=No
     ensure_restaurant_templates(restaurant=order.restaurant)
     template = PrintTemplate.objects.select_related("published_version").get(
         restaurant=order.restaurant,
-        kind=PrintTemplate.Kind.ORDER_PRECHECK,
+        kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
     )
     snapshot = build_order_precheck_print_snapshot(order=order)
     content_hash = _hash_document(

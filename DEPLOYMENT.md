@@ -12,14 +12,24 @@ Production is prepared for Docker Compose with:
 - `nginx`: public reverse proxy; `/metrics` is blocked externally
 - `prometheus`, `grafana`, `postgres-exporter`, `redis-exporter`: monitoring
 
-Create an env file from the example and replace every placeholder secret:
+Use the example only to prepare secrets in an approved environment. **Never run
+`docker compose up` directly in production.** Every production rollout must
+follow [`ops/DEVICE_MIGRATION_RUNBOOK.md`](ops/DEVICE_MIGRATION_RUNBOOK.md), use
+the manually approved GitHub production environment, and deploy the exact
+CI-scanned, OIDC-signed image digest.
+
+For a disposable local environment only:
 
 ```bash
 cp .env.production.example .env.production
 docker compose --env-file .env.production up -d --build
 ```
 
-The `web` service runs migrations and `collectstatic` before Gunicorn starts. Prometheus scrapes Django metrics directly on the internal Docker network at `web:8000/metrics`.
+The `web`, `ws`, and `qcluster` services use a least-privilege runtime database
+role and never run migrations. The operations-only `migrate` service uses the
+separate migration credential, lock timeout, and statement timeout before any
+application replacement. Prometheus scrapes Django metrics directly on the
+internal Docker network at `web:8000/metrics`.
 
 Docker Nginx routes normal HTTP/API traffic to Gunicorn and WebSocket traffic to Daphne:
 
@@ -27,6 +37,14 @@ Docker Nginx routes normal HTTP/API traffic to Gunicorn and WebSocket traffic to
 - everything else -> `web:8000`
 
 By default Docker Nginx binds to `127.0.0.1:8880` so it can run behind the host Certbot/TLS Nginx. The host-level `cafe-postcode` Nginx config is stored at `nginx/cafe-postcode.uz.conf` and included by the host Nginx service.
+
+The `admin.cafe-postcode.uz` virtual host keeps the existing Admin SPA on
+`127.0.0.1:4200` and routes only `/control/` to the separately deployed Control
+PWA on `127.0.0.1:4500`. Deploy and health-check the Control container before
+installing/reloading this host config. The Control PWA must use the same
+`https://cafe-postcode.uz` API origin as Admin so both clients share the existing
+`__Host-cafe_admin_refresh` cookie family; do not proxy Control API calls through
+the UI origin as a separate cookie scope.
 
 ## Required Production Settings
 
@@ -37,6 +55,9 @@ By default Docker Nginx binds to `127.0.0.1:8880` so it can run behind the host 
 - strong `SECRET_KEY`
 - PostgreSQL via `DB_ENGINE=postgres`
 - `REDIS_URL`
+- distinct runtime and database-admin roles
+- dedicated Admin MFA and integration-encryption Fernet keys
+- trusted proxy CIDRs and fail-closed device migration settings
 
 The production Compose defaults expect TLS to be terminated before or at Nginx:
 
@@ -48,11 +69,7 @@ CSRF_COOKIE_SECURE=1
 
 For local HTTP-only smoke tests, temporarily set those three values to `0` in `.env.production`.
 
-Only enable API docs intentionally:
-
-```bash
-ENABLE_API_DOCS=1
-```
+API docs and the browsable API must remain disabled in production.
 
 ## Telegram Sales Reports Bot
 

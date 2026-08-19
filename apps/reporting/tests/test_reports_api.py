@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 
 from django.utils import timezone
@@ -40,7 +40,13 @@ class ReportsApiTests(PosAPITestCase):
 
     def setUp(self):
         super().setUp()
-        now = timezone.now()
+        now = timezone.localtime(timezone.now(), TASHKENT_TIMEZONE).replace(
+            hour=12,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        self.report_date = now.date()
         self.shift_service = CashShiftService()
         self.closed_order = Order.objects.create(
             restaurant=self.restaurant,
@@ -166,7 +172,7 @@ class ReportsApiTests(PosAPITestCase):
         )
 
     def current_range_params(self):
-        current_date = timezone.localtime(timezone.now(), TASHKENT_TIMEZONE).date().isoformat()
+        current_date = self.report_date.isoformat()
         return {
             'start_date': current_date,
             'end_date': current_date,
@@ -180,6 +186,39 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['method'], Payment.Method.CASH)
         self.assertEqual(rows[0]['total'], self.closed_order.total)
+
+    def test_sales_report_uses_tashkent_midnight_boundary(self):
+        report_date = datetime(2031, 1, 15, tzinfo=TASHKENT_TIMEZONE)
+        Payment.objects.create(
+            order=self.closed_order,
+            received_by=self.user,
+            method=Payment.Method.QR,
+            amount=11000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=report_date - timedelta(minutes=1),
+        )
+        Payment.objects.create(
+            order=self.closed_order,
+            received_by=self.user,
+            method=Payment.Method.CARD,
+            amount=22000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=report_date + timedelta(minutes=1),
+        )
+
+        response = self.client.get(
+            '/api/v1/admin/reporting/sales/',
+            {
+                'start_date': report_date.date().isoformat(),
+                'end_date': report_date.date().isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data['data'],
+            [{'method': Payment.Method.CARD, 'count': 1, 'total': 22000}],
+        )
 
     def test_summary_separates_gross_refunds_and_net_sales(self):
         PaymentRefund.objects.create(

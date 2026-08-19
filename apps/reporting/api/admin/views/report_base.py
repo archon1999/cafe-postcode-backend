@@ -6,14 +6,21 @@ from apps.reporting.helpers import SummaryReportFilters
 from apps.reporting.services import ReportPeriod, build_report_filter_pairs
 from common.api.paginations import StandardResultsSetPagination
 from common.api.permissions import EndpointRBACPermission
-from common.api.scopes import get_optional_request_restaurant
+from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
 
 class AdminBaseReportView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
 
     def get_restaurant(self):
-        return get_optional_request_restaurant(self.request)
+        restaurant = get_optional_request_restaurant(self.request)
+        if restaurant is not None or self.request.user.is_superuser:
+            return restaurant
+
+        # ``None`` intentionally means the all-restaurant aggregate for a
+        # superuser in reporting selectors.  It must never acquire that same
+        # meaning for an authenticated account whose tenant profile is absent.
+        return get_request_restaurant(self.request)
 
     def get_period(self) -> ReportPeriod:
         return SummaryReportFilters.from_request(self.request).period

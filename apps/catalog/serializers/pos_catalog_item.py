@@ -99,6 +99,7 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
             'mxik_code',
             'mxik_payload',
             'cash_payment_forbidden',
+            'item_type',
             'price',
             'sale_unit',
             'modifier_groups',

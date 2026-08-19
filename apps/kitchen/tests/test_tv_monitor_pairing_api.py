@@ -86,7 +86,7 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         device = TvMonitorDevice.objects.get(restaurant=self.restaurant)
         self.assertIsNone(device.revoked_at)
 
-    def test_restaurant_code_rotation_requires_pairing_again(self):
+    def test_unrelated_restaurant_profile_change_does_not_revoke_paired_tv(self):
         pairing = self.create_pairing()
         self.claim_pairing(pairing)
         initial_response = self.client.get(
@@ -95,16 +95,15 @@ class TvMonitorPairingApiTests(PosAPITestCase):
         )
         self.assertEqual(initial_response.status_code, status.HTTP_200_OK)
 
-        self.restaurant.auth_code = 'ROTATE'
-        self.restaurant.save(update_fields=['auth_code', 'updated_at'])
+        self.restaurant.address = 'Updated address'
+        self.restaurant.save(update_fields=['address', 'updated_at'])
         rotated_response = self.client.get(
             '/api/v1/pos/monitor/tv-kitchen-queue/',
             HTTP_X_TV_TOKEN=pairing['pollToken'],
         )
 
-        self.assertEqual(rotated_response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(rotated_response.json()['code'], 'tv_pairing_required')
-        self.assertIsNotNone(TvMonitorDevice.objects.get(restaurant=self.restaurant).revoked_at)
+        self.assertEqual(rotated_response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(TvMonitorDevice.objects.get(restaurant=self.restaurant).revoked_at)
 
     def test_paired_tv_can_send_client_diagnostics(self):
         pairing = self.create_pairing()

@@ -39,6 +39,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
     kitchen_dispatched = serializers.SerializerMethodField()
     kitchen_dispatch_number = serializers.SerializerMethodField()
     quantity = QuantityDecimalField(max_digits=12, decimal_places=3)
+    manual_price = serializers.IntegerField(
+        write_only=True,
+        required=False,
+        min_value=1,
+        max_value=2_147_483_647,
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -47,10 +53,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
             return
 
         restaurant = get_optional_request_restaurant(request)
-        if restaurant is not None:
-            self.fields['catalog_item'].queryset = CatalogItem.objects.filter(
-                restaurant=restaurant,
-            )
+        if restaurant is None:
+            if getattr(request.user, 'is_superuser', False):
+                return
+            self.fields['catalog_item'].queryset = CatalogItem.objects.none()
+            return
+        self.fields['catalog_item'].queryset = CatalogItem.objects.filter(
+            restaurant=restaurant,
+        )
 
     @staticmethod
     def _ticket_line(obj):
@@ -108,6 +118,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'sale_unit',
             'base_unit_price',
             'unit_price',
+            'manual_price',
             'line_total',
             'status',
             'note',
@@ -131,6 +142,15 @@ class OrderItemSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'catalog_item': _('This menu item is in stoplist.')})
         quantity = attrs.get('quantity', getattr(self.instance, 'quantity', Decimal('1')))
         sale_unit = getattr(catalog_item, 'sale_unit', CatalogItem.SaleUnit.PIECE)
+        item_type = getattr(catalog_item, 'item_type', CatalogItem.ItemType.PRODUCT)
+        manual_price = attrs.get('manual_price')
+        if self.instance is None:
+            if item_type == CatalogItem.ItemType.SERVICE and manual_price is None:
+                raise serializers.ValidationError({'manual_price': _('Enter a price for the service.')})
+            if item_type != CatalogItem.ItemType.SERVICE and manual_price is not None:
+                raise serializers.ValidationError(
+                    {'manual_price': _('Manual price is allowed only for services.')}
+                )
         if quantity is None or quantity <= 0:
             raise serializers.ValidationError({'quantity': _('Quantity must be greater than zero.')})
         if sale_unit == CatalogItem.SaleUnit.PIECE and quantity != quantity.to_integral_value():
@@ -231,11 +251,16 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         resolved_modifiers = validated_data.pop('_resolved_modifiers', [])
+        manual_price = validated_data.pop('manual_price', None)
         catalog_item = validated_data['catalog_item']
         catalog_item = type(catalog_item).objects.select_related('category__prep_station', 'prep_station').get(
             pk=catalog_item.pk
         )
-        base_unit_price = int(catalog_item.price or 0)
+        base_unit_price = (
+            int(manual_price)
+            if catalog_item.item_type == CatalogItem.ItemType.SERVICE
+            else int(catalog_item.price or 0)
+        )
         validated_data['base_unit_price'] = base_unit_price
         validated_data['unit_price'] = base_unit_price + sum(int(option.price_delta or 0) for _, option in resolved_modifiers)
         validated_data['sale_unit'] = catalog_item.sale_unit

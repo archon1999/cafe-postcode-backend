@@ -11,7 +11,10 @@ from .restaurant_activation import (
     RestaurantActivationResultSerializer,
     RestaurantActivationSerializer,
 )
-from .restaurant_balance import RestaurantBalanceTopUpSerializer, RestaurantBalanceTransactionSerializer
+from .restaurant_tariff_change import (
+    RestaurantTariffChangePreviewQuerySerializer,
+    RestaurantTariffChangeSerializer,
+)
 from .tariff import TariffOptionSerializer, TariffSerializer
 
 __all__ = [
@@ -24,8 +27,8 @@ __all__ = [
     'RestaurantActivationOptionsSerializer',
     'RestaurantActivationResultSerializer',
     'RestaurantActivationSerializer',
-    'RestaurantBalanceTopUpSerializer',
-    'RestaurantBalanceTransactionSerializer',
+    'RestaurantTariffChangePreviewQuerySerializer',
+    'RestaurantTariffChangeSerializer',
     'TariffOptionSerializer',
     'TariffSerializer',
 ]

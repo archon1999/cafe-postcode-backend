@@ -17,7 +17,6 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, ZoneOrCabin
 from apps.integrations.models import IntegrationConfig
 from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
-from apps.platform.services import add_billing_period
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 
 from .specs import (
@@ -116,14 +115,10 @@ def seed_tariffs(tariff_specs, roles_by_code: dict[str, Role]) -> dict[str, Tari
             name=spec.name,
             defaults={
                 'description': spec.description,
-                'monthly_price': spec.monthly_price,
-                'yearly_price': spec.yearly_price,
                 'is_active': True,
             },
         )
         tariff.description = spec.description
-        tariff.monthly_price = spec.monthly_price
-        tariff.yearly_price = spec.yearly_price
         tariff.is_active = True
         tariff.save()
         tariff.allowed_roles.set([roles_by_code[role_code] for role_code in spec.role_codes])
@@ -260,11 +255,6 @@ def configure_entitlement(restaurant: Restaurant, tariff: Tariff) -> RestaurantE
     entitlement.tariff = tariff
     entitlement.is_custom = False
     entitlement.is_active = True
-    entitlement.starts_on = timezone.localdate()
-    entitlement.billing_period = RestaurantEntitlement.BillingPeriod.MONTHLY
-    entitlement.expires_on = add_billing_period(entitlement.starts_on, entitlement.billing_period)
-    entitlement.monthly_price = tariff.monthly_price
-    entitlement.yearly_price = tariff.yearly_price
     entitlement.save()
     entitlement.permissions.clear()
     entitlement.allowed_roles.clear()

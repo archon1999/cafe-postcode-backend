@@ -33,6 +33,9 @@ class CatalogCategorySerializer(
 
         restaurant = get_optional_request_restaurant(request)
         if restaurant is None:
+            if getattr(request.user, "is_superuser", False):
+                return
+            self.fields["prep_station"].queryset = PrepStation.objects.none()
             return
 
         self.fields["prep_station"].queryset = PrepStation.objects.filter(

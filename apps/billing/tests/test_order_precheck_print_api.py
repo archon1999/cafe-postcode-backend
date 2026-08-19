@@ -39,6 +39,10 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         document = PrintDocument.objects.get(id=response.data['printDocument'])
         self.assertEqual(document.kind, PrintTemplate.Kind.ORDER_PRECHECK)
+        self.assertEqual(
+            document.template_version.template.kind,
+            PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
         self.assertEqual(document.source_model, 'sales.order')
         self.assertEqual(str(document.source_id), self.order['id'])
         self.assertLessEqual(

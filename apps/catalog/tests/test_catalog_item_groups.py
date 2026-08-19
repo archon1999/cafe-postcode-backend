@@ -57,7 +57,11 @@ class CatalogItemGroupApiTests(APITestCase):
         menu_response = self.client.get('/api/v1/pos/catalog/menu/')
 
         self.assertEqual(menu_response.status_code, status.HTTP_200_OK, menu_response.data)
-        menu_payload = menu_response.data.get('data', menu_response.data)
+        menu_payload = (
+            menu_response.data.get('data', menu_response.data)
+            if isinstance(menu_response.data, dict)
+            else menu_response.data
+        )
         category = next(row for row in menu_payload if row['id'] == str(self.category.id))
         self.assertEqual(len(category['items']), 3)
         self.assertEqual(category['item_groups'][0]['name'], 'Pepperoni')

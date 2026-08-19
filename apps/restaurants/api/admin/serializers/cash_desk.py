@@ -22,6 +22,19 @@ class CashDeskSerializer(serializers.ModelSerializer):
         restaurant = (
             get_optional_request_restaurant(request) if request is not None else None
         )
+        if (
+            request is not None
+            and restaurant is None
+            and not getattr(request.user, "is_superuser", False)
+        ):
+            for field_name in (
+                "fiscal_integration",
+                "payment_integration",
+                "printer_integration",
+            ):
+                if field_name in fields:
+                    fields[field_name].queryset = IntegrationConfig.objects.none()
+            return fields
         if restaurant is not None and "fiscal_integration" in fields:
             fields["fiscal_integration"].queryset = IntegrationConfig.objects.filter(
                 restaurant=restaurant,

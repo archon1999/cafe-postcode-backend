@@ -1,7 +1,9 @@
+from uuid import uuid4
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.users.models import Role, User
+from apps.users.models import Permission, Role, User
 from apps.floor.models import Hall, ZoneOrCabin
 from apps.restaurants.models import Restaurant
 from apps.platform.models import RestaurantEntitlement, Tariff
@@ -43,8 +45,6 @@ class AdminUsersApiTests(APITestCase):
         cls.tariff = Tariff.objects.create(
             name='Users Test Tariff',
             description='Users API test tariff',
-            monthly_price=1000,
-            yearly_price=10000,
             is_active=True,
         )
         cls.tariff.allowed_roles.set([cls.restaurant_admin_role, cls.waiter_role, cls.cashier_role])
@@ -298,4 +298,107 @@ class AdminUsersApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('baseAmount', response.data)
+
+    def test_employee_detail_does_not_reveal_another_restaurant_employee(self):
+        other_restaurant = Restaurant.objects.create(name='Other employee tenant')
+        other_employee = User.objects.create_user(
+            username='other-tenant-waiter',
+            full_name='Other Tenant Waiter',
+            restaurant=other_restaurant,
+            role=self.waiter_role,
+        )
+
+        foreign_response = self.client.get(
+            f'/api/v1/admin/employees/{other_employee.id}/',
+        )
+        unknown_response = self.client.get(
+            f'/api/v1/admin/employees/{uuid4()}/',
+        )
+
+        self.assertEqual(foreign_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(unknown_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(foreign_response.data, unknown_response.data)
+
+    def test_employee_create_rejects_foreign_and_unknown_hall_ids(self):
+        other_restaurant = Restaurant.objects.create(name='Other hall tenant')
+        other_zone = ZoneOrCabin.objects.create(
+            restaurant=other_restaurant,
+            name='Other tenant zone',
+        )
+        other_hall = Hall.objects.create(
+            zone_or_cabin=other_zone,
+            name='Other tenant hall',
+        )
+        user_count = User.objects.count()
+        base_payload = {
+            'full_name': 'Scoped Waiter',
+            'phone': '+998901110000',
+            'is_active': True,
+            'role_id': str(self.waiter_role.id),
+            'employment_status': 'active',
+            'pin': '7788',
+        }
+
+        foreign_response = self.client.post(
+            '/api/v1/admin/employees/',
+            {
+                **base_payload,
+                'primary_hall_id': str(other_hall.id),
+            },
+            format='json',
+        )
+        unknown_response = self.client.post(
+            '/api/v1/admin/employees/',
+            {
+                **base_payload,
+                'primary_hall_id': str(uuid4()),
+            },
+            format='json',
+        )
+
+        self.assertEqual(foreign_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(unknown_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('primaryHallId', foreign_response.data)
+        self.assertIn('primaryHallId', unknown_response.data)
+        self.assertEqual(User.objects.count(), user_count)
+
+    def test_employee_role_assignment_cannot_exceed_actor_permissions(self):
+        employee_update_permission = Permission.objects.get(code='employees.update')
+        delegated_role = Role.objects.create(
+            code='delegated-employee-editor',
+            name='Delegated employee editor',
+            is_system=False,
+        )
+        delegated_role.permissions.set([employee_update_permission])
+        self.entitlement.allowed_roles.add(delegated_role)
+        delegated_user = User.objects.create_user(
+            username='delegated-employee-editor',
+            password='secret123',
+            full_name='Delegated Employee Editor',
+            restaurant=self.restaurant,
+            role=delegated_role,
+            is_staff=True,
+        )
+        target_user = User.objects.create_user(
+            username='role-escalation-target',
+            full_name='Role Escalation Target',
+            restaurant=self.restaurant,
+            role=self.waiter_role,
+        )
+        self.client.force_authenticate(delegated_user)
+
+        response = self.client.patch(
+            f'/api/v1/admin/employees/{target_user.id}/',
+            {
+                'role_id': str(self.restaurant_admin_role.id),
+                'password': 'Secret123!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('roleId', response.data)
+        target_user.refresh_from_db()
+        self.assertEqual(target_user.role_id, self.waiter_role.id)
+        self.assertFalse(target_user.check_password('Secret123!'))
 

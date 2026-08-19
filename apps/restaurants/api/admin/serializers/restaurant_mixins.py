@@ -2,13 +2,12 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from common.api.fields import SecureImageField
+
 
 class RestaurantEntitlementFieldsMixin(serializers.Serializer):
     restaurant_access_active = serializers.SerializerMethodField()
     tariff = serializers.SerializerMethodField()
-    starts_on = serializers.SerializerMethodField()
-    expires_on = serializers.SerializerMethodField()
-    billing_period = serializers.SerializerMethodField()
     activation_type = serializers.SerializerMethodField()
 
     @staticmethod
@@ -31,18 +30,6 @@ class RestaurantEntitlementFieldsMixin(serializers.Serializer):
             "role_codes": sorted(entitlement.get_effective_role_codes()),
         }
 
-    def get_starts_on(self, instance):
-        entitlement = self._get_entitlement(instance)
-        return entitlement.starts_on if entitlement is not None else None
-
-    def get_expires_on(self, instance):
-        entitlement = self._get_entitlement(instance)
-        return entitlement.expires_on if entitlement is not None else None
-
-    def get_billing_period(self, instance):
-        entitlement = self._get_entitlement(instance)
-        return entitlement.billing_period if entitlement is not None else None
-
     def get_activation_type(self, instance):
         entitlement = self._get_entitlement(instance)
         if entitlement is None:
@@ -51,7 +38,7 @@ class RestaurantEntitlementFieldsMixin(serializers.Serializer):
 
 
 class RestaurantSettingsFieldsMixin(serializers.Serializer):
-    pos_auth_background_image = serializers.ImageField(
+    pos_auth_background_image = SecureImageField(
         required=False, allow_null=True, write_only=True
     )
     pos_auth_background_image_url = serializers.SerializerMethodField()

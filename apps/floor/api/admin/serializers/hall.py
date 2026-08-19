@@ -5,7 +5,7 @@ from django.db.models import Max
 from rest_framework import serializers
 
 from apps.floor.models import Hall, ZoneOrCabin
-from common.api.scopes import get_request_restaurant
+from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
 from .dining_table import DiningTableSerializer
 from .zone_or_cabin import ZoneOrCabinSerializer
@@ -21,6 +21,22 @@ class HallSerializer(serializers.ModelSerializer):
         source="zone_or_cabin",
         queryset=ZoneOrCabin.objects.all(),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get("request")
+        restaurant = (
+            get_optional_request_restaurant(request) if request is not None else None
+        )
+        if request is None:
+            return
+        if restaurant is None and getattr(request.user, "is_superuser", False):
+            return
+        self.fields["zone_or_cabin_id"].queryset = (
+            ZoneOrCabin.objects.filter(restaurant=restaurant)
+            if restaurant is not None
+            else ZoneOrCabin.objects.none()
+        )
 
     class Meta:
         model = Hall
@@ -39,6 +55,17 @@ class HallSerializer(serializers.ModelSerializer):
             "tables",
         )
         validators = []
+
+    def to_internal_value(self, data):
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError as exc:
+            if "zone_or_cabin_id" not in exc.detail:
+                raise
+            detail = dict(exc.detail)
+            detail.pop("zone_or_cabin_id")
+            detail["zoneOrCabinId"] = [_("Invalid zone or cabin.")]
+            raise serializers.ValidationError(detail) from None
 
     def validate_service_fee_percent(self, value):
         if value < Decimal("0") or value > Decimal("99"):

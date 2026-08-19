@@ -13,6 +13,7 @@ AUTH_CODE_ALPHABET = string.ascii_letters + string.digits
 
 
 def generate_restaurant_auth_code():
+    """Historical migration callable; no runtime authentication flow uses it."""
     return ''.join(secrets.choice(AUTH_CODE_ALPHABET) for _ in range(6))
 
 
@@ -52,7 +53,6 @@ class Restaurant(BaseModel):
     address = models.CharField(max_length=255, blank=True)
     faktura_payload = models.JSONField(default=dict, blank=True)
     currency = models.CharField(max_length=10, default='UZS')
-    auth_code = models.CharField(max_length=6, unique=True, default=generate_restaurant_auth_code)
     service_fee_enabled = models.BooleanField(default=False)
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     vat_enabled = models.BooleanField(default=True)
@@ -71,6 +71,7 @@ class Restaurant(BaseModel):
     pos_auth_background_image = models.ImageField(
         blank=True,
         null=True,
+        max_length=255,
         storage=RestaurantAuthBackgroundStorage,
         upload_to=restaurant_auth_background_upload_to,
     )

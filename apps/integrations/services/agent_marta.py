@@ -179,6 +179,8 @@ class MartaSoftPOSAgentPaymentService:
             restaurant=order.restaurant,
             method='GET',
             url=f'{endpoint_url}/health',
+            purpose='marta',
+            integration_id=getattr(self.config, 'pk', None),
             timeout_seconds=int(self._timeout()),
         )
         payload['debug']['health']['response'] = self._response_snapshot(result)
@@ -193,6 +195,8 @@ class MartaSoftPOSAgentPaymentService:
             restaurant=order.restaurant,
             method='GET',
             url=f'{endpoint_url}/transaction',
+            purpose='marta',
+            integration_id=getattr(self.config, 'pk', None),
             query=params,
             timeout_seconds=int(self._timeout()),
         )

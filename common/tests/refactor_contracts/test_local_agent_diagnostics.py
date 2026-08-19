@@ -9,8 +9,8 @@ from apps.users.models import User
 
 class BackendLocalAgentDiagnosticsCharacterizationTests(APITestCase):
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name="Qamish diagnostics", auth_code="DIA001")
-        self.other_restaurant = Restaurant.objects.create(name="Other diagnostics", auth_code="DIA002")
+        self.restaurant = Restaurant.objects.create(name="Qamish diagnostics")
+        self.other_restaurant = Restaurant.objects.create(name="Other diagnostics")
         self.agent, _ = LocalAgent.issue_for_restaurant(
             restaurant=self.restaurant,
             name="Qamish coordinator",

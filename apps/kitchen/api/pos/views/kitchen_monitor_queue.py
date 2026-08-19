@@ -12,6 +12,7 @@ from apps.kitchen.services import complete_stale_closed_order_kitchen_work
 from apps.platform.services import FeatureGateService
 from apps.sales.models import Order
 from common.api.permissions import EndpointRBACPermission
+from common.api.scopes import get_request_restaurant
 
 
 def serialize_kitchen_monitor_queue(restaurant):
@@ -52,8 +53,8 @@ class KitchenMonitorQueueView(APIView):
         serializer = KitchenMonitorQuerySerializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
 
-        restaurant = serializer.validated_data['restaurant']
-        if request.user.get_restaurant_scope() != restaurant:
+        restaurant = get_request_restaurant(request)
+        if serializer.validated_data['restaurant_id'] != restaurant.id:
             return Response({'detail': 'Restaurant does not match the authenticated user.'}, status=403)
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=restaurant)
         return Response(serialize_kitchen_monitor_queue(restaurant))

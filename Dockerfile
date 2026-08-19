@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -11,7 +11,6 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        curl \
         libpq-dev \
     && pip install --no-cache-dir --upgrade "pip==26.1.2" \
     && pip install --no-cache-dir "poetry==$POETRY_VERSION" \
@@ -20,6 +19,15 @@ RUN apt-get update \
 
 COPY pyproject.toml poetry.lock ./
 RUN poetry install --only main --no-root --no-ansi
+
+FROM python:3.12-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY --from=builder /usr/local /usr/local
 
 COPY . .
 

@@ -2,8 +2,7 @@ import hashlib
 import secrets
 from datetime import timedelta
 
-from django.conf import settings
-from django.db import models, transaction
+from django.db import models
 from django.utils import timezone
 
 from common.models import BaseModel
@@ -17,16 +16,19 @@ def generate_agent_token() -> str:
     return f'cpa_{secrets.token_urlsafe(32)}'
 
 
-def generate_enrollment_token() -> str:
-    return f'cpe_{secrets.token_urlsafe(32)}'
-
-
 class LocalAgent(BaseModel):
     class Status(models.TextChoices):
         OFFLINE = 'offline', 'Offline'
         ONLINE = 'online', 'Online'
 
     restaurant = models.OneToOneField('restaurants.Restaurant', on_delete=models.CASCADE, related_name='local_agent')
+    device = models.OneToOneField(
+        'devices.Device',
+        on_delete=models.SET_NULL,
+        related_name='local_agent_record',
+        null=True,
+        blank=True,
+    )
     name = models.CharField(max_length=255, blank=True)
     token_hash = models.CharField(max_length=64, unique=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OFFLINE)
@@ -35,7 +37,9 @@ class LocalAgent(BaseModel):
     capabilities = models.JSONField(default=list, blank=True)
     lan_endpoints = models.JSONField(default=list, blank=True)
     protocol_version = models.PositiveSmallIntegerField(default=1)
+    rollout_state = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
+    credential_migrated_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ('restaurant__name',)
@@ -63,79 +67,17 @@ class LocalAgent(BaseModel):
         return agent, token
 
     @classmethod
-    def authenticate_token(cls, token: str) -> 'LocalAgent | None':
+    def authenticate_token(cls, token: str, *, allow_migrated: bool = False) -> 'LocalAgent | None':
         digest = hash_agent_token(token)
-        return cls.objects.select_related('restaurant').filter(token_hash=digest, is_active=True).first()
+        queryset = cls.objects.select_related('restaurant').filter(token_hash=digest, is_active=True)
+        if not allow_migrated:
+            queryset = queryset.filter(credential_migrated_at__isnull=True)
+        return queryset.first()
 
     def is_online(self, *, max_age_seconds: int = 75) -> bool:
         if self.status != self.Status.ONLINE or self.last_seen_at is None:
             return False
         return self.last_seen_at >= timezone.now() - timedelta(seconds=max_age_seconds)
-
-
-class LocalAgentEnrollmentToken(BaseModel):
-    restaurant = models.ForeignKey(
-        'restaurants.Restaurant',
-        on_delete=models.CASCADE,
-        related_name='local_agent_enrollment_tokens',
-    )
-    token_hash = models.CharField(max_length=64, unique=True)
-    expires_at = models.DateTimeField()
-    used_at = models.DateTimeField(blank=True, null=True)
-    issued_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        related_name='issued_local_agent_enrollment_tokens',
-        blank=True,
-        null=True,
-    )
-
-    class Meta:
-        ordering = ('-created_at',)
-        indexes = [models.Index(fields=['restaurant', 'expires_at'], name='agent_enroll_rest_exp_idx')]
-
-    @classmethod
-    def inspect(cls, raw_token: str):
-        now = timezone.now()
-        token = (
-            cls.objects.select_related('restaurant')
-            .filter(token_hash=hash_agent_token(raw_token), used_at__isnull=True, expires_at__gt=now)
-            .first()
-        )
-        if token is None or not token.restaurant.is_active:
-            return None
-        return token
-
-    @classmethod
-    @transaction.atomic
-    def issue(cls, *, restaurant, issued_by=None, ttl_minutes: int = 15):
-        restaurant.__class__.objects.select_for_update().get(pk=restaurant.pk)
-        raw_token = generate_enrollment_token()
-        now = timezone.now()
-        cls.objects.filter(restaurant=restaurant, used_at__isnull=True, expires_at__gt=now).update(used_at=now)
-        token = cls.objects.create(
-            restaurant=restaurant,
-            token_hash=hash_agent_token(raw_token),
-            expires_at=now + timedelta(minutes=max(1, min(ttl_minutes, 60))),
-            issued_by=issued_by,
-        )
-        return token, raw_token
-
-    @classmethod
-    @transaction.atomic
-    def consume(cls, raw_token: str):
-        now = timezone.now()
-        token = (
-            cls.objects.select_for_update()
-            .select_related('restaurant')
-            .filter(token_hash=hash_agent_token(raw_token), used_at__isnull=True, expires_at__gt=now)
-            .first()
-        )
-        if token is None or not token.restaurant.is_active:
-            return None
-        token.used_at = now
-        token.save(update_fields=['used_at', 'updated_at'])
-        return token
 
 
 class LocalAgentCommand(BaseModel):

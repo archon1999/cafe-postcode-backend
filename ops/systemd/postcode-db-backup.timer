@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Cafe Postcode PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 02:40:00 Asia/Tashkent
+RandomizedDelaySec=10m
+Persistent=true
+Unit=postcode-db-backup.service
+
+[Install]
+WantedBy=timers.target

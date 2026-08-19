@@ -2,14 +2,18 @@
 
 The default profile targets 500 concurrent POS API users, ramps at 25 users per second, and runs for 15 minutes.
 
-Required environment:
+The legacy Locust profile is restricted to an isolated stack with
+`DEVICE_POS_PROOF_REQUIRED=0`. Use pre-issued, scoped test sessions:
 
 ```bash
-export LOCUST_RESTAURANT_ID=<restaurant uuid>
-export LOCUST_PIN=<active POS user pin>
+export LOCUST_TOKEN_POOL='<restaurant uuid>:<test token>,<restaurant uuid>:<test token>'
 ```
 
-Alternatively, set `LOCUST_RESTAURANT_CODE` instead of `LOCUST_RESTAURANT_ID`; the test will resolve the restaurant through `/api/v1/pos/auth/restaurant-code/`.
+`LOCUST_TOKEN=<test token>` is also supported for a single restaurant. The
+`LOCUST_RESTAURANT_ID` + `LOCUST_PIN` shortcut is likewise isolated-stack only.
+This profile intentionally refuses to model production device private keys and
+must not be pointed at production; device-proof load is covered by the signed
+transport/E2E harness.
 
 Run against a local Docker Compose stack:
 

@@ -7,6 +7,7 @@ from apps.floor.services import (
     restaurant_has_multiple_active_zones,
 )
 from apps.sales.helpers import get_order_model
+from apps.users.helpers import get_user_model
 from common.api.scopes import (
     get_optional_request_restaurant,
     get_request_restaurant,
@@ -14,6 +15,7 @@ from common.api.scopes import (
 
 
 Order = get_order_model()
+User = get_user_model()
 
 
 def get_supported_seat_count(seat_count: int) -> int:
@@ -50,10 +52,19 @@ class TableSessionSerializer(serializers.ModelSerializer):
             return
 
         restaurant = get_optional_request_restaurant(request)
-        if restaurant is not None:
-            self.fields["table"].queryset = DiningTable.objects.filter(
-                hall__zone_or_cabin__restaurant=restaurant,
-            )
+        if restaurant is None:
+            if getattr(request.user, "is_superuser", False):
+                return
+            self.fields["table"].queryset = DiningTable.objects.none()
+            self.fields["assigned_waiter"].queryset = User.objects.none()
+            return
+        self.fields["table"].queryset = DiningTable.objects.filter(
+            hall__zone_or_cabin__restaurant=restaurant,
+        )
+        self.fields["assigned_waiter"].queryset = User.objects.filter(
+            restaurant_profile__restaurant=restaurant,
+            is_active=True,
+        ).distinct()
 
     def get_show_zone_name(self, obj):
         annotated_value = getattr(obj, "has_multiple_active_zones", None)
@@ -127,6 +138,25 @@ class TableSessionSerializer(serializers.ModelSerializer):
             "merged_into",
         )
 
+    def to_internal_value(self, data):
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError as exc:
+            detail = dict(exc.detail)
+            generic_errors = {
+                "table": _("Invalid table."),
+                "assigned_waiter": _("Invalid assigned waiter."),
+            }
+            changed = False
+            for field_name, message in generic_errors.items():
+                if field_name not in detail:
+                    continue
+                detail[field_name] = [message]
+                changed = True
+            if not changed:
+                raise
+            raise serializers.ValidationError(detail) from None
+
     def validate(self, attrs):
         if self.instance is not None:
             forbidden_update_errors = {
@@ -159,6 +189,21 @@ class TableSessionSerializer(serializers.ModelSerializer):
             if table.hall.restaurant_id != restaurant.id:
                 raise serializers.ValidationError(
                     {"table": _("Selected table does not belong to this restaurant.")}
+                )
+            assigned_waiter = attrs.get(
+                "assigned_waiter", getattr(self.instance, "assigned_waiter", None)
+            )
+            if (
+                assigned_waiter is not None
+                and getattr(assigned_waiter.get_restaurant_scope(), "id", None)
+                != restaurant.id
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "assigned_waiter": _(
+                            "Selected waiter does not belong to this restaurant."
+                        )
+                    }
                 )
 
         if table.status == DiningTable.Status.BLOCKED:

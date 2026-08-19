@@ -1,14 +1,17 @@
 from rest_framework import generics
 
 from apps.users.api.admin.serializers import PermissionOptionSerializer, PermissionSerializer
+from apps.users.api.admin.permissions import (
+    NonRestaurantPermissionRequiredMixin,
+    PlatformPermissionRequiredMixin,
+)
 from apps.users.helpers import get_permission_model
 from apps.users.selectors.users import PermissionListFilters
-from common.api.admin_permissions import AdminPermissionRequiredMixin
 
 Permission = get_permission_model()
 
 
-class PermissionListView(AdminPermissionRequiredMixin, generics.ListAPIView):
+class PermissionListView(PlatformPermissionRequiredMixin, generics.ListAPIView):
     serializer_class = PermissionSerializer
 
     def get_queryset(self):
@@ -16,7 +19,7 @@ class PermissionListView(AdminPermissionRequiredMixin, generics.ListAPIView):
         return PermissionListFilters.from_request(self.request).apply(queryset)
 
 
-class PermissionOptionsView(AdminPermissionRequiredMixin, generics.ListAPIView):
+class PermissionOptionsView(NonRestaurantPermissionRequiredMixin, generics.ListAPIView):
     serializer_class = PermissionOptionSerializer
     pagination_class = None
 

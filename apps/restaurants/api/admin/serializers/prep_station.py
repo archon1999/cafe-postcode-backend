@@ -50,6 +50,12 @@ class PrepStationSerializer(serializers.ModelSerializer):
             get_optional_request_restaurant(request) if request is not None else None
         )
         if restaurant is None:
+            if request is not None and not getattr(
+                request.user, "is_superuser", False
+            ):
+                self.fields[
+                    "printer_integration"
+                ].queryset = IntegrationConfig.objects.none()
             return
         self.fields["printer_integration"].queryset = IntegrationConfig.objects.filter(
             restaurant=restaurant,

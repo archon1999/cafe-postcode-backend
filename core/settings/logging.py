@@ -17,6 +17,9 @@ LOGGING = {
         'request_context': {
             '()': 'core.observability.RequestContextFilter',
         },
+        'sensitive_data': {
+            '()': 'core.observability.SensitiveLogFilter',
+        },
     },
     'formatters': {
         'standard': {
@@ -31,7 +34,7 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': CONSOLE_FORMATTER,
-            'filters': ['request_context'],
+            'filters': ['request_context', 'sensitive_data'],
         },
     },
     'root': {

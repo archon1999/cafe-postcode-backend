@@ -2,7 +2,7 @@ import logging
 import re
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -276,6 +276,68 @@ class OrderStateService:
         if order.status != Order.Status.OPEN:
             sync_order_tickets(order)
         return order
+
+    @transaction.atomic
+    def remove_empty_order(self, *, order: Order) -> bool:
+        """Remove an itemless order from active POS flows.
+
+        Open orders are disposable builder drafts, so they are hard-deleted and
+        their tail order number is released. Submitted orders keep their item
+        and kitchen audit trail, but become cancelled and disappear from open
+        checks.
+        """
+        from apps.sales.models import OrderItem
+
+        order = (
+            Order.objects.select_for_update()
+            .select_related('restaurant', 'table_session__table')
+            .get(pk=order.pk)
+        )
+        if order.items.exclude(status=OrderItem.Status.CANCELLED).exists():
+            return False
+
+        if order.status == Order.Status.OPEN and not order.payments.exists():
+            locked_restaurant = Restaurant.objects.select_for_update().get(pk=order.restaurant_id)
+            if locked_restaurant.last_order_number == order.order_number:
+                previous_number = (
+                    Order.objects.filter(restaurant_id=order.restaurant_id)
+                    .exclude(pk=order.pk)
+                    .aggregate(number=Max('order_number'))['number']
+                    or 0
+                )
+                locked_restaurant.last_order_number = previous_number
+                locked_restaurant.save(update_fields=['last_order_number', 'updated_at'])
+
+            display_name = str(order.display_name or '').strip()
+            if display_name.isdecimal():
+                shift = (
+                    CashShift.objects.select_for_update()
+                    .filter(
+                        cash_desk__restaurant_id=order.restaurant_id,
+                        status=CashShift.Status.OPEN,
+                        next_order_number=int(display_name),
+                    )
+                    .filter(Q(cashier_id=order.opened_by_id) | Q(cashier__isnull=True))
+                    .order_by('-opened_at')
+                    .first()
+                )
+                if shift is not None:
+                    shift.next_order_number = max(shift.next_order_number - 1, 0)
+                    shift.save(update_fields=['next_order_number', 'updated_at'])
+
+            order.delete()
+            return True
+
+        order.status = Order.Status.CANCELLED
+        order.closed_at = timezone.now()
+        order.save(update_fields=['status', 'closed_at', 'updated_at'])
+        if order.table_session_id:
+            session = order.table_session
+            session.status = TableSession.Status.CLOSED
+            session.closed_at = order.closed_at
+            session.save(update_fields=['status', 'closed_at', 'updated_at'])
+            sync_table_status(session.table)
+        return True
 
     def serve_ready_items(self, *, order: Order):
         from apps.kitchen.models import KitchenTicket

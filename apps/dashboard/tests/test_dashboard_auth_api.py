@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -9,7 +10,7 @@ from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import CashDesk, Restaurant
 from apps.sales.models import Order, OrderItem
-from apps.users.models import Permission, Role, User
+from apps.users.models import AuthSession, Permission, Role, User
 from common.utils.date import TASHKENT_TIMEZONE
 
 
@@ -574,6 +575,35 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.data['user']['id'], str(self.owner_user.id))
         self.assertEqual(response.data['session']['surface'], 'dashboard')
         self.assertEqual(response.data['session']['status'], 'active')
+
+    def test_superuser_can_use_password_only_dashboard_login(self):
+        superuser = User.objects.create_superuser(
+            username='dashboard-superuser',
+            password='Strong-Dashboard-Password-123!',
+        )
+
+        response = self.client.post(
+            '/api/v1/dashboard/auth/login/',
+            {'username': superuser.username, 'password': 'Strong-Dashboard-Password-123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(AuthSession.objects.filter(user=superuser, surface=AuthSession.Surface.DASHBOARD).exists())
+
+    @override_settings(ADMIN_MFA_REQUIRED=True)
+    def test_dashboard_respects_rollback_mfa_flag(self):
+        superuser = User.objects.create_superuser(
+            username='dashboard-mfa-rollback-superuser',
+            password='Strong-Dashboard-Password-123!',
+        )
+        response = self.client.post(
+            '/api/v1/dashboard/auth/login/',
+            {'username': superuser.username, 'password': 'Strong-Dashboard-Password-123!'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(AuthSession.objects.filter(user=superuser).exists())
 
     def test_dashboard_auth_me_requires_dashboard_permission(self):
         self.client.force_authenticate(self.owner_user)

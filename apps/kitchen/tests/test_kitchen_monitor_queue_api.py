@@ -107,9 +107,13 @@ class KitchenMonitorQueueApiTests(PosAPITestCase):
     def test_monitor_queue_requires_valid_restaurant_id(self):
         missing_response = self.client.get('/api/v1/pos/monitor/kitchen-queue/')
         invalid_response = self.client.get('/api/v1/pos/monitor/kitchen-queue/?restaurant_id=00000000-0000-0000-0000-000000000000')
+        foreign_response = self.client.get(
+            f'/api/v1/pos/monitor/kitchen-queue/?restaurant_id={self.other_restaurant.id}'
+        )
 
         self.assertEqual(missing_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(invalid_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(invalid_response.data, foreign_response.data)
 
     def test_monitor_queue_completes_closed_kitchen_work_after_sixty_minutes(self):
         now = timezone.now()

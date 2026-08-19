@@ -28,10 +28,6 @@ def _new_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
-def restaurant_auth_code_hash(restaurant: Restaurant) -> str:
-    return hash_tv_monitor_secret(restaurant.auth_code)
-
-
 def create_tv_monitor_pairing(*, now=None):
     created_at = now or timezone.now()
     poll_token = _new_secret()
@@ -70,7 +66,6 @@ def claim_tv_monitor_pairing(*, pairing_id, claim_token: str, restaurant: Restau
     device = TvMonitorDevice.objects.create(
         restaurant=restaurant,
         token_hash=pairing.poll_token_hash,
-        restaurant_auth_code_hash=restaurant_auth_code_hash(restaurant),
         paired_at=claimed_at,
     )
     pairing.device = device
@@ -79,26 +74,20 @@ def claim_tv_monitor_pairing(*, pairing_id, claim_token: str, restaurant: Restau
     return device
 
 
-def authenticate_tv_monitor_device(*, token: str, now=None) -> TvMonitorDevice:
+def authenticate_tv_monitor_device(*, token: str, now=None, allow_migrated: bool = False) -> TvMonitorDevice:
     authenticated_at = now or timezone.now()
-    code_changed = False
     with transaction.atomic():
-        device = (
-            TvMonitorDevice.objects.select_for_update()
-            .select_related('restaurant')
-            .filter(token_hash=hash_tv_monitor_secret(token), revoked_at__isnull=True)
-            .first()
+        devices = TvMonitorDevice.objects.select_for_update(of=('self',)).select_related('restaurant', 'device').filter(
+            token_hash=hash_tv_monitor_secret(token),
+            revoked_at__isnull=True,
         )
+        if not allow_migrated:
+            devices = devices.filter(device__isnull=True)
+        device = devices.first()
         if device is None or not device.restaurant.is_active:
             raise TvMonitorPairingRequired('TV pairing is required.')
-        if not secrets.compare_digest(device.restaurant_auth_code_hash, restaurant_auth_code_hash(device.restaurant)):
-            device.revoked_at = authenticated_at
-            device.save(update_fields=['revoked_at', 'updated_at'])
-            code_changed = True
-        elif device.last_seen_at is None or device.last_seen_at < authenticated_at - timedelta(minutes=5):
+        if device.last_seen_at is None or device.last_seen_at < authenticated_at - timedelta(minutes=5):
             device.last_seen_at = authenticated_at
             device.save(update_fields=['last_seen_at', 'updated_at'])
 
-    if code_changed:
-        raise TvMonitorPairingRequired('Restaurant code changed. TV pairing is required.')
     return device

@@ -85,7 +85,6 @@ class MyRestaurantAdminApiTests(APITestCase):
 
     def test_self_service_settings_reject_platform_owned_fields(self):
         target_tariff = Tariff.objects.create(name='Forbidden self-service tariff', is_active=True)
-        original_auth_code = self.second_restaurant.auth_code
         original_faktura_payload = self.second_restaurant.faktura_payload
 
         response = self.client.patch(
@@ -105,7 +104,6 @@ class MyRestaurantAdminApiTests(APITestCase):
         self.second_restaurant.refresh_from_db()
         entitlement = getattr(self.second_restaurant, 'entitlement', None)
         self.assertNotEqual(getattr(entitlement, 'tariff_id', None), target_tariff.id)
-        self.assertEqual(self.second_restaurant.auth_code, original_auth_code)
         self.assertTrue(self.second_restaurant.is_active)
         self.assertEqual(self.second_restaurant.faktura_payload, original_faktura_payload)
         self.assertNotEqual(self.second_restaurant.legal_name, 'Hacked legal name')

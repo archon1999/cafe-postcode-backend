@@ -12,12 +12,9 @@ from apps.platform.api.admin.views.business_partners import (
 from apps.platform.api.admin.views.restaurants import (
     RestaurantActivateView,
     RestaurantActivationOptionsView,
-    RestaurantBalanceTopUpView,
-    RestaurantBalanceTransactionsView,
     RestaurantDeactivateView,
-    RestaurantExtendView,
-    RestaurantRotateAuthCodeView,
     RestaurantResetPasswordView,
+    RestaurantTariffChangeView,
 )
 from apps.platform.api.admin.views.tariffs import TariffDetailView, TariffListCreateView, TariffOptionsView
 
@@ -35,9 +32,6 @@ urlpatterns = [
     path('restaurants/activation-options/', RestaurantActivationOptionsView.as_view()),
     path('restaurants/<uuid:pk>/activate/', RestaurantActivateView.as_view()),
     path('restaurants/<uuid:pk>/deactivate/', RestaurantDeactivateView.as_view()),
-    path('restaurants/<uuid:pk>/extend/', RestaurantExtendView.as_view()),
-    path('restaurants/<uuid:pk>/balance-transactions/', RestaurantBalanceTransactionsView.as_view()),
-    path('restaurants/<uuid:pk>/top-up/', RestaurantBalanceTopUpView.as_view()),
-    path('restaurants/<uuid:pk>/rotate-auth-code/', RestaurantRotateAuthCodeView.as_view()),
+    path('restaurants/<uuid:pk>/tariff-change/', RestaurantTariffChangeView.as_view()),
     path('restaurants/<uuid:pk>/reset-password/', RestaurantResetPasswordView.as_view()),
 ]

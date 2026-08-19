@@ -1,3 +1,4 @@
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.floor.models import Hall
@@ -6,6 +7,8 @@ from apps.users.helpers import (
     get_role_model,
     get_user_model,
 )
+from apps.users.selectors.users import employee_role_queryset
+from common.api.scopes import get_optional_request_restaurant
 
 from .role import RoleSerializer
 from .user_persistence import UserPersistenceMixin
@@ -104,6 +107,24 @@ class UserSerializer(
         if self.user_surface == "employee":
             self.fields["username"].required = False
             self.fields["username"].allow_blank = True
+            request = self.context.get("request")
+            if request is not None:
+                self.fields["role_id"].queryset = employee_role_queryset(request)
+                restaurant = get_optional_request_restaurant(request)
+                if restaurant is not None:
+                    hall_queryset = Hall.objects.filter(
+                        zone_or_cabin__restaurant=restaurant
+                    )
+                elif getattr(request.user, "is_superuser", False):
+                    hall_queryset = Hall.objects.all()
+                else:
+                    hall_queryset = Hall.objects.none()
+                self.fields["primary_hall_id"].queryset = hall_queryset
+                allowed_halls_field = self.fields["allowed_hall_ids"]
+                if hasattr(allowed_halls_field, "child_relation"):
+                    allowed_halls_field.child_relation.queryset = hall_queryset
+                else:
+                    allowed_halls_field.queryset = hall_queryset
 
     def get_restaurant_id(self, instance):
         restaurant = instance.get_restaurant_scope()
@@ -116,6 +137,27 @@ class UserSerializer(
     def get_business_partner_id(self, instance):
         business_partner = instance.get_business_partner_scope()
         return getattr(business_partner, "id", None)
+
+    def to_internal_value(self, data):
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError as exc:
+            detail = dict(exc.detail)
+            generic_relation_errors = {
+                "role_id": ("roleId", _("Invalid role.")),
+                "primary_hall_id": ("primaryHallId", _("Invalid primary hall.")),
+                "allowed_hall_ids": ("allowedHallIds", _("Invalid allowed halls.")),
+            }
+            changed = False
+            for source_name, (target_name, message) in generic_relation_errors.items():
+                if source_name not in detail:
+                    continue
+                detail.pop(source_name)
+                detail[target_name] = [message]
+                changed = True
+            if not changed:
+                raise
+            raise serializers.ValidationError(detail) from None
 
 
 class EmployeeSerializer(UserSerializer):

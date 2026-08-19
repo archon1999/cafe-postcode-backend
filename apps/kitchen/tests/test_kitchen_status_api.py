@@ -1,4 +1,5 @@
 from datetime import timedelta
+from uuid import uuid4
 
 from django.utils import timezone
 from rest_framework import status
@@ -177,4 +178,113 @@ class KitchenStatusApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['data'], [])
+
+    def test_status_updates_reject_foreign_resources_without_an_oracle(self):
+        other_restaurant = Restaurant.objects.create(name='Foreign kitchen tenant')
+        foreign_user = User.objects.create_user(
+            username='foreign-kitchen-user',
+            full_name='Foreign Kitchen User',
+            restaurant=other_restaurant,
+            role=self.role,
+        )
+        foreign_category = CatalogCategory.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign category',
+            mxik_code='10000000000000999',
+            mxik_name='Foreign category',
+        )
+        foreign_catalog_item = CatalogItem.objects.create(
+            restaurant=other_restaurant,
+            category=foreign_category,
+            name='Foreign dish',
+        )
+        foreign_station = PrepStation.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign kitchen',
+            kind=PrepStation.Kind.KITCHEN,
+        )
+        foreign_distribution = DistributionPoint.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign hall orders',
+            kind=DistributionPoint.Kind.HALL,
+        )
+        foreign_order = Order.objects.create(
+            restaurant=other_restaurant,
+            distribution_point=foreign_distribution,
+            opened_by=foreign_user,
+            order_number=9002,
+            channel=Order.Channel.HALL,
+            status=Order.Status.SUBMITTED,
+            guest_count=1,
+        )
+        foreign_item = OrderItem.objects.create(
+            order=foreign_order,
+            catalog_item=foreign_catalog_item,
+            prep_station=foreign_station,
+            created_by=foreign_user,
+            quantity=1,
+            unit_price=1000,
+            status=OrderItem.Status.NEW,
+        )
+        foreign_ticket = KitchenTicket.objects.create(
+            restaurant=other_restaurant,
+            order=foreign_order,
+            prep_station=foreign_station,
+            status=KitchenTicket.Status.NEW,
+            routed_via=KitchenTicket.RouteMode.DISPLAY,
+        )
+        KitchenTicketLine.objects.create(
+            ticket=foreign_ticket,
+            order_item=foreign_item,
+        )
+
+        foreign_item_response = self.client.post(
+            f'/api/v1/pos/kitchen/items/{foreign_item.id}/status/',
+            {'status': OrderItem.Status.DONE},
+            format='json',
+        )
+        unknown_item_response = self.client.post(
+            f'/api/v1/pos/kitchen/items/{uuid4()}/status/',
+            {'status': OrderItem.Status.DONE},
+            format='json',
+        )
+        foreign_ticket_response = self.client.post(
+            f'/api/v1/pos/kitchen/tickets/{foreign_ticket.id}/status/',
+            {'status': KitchenTicket.Status.DONE},
+            format='json',
+        )
+        unknown_ticket_response = self.client.post(
+            f'/api/v1/pos/kitchen/tickets/{uuid4()}/status/',
+            {'status': KitchenTicket.Status.DONE},
+            format='json',
+        )
+
+        self.assertEqual(
+            foreign_item_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            unknown_item_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(foreign_item_response.data, unknown_item_response.data)
+        self.assertEqual(
+            foreign_ticket_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            unknown_ticket_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            foreign_ticket_response.data,
+            unknown_ticket_response.data,
+        )
+
+        foreign_item.refresh_from_db()
+        foreign_ticket.refresh_from_db()
+        foreign_order.refresh_from_db()
+        self.assertEqual(foreign_item.status, OrderItem.Status.NEW)
+        self.assertEqual(foreign_ticket.status, KitchenTicket.Status.NEW)
+        self.assertEqual(foreign_order.status, Order.Status.SUBMITTED)
 

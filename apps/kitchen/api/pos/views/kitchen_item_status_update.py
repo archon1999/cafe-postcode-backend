@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,10 +15,11 @@ class KitchenItemStatusUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     kitchen_status_service_class = KitchenStatusService
 
+    @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         item = generics.get_object_or_404(
-            OrderItem.objects.select_related('order__restaurant', 'prep_station'),
+            OrderItem.objects.select_for_update(of=('self',)).select_related('order__restaurant', 'prep_station'),
             pk=pk,
             order__restaurant=restaurant,
         )

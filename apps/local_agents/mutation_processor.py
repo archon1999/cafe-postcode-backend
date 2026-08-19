@@ -1,3 +1,5 @@
+import uuid
+
 from rest_framework.test import APIRequestFactory
 
 from apps.billing.services import CashShiftService
@@ -11,6 +13,7 @@ from apps.local_agents.mutation_results import (
     mutation_error_result,
 )
 from apps.users.models import User
+from apps.devices.models import Device
 
 
 class LocalAgentMutationProcessor(
@@ -33,6 +36,7 @@ class LocalAgentMutationProcessor(
             operation.get("operationId") or operation.get("operation_id") or ""
         ).strip()
         user_id = str(operation.get("userId") or operation.get("user_id") or "").strip()
+        device_id = str(operation.get("deviceId") or operation.get("device_id") or "").strip()
         method = str(operation.get("method") or "").strip().upper()
         path = str(operation.get("path") or "").strip()
         body = operation.get("body") if isinstance(operation.get("body"), dict) else {}
@@ -51,6 +55,31 @@ class LocalAgentMutationProcessor(
                 error="Mutation path is not allowed.",
                 code="MUTATION_PATH_NOT_ALLOWED",
                 classification=CLASSIFICATION_QUARANTINED,
+            )
+
+        normalized_device_id = ''
+        if device_id:
+            try:
+                normalized_device_id = str(uuid.UUID(device_id))
+            except (ValueError, AttributeError, TypeError):
+                normalized_device_id = ''
+        if device_id and (
+            not normalized_device_id
+            or not Device.objects.filter(
+                id=normalized_device_id,
+                restaurant=agent.restaurant,
+                type=Device.Type.POS_TERMINAL,
+                status=Device.Status.ACTIVE,
+                revoked_at__isnull=True,
+            ).exists()
+        ):
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=403,
+                error="Originating POS device is revoked or outside this restaurant.",
+                code="POS_DEVICE_INVALID",
+                classification=CLASSIFICATION_QUARANTINED,
+                resolution_hint="Review the revoked POS device and resolve this operation.",
             )
 
         digest = request_hash(user_id=user_id, method=method, path=path, body=body)

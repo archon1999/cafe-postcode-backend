@@ -7,7 +7,6 @@ from django.urls import resolve
 from django.utils import timezone, translation
 from openpyxl import load_workbook
 from rest_framework import status
-from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from apps.users.models import AuthSession, Permission, Role, User
@@ -58,8 +57,6 @@ class AdminApiTests(APITestCase):
         cls.tariff = Tariff.objects.create(
             name='Admin Test Tariff',
             description='Tariff for admin API tests',
-            monthly_price=100,
-            yearly_price=1000,
             is_active=True,
         )
         cls.tariff.permissions.set(Permission.objects.all())
@@ -151,14 +148,15 @@ class AdminApiTests(APITestCase):
             '/api/v1/admin/auth/login/',
             {'username': self.admin_user.username, 'password': 'secret123'},
             format='json',
+            HTTP_ORIGIN='https://admin.cafe-postcode.uz',
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('token', response.data)
+        self.assertIn('access_token', response.data)
         self.assertIn('session', response.data)
         self.assertEqual(response.data['user']['username'], self.admin_user.username)
         session_id = response.data['session']['id']
 
-        token = response.data['token']
+        token = response.data['access_token']
         self.client.credentials(HTTP_AUTHORIZATION=f'Token {token}')
 
         me_response = self.client.get('/api/v1/admin/auth/me/')
@@ -167,9 +165,11 @@ class AdminApiTests(APITestCase):
         system_time = datetime.fromisoformat(me_response.headers['system-time'])
         self.assertEqual(system_time.utcoffset(), timedelta(hours=5))
 
-        logout_response = self.client.post('/api/v1/admin/auth/logout/')
+        logout_response = self.client.post(
+            '/api/v1/admin/auth/logout/',
+            HTTP_ORIGIN='https://admin.cafe-postcode.uz',
+        )
         self.assertEqual(logout_response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(Token.objects.filter(user=self.admin_user).exists())
         session = AuthSession.objects.get(pk=session_id)
         self.assertEqual(session.status, AuthSession.Status.REVOKED)
         self.assertIsNotNone(session.revoked_at)
@@ -182,8 +182,8 @@ class AdminApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['restaurant_name'], self.restaurant.name)
         self.assertEqual(response.data['activation_type'], 'tariff')
-        self.assertEqual(response.data['billing_period'], None)
-        self.assertEqual(response.data['expires_on'], None)
+        self.assertNotIn('billing_period', response.data)
+        self.assertNotIn('expires_on', response.data)
         self.assertEqual(response.data['tariff']['id'], str(self.tariff.id))
         self.assertEqual(response.data['tariff']['name'], self.tariff.name)
 
@@ -244,8 +244,23 @@ class AdminApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_users_roles_and_permissions_endpoints(self):
+    def test_restaurant_admin_cannot_access_global_identity_endpoints(self):
         self.authenticate()
+
+        endpoints = (
+            '/api/v1/admin/permissions/',
+            '/api/v1/admin/permissions/options/',
+            '/api/v1/admin/roles/',
+            '/api/v1/admin/users/',
+        )
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(endpoint)
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_superuser_can_access_global_identity_endpoints(self):
+        self.authenticate(self.superuser)
 
         permissions_response = self.client.get('/api/v1/admin/permissions/')
         self.assertEqual(permissions_response.status_code, status.HTTP_200_OK)
@@ -1044,18 +1059,22 @@ class AdminApiTests(APITestCase):
             '/api/v1/admin/auth/login/?lang=ru',
             {'username': self.admin_user.username, 'password': 'wrong-secret'},
             format='json',
+            HTTP_ORIGIN='https://admin.cafe-postcode.uz',
         )
         self.assertEqual(login_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(login_response.data['non_field_errors'][0], 'Неверные учетные данные.')
+        self.assertEqual(login_response.data['code'], 'invalid_credentials')
+        self.assertEqual(login_response.data['detail'], 'Неверные учетные данные.')
 
         self.authenticate()
+        employee_role = Role.objects.get(code='waiter')
+        self.tariff.allowed_roles.add(employee_role)
         create_user_response = self.client.post(
-            '/api/v1/admin/users/?lang=uz-crl',
+            '/api/v1/admin/employees/?lang=uz-crl',
             {
                 'username': 'pin-error-user',
                 'full_name': 'Pin Error User',
                 'is_active': True,
-                'role_id': str(self.admin_role.id),
+                'role_id': str(employee_role.id),
                 'pin': 123456,
             },
             format='json',

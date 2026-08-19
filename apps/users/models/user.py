@@ -137,6 +137,8 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
         business_partner = self.get_business_partner_scope()
         if business_partner is not None:
+            if getattr(business_partner, 'status', None) != 'active':
+                return []
             extra_permission_codes = set(business_partner.extra_permissions.values_list('code', flat=True))
             return sorted(role_permission_codes | extra_permission_codes)
 
@@ -149,6 +151,9 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
 
         restaurant = self.get_restaurant_scope()
         if restaurant is None:
+            business_partner = self.get_business_partner_scope()
+            if business_partner is not None:
+                return bool(self.is_active and getattr(business_partner, 'status', None) == 'active')
             return self.is_active
 
         if not getattr(restaurant, 'is_active', False):

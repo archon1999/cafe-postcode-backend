@@ -174,7 +174,9 @@ class OrderSubmitView(APIView):
     @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
-        order = generics.get_object_or_404(Order, pk=pk, restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_for_update(of=('self',)), pk=pk, restaurant=restaurant
+        )
         required_permission = POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         require_any_permission_code(request.user, required_permission)
         if not order.items.exists():
@@ -201,7 +203,9 @@ class OrderServeReadyView(APIView):
     @transaction.atomic
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
-        order = generics.get_object_or_404(Order, pk=pk, restaurant=restaurant)
+        order = generics.get_object_or_404(
+            Order.objects.select_for_update(of=('self',)), pk=pk, restaurant=restaurant
+        )
         required_permission = POS_TABLES_MANAGE_PERMISSION if order.table_session_id else POS_TAKEAWAY_MENU_VIEW_PERMISSION
         require_any_permission_code(request.user, required_permission)
         self.state_service_class().serve_ready_items(order=order)

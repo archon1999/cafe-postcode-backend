@@ -12,7 +12,7 @@ from apps.users.models import User
 class RestaurantSetupApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='Setup Restaurant', auth_code='S3TUP1')
+        cls.restaurant = Restaurant.objects.create(name='Setup Restaurant')
         cls.superuser = User.objects.create_superuser(
             username='setup-superuser', password='secret123', full_name='Setup Superuser'
         )
@@ -34,7 +34,9 @@ class RestaurantSetupApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertFalse(response.data['ready'])
         self.assertGreater(response.data['blockingIssueCount'], 0)
-        self.assertEqual(response.data['installerManifest']['restaurantCode'], self.restaurant.auth_code)
+        self.assertNotIn('restaurantCode', response.data['installerManifest'])
+        self.assertEqual(response.data['installerManifest']['pairingMode'], 'device_qr')
+        self.assertEqual(response.data['installerManifest']['schemaVersion'], 2)
         self.assertNotIn('agentToken', response.data['installerManifest'])
         self.assertEqual(response.data['installerManifest']['localHttpListen'], '127.0.0.1:18181')
         self.assertEqual(
@@ -134,7 +136,7 @@ class RestaurantSetupApiTests(APITestCase):
         self.assertEqual(PrepStation.objects.filter(restaurant=self.restaurant).count(), 1)
         self.assertEqual(IntegrationConfig.objects.filter(restaurant=self.restaurant).count(), 4)
         self.assertEqual(DistributionPoint.objects.filter(restaurant=self.restaurant).count(), 2)
-        self.assertEqual(PrintTemplate.objects.filter(restaurant=self.restaurant).count(), 4)
+        self.assertEqual(PrintTemplate.objects.filter(restaurant=self.restaurant).count(), 3)
         primary = CashDesk.objects.get(restaurant=self.restaurant, name='Kassa 1')
         self.assertEqual(primary.printer_integration.name, 'Kassa 1 printer')
         self.assertEqual(primary.payment_integration.name, 'MARTA main')

@@ -11,7 +11,7 @@ from apps.users.models import User
 class MartaConnectionCheckApiTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='MARTA Test Restaurant', auth_code='MARTA1')
+        cls.restaurant = Restaurant.objects.create(name='MARTA Test Restaurant')
         cls.superuser = User.objects.create_superuser(
             username='marta-test-superuser', password='secret123', full_name='MARTA Test Superuser'
         )
@@ -61,5 +61,24 @@ class MartaConnectionCheckApiTests(APITestCase):
             restaurant=self.restaurant,
             method='GET',
             url='http://192.168.1.30:8090/health',
+            purpose='marta',
             timeout_seconds=10,
         )
+
+    def test_explicit_address_rejects_credentials_query_fragment_and_non_http_scheme(self):
+        for endpoint in (
+            'http://user:password@192.168.1.30:8090',
+            'http://192.168.1.30:8090?token=secret',
+            'http://192.168.1.30:8090#secret',
+            'https://192.168.1.30:8090',
+        ):
+            with self.subTest(endpoint=endpoint):
+                response = self.client.post(
+                    '/api/v1/admin/integrations/marta/check/',
+                    {'endpointUrl': endpoint},
+                    format='json',
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.data['code'], 'MARTA_ADDRESS_INVALID')
+                self.assertNotIn('secret', str(response.data))
+                self.assertNotIn('password', str(response.data))

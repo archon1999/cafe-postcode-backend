@@ -17,7 +17,15 @@ def normalize_marta_endpoint(value: str) -> str:
         endpoint = f'http://{endpoint}'
 
     parsed = urlsplit(endpoint)
-    if not parsed.hostname:
+    if (
+        parsed.scheme.lower() != 'http'
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or bool(parsed.query)
+        or bool(parsed.fragment)
+        or parsed.path not in ('', '/')
+    ):
         return ''
     if parsed.port is None:
         host = f'[{parsed.hostname}]' if ':' in parsed.hostname else parsed.hostname
@@ -51,6 +59,7 @@ class MartaConnectionCheckView(APIView):
                     restaurant=restaurant,
                     method='GET',
                     url=f'{endpoint_url}/health',
+                    purpose='marta',
                     timeout_seconds=10,
                 )
                 health = result.get('body') if isinstance(result.get('body'), dict) else {}

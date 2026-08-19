@@ -21,9 +21,6 @@ RESTAURANT_ORDERING_FIELDS = {
     'isActive': 'is_active',
     'activatedAt': 'activated_at',
     'deactivatedAt': 'deactivated_at',
-    'startsOn': 'entitlement__starts_on',
-    'expiresOn': 'entitlement__expires_on',
-    'billingPeriod': 'entitlement__billing_period',
 }
 
 
@@ -45,10 +42,6 @@ def get_restaurants_queryset_for_request(request):
     business_partner = request.user.get_business_partner_scope()
     if business_partner is not None:
         return queryset.filter(business_partner_id=business_partner.id)
-
-    restaurant = request.user.get_restaurant_scope()
-    if restaurant is not None:
-        return queryset.filter(pk=restaurant.id)
 
     return queryset.none()
 

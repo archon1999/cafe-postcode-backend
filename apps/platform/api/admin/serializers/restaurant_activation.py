@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from rest_framework import serializers
 
 from apps.platform.helpers import get_restaurant_entitlement_model, get_tariff_model
@@ -22,21 +20,6 @@ CUSTOM_TARIFF_PERMISSION_CODE = 'restaurants.custom_tariff'
 
 class RestaurantActivationSerializer(serializers.Serializer):
     activation_type = serializers.ChoiceField(choices=('tariff', 'custom'), default='tariff')
-    billing_period = serializers.ChoiceField(choices=RestaurantEntitlement.BillingPeriod.choices)
-    monthly_price = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        min_value=Decimal('0.00'),
-        required=False,
-        allow_null=True,
-    )
-    yearly_price = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        min_value=Decimal('0.00'),
-        required=False,
-        allow_null=True,
-    )
     tariff_id = serializers.PrimaryKeyRelatedField(
         source='tariff',
         queryset=Tariff.objects.filter(is_active=True),
@@ -57,8 +40,6 @@ class RestaurantActivationSerializer(serializers.Serializer):
         many=True,
         required=False,
     )
-    starts_on = serializers.DateField()
-
     @staticmethod
     def _derive_permissions(allowed_roles):
         permission_map: dict[str, Permission] = {}
@@ -95,12 +76,6 @@ class RestaurantActivationSerializer(serializers.Serializer):
 
         if not permissions:
             raise serializers.ValidationError({'permissionIds': 'Kamida bitta ruxsat tanlang.'})
-
-        if attrs.get('monthly_price') is None:
-            raise serializers.ValidationError({'monthlyPrice': "Custom tarifda oylik narx bo'lishi shart."})
-
-        if attrs.get('yearly_price') is None:
-            raise serializers.ValidationError({'yearlyPrice': "Custom tarifda yillik narx bo'lishi shart."})
 
         attrs['permissions'] = ensure_dashboard_permission_for_admin_roles(allowed_roles, permissions)
         attrs['tariff'] = None

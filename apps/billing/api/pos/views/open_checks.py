@@ -244,6 +244,7 @@ class OpenCheckListView(generics.ListAPIView):
             "id",
             "order_id",
             "payment_id",
+            "print_document_id",
             "kind",
             "status",
             "payload",

@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -38,6 +39,7 @@ class OrderPaymentService(
     state_service_class = OrderStateService
     shift_service_class = CashShiftService
 
+    @transaction.atomic
     def process(
         self,
         *,
@@ -48,6 +50,27 @@ class OrderPaymentService(
         trusted_edge_replay=False,
     ):
         from apps.billing.serializers import PaymentSerializer
+
+        order = (
+            Order.objects.select_for_update(of=("self",))
+            .select_related(
+                "restaurant",
+                "table_session__hall",
+                "table_session__table",
+            )
+            .get(pk=order.pk)
+        )
+        if cash_shift is not None:
+            cash_shift = (
+                type(cash_shift).objects.select_for_update(of=("self",))
+                .select_related(
+                    "cash_desk",
+                    "cash_desk__payment_integration",
+                    "cash_desk__printer_integration",
+                    "cash_desk__fiscal_integration",
+                )
+                .get(pk=cash_shift.pk)
+            )
 
         edge_operation_id = str(
             payload.get("edge_operation_id") or payload.get("edgeOperationId") or ""

@@ -156,12 +156,12 @@ def restaurant_setup_readiness(*, restaurant, backend_url="") -> dict:
             prep_stations=prep_stations,
         ),
         "installerManifest": {
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "restaurantId": str(restaurant.id),
             "restaurantName": restaurant.name,
-            "restaurantCode": restaurant.auth_code,
             "backendUrl": backend_url.rstrip("/"),
             "coordinatorMode": True,
+            "pairingMode": "device_qr",
             "localHttpListen": "127.0.0.1:18181",
         },
     }

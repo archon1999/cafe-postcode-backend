@@ -10,7 +10,10 @@ User = get_user_model()
 
 
 class PosLoginSerializer(serializers.Serializer):
-    restaurant_id = serializers.PrimaryKeyRelatedField(queryset=Restaurant.objects.filter(is_active=True))
+    restaurant_id = serializers.PrimaryKeyRelatedField(
+        queryset=Restaurant.objects.filter(is_active=True),
+        required=False,
+    )
     pin = serializers.CharField(min_length=4, max_length=4, trim_whitespace=True)
 
     def validate_pin(self, value):
@@ -19,7 +22,11 @@ class PosLoginSerializer(serializers.Serializer):
         return value
 
     def validate(self, attrs):
-        restaurant = attrs['restaurant_id']
+        restaurant = self.context.get('restaurant') or attrs.get('restaurant_id')
+        if restaurant is None:
+            raise serializers.ValidationError({'restaurantId': _('Restaurant is required.')})
+        if attrs.get('restaurant_id') is not None and attrs['restaurant_id'].pk != restaurant.pk:
+            raise serializers.ValidationError({'restaurantId': _('Restaurant does not match the paired device.')})
         candidate_users = User.objects.filter(restaurant_profile__restaurant=restaurant).select_related(
             'role',
             'employee_profile',

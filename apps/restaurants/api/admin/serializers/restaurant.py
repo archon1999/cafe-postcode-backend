@@ -67,7 +67,6 @@ class RestaurantSerializer(
             "address",
             "faktura_payload",
             "currency",
-            "auth_code",
             "service_fee_enabled",
             "service_fee_percent",
             "vat_enabled",
@@ -83,9 +82,6 @@ class RestaurantSerializer(
             "deactivated_at",
             "restaurant_access_active",
             "activation_type",
-            "starts_on",
-            "expires_on",
-            "billing_period",
             "permission_codes",
             "role_codes",
             "tariff",
@@ -129,14 +125,10 @@ class RestaurantSerializer(
         )
         entitlement.tariff = tariff
         entitlement.is_custom = False
-        entitlement.monthly_price = tariff.monthly_price if tariff is not None else None
-        entitlement.yearly_price = tariff.yearly_price if tariff is not None else None
         entitlement.save(
             update_fields=[
                 "tariff",
                 "is_custom",
-                "monthly_price",
-                "yearly_price",
                 "updated_at",
             ]
         )
@@ -159,6 +151,10 @@ class RestaurantSerializer(
 
     def update(self, instance, validated_data):
         tariff = validated_data.pop("tariff", serializers.empty)
+        if tariff is not serializers.empty:
+            raise serializers.ValidationError(
+                {"tariffId": "Tarifni faqat tarifni o‘zgartirish actioni orqali almashtiring."}
+            )
         validated_data.pop("clear_pos_auth_background_image", False)
         faktura_payload = validated_data.pop("faktura_payload", serializers.empty)
         if faktura_payload is not serializers.empty:
@@ -168,7 +164,6 @@ class RestaurantSerializer(
         validated_data["currency"] = "UZS"
         old_image_name, old_image_storage = self.capture_background_image(instance)
         restaurant = super().update(instance, validated_data)
-        self._sync_entitlement(restaurant, tariff)
         self.delete_replaced_background_image(
             restaurant, old_image_name, old_image_storage
         )
@@ -222,16 +217,12 @@ class RestaurantSelfServiceSerializer(
             "tariff",
             "tariff_id",
             "faktura_payload",
-            "auth_code",
             "currency",
             "legal_name",
             "tax_number",
             "is_active",
             "activated_at",
             "deactivated_at",
-            "starts_on",
-            "expires_on",
-            "billing_period",
         }
     )
 
@@ -246,7 +237,6 @@ class RestaurantSelfServiceSerializer(
             "social",
             "address",
             "currency",
-            "auth_code",
             "service_fee_enabled",
             "service_fee_percent",
             "vat_enabled",
@@ -262,9 +252,6 @@ class RestaurantSelfServiceSerializer(
             "deactivated_at",
             "restaurant_access_active",
             "activation_type",
-            "starts_on",
-            "expires_on",
-            "billing_period",
             "tariff",
         )
         read_only_fields = (
@@ -272,7 +259,6 @@ class RestaurantSelfServiceSerializer(
             "legal_name",
             "tax_number",
             "currency",
-            "auth_code",
             "is_active",
             "activated_at",
             "deactivated_at",

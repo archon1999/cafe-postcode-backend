@@ -1,9 +1,11 @@
-from rest_framework import generics, permissions
+from django.db import transaction
+from django.utils.translation import gettext_lazy as _
+from rest_framework import generics, permissions, serializers
 
 from apps.floor.api.admin.serializers import TableSessionSerializer
 from apps.floor.models import DiningTable, TableSession
 from apps.floor.selectors.floor import TableSessionListFilters
-from apps.floor.services import sync_table_status
+from apps.floor.services import available_seat_count, sync_table_status
 from apps.platform.services import FeatureGateService
 from common.api.permissions import (
     EndpointRBACPermission,
@@ -33,10 +35,24 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
         )
         return TableSessionListFilters.from_request(self.request).apply(queryset)
 
+    @transaction.atomic
     def perform_create(self, serializer):
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
-        table = serializer.validated_data["table"]
+        submitted_table = serializer.validated_data["table"]
+        table = generics.get_object_or_404(
+            DiningTable.objects.select_for_update(of=("self",)).select_related("hall"),
+            pk=submitted_table.pk,
+            hall__zone_or_cabin__restaurant=restaurant,
+        )
+        serializer.validated_data["table"] = table
+        guest_count = serializer.validated_data.get("guest_count", 1)
+        if table.status == DiningTable.Status.BLOCKED:
+            raise serializers.ValidationError({"table": _("This table is blocked.")})
+        if guest_count > available_seat_count(table):
+            raise serializers.ValidationError(
+                {"guest_count": _("Guest count exceeds the seats currently available at this table.")}
+            )
         required_permission = (
             POS_TABLE_RESERVATIONS_MANAGE_PERMISSION
             if table.status == DiningTable.Status.RESERVED

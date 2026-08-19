@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -12,7 +13,13 @@ Receipt = get_receipt_model()
 
 
 class PaymentFiscalRetryService:
+    @transaction.atomic
     def retry(self, *, payment: Payment, fiscal_results=None):
+        payment = (
+            Payment.objects.select_for_update(of=("self",))
+            .select_related("order", "order__restaurant", "received_by")
+            .get(pk=payment.pk)
+        )
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError(
                 {

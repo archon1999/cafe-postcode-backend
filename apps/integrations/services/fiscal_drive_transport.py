@@ -85,6 +85,8 @@ class FiscalDriveTransportMixin:
                 restaurant=restaurant,
                 method='POST',
                 url=f'{self._endpoint_url()}{path}',
+                purpose='fiscal-drive',
+                integration_id=getattr(self.config, 'pk', None),
                 json_body=json,
                 form_body=data,
                 timeout_seconds=int(self._timeout()),
@@ -240,4 +242,3 @@ class FiscalDriveTransportMixin:
         if isinstance(explicit, bool):
             return explicit
         return str(explicit).strip().lower() in {'1', 'true', 'yes', 'on'}
-

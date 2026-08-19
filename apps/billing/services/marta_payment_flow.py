@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -21,6 +22,7 @@ Payment = get_payment_model()
 
 
 class MartaPaymentFlowMixin:
+    @transaction.atomic
     def initiate_marta_card_payment(
         self,
         *,
@@ -33,6 +35,22 @@ class MartaPaymentFlowMixin:
         cash_shift=None,
     ):
         from apps.billing.serializers import PaymentSerializer
+
+        order = (
+            Order.objects.select_for_update(of=("self",))
+            .select_related(
+                "restaurant",
+                "table_session__hall",
+                "table_session__table",
+            )
+            .get(pk=order.pk)
+        )
+        if cash_shift is not None:
+            cash_shift = (
+                type(cash_shift).objects.select_for_update(of=("self",))
+                .select_related("cash_desk", "cash_desk__payment_integration")
+                .get(pk=cash_shift.pk)
+            )
 
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
@@ -166,9 +184,20 @@ class MartaPaymentFlowMixin:
         payment.save(update_fields=["provider_payload", "updated_at"])
         return {"payment": payment, "marta": marta_payload}
 
+    @transaction.atomic
     def complete_marta_terminal_payment(
         self, *, payment: Payment, terminal_result: dict, received_by
     ):
+        payment = (
+            Payment.objects.select_for_update(of=("self",))
+            .select_related(
+                "order",
+                "order__restaurant",
+                "order__table_session__hall",
+                "order__table_session__table",
+            )
+            .get(pk=payment.pk)
+        )
         if payment.method != Payment.Method.CARD:
             raise ValidationError(
                 {

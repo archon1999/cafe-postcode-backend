@@ -5,7 +5,7 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
-from apps.floor.models import DiningTable, Hall
+from apps.floor.models import DiningTable, Hall, TableSession
 
 
 @dataclass(frozen=True)
@@ -38,9 +38,19 @@ class HallConstructorService:
         deleted_table_ids = {str(table_id) for table_id in deleted_table_ids}
         payload_ids = {str(item['id']) for item in tables_payload if item.get('id')}
 
+        submitted_payload_ids = [
+            str(item['id']) for item in tables_payload if item.get('id')
+        ]
+        if len(submitted_payload_ids) != len(payload_ids):
+            raise ValidationError({'tables': _('A table may be submitted only once.')})
+
         unknown_deleted_ids = deleted_table_ids - set(existing_tables.keys())
         if unknown_deleted_ids:
             raise ValidationError({'deleted_table_ids': _('One or more tables do not belong to this hall.')})
+
+        unknown_payload_ids = payload_ids - set(existing_tables.keys())
+        if unknown_payload_ids:
+            raise ValidationError({'tables': _('One or more tables do not belong to this hall.')})
 
         if payload_ids & deleted_table_ids:
             raise ValidationError(
@@ -50,6 +60,22 @@ class HallConstructorService:
         missing_existing_ids = set(existing_tables.keys()) - deleted_table_ids - payload_ids
         if missing_existing_ids:
             raise ValidationError({'tables': _('Full hall snapshot is required when saving constructor data.')})
+
+        if deleted_table_ids and DiningTable.objects.filter(
+            id__in=deleted_table_ids,
+            hall=hall,
+            table_sessions__status__in=(
+                TableSession.Status.OPEN,
+                TableSession.Status.PENDING_PAYMENT,
+            ),
+        ).exists():
+            raise ValidationError(
+                {
+                    'deleted_table_ids': _(
+                        'Close or move active table sessions before deleting a table.'
+                    )
+                }
+            )
 
         placements: list[_Placement] = []
         table_numbers: set[int] = set()
@@ -95,6 +121,7 @@ class HallConstructorService:
         tables_payload: list[dict],
         deleted_table_ids: Iterable[str],
     ):
+        hall = Hall.objects.select_for_update(of=('self',)).get(pk=hall.pk)
         deleted_table_ids = {str(table_id) for table_id in deleted_table_ids}
         self.validate_layout(
             hall=hall,

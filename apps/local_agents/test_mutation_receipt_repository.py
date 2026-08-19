@@ -11,8 +11,8 @@ from apps.restaurants.models import Restaurant
 class MutationReceiptRepositoryTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='Repository one', auth_code='REP001')
-        cls.other_restaurant = Restaurant.objects.create(name='Repository two', auth_code='REP002')
+        cls.restaurant = Restaurant.objects.create(name='Repository one')
+        cls.other_restaurant = Restaurant.objects.create(name='Repository two')
         cls.user_id = uuid.uuid4()
 
     def setUp(self):

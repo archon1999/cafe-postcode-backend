@@ -5,6 +5,8 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.api.client_ip import get_client_ip
+
 from apps.dashboard.api.serializers import OwnerDashboardLoginSerializer, OwnerDashboardUserSerializer
 from apps.users.api.admin.serializers import AuthSessionSerializer
 from apps.users.services import AuthSessionService
@@ -26,7 +28,7 @@ class DashboardAuthLoginView(APIView):
         except ValidationError:
             logger.warning(
                 'Dashboard login failed',
-                extra={'ui_channel': 'dashboard', 'client_ip': request.META.get('REMOTE_ADDR')},
+                extra={'ui_channel': 'dashboard', 'client_ip': get_client_ip(request)},
             )
             raise
         user = serializer.validated_data['user']

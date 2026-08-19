@@ -10,8 +10,8 @@ from apps.restaurants.models import Restaurant
 class MutationReceiptStorageCharacterizationTests(TestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.restaurant = Restaurant.objects.create(name='Receipt storage one', auth_code='MUT001')
-        cls.other_restaurant = Restaurant.objects.create(name='Receipt storage two', auth_code='MUT002')
+        cls.restaurant = Restaurant.objects.create(name='Receipt storage one')
+        cls.other_restaurant = Restaurant.objects.create(name='Receipt storage two')
         cls.user_id = uuid.uuid4()
 
     def create_receipt(self, **overrides):

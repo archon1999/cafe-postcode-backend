@@ -19,7 +19,7 @@ def auth_scenario(
         "mode": "remote",
         "actor": {
             "kind": "anonymous",
-            "role": "anonymous_restaurant_code",
+            "role": "anonymous_device_terminal",
             "restaurantRef": "restaurant:primary",
         },
         "input": {},

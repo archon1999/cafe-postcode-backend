@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler
 
 from common.api.error_codes import ErrorCode
+from core.observability import normalize_request_id, request_id_context
 
 
 logger = logging.getLogger(__name__)
@@ -39,15 +40,26 @@ def custom_exception_handler(exc, context):
     path = request.path if request else 'unknown path'
     view_name = view.__class__.__name__ if view else 'unknown view'
 
-    logger.exception('Unhandled API exception in %s on %s', view_name, path, exc_info=exc)
+    # Exception messages may contain database details, credentials or provider
+    # payloads. Correlate by request ID and type without copying the exception
+    # text into either the response or application logs.
+    logger.error(
+        'Unhandled API exception in %s on %s (type=%s)',
+        view_name,
+        path,
+        type(exc).__name__,
+    )
 
-    message = str(exc).strip() or _('Internal server error')
+    request_id = normalize_request_id(
+        getattr(request, 'request_id', '') if request is not None else request_id_context.get()
+    )
 
     return Response(
         {
             'status': status.HTTP_500_INTERNAL_SERVER_ERROR,
-            'message': message,
+            'message': _('Internal server error'),
             'code': ErrorCode.SERVER_ERROR,
+            'requestId': request_id,
         },
         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
     )

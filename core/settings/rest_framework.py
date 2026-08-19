@@ -28,6 +28,9 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'common.api.authentication.ExpiringSessionTokenAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
     'DEFAULT_RENDERER_CLASSES': DEFAULT_RENDERER_CLASSES,
     'DEFAULT_PARSER_CLASSES': (
         'djangorestframework_camel_case.parser.CamelCaseFormParser',
@@ -43,15 +46,22 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '120/min',
         'login': '10/min',
-        'pin_login': '20/min',
+        'pin_login': '10/min',
+        'pin_device': '5/min',
         'submit': '10/min',
-        'agent_enrollment': '10/min',
+        'device_pairing': '6/min',
+        'device_migration': '30/min',
+        'restaurant_code_migration': '10/min',
+        'control_pairing_resolve': '30/min',
+        'control_pairing_decision': '10/min',
+        'catalog_translation': '30/min',
     }
 }
 
 AUTH_SESSION_TTL_SECONDS = {
-    # Keep login/password and POS PIN sessions active for a full day by default.
-    'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
+    # Admin access credentials are deliberately short-lived; the browser uses
+    # the rotating HttpOnly refresh family for continuity.
+    'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(15 * 60))),
     'pos': int(os.getenv('POS_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
     'dashboard': int(os.getenv('DASHBOARD_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
 }

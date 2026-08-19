@@ -15,6 +15,17 @@ Receipt = get_receipt_model()
 class PaymentRefundService:
     @transaction.atomic
     def refund(self, *, payment, refunded_by, cash_shift, reason=''):
+        payment = (
+            Payment.objects.select_for_update(of=('self',))
+            .select_related('order', 'order__restaurant')
+            .get(pk=payment.pk)
+        )
+        if cash_shift is not None:
+            cash_shift = (
+                type(cash_shift).objects.select_for_update(of=('self',))
+                .select_related('cash_desk')
+                .get(pk=cash_shift.pk)
+            )
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError({'detail': 'Only successful payments can be refunded.'})
         if payment.order.status != payment.order.Status.CLOSED:
@@ -56,6 +67,17 @@ class PaymentRefundService:
 
     @transaction.atomic
     def ensure_payment_print_document(self, *, payment, created_by, cash_shift):
+        payment = (
+            Payment.objects.select_for_update(of=('self',))
+            .select_related('order', 'order__restaurant')
+            .get(pk=payment.pk)
+        )
+        if cash_shift is not None:
+            cash_shift = (
+                type(cash_shift).objects.select_for_update(of=('self',))
+                .select_related('cash_desk')
+                .get(pk=cash_shift.pk)
+            )
         if payment.status != Payment.Status.SUCCEEDED:
             raise ValidationError({'detail': 'Only successful payments can be printed.'})
         if cash_shift is None or cash_shift.status != cash_shift.Status.OPEN:

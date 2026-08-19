@@ -1,5 +1,6 @@
 services:
   web:
+    image: ${BACKEND_IMAGE:-postcode/backend:local}
     build:
       context: .
     environment:
@@ -17,21 +18,33 @@ services:
       CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-1}
       DB_ENGINE: postgres
       DB_NAME: ${POSTGRES_DB:-cafe_postcode}
-      DB_USER: ${POSTGRES_USER:-cafe_postcode}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      DB_USER: ${DB_APP_USER:?Set DB_APP_USER in .env.production}
+      DB_PASSWORD: ${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env.production}
+      DB_ADMIN_USER: ${POSTGRES_USER:-cafe_postcode}
       DB_HOST: postgres
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ADMIN_MFA_FERNET_KEYS: ${ADMIN_MFA_FERNET_KEYS:?Set ADMIN_MFA_FERNET_KEYS in .env.production}
+      ADMIN_MFA_REQUIRED: ${ADMIN_MFA_REQUIRED:-0}
+      INTEGRATION_FERNET_KEYS: ${INTEGRATION_FERNET_KEYS:?Set INTEGRATION_FERNET_KEYS in .env.production}
+      DJANGO_ADMIN_ENABLED: ${DJANGO_ADMIN_ENABLED:-0}
+      DJANGO_ADMIN_ALLOWED_CIDRS: ${DJANGO_ADMIN_ALLOWED_CIDRS:-}
+      DJANGO_ADMIN_TRUSTED_PROXY_CIDRS: ${DJANGO_ADMIN_TRUSTED_PROXY_CIDRS:-}
+      CLIENT_IP_TRUSTED_PROXY_CIDRS: ${CLIENT_IP_TRUSTED_PROXY_CIDRS:?Set CLIENT_IP_TRUSTED_PROXY_CIDRS in .env.production}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_LEADS_CHAT_ID: ${TELEGRAM_LEADS_CHAT_ID:-}
       TELEGRAM_TIMEOUT: ${TELEGRAM_TIMEOUT:-10}
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
+      YANDEX_TRANSLATE_API_KEY: ${YANDEX_TRANSLATE_API_KEY:-}
+      YANDEX_TRANSLATE_FOLDER_ID: ${YANDEX_TRANSLATE_FOLDER_ID:-}
+      YANDEX_TRANSLATE_TIMEOUT: ${YANDEX_TRANSLATE_TIMEOUT:-10}
       TELEGRAM_REPORTS_BOT_TOKEN: ${TELEGRAM_REPORTS_BOT_TOKEN:-}
+      TELEGRAM_REPORTS_BOT_USERNAME: ${TELEGRAM_REPORTS_BOT_USERNAME:-}
       TELEGRAM_REPORTS_WEBHOOK_SECRET: ${TELEGRAM_REPORTS_WEBHOOK_SECRET:-}
       TELEGRAM_REPORTS_WEBHOOK_URL: ${TELEGRAM_REPORTS_WEBHOOK_URL:-https://cafe-postcode.uz/api/v1/telegram-reports/webhook/}
-      ADMIN_AUTH_SESSION_TTL_SECONDS: ${ADMIN_AUTH_SESSION_TTL_SECONDS:-86400}
+      ADMIN_AUTH_SESSION_TTL_SECONDS: ${ADMIN_AUTH_SESSION_TTL_SECONDS:-900}
       POS_AUTH_SESSION_TTL_SECONDS: ${POS_AUTH_SESSION_TTL_SECONDS:-86400}
       DASHBOARD_AUTH_SESSION_TTL_SECONDS: ${DASHBOARD_AUTH_SESSION_TTL_SECONDS:-86400}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -40,6 +53,16 @@ services:
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
       LOCAL_AGENT_RELEASE_MANIFEST_URL: ${LOCAL_AGENT_RELEASE_MANIFEST_URL:-https://admin.cafe-postcode.uz/downloads/local-agent-release.json}
+      DEVICE_PAIRING_CLAIM_BASE_URL: ${DEVICE_PAIRING_CLAIM_BASE_URL:-https://admin.cafe-postcode.uz/control/pair}
+      DEVICE_POS_PROOF_REQUIRED: ${DEVICE_POS_PROOF_REQUIRED:-1}
+      DEVICE_LEGACY_POS_MIGRATION_ENABLED: ${DEVICE_LEGACY_POS_MIGRATION_ENABLED:-0}
+      DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED: ${DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED:-0}
+      DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED: ${DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED:-0}
+      DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED: ${DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED:-0}
+      DEVICE_LEGACY_TV_PAIRING_ENABLED: ${DEVICE_LEGACY_TV_PAIRING_ENABLED:-0}
+      DEVICE_LEGACY_TV_MIGRATION_ENABLED: ${DEVICE_LEGACY_TV_MIGRATION_ENABLED:-0}
+      DEVICE_LEGACY_MIGRATION_STARTED_AT: ${DEVICE_LEGACY_MIGRATION_STARTED_AT:-}
+      DEVICE_LEGACY_MIGRATION_DEADLINE: ${DEVICE_LEGACY_MIGRATION_DEADLINE:-}
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
@@ -48,8 +71,7 @@ services:
       - sh
       - -c
       - >-
-        python manage.py migrate --noinput &&
-        python manage.py collectstatic --noinput &&
+        python manage.py check_database_role &&
         rm -rf /tmp/prometheus-multiproc &&
         mkdir -p /tmp/prometheus-multiproc &&
         exec gunicorn core.wsgi:application
@@ -67,13 +89,38 @@ services:
       - staticfiles:/app/staticfiles
       - media:/app/media
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz/"]
+      test: ["CMD", "python", "-c", "import urllib.request; request=urllib.request.Request('http://127.0.0.1:8000/readyz/', headers={'Host':'cafe-postcode.uz'}); urllib.request.urlopen(request, timeout=4).read()"]
       interval: 30s
       timeout: 5s
       retries: 5
 
+  migrate:
+    extends:
+      service: web
+    profiles: ["operations"]
+    environment:
+      DB_USER: ${POSTGRES_USER:-cafe_postcode}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      DB_ADMIN_USER: ${POSTGRES_USER:-cafe_postcode}
+      DJANGO_MIGRATION_PROCESS: "1"
+      PGOPTIONS: -c lock_timeout=${MIGRATION_LOCK_TIMEOUT:-5s} -c statement_timeout=${MIGRATION_STATEMENT_TIMEOUT:-15min}
+    command:
+      - sh
+      - -c
+      - >-
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput
+    restart: "no"
+    healthcheck:
+      disable: true
+
   ws:
+    image: ${BACKEND_IMAGE:-postcode/backend:local}
     build:
       context: .
     environment:
@@ -91,14 +138,22 @@ services:
       CSRF_COOKIE_SECURE: ${CSRF_COOKIE_SECURE:-1}
       DB_ENGINE: postgres
       DB_NAME: ${POSTGRES_DB:-cafe_postcode}
-      DB_USER: ${POSTGRES_USER:-cafe_postcode}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      DB_USER: ${DB_APP_USER:?Set DB_APP_USER in .env.production}
+      DB_PASSWORD: ${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env.production}
+      DB_ADMIN_USER: ${POSTGRES_USER:-cafe_postcode}
       DB_HOST: postgres
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      ADMIN_AUTH_SESSION_TTL_SECONDS: ${ADMIN_AUTH_SESSION_TTL_SECONDS:-86400}
+      ADMIN_MFA_FERNET_KEYS: ${ADMIN_MFA_FERNET_KEYS:?Set ADMIN_MFA_FERNET_KEYS in .env.production}
+      ADMIN_MFA_REQUIRED: ${ADMIN_MFA_REQUIRED:-0}
+      INTEGRATION_FERNET_KEYS: ${INTEGRATION_FERNET_KEYS:?Set INTEGRATION_FERNET_KEYS in .env.production}
+      DJANGO_ADMIN_ENABLED: ${DJANGO_ADMIN_ENABLED:-0}
+      DJANGO_ADMIN_ALLOWED_CIDRS: ${DJANGO_ADMIN_ALLOWED_CIDRS:-}
+      DJANGO_ADMIN_TRUSTED_PROXY_CIDRS: ${DJANGO_ADMIN_TRUSTED_PROXY_CIDRS:-}
+      CLIENT_IP_TRUSTED_PROXY_CIDRS: ${CLIENT_IP_TRUSTED_PROXY_CIDRS:?Set CLIENT_IP_TRUSTED_PROXY_CIDRS in .env.production}
+      ADMIN_AUTH_SESSION_TTL_SECONDS: ${ADMIN_AUTH_SESSION_TTL_SECONDS:-900}
       POS_AUTH_SESSION_TTL_SECONDS: ${POS_AUTH_SESSION_TTL_SECONDS:-86400}
       DASHBOARD_AUTH_SESSION_TTL_SECONDS: ${DASHBOARD_AUTH_SESSION_TTL_SECONDS:-86400}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -106,13 +161,15 @@ services:
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
+      DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED: ${DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED:-0}
+      DEVICE_LEGACY_MIGRATION_STARTED_AT: ${DEVICE_LEGACY_MIGRATION_STARTED_AT:-}
+      DEVICE_LEGACY_MIGRATION_DEADLINE: ${DEVICE_LEGACY_MIGRATION_DEADLINE:-}
     command:
-      - daphne
-      - -b
-      - 0.0.0.0
-      - -p
-      - "8888"
-      - core.asgi:application
+      - sh
+      - -c
+      - >-
+        python manage.py check_database_role &&
+        exec daphne -b 0.0.0.0 -p 8888 core.asgi:application
     depends_on:
       web:
         condition: service_healthy
@@ -122,8 +179,18 @@ services:
       - staticfiles:/app/staticfiles
       - media:/app/media
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; request=urllib.request.Request('http://127.0.0.1:8888/readyz/', headers={'Host':'cafe-postcode.uz'}); urllib.request.urlopen(request, timeout=4).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   qcluster:
+    image: ${BACKEND_IMAGE:-postcode/backend:local}
     build:
       context: .
     environment:
@@ -133,14 +200,21 @@ services:
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,cafe-postcode.uz,www.cafe-postcode.uz}
       DB_ENGINE: postgres
       DB_NAME: ${POSTGRES_DB:-cafe_postcode}
-      DB_USER: ${POSTGRES_USER:-cafe_postcode}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      DB_USER: ${DB_APP_USER:?Set DB_APP_USER in .env.production}
+      DB_PASSWORD: ${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env.production}
+      DB_ADMIN_USER: ${POSTGRES_USER:-cafe_postcode}
       DB_HOST: postgres
       DB_PORT: "5432"
       REDIS_URL: redis://redis:6379/0
       LOG_FORMAT: json
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ADMIN_MFA_FERNET_KEYS: ${ADMIN_MFA_FERNET_KEYS:?Set ADMIN_MFA_FERNET_KEYS in .env.production}
+      INTEGRATION_FERNET_KEYS: ${INTEGRATION_FERNET_KEYS:?Set INTEGRATION_FERNET_KEYS in .env.production}
+      DJANGO_ADMIN_ENABLED: "0"
+      CLIENT_IP_TRUSTED_PROXY_CIDRS: ${CLIENT_IP_TRUSTED_PROXY_CIDRS:?Set CLIENT_IP_TRUSTED_PROXY_CIDRS in .env.production}
       TELEGRAM_REPORTS_BOT_TOKEN: ${TELEGRAM_REPORTS_BOT_TOKEN:-}
+      TELEGRAM_REPORTS_BOT_USERNAME: ${TELEGRAM_REPORTS_BOT_USERNAME:-}
+      TELEGRAM_REPORTS_WEBHOOK_SECRET: ${TELEGRAM_REPORTS_WEBHOOK_SECRET:-}
       TELEGRAM_TIMEOUT: ${TELEGRAM_TIMEOUT:-10}
       TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
@@ -149,13 +223,22 @@ services:
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
       Q_CLUSTER_WORKERS: ${Q_CLUSTER_WORKERS:-1}
-    command: ["python", "manage.py", "qcluster"]
+    command: ["sh", "-c", "python manage.py check_database_role && exec python manage.py qcluster"]
     depends_on:
       web:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   nginx:
     image: nginx:1.27-alpine
@@ -163,7 +246,7 @@ services:
       web:
         condition: service_healthy
       ws:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8880}:80"
     volumes:
@@ -171,6 +254,11 @@ services:
       - staticfiles:/app/staticfiles:ro
       - media:/app/media:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - --header='Host: cafe-postcode.uz' http://127.0.0.1/readyz/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   postgres:
     image: postgres:16-alpine
@@ -186,6 +274,48 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  db-role-provisioner:
+    image: postgres:16-alpine
+    profiles: ["operations"]
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-cafe_postcode}
+      PGUSER: ${POSTGRES_USER:-cafe_postcode}
+      DB_APP_USER: ${DB_APP_USER:?Set DB_APP_USER in .env.production}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env.production}
+      DB_MONITOR_USER: ${DB_MONITOR_USER:?Set DB_MONITOR_USER in .env.production}
+      DB_MONITOR_PASSWORD: ${DB_MONITOR_PASSWORD:?Set DB_MONITOR_PASSWORD in .env.production}
+    command:
+      - sh
+      - -ceu
+      - >-
+        for role_name in "$${PGUSER}" "$${DB_APP_USER}" "$${DB_MONITOR_USER}"; do
+          case "$${role_name}" in
+            ""|*[!A-Za-z0-9_]*|[0-9]*) echo "Invalid database role name." >&2; exit 1 ;;
+          esac;
+        done;
+        test "$${PGUSER}" != "$${DB_APP_USER}";
+        test "$${PGUSER}" != "$${DB_MONITOR_USER}";
+        test "$${DB_APP_USER}" != "$${DB_MONITOR_USER}";
+        case "$${DB_MONITOR_PASSWORD}" in
+          ""|*[!A-Za-z0-9._~-]*) echo "DB_MONITOR_PASSWORD must be URL-safe." >&2; exit 1 ;;
+        esac;
+        exec psql --no-psqlrc --set=ON_ERROR_STOP=1
+        --set=owner_user="$${PGUSER}"
+        --set=database_name="$${PGDATABASE}"
+        --set=app_user="$${DB_APP_USER}"
+        --set=app_password="$${DB_APP_PASSWORD}"
+        --set=monitor_user="$${DB_MONITOR_USER}"
+        --set=monitor_password="$${DB_MONITOR_PASSWORD}"
+        --file=/opt/postcode/provision-database-roles.sql
+    volumes:
+      - ./ops/provision-database-roles.sql:/opt/postcode/provision-database-roles.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   redis:
     image: redis:7-alpine
@@ -219,10 +349,6 @@ services:
         condition: service_started
       redis-exporter:
         condition: service_started
-      node-exporter:
-        condition: service_started
-      cadvisor:
-        condition: service_started
     restart: unless-stopped
 
   grafana:
@@ -248,7 +374,7 @@ services:
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     environment:
-      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-cafe_postcode}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.production}@postgres:5432/${POSTGRES_DB:-cafe_postcode}?sslmode=disable
+      DATA_SOURCE_NAME: postgresql://${DB_MONITOR_USER:?Set DB_MONITOR_USER in .env.production}:${DB_MONITOR_PASSWORD:?Set a URL-safe DB_MONITOR_PASSWORD in .env.production}@postgres:5432/${POSTGRES_DB:-cafe_postcode}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -265,6 +391,7 @@ services:
 
   node-exporter:
     image: prom/node-exporter:v1.8.2
+    profiles: ["host-observability"]
     command:
       - "--path.rootfs=/host"
     pid: host
@@ -274,6 +401,7 @@ services:
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
+    profiles: ["host-observability"]
     privileged: true
     devices:
       - /dev/kmsg:/dev/kmsg
@@ -286,7 +414,8 @@ services:
     restart: unless-stopped
 
   portainer:
-    image: portainer/portainer-ce:latest
+    image: portainer/portainer-ce:2.39.2
+    profiles: ["docker-admin"]
     command:
       - "-H"
       - "unix:///var/run/docker.sock"

@@ -60,8 +60,6 @@ class PosTestDataMixin:
         cls.tariff = Tariff.objects.create(
             name='POS Test Tariff',
             description='Tariff for POS test data',
-            monthly_price=0,
-            yearly_price=0,
             is_active=True,
         )
         cls.tariff.permissions.set(cls.permissions)

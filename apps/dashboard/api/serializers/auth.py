@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -67,9 +68,10 @@ class OwnerDashboardLoginSerializer(serializers.Serializer):
         if not user or not user.is_active:
             raise serializers.ValidationError(_('Invalid credentials.'))
 
-        if user.is_superuser:
-            attrs['user'] = user
-            return attrs
+        if user.is_superuser and settings.ADMIN_MFA_REQUIRED:
+            raise serializers.ValidationError(
+                _('Superusers must sign in through the MFA-protected administration application.')
+            )
 
         if 'dashboard.view' not in set(user.permission_codes):
             raise serializers.ValidationError(_('Only users with dashboard access can open the owner dashboard.'))

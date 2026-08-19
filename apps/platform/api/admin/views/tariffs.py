@@ -1,6 +1,7 @@
 from rest_framework import generics
 
 from apps.platform.api.admin.serializers import TariffOptionSerializer, TariffSerializer
+from apps.platform.api.admin.permissions import PlatformPermissionRequiredMixin
 from apps.platform.helpers import get_tariff_model
 from apps.platform.selectors.business_partners import filter_tariffs
 from common.api.admin_permissions import AdminPermissionRequiredMixin
@@ -8,14 +9,14 @@ from common.api.admin_permissions import AdminPermissionRequiredMixin
 Tariff = get_tariff_model()
 
 
-class TariffListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
+class TariffListCreateView(PlatformPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = TariffSerializer
 
     def get_queryset(self):
         return filter_tariffs(Tariff.objects.prefetch_related('permissions', 'allowed_roles'), self.request)
 
 
-class TariffDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
+class TariffDetailView(PlatformPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = TariffSerializer
 
     def get_queryset(self):

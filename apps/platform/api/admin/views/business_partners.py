@@ -10,6 +10,7 @@ from apps.platform.api.admin.serializers import (
     BusinessPartnerSerializer,
     PartnerActivationResultSerializer,
 )
+from apps.platform.api.admin.permissions import PlatformPermissionRequiredMixin
 from apps.platform.helpers import get_business_partner_model
 from apps.platform.selectors.business_partners import (
     filter_partners,
@@ -31,7 +32,7 @@ def _build_partner_activation_defaults(partner):
     return {'username': username, 'password': password}
 
 
-class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListCreateAPIView):
+class BusinessPartnerListCreateView(PlatformPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = BusinessPartnerSerializer
 
     def get_queryset(self):
@@ -41,7 +42,7 @@ class BusinessPartnerListCreateView(AdminPermissionRequiredMixin, generics.ListC
         )
 
 
-class BusinessPartnerDetailView(AdminPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
+class BusinessPartnerDetailView(PlatformPermissionRequiredMixin, generics.RetrieveUpdateAPIView):
     serializer_class = BusinessPartnerSerializer
 
     def get_queryset(self):
@@ -73,16 +74,22 @@ class BusinessPartnerLookupView(AdminPermissionRequiredMixin, APIView):
         return Response(BusinessPartnerLookupSerializer(payload).data, status=status.HTTP_200_OK)
 
 
-class BusinessPartnerActivationDefaultsView(AdminPermissionRequiredMixin, APIView):
+class BusinessPartnerActivationDefaultsView(PlatformPermissionRequiredMixin, APIView):
     def get(self, request, pk):
-        partner = BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').get(pk=pk)
+        partner = generics.get_object_or_404(
+            BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants'),
+            pk=pk,
+        )
         payload = _build_partner_activation_defaults(partner)
         return Response(PartnerActivationDefaultsSerializer(payload).data, status=status.HTTP_200_OK)
 
 
-class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
+class BusinessPartnerActivateView(PlatformPermissionRequiredMixin, APIView):
     def post(self, request, pk):
-        partner = BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants').get(pk=pk)
+        partner = generics.get_object_or_404(
+            BusinessPartner.objects.select_related('owner_user').prefetch_related('restaurants'),
+            pk=pk,
+        )
         activation_serializer = PartnerActivationSerializer(
             data=request.data,
             context={'partner': partner, 'user_model': User},
@@ -100,14 +107,15 @@ class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
                 phone=partner.phone,
                 role=get_business_partner_role(),
                 is_active=True,
-                is_staff=True,
+                is_staff=False,
             )
             partner.owner_user = user
         else:
             user.username = username
             user.role = get_business_partner_role()
             user.is_active = True
-            user.is_staff = True
+            if not user.is_superuser:
+                user.is_staff = False
 
         user.set_password(password)
         user.save()
@@ -121,9 +129,11 @@ class BusinessPartnerActivateView(AdminPermissionRequiredMixin, APIView):
         return Response(PartnerActivationResultSerializer(payload).data, status=status.HTTP_200_OK)
 
 
-class BusinessPartnerDeactivateView(AdminPermissionRequiredMixin, APIView):
+class BusinessPartnerDeactivateView(PlatformPermissionRequiredMixin, APIView):
     def post(self, request, pk):
-        partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
+        partner = generics.get_object_or_404(
+            BusinessPartner.objects.select_related('owner_user'), pk=pk
+        )
         partner.status = BusinessPartner.Status.INACTIVE
         partner.deactivated_at = timezone.now()
         partner.save(update_fields=['status', 'deactivated_at', 'updated_at'])
@@ -133,9 +143,11 @@ class BusinessPartnerDeactivateView(AdminPermissionRequiredMixin, APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class BusinessPartnerResetPasswordView(AdminPermissionRequiredMixin, APIView):
+class BusinessPartnerResetPasswordView(PlatformPermissionRequiredMixin, APIView):
     def post(self, request, pk):
-        partner = BusinessPartner.objects.select_related('owner_user').get(pk=pk)
+        partner = generics.get_object_or_404(
+            BusinessPartner.objects.select_related('owner_user'), pk=pk
+        )
         if partner.owner_user is None:
             raise serializers.ValidationError({'detail': 'Business partner is not activated yet.'})
         password = generate_password()

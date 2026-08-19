@@ -9,9 +9,5 @@ def get_restaurant_entitlement_model():
     return apps.get_model('platform', 'RestaurantEntitlement')
 
 
-def get_restaurant_balance_transaction_model():
-    return apps.get_model('platform', 'RestaurantBalanceTransaction')
-
-
 def get_tariff_model():
     return apps.get_model('platform', 'Tariff')

@@ -23,6 +23,7 @@ class LocalAgentFleetSerializer(serializers.ModelSerializer):
             'capabilities',
             'lan_endpoints',
             'protocol_version',
+            'rollout_state',
             'is_active',
         )
 

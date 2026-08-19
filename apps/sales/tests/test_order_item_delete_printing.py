@@ -45,11 +45,13 @@ class OrderItemDeletePrintingApiTests(PosAPITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['orderRemoved'])
         self.assertEqual(len(response.data['kitchenPrintDocuments']), 1)
         order_item.refresh_from_db()
         order.refresh_from_db()
         original_line.refresh_from_db()
         self.assertEqual(order_item.status, OrderItem.Status.CANCELLED)
+        self.assertEqual(order.status, Order.Status.CANCELLED)
         self.assertTrue(KitchenTicketLine.objects.filter(pk=original_line.pk).exists())
         self.assertEqual(original_line.order_item_id, order_item.id)
         self.assertEqual(original_line.ticket.status, KitchenTicket.Status.DONE)
@@ -88,13 +90,16 @@ class OrderItemDeletePrintingApiTests(PosAPITestCase):
         self.assertEqual(document.data_snapshot['kitchen']['quantityDelta'], -3)
 
     def test_draft_item_is_deleted_without_a_cancellation_document(self):
+        shift = self.create_cash_shift()
         order, order_item = self.create_order_with_item()
 
         response = self.client.delete(
             f'/api/v1/pos/sales/orders/items/{order_item.id}/'
         )
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['orderRemoved'])
+        self.assertEqual(response.data['kitchenPrintDocuments'], [])
         self.assertFalse(OrderItem.objects.filter(pk=order_item.pk).exists())
         self.assertFalse(
             PrintDocument.objects.filter(
@@ -102,10 +107,17 @@ class OrderItemDeletePrintingApiTests(PosAPITestCase):
                 source_id=order_item.id,
             ).exists()
         )
-        order.refresh_from_db()
-        self.assertEqual(order.subtotal, 0)
-        self.assertEqual(order.calculated_total, 0)
-        self.assertEqual(order.total, 0)
+        self.assertFalse(Order.objects.filter(pk=order.pk).exists())
+        self.restaurant.refresh_from_db()
+        shift.refresh_from_db()
+        self.assertEqual(self.restaurant.last_order_number, 0)
+        self.assertEqual(shift.next_order_number, 0)
+
+        replacement, _replacement_item = self.create_order_with_item()
+        shift.refresh_from_db()
+        self.assertEqual(replacement.order_number, order.order_number)
+        self.assertEqual(replacement.display_name, order.display_name)
+        self.assertEqual(shift.next_order_number, 1)
 
     def test_display_only_dispatched_item_is_cancelled_without_a_print_document(self):
         order, order_item = self.create_order_with_item()
@@ -117,10 +129,17 @@ class OrderItemDeletePrintingApiTests(PosAPITestCase):
             f'/api/v1/pos/sales/orders/items/{order_item.id}/'
         )
 
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['orderRemoved'])
+        self.assertEqual(response.data['kitchenPrintDocuments'], [])
         order_item.refresh_from_db()
+        order.refresh_from_db()
         self.assertEqual(order_item.status, OrderItem.Status.CANCELLED)
+        self.assertEqual(order.status, Order.Status.CANCELLED)
         self.assertTrue(KitchenTicketLine.objects.filter(order_item=order_item).exists())
+        open_checks = self.client.get('/api/v1/pos/billing/open-checks/')
+        self.assertEqual(open_checks.status_code, status.HTTP_200_OK, open_checks.data)
+        self.assertNotIn(str(order.id), {str(row['id']) for row in open_checks.data})
         self.assertFalse(
             PrintDocument.objects.filter(
                 source_model='sales.orderitem',

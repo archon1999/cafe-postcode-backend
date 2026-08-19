@@ -14,6 +14,10 @@ def catalog_item_image_upload_to(instance, filename: str) -> str:
 
 
 class CatalogItem(BaseModel):
+    class ItemType(models.TextChoices):
+        PRODUCT = 'product', 'Product'
+        SERVICE = 'service', 'Service'
+
     class SaleUnit(models.TextChoices):
         PIECE = 'piece', 'Piece'
         KILOGRAM = 'kg', 'Kilogram'
@@ -52,6 +56,7 @@ class CatalogItem(BaseModel):
         upload_to=catalog_item_image_upload_to,
     )
     description = models.TextField(blank=True)
+    item_type = models.CharField(max_length=16, choices=ItemType.choices, default=ItemType.PRODUCT)
     price = models.PositiveIntegerField(default=0)
     sale_unit = models.CharField(max_length=16, choices=SaleUnit.choices, default=SaleUnit.PIECE)
     sort_order = models.PositiveIntegerField(default=0)

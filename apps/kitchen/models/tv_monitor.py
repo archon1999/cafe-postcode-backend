@@ -16,10 +16,17 @@ class TvMonitorDevice(BaseModel):
         related_name='tv_monitor_devices',
     )
     token_hash = models.CharField(max_length=64, unique=True)
-    restaurant_auth_code_hash = models.CharField(max_length=64)
+    device = models.OneToOneField(
+        'devices.Device',
+        on_delete=models.SET_NULL,
+        related_name='legacy_tv_monitor_record',
+        null=True,
+        blank=True,
+    )
     paired_at = models.DateTimeField()
     last_seen_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    credential_migrated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [

@@ -1,5 +1,6 @@
 from django.db import models
 
+from apps.integrations.fields import EncryptedJSONField
 from common.models import BaseModel
 
 
@@ -18,7 +19,11 @@ class IntegrationConfig(BaseModel):
     kind = models.CharField(max_length=20, choices=Kind.choices)
     provider = models.CharField(max_length=120)
     is_enabled = models.BooleanField(default=True)
-    settings = models.JSONField(default=dict, blank=True)
+    # The original plaintext ``settings`` database column is intentionally
+    # retained during the rollback window. Runtime reads/writes use only this
+    # encrypted shadow column; migration 0013 can repopulate the legacy column
+    # before an application rollback.
+    settings = EncryptedJSONField(default=dict, blank=True, db_column='settings_encrypted')
 
     class Meta:
         ordering = ('kind', 'provider')

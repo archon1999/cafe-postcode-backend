@@ -128,6 +128,8 @@ class UnikassaTransportMixin:
                 restaurant=restaurant,
                 method='POST',
                 url=f'{endpoint_url}{path}',
+                purpose='unikassa',
+                integration_id=getattr(self.config, 'pk', None),
                 json_body=payload,
                 timeout_seconds=int(self._timeout()),
             )
@@ -270,4 +272,3 @@ class UnikassaTransportMixin:
         except UnikassaFiscalError:
             return None
         return payload if isinstance(payload, dict) else None
-

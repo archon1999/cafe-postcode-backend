@@ -3,7 +3,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.authtoken.models import Token
 
-from apps.users.models import AuthSession, Role, User
+from apps.users.models import AdminRefreshFamily, AdminRefreshToken, AuthSession, Role, User
 
 
 SENSITIVE_USER_FIELDS = ('password', 'role_id', 'is_active', 'is_staff', 'is_superuser')
@@ -12,6 +12,20 @@ SENSITIVE_USER_FIELDS = ('password', 'role_id', 'is_active', 'is_staff', 'is_sup
 def revoke_user_sessions(user_id) -> None:
     now = timezone.now()
     Token.objects.filter(user_id=user_id).delete()
+    family_ids = list(
+        AdminRefreshFamily.objects.filter(user_id=user_id, status=AdminRefreshFamily.Status.ACTIVE).values_list(
+            'id', flat=True
+        )
+    )
+    AdminRefreshFamily.objects.filter(id__in=family_ids).update(
+        status=AdminRefreshFamily.Status.REVOKED,
+        revoked_at=now,
+        updated_at=now,
+    )
+    AdminRefreshToken.objects.filter(family_id__in=family_ids, revoked_at__isnull=True).update(
+        revoked_at=now,
+        updated_at=now,
+    )
     AuthSession.objects.filter(user_id=user_id, status=AuthSession.Status.ACTIVE).update(
         status=AuthSession.Status.REVOKED,
         revoked_at=now,

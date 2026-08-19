@@ -70,6 +70,7 @@ class OpenCheckReceiptSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'payment',
+            'print_document',
             'kind',
             'status',
             'payload',

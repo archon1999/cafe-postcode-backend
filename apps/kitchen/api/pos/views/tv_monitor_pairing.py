@@ -15,7 +15,11 @@ from apps.kitchen.services.tv_monitor_pairing import (
     get_tv_monitor_pairing,
 )
 from apps.platform.services import FeatureGateService
+from apps.devices.authentication import authenticate_device_request
+from apps.devices.migration_window import legacy_tv_migration_enabled, legacy_tv_pairing_enabled
+from apps.devices.models import Device
 from apps.users.api.pos.serializers import PosRestaurantContextSerializer
+from common.api.client_ip import get_client_ip
 from common.api.throttling import LoginRateThrottle
 from common.api.scopes import get_request_restaurant
 
@@ -61,6 +65,11 @@ class TvMonitorPairingCreateView(APIView):
     throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
+        if not legacy_tv_pairing_enabled():
+            return Response(
+                {'code': 'legacy_tv_pairing_disabled', 'detail': 'Legacy TV pairing has been retired.'},
+                status=status.HTTP_410_GONE,
+            )
         pairing, poll_token, claim_token = create_tv_monitor_pairing()
         return Response(
             {
@@ -77,6 +86,11 @@ class TvMonitorPairingStatusView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, pairing_id):
+        if not legacy_tv_pairing_enabled():
+            return Response(
+                {'code': 'legacy_tv_pairing_disabled', 'detail': 'Legacy TV pairing has been retired.'},
+                status=status.HTTP_410_GONE,
+            )
         poll_token = request.headers.get('X-TV-Pairing-Token', '').strip()
         try:
             pairing = get_tv_monitor_pairing(pairing_id=pairing_id, poll_token=poll_token)
@@ -100,6 +114,11 @@ class TvMonitorPairingClaimView(APIView):
     throttle_classes = [LoginRateThrottle]
 
     def post(self, request, pairing_id):
+        if not legacy_tv_pairing_enabled():
+            return Response(
+                {'code': 'legacy_tv_pairing_disabled', 'detail': 'Legacy TV pairing has been retired.'},
+                status=status.HTTP_410_GONE,
+            )
         serializer = TvMonitorPairingClaimSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -121,14 +140,22 @@ class TvKitchenMonitorQueueView(APIView):
     feature_gate_service_class = FeatureGateService
 
     def get(self, request):
-        token = request.headers.get('X-TV-Token', '').strip()
-        try:
-            device = authenticate_tv_monitor_device(token=token)
-        except TvMonitorPairingRequired as error:
-            return Response(
-                {'code': 'tv_pairing_required', 'detail': str(error)},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+        if request.headers.get('X-Device-Id'):
+            device = authenticate_device_request(request, expected_types=[Device.Type.TV_MONITOR])
+        else:
+            if not legacy_tv_migration_enabled():
+                return Response(
+                    {'code': 'device_required', 'detail': 'A paired TV device proof is required.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            token = request.headers.get('X-TV-Token', '').strip()
+            try:
+                device = authenticate_tv_monitor_device(token=token)
+            except TvMonitorPairingRequired as error:
+                return Response(
+                    {'code': 'tv_pairing_required', 'detail': str(error)},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
 
         self.feature_gate_service_class().ensure_kitchen_access(restaurant=device.restaurant)
         return Response(serialize_kitchen_monitor_queue(device.restaurant))
@@ -138,14 +165,22 @@ class TvMonitorDiagnosticView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        token = request.headers.get('X-TV-Token', '').strip()
-        try:
-            device = authenticate_tv_monitor_device(token=token)
-        except TvMonitorPairingRequired as error:
-            return Response(
-                {'code': 'tv_pairing_required', 'detail': str(error)},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
+        if request.headers.get('X-Device-Id'):
+            device = authenticate_device_request(request, expected_types=[Device.Type.TV_MONITOR])
+        else:
+            if not legacy_tv_migration_enabled():
+                return Response(
+                    {'code': 'device_required', 'detail': 'A paired TV device proof is required.'},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            token = request.headers.get('X-TV-Token', '').strip()
+            try:
+                device = authenticate_tv_monitor_device(token=token)
+            except TvMonitorPairingRequired as error:
+                return Response(
+                    {'code': 'tv_pairing_required', 'detail': str(error)},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
 
         serializer = TvMonitorDiagnosticSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -158,11 +193,7 @@ class TvMonitorDiagnosticView(APIView):
             'device_id': str(device.id),
             'restaurant_id': str(device.restaurant_id),
             'restaurant_name': device.restaurant.name,
-            'remote_addr': (
-                request.META.get('HTTP_CF_CONNECTING_IP')
-                or request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-                or request.META.get('REMOTE_ADDR', '')
-            ),
+            'remote_addr': get_client_ip(request) or '',
             'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
         }
         logger.info('tv_monitor_diagnostic %s', json.dumps(log_payload, default=str, ensure_ascii=False, sort_keys=True))

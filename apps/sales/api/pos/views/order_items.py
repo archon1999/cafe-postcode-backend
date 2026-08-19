@@ -156,16 +156,19 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
                 created_by=self.request.user,
             )
             self.kitchen_print_documents.append(str(document.id))
+        self.order_removed = state_service.remove_empty_order(order=order)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
         documents = getattr(self, 'kitchen_print_documents', [])
-        if not documents:
+        order_removed = getattr(self, 'order_removed', False)
+        if not documents and not order_removed:
             return Response(status=status.HTTP_204_NO_CONTENT)
         return Response(
             {
                 'kitchenPrintDocuments': documents,
+                'orderRemoved': order_removed,
             },
             status=status.HTTP_200_OK,
         )

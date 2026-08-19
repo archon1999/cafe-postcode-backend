@@ -98,17 +98,17 @@ class ExceptionHandlerContractTests(SimpleTestCase):
         self.assertNotEqual(response.data['message'], 'raw detail is hidden')
 
     def test_unhandled_exception_has_server_error_envelope(self):
-        response = custom_exception_handler(RuntimeError('unexpected failure'), {})
+        secret = 'database-password=do-not-leak'
+        with self.assertLogs('common.api.exception_handler', level='ERROR') as captured:
+            response = custom_exception_handler(RuntimeError(secret), {})
 
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
-        self.assertEqual(
-            response.data,
-            {
-                'status': status.HTTP_500_INTERNAL_SERVER_ERROR,
-                'message': 'unexpected failure',
-                'code': 'server_error',
-            },
-        )
+        self.assertEqual(response.data['status'], status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertTrue(response.data['message'])
+        self.assertEqual(response.data['code'], 'server_error')
+        self.assertRegex(response.data['requestId'], r'^[a-f0-9]{32}$')
+        self.assertNotIn(secret, str(response.data))
+        self.assertNotIn(secret, '\n'.join(captured.output))
 
     def test_error_codes_do_not_change_with_locale(self):
         codes = []

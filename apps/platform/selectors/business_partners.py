@@ -22,8 +22,6 @@ BUSINESS_PARTNER_ORDERING_FIELDS = {
 }
 TARIFF_ORDERING_FIELDS = {
     'name': 'name',
-    'monthlyPrice': 'monthly_price',
-    'yearlyPrice': 'yearly_price',
     'isActive': 'is_active',
 }
 RESTAURANT_LOGIN_ROLE_CODES = frozenset({'restaurant_admin', 'fast_food_admin'})

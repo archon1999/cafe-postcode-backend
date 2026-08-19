@@ -10,6 +10,7 @@ from apps.users.models import Permission, Role, User
 from apps.billing.models import Payment, PaymentRefund, Receipt
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
+from apps.printing.models import PrintDocument, PrintTemplate, PrintTemplateVersion
 from apps.sales.models import Order, OrderItem
 from apps.restaurants.models import DistributionPoint, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -305,9 +306,30 @@ class OpenCheckListApiTests(APITestCase):
             amount=order.total,
             status=PaymentRefund.Status.SUCCEEDED,
         )
+        template, _ = PrintTemplate.objects.get_or_create(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
+        template_version = PrintTemplateVersion.objects.create(
+            template=template,
+            revision=999,
+            status=PrintTemplateVersion.Status.PUBLISHED,
+            layout={},
+        )
+        print_document = PrintDocument.objects.create(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+            idempotency_key=f'open-check-reprint:{order.id}',
+            source_model='billing.Receipt',
+            source_id=payment.id,
+            data_snapshot={},
+            template_version=template_version,
+            content_hash='test',
+        )
         Receipt.objects.create(
             order=order,
             payment=payment,
+            print_document=print_document,
             kind=Receipt.Kind.PLAIN,
             status=Receipt.Status.SENT,
             payload={'receiptNumber': 'R-1'},
@@ -322,6 +344,7 @@ class OpenCheckListApiTests(APITestCase):
         self.assertTrue(payload['payments'][0]['is_refunded'])
         self.assertNotIn('provider_payload', payload['payments'][0])
         self.assertEqual(payload['receipts'][0]['payload']['receiptNumber'], 'R-1')
+        self.assertEqual(str(payload['receipts'][0]['print_document']), str(print_document.id))
 
     def test_closed_status_query_count_does_not_grow_with_payments(self):
         first_order = self.create_order(

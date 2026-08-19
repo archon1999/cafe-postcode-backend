@@ -7,7 +7,7 @@ from unittest.mock import patch
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIRequestFactory, APITestCase
 
 from apps.local_agents.admin_views import (
     LocalAgentFleetBulkActionView,
@@ -22,6 +22,7 @@ from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentLogsVie
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import Restaurant
 from apps.users.models import Permission, Role, User
+from apps.users.services import AdminAuthService
 
 
 class _ManifestResponse(BytesIO):
@@ -35,7 +36,7 @@ class _ManifestResponse(BytesIO):
 @override_settings(LOCAL_AGENT_RELEASE_MANIFEST_URL='https://updates.example/release.json')
 class LocalAgentReleaseTests(APITestCase):
     def setUp(self):
-        restaurant = Restaurant.objects.create(name='Release Restaurant', auth_code='REL123')
+        restaurant = Restaurant.objects.create(name='Release Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=restaurant)
         self.manifest = {
             'schemaVersion': 1,
@@ -113,7 +114,7 @@ class _SuccessfulAgentCommandService:
 
 class LocalAgentAdminMonitoringTests(APITestCase):
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name='Admin Agent Restaurant', auth_code='ADM123')
+        self.restaurant = Restaurant.objects.create(name='Admin Agent Restaurant')
         self.agent, _token = LocalAgent.issue_for_restaurant(
             restaurant=self.restaurant,
             name='Cashier PC',
@@ -135,8 +136,24 @@ class LocalAgentAdminMonitoringTests(APITestCase):
             password='Strong-Agent-Monitor-123!',
             full_name='Agent Monitor Admin',
         )
-        self.client.force_authenticate(self.admin)
+        self.authenticate_admin()
         self.headers = {'HTTP_X_ADMIN_RESTAURANT_ID': str(self.restaurant.id)}
+
+    def authenticate_admin(self, *, recent_mfa=True):
+        verified_at = timezone.now() if recent_mfa else timezone.now() - timedelta(minutes=16)
+        request = APIRequestFactory().post(
+            '/',
+            HTTP_ORIGIN='https://admin.cafe-postcode.uz',
+            REMOTE_ADDR='192.0.2.44',
+        )
+        bundle = AdminAuthService().issue_credentials(
+            user=self.admin,
+            request=request,
+            mfa_verified_at=verified_at,
+        )
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {bundle.access_token}')
+        return bundle
 
     @patch('apps.local_agents.views.agent_update_status')
     def test_admin_status_includes_version_and_pending_update(self, update_status):
@@ -168,6 +185,17 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(response.data['result']['accepted'])
         self.assertEqual(service.calls[0]['command_type'], 'agent.update_now')
+
+    @override_settings(ADMIN_MFA_REQUIRED=True)
+    def test_immediate_update_requires_recent_mfa_when_rollback_flag_is_enabled(self):
+        self.authenticate_admin(recent_mfa=False)
+        service = _SuccessfulAgentCommandService()
+        with patch.object(LocalAgentUpdateNowView, 'command_service_class', return_value=service):
+            response = self.client.post('/api/v1/local-agent/update-now/', {}, format='json', **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+        self.assertEqual(response.data['code'], 'mfa_step_up_required')
+        self.assertEqual(service.calls, [])
 
     def test_admin_can_read_sanitized_agent_logs(self):
         service = _SuccessfulAgentCommandService()
@@ -224,7 +252,7 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertEqual(len(service.calls), 1)
 
     def test_superuser_can_list_all_local_agents(self):
-        offline_restaurant = Restaurant.objects.create(name='Offline Restaurant', auth_code='OFF123')
+        offline_restaurant = Restaurant.objects.create(name='Offline Restaurant')
         offline_agent, _token = LocalAgent.issue_for_restaurant(
             restaurant=offline_restaurant,
             name='Offline PC',

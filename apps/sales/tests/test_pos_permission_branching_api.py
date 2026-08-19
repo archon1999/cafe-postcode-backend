@@ -103,14 +103,22 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         self.client.force_authenticate(self.table_menu_user)
         table_menu_response = self.client.get('/api/v1/pos/catalog/menu/')
         self.assertEqual(table_menu_response.status_code, status.HTTP_200_OK)
-        table_menu_payload = table_menu_response.data.get('data', table_menu_response.data)
+        table_menu_payload = (
+            table_menu_response.data.get('data', table_menu_response.data)
+            if isinstance(table_menu_response.data, dict)
+            else table_menu_response.data
+        )
         self.assertEqual(table_menu_payload[0]['image_url'], 'https://cdn.example.com/categories/plov.png')
         self.assertEqual(table_menu_payload[0]['items'][0]['image_url'], 'https://cdn.example.com/osh.png')
 
         self.client.force_authenticate(self.takeaway_user)
         takeaway_menu_response = self.client.get('/api/v1/pos/catalog/menu/')
         self.assertEqual(takeaway_menu_response.status_code, status.HTTP_200_OK)
-        takeaway_menu_payload = takeaway_menu_response.data.get('data', takeaway_menu_response.data)
+        takeaway_menu_payload = (
+            takeaway_menu_response.data.get('data', takeaway_menu_response.data)
+            if isinstance(takeaway_menu_response.data, dict)
+            else takeaway_menu_response.data
+        )
         self.assertEqual(takeaway_menu_payload[0]['image_url'], 'https://cdn.example.com/categories/plov.png')
         self.assertEqual(takeaway_menu_payload[0]['items'][0]['image_url'], 'https://cdn.example.com/osh.png')
 
@@ -688,15 +696,15 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         hall_forbidden = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')
         self.assertEqual(hall_forbidden.status_code, status.HTTP_403_FORBIDDEN)
         takeaway_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{takeaway_item.id}/')
-        self.assertEqual(takeaway_success.status_code, status.HTTP_204_NO_CONTENT)
-        takeaway_order.refresh_from_db()
-        self.assertEqual(takeaway_order.status, Order.Status.OPEN)
+        self.assertEqual(takeaway_success.status_code, status.HTTP_200_OK)
+        self.assertTrue(takeaway_success.data['orderRemoved'])
+        self.assertFalse(Order.objects.filter(pk=takeaway_order.pk).exists())
 
         self.client.force_authenticate(self.hall_user)
         hall_manager_success = self.client.delete(f'/api/v1/pos/sales/orders/items/{hall_item.id}/')
-        self.assertEqual(hall_manager_success.status_code, status.HTTP_204_NO_CONTENT)
-        hall_order.refresh_from_db()
-        self.assertEqual(hall_order.status, Order.Status.OPEN)
+        self.assertEqual(hall_manager_success.status_code, status.HTTP_200_OK)
+        self.assertTrue(hall_manager_success.data['orderRemoved'])
+        self.assertFalse(Order.objects.filter(pk=hall_order.pk).exists())
 
     def test_counter_draft_channel_change_updates_distribution_point(self):
         order = Order.objects.create(

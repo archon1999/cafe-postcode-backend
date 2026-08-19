@@ -117,12 +117,17 @@ class IsAdminOrReadOnly(permissions.BasePermission):
 AUTHENTICATED_RBAC_EXEMPT_ENDPOINTS = {
     ('GET', 'api/v1/pos/auth/me/'),
     ('POST', 'api/v1/pos/auth/logout/'),
+    ('POST', 'api/v1/pos/auth/lock/'),
+    ('POST', 'api/v1/pos/auth/unlock/'),
     ('POST', 'api/v1/pos/auth/transport/'),
+    ('POST', 'api/v1/devices/legacy-pos-migration/'),
     ('POST', 'api/v1/pos/monitor/tv-pairings/<uuid:pairing_id>/claim/'),
     ('GET', 'api/v1/system/status/'),
     ('GET', 'api/v1/local-agent/releases/latest/'),
     ('GET', 'api/v1/admin/auth/me/'),
     ('POST', 'api/v1/admin/auth/logout/'),
+    ('POST', 'api/v1/admin/auth/lock/'),
+    ('POST', 'api/v1/admin/auth/mfa/step-up/'),
     ('POST', 'api/v1/dashboard/auth/logout/'),
 }
 

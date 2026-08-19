@@ -67,12 +67,25 @@ class FakeAgentCommandService:
             }
         raise AssertionError(f'Unexpected command type: {command_type}')
 
-    def local_http_request(self, *, restaurant, method, url, query=None, json_body=None, timeout_seconds=30):
+    def local_http_request(
+        self,
+        *,
+        restaurant,
+        method,
+        url,
+        purpose,
+        integration_id=None,
+        query=None,
+        json_body=None,
+        timeout_seconds=30,
+    ):
         self.calls.append(
             {
                 'command_type': 'local_http.request',
                 'method': method,
                 'url': url,
+                'purpose': purpose,
+                'integration_id': integration_id,
                 'query': query or {},
                 'timeout_seconds': timeout_seconds,
             }

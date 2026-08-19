@@ -1,8 +1,11 @@
+import ipaddress
 import os
+from datetime import datetime, timedelta, timezone as datetime_timezone
 from pathlib import Path
 
 import dotenv
 from class_settings import Settings
+from cryptography.fernet import Fernet
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.translation import gettext_lazy as _
 
@@ -60,6 +63,44 @@ DEBUG_VALUE = False if PRODUCTION_MODE else env_bool('DEBUG', env_bool('DJANGO_D
 ALLOWED_HOSTS_VALUE = env_list('ALLOWED_HOSTS', ['localhost', '127.0.0.1', '.cafe-postcode.uz'])
 SECRET_KEY_VALUE = os.getenv('SECRET_KEY') or os.getenv('DJANGO_SECRET_KEY') or 'restaurant-pos-dev-secret'
 ENABLE_API_DOCS_VALUE = env_bool('ENABLE_API_DOCS', DEBUG_VALUE)
+ADMIN_MFA_FERNET_KEYS_VALUE = env_list('ADMIN_MFA_FERNET_KEYS', [])
+ADMIN_MFA_REQUIRED_VALUE = env_bool('ADMIN_MFA_REQUIRED', False)
+INTEGRATION_FERNET_KEYS_VALUE = env_list('INTEGRATION_FERNET_KEYS', [])
+DJANGO_ADMIN_ENABLED_VALUE = env_bool('DJANGO_ADMIN_ENABLED', not PRODUCTION_MODE)
+DJANGO_ADMIN_ALLOWED_CIDRS_VALUE = env_list('DJANGO_ADMIN_ALLOWED_CIDRS', [])
+DJANGO_ADMIN_TRUSTED_PROXY_CIDRS_VALUE = env_list('DJANGO_ADMIN_TRUSTED_PROXY_CIDRS', [])
+CLIENT_IP_TRUSTED_PROXY_CIDRS_VALUE = env_list('CLIENT_IP_TRUSTED_PROXY_CIDRS', ['127.0.0.1/32'])
+DEVICE_POS_PROOF_REQUIRED_VALUE = env_bool('DEVICE_POS_PROOF_REQUIRED', PRODUCTION_MODE)
+DEVICE_LEGACY_POS_MIGRATION_ENABLED_VALUE = env_bool('DEVICE_LEGACY_POS_MIGRATION_ENABLED', False)
+DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED_VALUE = env_bool('DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED', False)
+DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED_VALUE = env_bool(
+    'DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED',
+    False,
+)
+DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED_VALUE = env_bool(
+    'DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED',
+    not PRODUCTION_MODE,
+)
+DEVICE_LEGACY_TV_PAIRING_ENABLED_VALUE = env_bool('DEVICE_LEGACY_TV_PAIRING_ENABLED', not PRODUCTION_MODE)
+DEVICE_LEGACY_TV_MIGRATION_ENABLED_VALUE = env_bool('DEVICE_LEGACY_TV_MIGRATION_ENABLED', not PRODUCTION_MODE)
+DEVICE_LEGACY_MIGRATION_STARTED_AT_VALUE = os.getenv('DEVICE_LEGACY_MIGRATION_STARTED_AT', '').strip()
+DEVICE_LEGACY_MIGRATION_DEADLINE_VALUE = os.getenv('DEVICE_LEGACY_MIGRATION_DEADLINE', '').strip()
+
+
+def parse_device_migration_timestamp(value: str, *, setting_name: str):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError as error:
+        raise ImproperlyConfigured(
+            f'{setting_name} must be an ISO-8601 timestamp with a timezone.'
+        ) from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ImproperlyConfigured(
+            f'{setting_name} must include an explicit timezone.'
+        )
+    return parsed.astimezone(datetime_timezone.utc)
 
 
 def is_weak_secret_key(value: str) -> bool:
@@ -76,8 +117,17 @@ def validate_production_environment() -> None:
     if not PRODUCTION_MODE:
         return
 
+    if not DEVICE_POS_PROOF_REQUIRED_VALUE:
+        raise ImproperlyConfigured(
+            'DEVICE_POS_PROOF_REQUIRED must remain enabled in production; '
+            'trusted terminals migrate through the attested migration endpoint.'
+        )
     if DEBUG_VALUE:
         raise ImproperlyConfigured('DEBUG must be disabled when DJANGO_PRODUCTION=1.')
+    if ENABLE_API_DOCS_VALUE:
+        raise ImproperlyConfigured('ENABLE_API_DOCS must be disabled when DJANGO_PRODUCTION=1.')
+    if env_bool('DISABLE_CSRF_CHECKS', False):
+        raise ImproperlyConfigured('DISABLE_CSRF_CHECKS must remain disabled in production.')
     if not os.getenv('ALLOWED_HOSTS'):
         raise ImproperlyConfigured('ALLOWED_HOSTS must be set explicitly when DJANGO_PRODUCTION=1.')
     if is_weak_secret_key(SECRET_KEY_VALUE):
@@ -86,6 +136,86 @@ def validate_production_environment() -> None:
         raise ImproperlyConfigured('REDIS_URL is required when DJANGO_PRODUCTION=1.')
     if os.getenv('USE_POSTGRES') != '1' and os.getenv('DB_ENGINE', '').lower() not in {'postgres', 'postgresql'}:
         raise ImproperlyConfigured('PostgreSQL is required when DJANGO_PRODUCTION=1.')
+    if not env_bool('DJANGO_MIGRATION_PROCESS', False):
+        runtime_db_user = os.getenv('DB_USER', '').strip()
+        admin_db_user = os.getenv('DB_ADMIN_USER', '').strip()
+        if not runtime_db_user or not admin_db_user or runtime_db_user == admin_db_user:
+            raise ImproperlyConfigured(
+                'Production runtime containers require distinct DB_USER and DB_ADMIN_USER roles.'
+            )
+    if ADMIN_MFA_REQUIRED_VALUE and not ADMIN_MFA_FERNET_KEYS_VALUE:
+        raise ImproperlyConfigured('ADMIN_MFA_FERNET_KEYS is required when DJANGO_PRODUCTION=1.')
+    for key in ADMIN_MFA_FERNET_KEYS_VALUE:
+        try:
+            Fernet(key.encode('ascii'))
+        except (TypeError, ValueError) as error:
+            raise ImproperlyConfigured('Every ADMIN_MFA_FERNET_KEYS value must be a valid Fernet key.') from error
+    if not INTEGRATION_FERNET_KEYS_VALUE:
+        raise ImproperlyConfigured('INTEGRATION_FERNET_KEYS is required when DJANGO_PRODUCTION=1.')
+    for key in INTEGRATION_FERNET_KEYS_VALUE:
+        try:
+            Fernet(key.encode('ascii'))
+        except (TypeError, ValueError) as error:
+            raise ImproperlyConfigured('Every INTEGRATION_FERNET_KEYS value must be a valid Fernet key.') from error
+    for name, values in (
+        ('DJANGO_ADMIN_ALLOWED_CIDRS', DJANGO_ADMIN_ALLOWED_CIDRS_VALUE),
+        ('DJANGO_ADMIN_TRUSTED_PROXY_CIDRS', DJANGO_ADMIN_TRUSTED_PROXY_CIDRS_VALUE),
+        ('CLIENT_IP_TRUSTED_PROXY_CIDRS', CLIENT_IP_TRUSTED_PROXY_CIDRS_VALUE),
+    ):
+        try:
+            for value in values:
+                ipaddress.ip_network(value, strict=False)
+        except ValueError as error:
+            raise ImproperlyConfigured(f'{name} contains an invalid network.') from error
+    if DJANGO_ADMIN_ENABLED_VALUE and not DJANGO_ADMIN_ALLOWED_CIDRS_VALUE:
+        raise ImproperlyConfigured(
+            'DJANGO_ADMIN_ALLOWED_CIDRS is required when Django admin is enabled in production.'
+        )
+    if not CLIENT_IP_TRUSTED_PROXY_CIDRS_VALUE:
+        raise ImproperlyConfigured('CLIENT_IP_TRUSTED_PROXY_CIDRS is required in production.')
+    if os.getenv('TELEGRAM_REPORTS_BOT_TOKEN', '').strip():
+        if not os.getenv('TELEGRAM_REPORTS_WEBHOOK_SECRET', '').strip():
+            raise ImproperlyConfigured(
+                'TELEGRAM_REPORTS_WEBHOOK_SECRET is required when the Telegram reports bot is enabled.'
+            )
+        if not os.getenv('TELEGRAM_REPORTS_BOT_USERNAME', '').strip().lstrip('@'):
+            raise ImproperlyConfigured(
+                'TELEGRAM_REPORTS_BOT_USERNAME is required when the Telegram reports bot is enabled.'
+            )
+    legacy_window_requested = (
+        not DEVICE_POS_PROOF_REQUIRED_VALUE
+        or DEVICE_LEGACY_POS_MIGRATION_ENABLED_VALUE
+        or DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED_VALUE
+        or DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED_VALUE
+        or DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED_VALUE
+        or DEVICE_LEGACY_TV_PAIRING_ENABLED_VALUE
+        or DEVICE_LEGACY_TV_MIGRATION_ENABLED_VALUE
+    )
+    if legacy_window_requested:
+        if not DEVICE_LEGACY_MIGRATION_STARTED_AT_VALUE:
+            raise ImproperlyConfigured(
+                'DEVICE_LEGACY_MIGRATION_STARTED_AT is required while any legacy device path is enabled.'
+            )
+        if not DEVICE_LEGACY_MIGRATION_DEADLINE_VALUE:
+            raise ImproperlyConfigured(
+                'DEVICE_LEGACY_MIGRATION_DEADLINE is required while any legacy device path is enabled.'
+            )
+        started_at = parse_device_migration_timestamp(
+            DEVICE_LEGACY_MIGRATION_STARTED_AT_VALUE,
+            setting_name='DEVICE_LEGACY_MIGRATION_STARTED_AT',
+        )
+        deadline = parse_device_migration_timestamp(
+            DEVICE_LEGACY_MIGRATION_DEADLINE_VALUE,
+            setting_name='DEVICE_LEGACY_MIGRATION_DEADLINE',
+        )
+        if deadline <= started_at:
+            raise ImproperlyConfigured(
+                'DEVICE_LEGACY_MIGRATION_DEADLINE must be later than DEVICE_LEGACY_MIGRATION_STARTED_AT.'
+            )
+        if deadline - started_at > timedelta(hours=24):
+            raise ImproperlyConfigured(
+                'The legacy device migration window cannot exceed 24 hours.'
+            )
 
 
 validate_production_environment()
@@ -120,9 +250,55 @@ class CoreSettings(Settings):
     SECRET_KEY = SECRET_KEY_VALUE
     DEBUG = DEBUG_VALUE
     DJANGO_PRODUCTION = PRODUCTION_MODE
+    CLIENT_IP_TRUSTED_PROXY_CIDRS = CLIENT_IP_TRUSTED_PROXY_CIDRS_VALUE
     ENABLE_API_DOCS = ENABLE_API_DOCS_VALUE
     DISABLE_CSRF_CHECKS = env_bool('DISABLE_CSRF_CHECKS', DEBUG_VALUE and not PRODUCTION_MODE)
-    LOCAL_AGENT_ALLOW_LEGACY_WS_QUERY_TOKEN = env_bool('LOCAL_AGENT_ALLOW_LEGACY_WS_QUERY_TOKEN', False)
+    DEVICE_PAIRING_CLAIM_BASE_URL = os.getenv(
+        'DEVICE_PAIRING_CLAIM_BASE_URL',
+        'https://admin.cafe-postcode.uz/control/pair',
+    ).strip()
+    DEVICE_LEGACY_POS_MIGRATION_ENABLED = DEVICE_LEGACY_POS_MIGRATION_ENABLED_VALUE
+    DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED = DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED_VALUE
+    DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED = DEVICE_LEGACY_LOCAL_AGENT_MIGRATION_ENABLED_VALUE
+    DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED = DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED_VALUE
+    DEVICE_LEGACY_MIGRATION_STARTED_AT = DEVICE_LEGACY_MIGRATION_STARTED_AT_VALUE
+    DEVICE_LEGACY_MIGRATION_DEADLINE = DEVICE_LEGACY_MIGRATION_DEADLINE_VALUE
+    DEVICE_LEGACY_TV_PAIRING_ENABLED = DEVICE_LEGACY_TV_PAIRING_ENABLED_VALUE
+    DEVICE_LEGACY_TV_MIGRATION_ENABLED = DEVICE_LEGACY_TV_MIGRATION_ENABLED_VALUE
+    DEVICE_POS_PROOF_REQUIRED = DEVICE_POS_PROOF_REQUIRED_VALUE
+    ADMIN_MFA_REQUIRED = ADMIN_MFA_REQUIRED_VALUE
+    SECURITY_EVENT_RETENTION_DAYS = env_int('SECURITY_EVENT_RETENTION_DAYS', 180)
+    DEVICE_PAIRING_RETENTION_DAYS = env_int('DEVICE_PAIRING_RETENTION_DAYS', 30)
+    ADMIN_AUTH_ALLOWED_ORIGINS = env_list(
+        'ADMIN_AUTH_ALLOWED_ORIGINS',
+        ['https://admin.cafe-postcode.uz']
+        if PRODUCTION_MODE
+        else [
+            'http://localhost:4200',
+            'http://localhost:4500',
+            'http://localhost:5173',
+            'http://127.0.0.1:4200',
+            'http://127.0.0.1:4500',
+            'http://127.0.0.1:5173',
+            'https://admin.cafe-postcode.uz',
+        ],
+    )
+    ADMIN_REFRESH_COOKIE_NAME = '__Host-cafe_admin_refresh'
+    ADMIN_REFRESH_COOKIE_SECURE = True
+    ADMIN_REFRESH_COOKIE_SAMESITE = 'Strict'
+    ADMIN_REFRESH_COOKIE_PATH = '/'
+    ADMIN_REFRESH_ABSOLUTE_TTL_SECONDS = env_int('ADMIN_REFRESH_ABSOLUTE_TTL_SECONDS', 30 * 24 * 60 * 60)
+    ADMIN_REFRESH_RACE_GRACE_SECONDS = env_int('ADMIN_REFRESH_RACE_GRACE_SECONDS', 5)
+    ADMIN_IDLE_LOCK_SECONDS = env_int('ADMIN_IDLE_LOCK_SECONDS', 20 * 60)
+    ADMIN_MFA_CHALLENGE_TTL_SECONDS = env_int('ADMIN_MFA_CHALLENGE_TTL_SECONDS', 5 * 60)
+    ADMIN_MFA_MAX_ATTEMPTS = env_int('ADMIN_MFA_MAX_ATTEMPTS', 5)
+    ADMIN_LOGIN_LOCKOUT_SECONDS = env_int('ADMIN_LOGIN_LOCKOUT_SECONDS', 15 * 60)
+    ADMIN_LOGIN_MAX_FAILURES = env_int('ADMIN_LOGIN_MAX_FAILURES', 5)
+    ADMIN_MFA_FERNET_KEYS = ADMIN_MFA_FERNET_KEYS_VALUE
+    INTEGRATION_FERNET_KEYS = INTEGRATION_FERNET_KEYS_VALUE
+    DJANGO_ADMIN_ENABLED = DJANGO_ADMIN_ENABLED_VALUE
+    DJANGO_ADMIN_ALLOWED_CIDRS = DJANGO_ADMIN_ALLOWED_CIDRS_VALUE
+    DJANGO_ADMIN_TRUSTED_PROXY_CIDRS = DJANGO_ADMIN_TRUSTED_PROXY_CIDRS_VALUE
     UNDER_MAINTENANCE = False
     INSTALLED_APPS = INSTALLED_APPS
     MIDDLEWARE = MIDDLEWARE
@@ -188,7 +364,12 @@ class CoreSettings(Settings):
     TELEGRAM_LEADS_CHAT_ID = os.getenv('TELEGRAM_LEADS_CHAT_ID', '').strip()
     TELEGRAM_TIMEOUT = env_float('TELEGRAM_TIMEOUT', 10.0)
     TELEGRAM_PROXY_URL = os.getenv('TELEGRAM_PROXY_URL', '').strip()
+
+    YANDEX_TRANSLATE_API_KEY = os.getenv('YANDEX_TRANSLATE_API_KEY', '').strip()
+    YANDEX_TRANSLATE_FOLDER_ID = os.getenv('YANDEX_TRANSLATE_FOLDER_ID', '').strip()
+    YANDEX_TRANSLATE_TIMEOUT = env_float('YANDEX_TRANSLATE_TIMEOUT', 10.0)
     TELEGRAM_REPORTS_BOT_TOKEN = os.getenv('TELEGRAM_REPORTS_BOT_TOKEN', '').strip()
+    TELEGRAM_REPORTS_BOT_USERNAME = os.getenv('TELEGRAM_REPORTS_BOT_USERNAME', '').strip().lstrip('@')
     TELEGRAM_REPORTS_WEBHOOK_SECRET = os.getenv('TELEGRAM_REPORTS_WEBHOOK_SECRET', '').strip()
     TELEGRAM_REPORTS_WEBHOOK_URL = os.getenv('TELEGRAM_REPORTS_WEBHOOK_URL', '').strip()
 

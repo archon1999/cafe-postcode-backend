@@ -130,6 +130,9 @@ def scoped_role_queryset(request) -> QuerySet:
 
 
 def employee_role_queryset(request) -> QuerySet:
+    restaurant = get_optional_request_restaurant(request)
+    if restaurant is None and not getattr(request.user, 'is_superuser', False):
+        return Role.objects.none()
     return (
         scoped_role_queryset(request)
         .filter(Q(permissions__code__in=POS_UI_PERMISSION_CODES) | Q(code__in=EMPLOYEE_LOGIN_ROLE_CODES))

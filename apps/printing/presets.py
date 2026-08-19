@@ -5,7 +5,8 @@ KITCHEN_TICKET = 'kitchen_ticket'
 ORDER_PRECHECK = 'order_precheck'
 PAYMENT_RECEIPT_PLAIN = 'payment_receipt_plain'
 PAYMENT_RECEIPT_FISCAL = 'payment_receipt_fiscal'
-PRINT_KINDS = (KITCHEN_TICKET, ORDER_PRECHECK, PAYMENT_RECEIPT_PLAIN, PAYMENT_RECEIPT_FISCAL)
+PRINT_KINDS = (KITCHEN_TICKET, PAYMENT_RECEIPT_PLAIN, PAYMENT_RECEIPT_FISCAL)
+LAYOUT_KINDS = (*PRINT_KINDS, ORDER_PRECHECK)
 
 
 def get_shift_report_layout() -> dict:
@@ -190,7 +191,6 @@ FISCAL_VARIABLES = PAYMENT_VARIABLES + (
 
 VARIABLES_BY_KIND = {
     KITCHEN_TICKET: KITCHEN_VARIABLES,
-    ORDER_PRECHECK: PRECHECK_VARIABLES,
     PAYMENT_RECEIPT_PLAIN: PAYMENT_VARIABLES,
     PAYMENT_RECEIPT_FISCAL: FISCAL_VARIABLES,
 }
@@ -200,7 +200,6 @@ VARIABLE_GROUPS = (
     {'key': 'order', 'label': 'Buyurtma'},
     {'key': 'item', 'label': 'Pozitsiya'},
     {'key': 'kitchen', 'label': 'Oshxona'},
-    {'key': 'precheck', 'label': 'Prechek'},
     {'key': 'payment', 'label': "To'lov"},
     {'key': 'totals', 'label': 'Jami'},
     {'key': 'fiscal', 'label': 'Fiskal'},
@@ -356,6 +355,7 @@ def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = Fals
         'type': 'items_table',
         'role': 'items',
         'columns': columns,
+        'showHeaders': True,
         'showNotes': True,
         'size': 'large' if large else 'normal',
     }
@@ -371,8 +371,7 @@ def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = Fals
 
 
 def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
-    total_rows = [
-        {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
+    service_fee_rows = [
         {
             'label': 'Restoran xizmati ({{totals.restaurantServiceFeePercent}}%)',
             'value': '{{totals.restaurantServiceFee}}',
@@ -391,6 +390,9 @@ def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
             'format': 'money',
             'hideZero': True,
         },
+    ]
+    total_rows = [
+        {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
         {'label': 'Narx tuzatishi', 'value': '{{totals.totalAdjustment}}', 'format': 'money', 'hideZero': True},
         {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
     ]
@@ -405,6 +407,8 @@ def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
             },
         )
     blocks = [
+        {'id': 'service-fees-divider', 'type': 'divider'},
+        {'id': 'service-fees', 'type': 'totals', 'rows': service_fee_rows},
         {'id': 'totals-divider', 'type': 'divider'},
         {'id': 'totals', 'type': 'totals', 'role': 'totals', 'rows': total_rows},
         {
@@ -499,13 +503,13 @@ def _precheck_blocks() -> list[dict]:
 
 
 def build_layout(*, kind: str, detailed: bool, kitchen_large: bool = False) -> dict:
-    if kind not in PRINT_KINDS:
+    if kind not in LAYOUT_KINDS:
         raise KeyError(kind)
 
     is_kitchen = kind == KITCHEN_TICKET
     is_precheck = kind == ORDER_PRECHECK
     is_fiscal = kind == PAYMENT_RECEIPT_FISCAL
-    blocks = _header_blocks(detailed=detailed)
+    blocks = _header_blocks(detailed=detailed and not is_kitchen)
     if is_precheck:
         blocks.append(
             {
@@ -530,15 +534,20 @@ def build_layout(*, kind: str, detailed: bool, kitchen_large: bool = False) -> d
         blocks.extend(_precheck_blocks())
     else:
         blocks.extend(_payment_blocks(fiscal=is_fiscal, detailed=detailed))
+    if not is_kitchen:
+        blocks.extend(
+            [
+                {'id': 'footer-divider', 'type': 'divider'},
+                {
+                    'id': 'footer',
+                    'type': 'text',
+                    'text': 'Bu fiskal chek emas' if is_precheck else 'Xaridingiz uchun rahmat!',
+                    'align': 'center',
+                },
+            ]
+        )
     blocks.extend(
         [
-            {'id': 'footer-divider', 'type': 'divider'},
-            {
-                'id': 'footer',
-                'type': 'text',
-                'text': 'Bu fiskal chek emas' if is_precheck else 'Xaridingiz uchun rahmat!',
-                'align': 'center',
-            },
             {'id': 'feed', 'type': 'feed', 'lines': 2},
             {'id': 'cut', 'type': 'cut'},
         ]
@@ -548,7 +557,7 @@ def build_layout(*, kind: str, detailed: bool, kitchen_large: bool = False) -> d
 
 def build_legacy_layout(kind: str) -> dict:
     """Canonical 80 mm layout matching the receipt used before the template editor."""
-    if kind not in PRINT_KINDS:
+    if kind not in LAYOUT_KINDS:
         raise KeyError(kind)
 
     is_kitchen = kind == KITCHEN_TICKET
@@ -625,6 +634,7 @@ def build_legacy_layout(kind: str) -> dict:
                 {'label': 'Soni', 'value': 'x{{item.quantity}}', 'align': 'right'},
                 {'label': 'Summa', 'value': '{{item.lineTotal}}', 'align': 'right', 'format': 'money'},
             ],
+            'showHeaders': True,
             'showNotes': True,
             'separatorAfterEach': True,
             **(
@@ -640,6 +650,12 @@ def build_legacy_layout(kind: str) -> dict:
     ]
     order_details = next(block for block in blocks if block['id'] == 'order-details')
     order_details['rows'] = [row for row in order_details['rows'] if row is not None]
+    if is_kitchen:
+        blocks = [
+            block
+            for block in blocks
+            if block['id'] not in {'restaurant-divider', 'restaurant-details'}
+        ]
 
     if is_kitchen:
         blocks.extend(
@@ -658,31 +674,11 @@ def build_legacy_layout(kind: str) -> dict:
     else:
         blocks.extend(
             [
-                {'id': 'total-top-divider', 'type': 'divider', 'character': '='},
+                {'id': 'service-fees-divider', 'type': 'divider', 'character': '='},
                 {
-                    'id': 'totals',
+                    'id': 'service-fees',
                     'type': 'totals',
-                    'role': 'totals',
                     'rows': [
-                        {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
-                        {
-                            'label': 'NARX TUZATISHI',
-                            'value': '{{totals.totalAdjustment}}',
-                            'format': 'money',
-                            'hideZero': True,
-                        },
-                        *(
-                            [
-                                {
-                                    'label': 'Sh.j. QQS ({{totals.vatPercent}}%)',
-                                    'value': '{{totals.vat}}',
-                                    'format': 'money',
-                                    'hideZero': True,
-                                }
-                            ]
-                            if is_fiscal
-                            else []
-                        ),
                         {
                             'label': 'RESTORAN XIZMATI ({{totals.restaurantServiceFeePercent}}%)',
                             'value': '{{totals.restaurantServiceFee}}',
@@ -701,6 +697,33 @@ def build_legacy_layout(kind: str) -> dict:
                             'format': 'money',
                             'hideZero': True,
                         },
+                    ],
+                },
+                {'id': 'total-top-divider', 'type': 'divider', 'character': '='},
+                {
+                    'id': 'totals',
+                    'type': 'totals',
+                    'role': 'totals',
+                    'rows': [
+                        {
+                            'label': 'NARX TUZATISHI',
+                            'value': '{{totals.totalAdjustment}}',
+                            'format': 'money',
+                            'hideZero': True,
+                        },
+                        *(
+                            [
+                                {
+                                    'label': 'Sh.j. QQS ({{totals.vatPercent}}%)',
+                                    'value': '{{totals.vat}}',
+                                    'format': 'money',
+                                    'hideZero': True,
+                                }
+                            ]
+                            if is_fiscal
+                            else []
+                        ),
+                        {'label': 'JAMI', 'value': '{{totals.total}}', 'format': 'money', 'bold': True},
                     ],
                 },
                 {'id': 'total-bottom-divider', 'type': 'divider', 'character': '='},
@@ -747,16 +770,21 @@ def build_legacy_layout(kind: str) -> dict:
         )
     if not is_kitchen and not is_precheck:
         blocks.append({'id': 'order-note', 'type': 'metadata', 'rows': [{'label': 'Izoh', 'value': '{{order.note}}'}]})
+    if not is_kitchen:
+        blocks.extend(
+            [
+                {'id': 'footer-divider', 'type': 'divider'},
+                {
+                    'id': 'footer-thanks',
+                    'type': 'text',
+                    'text': 'Bu fiskal chek emas' if is_precheck else 'Buyurtmangiz uchun rahmat!',
+                    'align': 'center',
+                },
+                {'id': 'footer-appetite', 'type': 'text', 'text': 'Yoqimli ishtaha!', 'align': 'center'},
+            ]
+        )
     blocks.extend(
         [
-            {'id': 'footer-divider', 'type': 'divider'},
-            {
-                'id': 'footer-thanks',
-                'type': 'text',
-                'text': 'Bu fiskal chek emas' if is_precheck else 'Buyurtmangiz uchun rahmat!',
-                'align': 'center',
-            },
-            {'id': 'footer-appetite', 'type': 'text', 'text': 'Yoqimli ishtaha!', 'align': 'center'},
             {'id': 'feed', 'type': 'feed', 'lines': 2},
             {'id': 'cut', 'type': 'cut'},
         ]

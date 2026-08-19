@@ -1,4 +1,3 @@
-import hashlib
 from datetime import timedelta
 
 from django.db.models import Prefetch, Q
@@ -16,6 +15,7 @@ from apps.billing.services import CashExpenseService
 from apps.floor.api.admin.serializers import HallSerializer, TableSessionSerializer
 from apps.floor.models import Hall, TableSession
 from apps.local_agents.authentication import authenticate_local_agent
+from apps.local_agents.device_state import pos_device_state_snapshot
 from apps.local_agents.selectors import bootstrap_kitchen_tickets
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
@@ -298,7 +298,7 @@ class LocalAgentBootstrapView(APIView):
                 'serverCursor': now.isoformat(),
                 'generatedAt': now.isoformat(),
                 'restaurant': PosRestaurantContextSerializer(restaurant).data,
-                'restaurantCodeHash': hashlib.sha256(restaurant.auth_code.encode('utf-8')).hexdigest(),
+                'posDevices': pos_device_state_snapshot(restaurant=restaurant),
                 'users': _user_snapshots(restaurant, now),
                 'menu': _menu_snapshot(restaurant),
                 'halls': _hall_snapshot(restaurant),
@@ -311,5 +311,21 @@ class LocalAgentBootstrapView(APIView):
                 'cashExpenses': expenses['expenses'],
                 'bindings': _device_bindings(restaurant),
                 'printTemplates': _print_templates(restaurant),
+            }
+        )
+
+
+class LocalAgentPOSDeviceStateView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        agent = authenticate_local_agent(request)
+        if agent is None:
+            return Response({'detail': 'Invalid local agent token.'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(
+            {
+                'schemaVersion': 1,
+                'serverTime': timezone.now().isoformat(),
+                'posDevices': pos_device_state_snapshot(restaurant=agent.restaurant),
             }
         )

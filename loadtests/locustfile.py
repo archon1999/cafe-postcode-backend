@@ -7,7 +7,6 @@ from locust import HttpUser, between, task
 
 
 API_PREFIX = '/api/v1'
-RESTAURANT_CODE = os.getenv('LOCUST_RESTAURANT_CODE', '').strip()
 RESTAURANT_ID = os.getenv('LOCUST_RESTAURANT_ID', '').strip()
 PIN = os.getenv('LOCUST_PIN', '').strip()
 TOKEN = os.getenv('LOCUST_TOKEN', '').strip()
@@ -68,15 +67,6 @@ class PosApiUser(HttpUser):
             self.refresh_menu()
             self.refresh_halls()
             return
-
-        if not self.restaurant_id and RESTAURANT_CODE:
-            response = self.client.post(
-                f'{API_PREFIX}/pos/auth/restaurant-code/',
-                json={'code': RESTAURANT_CODE},
-                name='pos auth: restaurant-code',
-            )
-            if response.ok:
-                self.restaurant_id = response.json().get('restaurantId') or response.json().get('restaurant_id')
 
         if self.restaurant_id and PIN:
             response = self.client.post(

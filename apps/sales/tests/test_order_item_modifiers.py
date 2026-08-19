@@ -206,3 +206,50 @@ class OrderItemModifierApiTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, 400, response.data)
         self.assertIn('quantity', response.data)
+
+    def test_service_requires_and_snapshots_manual_price(self):
+        service = type(self.catalog_item).objects.create(
+            restaurant=self.restaurant,
+            category=self.category,
+            name='Yetkazib berish',
+            item_type=type(self.catalog_item).ItemType.SERVICE,
+            price=0,
+        )
+        order_id = self.create_takeaway_order()
+
+        missing_price_response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/',
+            {'catalog_item': str(service.id), 'quantity': 1},
+            format='json',
+        )
+        self.assertEqual(missing_price_response.status_code, 400, missing_price_response.data)
+        self.assertIn('manual_price', missing_price_response.data)
+
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/',
+            {'catalog_item': str(service.id), 'quantity': 1, 'manual_price': 75000},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['base_unit_price'], 75000)
+        self.assertEqual(response.data['unit_price'], 75000)
+        self.assertEqual(response.data['line_total'], 75000)
+
+    def test_product_rejects_manual_price_override(self):
+        order_id = self.create_takeaway_order()
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/',
+            {
+                'catalog_item': str(self.catalog_item.id),
+                'quantity': 1,
+                'manual_price': 1,
+                'selected_modifiers': [
+                    {'group': str(self.dough_group.id), 'options': [str(self.thin_option.id)]},
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn('manual_price', response.data)

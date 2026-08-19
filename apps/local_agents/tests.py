@@ -8,17 +8,17 @@ from django.test import TransactionTestCase, override_settings
 from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIRequestFactory, APITestCase
 
 from apps.local_agents.models import (
     LocalAgent,
     LocalAgentCommand,
-    LocalAgentEnrollmentToken,
     LocalAgentMutationReceipt,
 )
 from apps.local_agents.mutations import _allowed_mutation, _request_hash
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, Receipt
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
+from apps.devices.models import Device
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintDocument, PrintTemplate
@@ -27,29 +27,13 @@ from apps.restaurants.models import CashDesk, PrepStation, Restaurant
 from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 from apps.users.models import Permission, User
+from apps.users.models import AuthSession
+from apps.users.services import AuthSessionService
 
 
 class LocalAgentAuthTests(APITestCase):
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name='Agent Restaurant', auth_code='123456')
-
-    def issue_enrollment_token(self):
-        _enrollment, raw_token = LocalAgentEnrollmentToken.issue(restaurant=self.restaurant)
-        return raw_token
-
-    def test_enrollment_returns_agent_token(self):
-        response = self.client.post(
-            '/api/v1/local-agent/auth/enroll/',
-            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC', 'version': '0.2.0'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data['agentToken'].startswith('cpa_'))
-        self.assertIn('/ws/local-agent/', response.data['wsUrl'])
-        agent = LocalAgent.objects.get(restaurant=self.restaurant)
-        self.assertEqual(agent.name, 'Cashier PC')
-        self.assertTrue(LocalAgent.authenticate_token(response.data['agentToken']))
+        self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
 
     def test_token_auth_returns_agent_metadata(self):
         _agent, token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
@@ -64,108 +48,61 @@ class LocalAgentAuthTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_restaurant_code_can_reinstall_agent(self):
-        payload = {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'}
+    def test_token_auth_rejects_an_agent_created_after_the_cutover(self):
+        now = timezone.now()
+        _agent, token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Post-cutover Agent')
 
-        first = self.client.post('/api/v1/local-agent/auth/enroll/', payload, format='json')
-        second = self.client.post('/api/v1/local-agent/auth/enroll/', payload, format='json')
+        with override_settings(
+            DJANGO_PRODUCTION=True,
+            DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED=True,
+            DEVICE_LEGACY_MIGRATION_STARTED_AT=(now - timedelta(hours=1)).isoformat(),
+            DEVICE_LEGACY_MIGRATION_DEADLINE=(now + timedelta(hours=1)).isoformat(),
+        ):
+            response = self.client.get(
+                '/api/v1/local-agent/auth/token/',
+                HTTP_AUTHORIZATION=f'Bearer {token}',
+            )
 
-        self.assertEqual(first.status_code, status.HTTP_200_OK)
-        self.assertEqual(second.status_code, status.HTTP_200_OK)
-        self.assertNotEqual(first.data['agentToken'], second.data['agentToken'])
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
-    def test_restaurant_code_preflight_allows_enrollment(self):
-        preflight = self.client.post(
-            '/api/v1/local-agent/auth/enrollment/preflight/',
-            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'},
-            format='json',
-        )
-        enroll = self.client.post(
+    def test_retired_enrollment_endpoints_do_not_exist(self):
+        for path in (
             '/api/v1/local-agent/auth/enroll/',
-            {'restaurantCode': self.restaurant.auth_code, 'name': 'Cashier PC'},
-            format='json',
-        )
-
-        self.assertEqual(preflight.status_code, status.HTTP_200_OK, preflight.data)
-        self.assertEqual(preflight.data['restaurantId'], str(self.restaurant.id))
-        self.assertEqual(enroll.status_code, status.HTTP_200_OK, enroll.data)
-
-    def test_enrollment_preflight_rejects_invalid_restaurant_code(self):
-        response = self.client.post(
             '/api/v1/local-agent/auth/enrollment/preflight/',
-            {'restaurantCode': 'BAD000'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_enrollment_rejects_invalid_restaurant_code(self):
-        response = self.client.post(
-            '/api/v1/local-agent/auth/enroll/',
-            {'restaurantCode': 'BAD000'},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-
-    def test_restaurant_code_enrollment_endpoint_is_removed(self):
-        response = self.client.post(
             '/api/v1/local-agent/auth/restaurant-code/',
-            {'code': self.restaurant.auth_code},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
-
-    def test_admin_can_issue_hashed_enrollment_token(self):
-        other_restaurant = Restaurant.objects.create(name='Other Restaurant', auth_code='OT1234')
-        admin = User.objects.create_superuser(
-            username='agent-enrollment-admin',
-            password='Strong-Agent-Admin-123!',
-            full_name='Agent Enrollment Admin',
-        )
-        self.client.force_authenticate(admin)
-
-        response = self.client.post(
             '/api/v1/local-agent/enrollment-token/',
-            format='json',
-            HTTP_X_ADMIN_RESTAURANT_ID=str(self.restaurant.id),
+        ):
+            with self.subTest(path=path):
+                response = self.client.post(path, {'restaurantCode': 'LEGACY'}, format='json')
+                self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class LocalAgentBrowserSessionSurfaceTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username='surface-admin',
+            password='Strong-Surface-Password-123!',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertTrue(response.data['enrollmentToken'].startswith('cpe_'))
-        enrollment = LocalAgentEnrollmentToken.objects.get(restaurant=self.restaurant)
-        self.assertNotEqual(enrollment.token_hash, response.data['enrollmentToken'])
-        self.assertFalse(LocalAgentEnrollmentToken.objects.filter(restaurant=other_restaurant).exists())
-
-    def test_admin_cannot_issue_enrollment_token_for_inactive_restaurant(self):
-        inactive_restaurant = Restaurant.objects.create(
-            name='Inactive Restaurant',
-            auth_code='IN1234',
-            is_active=False,
-        )
-        admin = User.objects.create_superuser(
-            username='inactive-agent-enrollment-admin',
-            password='Strong-Agent-Admin-123!',
-            full_name='Inactive Agent Enrollment Admin',
-        )
-        self.client.force_authenticate(admin)
-
-        response = self.client.post(
-            '/api/v1/local-agent/enrollment-token/',
-            format='json',
-            HTTP_X_ADMIN_RESTAURANT_ID=str(inactive_restaurant.id),
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
-        self.assertFalse(LocalAgentEnrollmentToken.objects.filter(restaurant=inactive_restaurant).exists())
+    def test_pos_and_dashboard_tokens_cannot_call_admin_local_agent_endpoints(self):
+        for surface in (AuthSession.Surface.POS, AuthSession.Surface.DASHBOARD):
+            with self.subTest(surface=surface):
+                token, _session = AuthSessionService().issue(
+                    user=self.user,
+                    request=APIRequestFactory().post('/', REMOTE_ADDR='192.0.2.10'),
+                    surface=surface,
+                )
+                self.client.credentials(HTTP_AUTHORIZATION=f'Token {token}')
+                response = self.client.get('/api/v1/local-agent/status/')
+                self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+                self.client.credentials()
 
 
 class LocalAgentWebSocketSecurityTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name='WebSocket Restaurant', auth_code='WS1234')
+        self.restaurant = Restaurant.objects.create(name='WebSocket Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant)
 
     def test_websocket_requires_bearer_header_and_allowed_origin(self):
@@ -196,6 +133,64 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
 
         async_to_sync(run_scenario)()
 
+    def test_reconnect_receives_device_authority_and_replays_durable_revoke(self):
+        from core.asgi import application
+
+        now = timezone.now()
+        pos = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Revoked POS',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='test-public-key',
+            public_key_fingerprint='a' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+            status=Device.Status.REVOKED,
+            revoked_at=now,
+        )
+        command = LocalAgentCommand.objects.create(
+            agent=LocalAgent.objects.get(restaurant=self.restaurant),
+            command_type='edge.terminal.revoke',
+            payload={'backendDeviceId': str(pos.id)},
+        )
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            hello = await communicator.receive_json_from()
+            self.assertEqual(
+                hello['posDevices'],
+                [
+                    {
+                        'backendDeviceId': str(pos.id),
+                        'status': Device.Status.REVOKED,
+                        'revokedAt': pos.revoked_at.isoformat(),
+                    }
+                ],
+            )
+            delivered = await communicator.receive_json_from()
+            self.assertEqual(delivered['type'], 'command')
+            self.assertEqual(delivered['commandId'], str(command.id))
+            self.assertEqual(delivered['commandType'], 'edge.terminal.revoke')
+            self.assertEqual(delivered['payload']['backendDeviceId'], str(pos.id))
+            await communicator.send_json_to(
+                {'type': 'command_result', 'commandId': str(command.id), 'ok': True, 'result': {'revoked': True}}
+            )
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+        command.refresh_from_db()
+        self.assertEqual(command.status, LocalAgentCommand.Status.SUCCEEDED)
+
     def test_heartbeat_persists_private_lan_discovery_metadata(self):
         from core.asgi import application
 
@@ -222,6 +217,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             )
             acknowledgement = await communicator.receive_json_from()
             self.assertEqual(acknowledgement['type'], 'heartbeat_ack')
+            self.assertEqual(acknowledgement['posDevices'], [])
             await communicator.disconnect()
 
         async_to_sync(run_scenario)()
@@ -230,8 +226,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         self.assertEqual(agent.protocol_version, 2)
         self.assertEqual(agent.lan_endpoints, ['http://192.168.1.20:18181'])
 
-    @override_settings(LOCAL_AGENT_ALLOW_LEGACY_WS_QUERY_TOKEN=True)
-    def test_legacy_query_token_can_be_enabled_only_for_rollout(self):
+    def test_query_token_is_rejected(self):
         from core.asgi import application
 
         async def run_scenario():
@@ -241,17 +236,40 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
                 headers=[(b'origin', b'http://testserver')],
             )
             connected, _subprotocol = await communicator.connect()
-            self.assertTrue(connected)
-            await communicator.receive_json_from()
-            await communicator.disconnect()
+            self.assertFalse(connected)
 
         async_to_sync(run_scenario)()
+
+    def test_legacy_websocket_rejects_an_agent_created_after_the_cutover(self):
+        from core.asgi import application
+
+        now = timezone.now()
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertFalse(connected)
+
+        with override_settings(
+            DJANGO_PRODUCTION=True,
+            DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED=True,
+            DEVICE_LEGACY_MIGRATION_STARTED_AT=(now - timedelta(hours=1)).isoformat(),
+            DEVICE_LEGACY_MIGRATION_DEADLINE=(now + timedelta(hours=1)).isoformat(),
+        ):
+            async_to_sync(run_scenario)()
 
 
 class LocalAgentPrintDocumentTests(APITestCase):
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name='Agent Restaurant', auth_code='123456')
-        self.foreign_restaurant = Restaurant.objects.create(name='Foreign Restaurant', auth_code='654321')
+        self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
+        self.foreign_restaurant = Restaurant.objects.create(name='Foreign Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
         ensure_restaurant_templates(restaurant=self.restaurant)
         template = PrintTemplate.objects.select_related('published_version').get(
@@ -386,7 +404,7 @@ class POSRemotePrintTests(PosAPITestCase):
         )
         precheck_template = PrintTemplate.objects.select_related('published_version').get(
             restaurant=self.restaurant,
-            kind=PrintTemplate.Kind.ORDER_PRECHECK,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
         )
         self.precheck_document = PrintDocument.objects.create(
             restaurant=self.restaurant,
@@ -601,9 +619,64 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['id'], str(shift.id))
         self.assertEqual(response.data['cashShifts'][0]['cashier'], str(self.user.id))
         self.assertEqual(response.data['cashShifts'][0]['openingCashAmount'], 125000)
+        self.assertEqual(response.data['posDevices'], [])
+
+    def test_device_state_endpoint_is_complete_and_restaurant_scoped(self):
+        now = timezone.now()
+        active = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Active POS',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='active-public-key',
+            public_key_fingerprint='b' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+        )
+        revoked = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Revoked POS',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='revoked-public-key',
+            public_key_fingerprint='c' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+            status=Device.Status.REVOKED,
+            revoked_at=now,
+        )
+        foreign_restaurant = Restaurant.objects.create(name='Foreign device authority tenant')
+        Device.objects.create(
+            restaurant=foreign_restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Foreign POS',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='foreign-public-key',
+            public_key_fingerprint='d' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+        )
+
+        response = self.client.get(
+            '/api/v1/local-agent/sync/pos-device-state/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        by_id = {item['backendDeviceId']: item for item in response.data['posDevices']}
+        self.assertEqual(set(by_id), {str(active.id), str(revoked.id)})
+        self.assertEqual(by_id[str(active.id)]['status'], Device.Status.ACTIVE)
+        self.assertIsNone(by_id[str(active.id)]['revokedAt'])
+        self.assertEqual(by_id[str(revoked.id)]['status'], Device.Status.REVOKED)
+        self.assertIsNotNone(by_id[str(revoked.id)]['revokedAt'])
 
     def test_bootstrap_requires_agent_token(self):
         response = self.client.get('/api/v1/local-agent/sync/bootstrap/')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_bootstrap_rejects_agent_token_in_query_string(self):
+        response = self.client.get(f'/api/v1/local-agent/sync/bootstrap/?token={self.token}')
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
@@ -784,6 +857,46 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertFalse(first.data['results'][0]['replayed'])
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(Order.objects.filter(id=order_id, restaurant=self.restaurant).count(), 1)
+
+    def test_revoked_originating_pos_device_is_denied_even_for_inflight_batch(self):
+        now = timezone.now()
+        device = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Revoked mutation origin',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='revoked-mutation-public-key',
+            public_key_fingerprint='e' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+            status=Device.Status.REVOKED,
+            revoked_at=now,
+        )
+        order_id = uuid.uuid4()
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [
+                    {
+                        'operationId': 'edge-revoked-device-inflight',
+                        'userId': str(self.user.id),
+                        'deviceId': str(device.id),
+                        'method': 'POST',
+                        'path': '/api/v1/pos/sales/orders/',
+                        'body': {'id': str(order_id), 'channel': 'takeaway', 'guestCount': 1},
+                    }
+                ]
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        result = response.data['results'][0]
+        self.assertEqual(result['status'], status.HTTP_403_FORBIDDEN)
+        self.assertEqual(result['code'], 'POS_DEVICE_INVALID')
+        self.assertFalse(Order.objects.filter(id=order_id).exists())
 
     def test_trusted_edge_create_preserves_ids_but_cannot_override_initial_status(self):
         order_id = uuid.uuid4()
@@ -1521,7 +1634,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
 
 class LocalAgentCommandServiceTests(APITestCase):
     def setUp(self):
-        self.restaurant = Restaurant.objects.create(name='Agent Restaurant', auth_code='123456')
+        self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
         self.agent, _token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
 
     def test_execute_returns_offline_error_without_online_agent(self):

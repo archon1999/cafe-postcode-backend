@@ -1,3 +1,4 @@
+from uuid import uuid4
 from unittest.mock import patch
 
 from django.utils import timezone
@@ -954,4 +955,91 @@ class PaymentCreateApiTests(APITestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.OPEN)
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+
+    def test_payment_and_refund_reject_foreign_resources_without_an_oracle(self):
+        other_restaurant = Restaurant.objects.create(name='Foreign billing tenant')
+        foreign_user = User.objects.create_user(
+            username='foreign-billing-user',
+            full_name='Foreign Billing User',
+            restaurant=other_restaurant,
+            role=self.role,
+        )
+        foreign_distribution = DistributionPoint.objects.create(
+            restaurant=other_restaurant,
+            name='Foreign takeaway',
+            kind=DistributionPoint.Kind.TAKEAWAY,
+        )
+        foreign_order = Order.objects.create(
+            restaurant=other_restaurant,
+            distribution_point=foreign_distribution,
+            opened_by=foreign_user,
+            order_number=9001,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.OPEN,
+            guest_count=1,
+        )
+        foreign_payment = Payment.objects.create(
+            order=foreign_order,
+            received_by=foreign_user,
+            method=Payment.Method.CASH,
+            amount=1000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+
+        foreign_payment_create_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{foreign_order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 1000,
+            },
+            format='json',
+        )
+        unknown_payment_create_response = self.client.post(
+            f'/api/v1/pos/billing/orders/{uuid4()}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 1000,
+            },
+            format='json',
+        )
+        foreign_refund_response = self.client.post(
+            f'/api/v1/pos/billing/{foreign_payment.id}/refund/',
+            {'reason': 'Cross-tenant attempt'},
+            format='json',
+        )
+        unknown_refund_response = self.client.post(
+            f'/api/v1/pos/billing/{uuid4()}/refund/',
+            {'reason': 'Unknown payment attempt'},
+            format='json',
+        )
+
+        self.assertEqual(
+            foreign_payment_create_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            unknown_payment_create_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            foreign_payment_create_response.data,
+            unknown_payment_create_response.data,
+        )
+        self.assertEqual(
+            foreign_refund_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(
+            unknown_refund_response.status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+        self.assertEqual(foreign_refund_response.data, unknown_refund_response.data)
+
+        foreign_order.refresh_from_db()
+        foreign_payment.refresh_from_db()
+        self.assertEqual(foreign_order.status, Order.Status.OPEN)
+        self.assertEqual(foreign_payment.status, Payment.Status.SUCCEEDED)
+        self.assertFalse(foreign_payment.refunds.exists())
+        self.assertEqual(Payment.objects.filter(order=foreign_order).count(), 1)
 

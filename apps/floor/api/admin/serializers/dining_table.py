@@ -38,6 +38,10 @@ class DiningTableSerializer(serializers.ModelSerializer):
 
         restaurant = get_optional_request_restaurant(request)
         if restaurant is None:
+            if getattr(request.user, "is_superuser", False):
+                return
+            self.fields["hall"].queryset = self.fields["hall"].queryset.none()
+            self.fields["zone"].queryset = self.fields["zone"].queryset.none()
             return
 
         self.fields["hall"].queryset = self.fields["hall"].queryset.filter(

@@ -128,7 +128,12 @@ class EndpointRBACApiTests(APITestCase):
         self.client.force_authenticate(self.no_access_user)
 
         me_response = self.client.get("/api/v1/pos/auth/me/")
-        logout_response = self.client.post("/api/v1/admin/auth/logout/", {}, format="json")
+        logout_response = self.client.post(
+            "/api/v1/admin/auth/logout/",
+            {},
+            format="json",
+            HTTP_ORIGIN="https://admin.cafe-postcode.uz",
+        )
 
         self.assertEqual(me_response.status_code, status.HTTP_200_OK)
         self.assertEqual(logout_response.status_code, status.HTTP_204_NO_CONTENT)
@@ -354,6 +359,9 @@ class EndpointRBACPermissionTests(TestCase):
                 "tariffs.view",
                 "tariffs.create",
                 "tariffs.update",
+                "control.branches.view",
+                "control.pairings.manage",
+                "control.devices.revoke",
             },
         )
 

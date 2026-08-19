@@ -15,6 +15,7 @@ from apps.local_agents.releases import agent_update_status
 from apps.local_agents.sanitization import sanitize_remote_logs_result, sanitize_remote_text
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from common.api.permissions import IsAdmin
+from common.api.admin_permissions import RecentAdminMFAPermission
 
 
 SUPERUSER_PERMISSIONS = [permissions.IsAuthenticated, IsAdmin]
@@ -110,6 +111,8 @@ class LocalAgentFleetDiagnosticsView(LocalAgentFleetActionView):
 
 
 class LocalAgentFleetUpdateView(LocalAgentFleetActionView):
+    permission_classes = [*SUPERUSER_PERMISSIONS, RecentAdminMFAPermission]
+
     def post(self, request, pk):
         agent = self.get_agent(pk)
         if not agent.is_online():
@@ -155,6 +158,8 @@ class LocalAgentFleetLogsView(LocalAgentFleetActionView):
 
 
 class LocalAgentFleetOutboxActionView(LocalAgentFleetActionView):
+    permission_classes = [*SUPERUSER_PERMISSIONS, RecentAdminMFAPermission]
+
     def post(self, request, pk, operation_id):
         agent = self.get_agent(pk)
         if not agent.is_online():
@@ -209,6 +214,7 @@ class LocalAgentFleetOutboxActionView(LocalAgentFleetActionView):
 
 
 class LocalAgentFleetBulkActionView(LocalAgentFleetActionView):
+    permission_classes = [*SUPERUSER_PERMISSIONS, RecentAdminMFAPermission]
     max_agents = 50
 
     def post(self, request):

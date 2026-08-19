@@ -1,9 +1,9 @@
 from django.conf import settings
-from django.contrib import admin
 from django.urls import include, path
 
 from apps.local_agents.pos_views import LocalAgentPOSSystemStatusView
 from common.constants import API_PREFIX, API_V1_PREFIX
+from core.admin_access import django_admin_urlpatterns
 from core.health import healthz, readyz
 
 urlpatterns = [
@@ -11,7 +11,6 @@ urlpatterns = [
     path('readyz/', readyz, name='readyz'),
     path(f'{API_V1_PREFIX}system/status/', LocalAgentPOSSystemStatusView.as_view()),
     path('', include('django_prometheus.urls')),
-    path('admin/', admin.site.urls),
     path(f'{API_PREFIX}i18n/', include('django.conf.urls.i18n')),
     path(f'{API_V1_PREFIX}landing/', include('apps.landing.api.urls')),
     path(f'{API_V1_PREFIX}dashboard/', include('apps.dashboard.api.urls')),
@@ -32,6 +31,14 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/integrations/', include('apps.integrations.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/printing/', include('apps.printing.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/local-agents/', include('apps.local_agents.admin_urls')),
+    path(f'{API_V1_PREFIX}admin/telegram-reports/', include('apps.telegram_reports.api.admin_urls')),
+    path(f'{API_V1_PREFIX}admin/devices/', include('apps.devices.admin_urls')),
+    path(f'{API_V1_PREFIX}admin/control/', include('apps.devices.control_urls')),
+    path(
+        f'{API_V1_PREFIX}admin/security-events/',
+        include('apps.devices.security_urls'),
+    ),
+    path(f'{API_V1_PREFIX}devices/', include('apps.devices.urls')),
     path(f'{API_V1_PREFIX}local-agent/', include('apps.local_agents.urls')),
     path(f'{API_V1_PREFIX}pos/auth/', include('apps.users.api.pos.urls.auth')),
     path(f'{API_V1_PREFIX}pos/catalog/', include('apps.catalog.api.pos.urls')),
@@ -42,6 +49,8 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}pos/monitor/', include('apps.kitchen.api.pos.monitor_urls')),
     path(f'{API_V1_PREFIX}pos/printing/', include('apps.printing.api.pos.urls')),
 ]
+
+urlpatterns = django_admin_urlpatterns() + urlpatterns
 
 if settings.ENABLE_API_DOCS:
     from core.yasg import schema_view

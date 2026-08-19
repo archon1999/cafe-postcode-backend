@@ -1,10 +1,10 @@
 from .login import PosLoginSerializer
-from .restaurant import PosRestaurantCodeSerializer, PosRestaurantContextSerializer, PosTransportDiscoverySerializer
+from .restaurant import LegacyRestaurantCodeSerializer, PosRestaurantContextSerializer, PosTransportDiscoverySerializer
 from .session import PosSessionSerializer
 
 __all__ = [
     'PosLoginSerializer',
-    'PosRestaurantCodeSerializer',
+    'LegacyRestaurantCodeSerializer',
     'PosRestaurantContextSerializer',
     'PosTransportDiscoverySerializer',
     'PosSessionSerializer',

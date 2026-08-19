@@ -73,7 +73,11 @@ class CashShiftOpenView(APIView):
         cashier_id = serializer.validated_data.get("cashier_id")
         if cashier_id is not None:
             cashier = (
-                User.objects.filter(pk=cashier_id)
+                User.objects.filter(
+                    pk=cashier_id,
+                    restaurant_profile__restaurant=restaurant,
+                    is_active=True,
+                )
                 .select_related("role", "restaurant_profile", "employee_profile")
                 .first()
             )

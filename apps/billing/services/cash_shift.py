@@ -226,6 +226,27 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             )
 
         with transaction.atomic():
+            cash_desk = (
+                CashDesk.objects.select_for_update(of=("self",))
+                .select_related(
+                    "payment_integration",
+                    "printer_integration",
+                    "fiscal_integration",
+                )
+                .get(pk=cash_desk.pk, restaurant=restaurant)
+            )
+            if cashier is not None:
+                cashier = (
+                    User.objects.select_for_update(of=("self",))
+                    .select_related("role", "restaurant_profile", "employee_profile")
+                    .get(pk=cashier.pk)
+                )
+                if not self._is_valid_cashier(
+                    restaurant=restaurant, cashier=cashier
+                ):
+                    raise ValidationError(
+                        {"cashierId": "Selected cashier was not found."}
+                    )
             if (
                 cashier is not None
                 and CashShift.objects.filter(
@@ -277,6 +298,11 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
     def close_shift(
         self, *, shift, actual_closing_cash_amount, closed_by, notes_close=""
     ):
+        shift = (
+            CashShift.objects.select_for_update(of=("self",))
+            .select_related("cash_desk", "cashier", "opened_by")
+            .get(pk=shift.pk)
+        )
         if shift.status != CashShift.Status.OPEN:
             raise ValidationError({"detail": "Only open shifts can be closed."})
 

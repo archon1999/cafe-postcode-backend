@@ -348,8 +348,74 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/admin/local-agents/<uuid:pk>/logs/'),
             ('POST', 'api/v1/admin/local-agents/<uuid:pk>/outbox/<str:operation_id>/'),
             ('POST', 'api/v1/admin/local-agents/<uuid:pk>/update-now/'),
+            ('POST', 'api/v1/admin/telegram-reports/link-token/'),
+            ('GET', 'api/v1/admin/telegram-reports/subscriptions/'),
+            ('DELETE', 'api/v1/admin/telegram-reports/subscriptions/<uuid:pk>/'),
+            ('GET', 'api/v1/admin/devices/'),
+            ('GET', 'api/v1/admin/devices/migration-summary/'),
+            ('GET', 'api/v1/admin/devices/pairings/'),
+            ('POST', 'api/v1/admin/devices/pairings/<uuid:pairing_id>/approve/'),
+            ('POST', 'api/v1/admin/devices/pairings/<uuid:pairing_id>/reject/'),
+            ('GET', 'api/v1/admin/devices/<uuid:pk>/'),
+            ('POST', 'api/v1/admin/devices/<uuid:pk>/revoke/'),
         ),
         default_roles=PRODUCT_OWNER_ROLES,
+    ),
+    action_permission(
+        'control.branches.view',
+        surface='admin',
+        group_key='devices',
+        name='Control ilovasida biriktirilgan shahobcha va qurilmalarni ko‘rish',
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/control/branches/'),
+            ('GET', 'api/v1/admin/control/branches/<uuid:restaurant_id>/devices/'),
+        ),
+        default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+    ),
+    action_permission(
+        'control.pairings.manage',
+        surface='admin',
+        group_key='devices',
+        name='Control ilovasida qurilmalarni ulash',
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/control/pairings/resolve/'),
+            (
+                'POST',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/approve/',
+            ),
+            (
+                'POST',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/reject/',
+            ),
+        ),
+        default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+    ),
+    action_permission(
+        'control.devices.revoke',
+        surface='admin',
+        group_key='devices',
+        name='Control ilovasida qurilma ulanishini bekor qilish',
+        endpoints=endpoint_specs(
+            (
+                'POST',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/devices/<uuid:device_id>/revoke/',
+            ),
+        ),
+        default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+    ),
+    permission_definition(
+        'security_events.view',
+        surface='admin',
+        resource='security_events',
+        action='view',
+        ui_visible=True,
+        group_key='security',
+        name='Xavfsizlik hodisalarini ko‘rish',
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/security-events/'),
+            ('POST', 'api/v1/admin/security-events/<uuid:pk>/acknowledge/'),
+        ),
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
     ),
     permission_definition(
         'dashboard.view',
@@ -878,7 +944,6 @@ PERMISSION_DEFINITIONS.extend(
         view_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/restaurants/<uuid:pk>/'),
             ('GET', 'api/v1/admin/restaurants/<uuid:pk>/detail/'),
-            ('GET', 'api/v1/admin/platform/restaurants/<uuid:pk>/balance-transactions/'),
         ),
         create_endpoints=merge_endpoint_specs(
             endpoint_specs(
@@ -950,10 +1015,14 @@ PERMISSION_DEFINITIONS.extend(
         list_url='api/v1/admin/catalog/categories/',
         detail_url='api/v1/admin/catalog/categories/<uuid:pk>/',
         default_roles=CATALOG_ADMIN_ROLES,
-        create_endpoints=endpoint_specs(('POST', 'api/v1/admin/catalog/categories/')),
+        create_endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/catalog/categories/'),
+            ('POST', 'api/v1/admin/catalog/translations/name/'),
+        ),
         update_endpoints=endpoint_specs(
             ('PUT', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
             ('PATCH', 'api/v1/admin/catalog/categories/<uuid:pk>/'),
+            ('POST', 'api/v1/admin/catalog/translations/name/'),
         ),
     )
 )
@@ -978,11 +1047,13 @@ PERMISSION_DEFINITIONS.extend(
         create_endpoints=endpoint_specs(
             ('POST', 'api/v1/admin/catalog/items/'),
             ('POST', 'api/v1/admin/catalog/item-groups/'),
+            ('POST', 'api/v1/admin/catalog/translations/name/'),
         ),
         update_endpoints=endpoint_specs(
             ('PUT', 'api/v1/admin/catalog/items/<uuid:pk>/'),
             ('PATCH', 'api/v1/admin/catalog/items/<uuid:pk>/'),
             ('POST', 'api/v1/admin/catalog/items/<uuid:pk>/stoplist/'),
+            ('POST', 'api/v1/admin/catalog/translations/name/'),
             ('PUT', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
             ('PATCH', 'api/v1/admin/catalog/item-groups/<uuid:pk>/'),
         ),
@@ -1374,19 +1445,14 @@ PERMISSION_DEFINITIONS.extend(
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
-            'restaurants.extend',
+            'restaurants.change_tariff',
             surface='admin',
             group_key='restaurants',
-            name='Restoran tarif muddatini uzaytirish',
-            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/extend/')),
-            default_roles=BUSINESS_PARTNER_ROLES,
-        ),
-        action_permission(
-            'restaurants.top_up',
-            surface='admin',
-            group_key='restaurants',
-            name="Restoran balansini to'ldirish",
-            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/top-up/')),
+            name='Restoran tarifini o‘zgartirish',
+            endpoints=endpoint_specs(
+                ('GET', 'api/v1/admin/platform/restaurants/<uuid:pk>/tariff-change/'),
+                ('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/tariff-change/'),
+            ),
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
         action_permission(
@@ -1395,14 +1461,6 @@ PERMISSION_DEFINITIONS.extend(
             group_key='restaurants',
             name='Restoran admini parolini tiklash',
             endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/reset-password/')),
-            default_roles=BUSINESS_PARTNER_ROLES,
-        ),
-        action_permission(
-            'restaurants.rotate_auth_code',
-            surface='admin',
-            group_key='restaurants',
-            name='Restoran aktivatsiya kodini yangilash',
-            endpoints=endpoint_specs(('POST', 'api/v1/admin/platform/restaurants/<uuid:pk>/rotate-auth-code/')),
             default_roles=BUSINESS_PARTNER_ROLES,
         ),
     ]

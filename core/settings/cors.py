@@ -37,6 +37,11 @@ CORS_ALLOWED_ORIGINS = [
     'https://pos.cafe-postcode.uz',
     'https://dashboard.cafe-postcode.uz',
 ]
+if os.getenv('DJANGO_PRODUCTION', '').strip().lower() not in {'1', 'true', 'yes', 'on'}:
+    CORS_ALLOWED_ORIGINS.extend([
+        'http://localhost:4500',
+        'http://127.0.0.1:4500',
+    ])
 CORS_ALLOWED_ORIGINS.extend(parse_csv_env('CORS_ALLOWED_ORIGINS'))
 
 CORS_ALLOWED_ORIGIN_REGEXES = []
@@ -48,9 +53,15 @@ CORS_ALLOW_HEADERS = [
     'accept-language',
     'x-language',
     'x-admin-restaurant-id',
+    'x-admin-user-activity',
     'x-dashboard-restaurant-id',
     'x-edge-operation-id',
     'x-edge-token',
+    'x-device-id',
+    'x-device-timestamp',
+    'x-device-nonce',
+    'x-device-content-sha256',
+    'x-device-signature',
     'x-tv-pairing-token',
     'x-tv-token',
 ]

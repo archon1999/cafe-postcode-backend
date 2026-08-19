@@ -26,6 +26,34 @@ class AdminLoginSerializer(serializers.Serializer):
         return attrs
 
 
+class MFAChallengeTokenSerializer(serializers.Serializer):
+    challenge_token = serializers.CharField(min_length=32, max_length=512, trim_whitespace=True)
+
+
+class MFACodeSerializer(MFAChallengeTokenSerializer):
+    code = serializers.CharField(required=False, allow_blank=True, max_length=16, trim_whitespace=True)
+    recovery_code = serializers.CharField(required=False, allow_blank=True, max_length=64, trim_whitespace=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get('code')) == bool(attrs.get('recovery_code')):
+            raise serializers.ValidationError('Provide exactly one TOTP code or recovery code.')
+        return attrs
+
+
+class MFAStepUpSerializer(serializers.Serializer):
+    code = serializers.CharField(required=False, allow_blank=True, max_length=16, trim_whitespace=True)
+    recovery_code = serializers.CharField(required=False, allow_blank=True, max_length=64, trim_whitespace=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get('code')) == bool(attrs.get('recovery_code')):
+            raise serializers.ValidationError('Provide exactly one TOTP code or recovery code.')
+        return attrs
+
+
+class AdminUnlockSerializer(serializers.Serializer):
+    password = serializers.CharField(min_length=1, max_length=256, trim_whitespace=False)
+
+
 class SessionUserSerializer(serializers.ModelSerializer):
     role = RoleSerializer(read_only=True)
     permission_codes = serializers.ListField(child=serializers.CharField(), read_only=True)
@@ -38,8 +66,6 @@ class SessionUserSerializer(serializers.ModelSerializer):
     inn = serializers.SerializerMethodField()
     restaurant_name = serializers.SerializerMethodField()
     activated_at = serializers.SerializerMethodField()
-    expires_on = serializers.SerializerMethodField()
-    billing_period = serializers.SerializerMethodField()
     activation_type = serializers.SerializerMethodField()
     tariff = serializers.SerializerMethodField()
 
@@ -77,14 +103,6 @@ class SessionUserSerializer(serializers.ModelSerializer):
     def get_activated_at(self, obj):
         restaurant = obj.get_restaurant_scope()
         return getattr(restaurant, 'activated_at', None) if restaurant is not None else None
-
-    def get_expires_on(self, obj):
-        entitlement = self._get_entitlement(obj)
-        return entitlement.expires_on if entitlement is not None else None
-
-    def get_billing_period(self, obj):
-        entitlement = self._get_entitlement(obj)
-        return entitlement.billing_period if entitlement is not None else None
 
     def get_activation_type(self, obj):
         entitlement = self._get_entitlement(obj)
@@ -124,8 +142,6 @@ class SessionUserSerializer(serializers.ModelSerializer):
             'inn',
             'restaurant_name',
             'activated_at',
-            'expires_on',
-            'billing_period',
             'activation_type',
             'tariff',
         )

@@ -7,15 +7,35 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.users.helpers import get_auth_session_model
+from common.api.client_ip import get_client_ip
 
 logger = logging.getLogger(__name__)
 
 
 class AuthSessionService:
     @transaction.atomic
-    def issue(self, *, user, request, surface: str):
+    def issue(
+        self,
+        *,
+        user,
+        request,
+        surface: str,
+        device=None,
+        restaurant=None,
+        refresh_family=None,
+        mfa_verified_at=None,
+    ):
         token_key = token_urlsafe(48)
-        session = self._create_session(user=user, token_key=token_key, request=request, surface=surface)
+        session = self._create_session(
+            user=user,
+            token_key=token_key,
+            request=request,
+            surface=surface,
+            device=device,
+            restaurant=restaurant,
+            refresh_family=refresh_family,
+            mfa_verified_at=mfa_verified_at,
+        )
         logger.info(
             'Authentication session issued',
             extra={'user_id': str(user.pk), 'session_id': str(session.pk)},
@@ -45,23 +65,31 @@ class AuthSessionService:
 
         return session
 
-    def _create_session(self, *, user, token_key: str, request, surface: str):
+    def _create_session(
+        self,
+        *,
+        user,
+        token_key: str,
+        request,
+        surface: str,
+        device=None,
+        restaurant=None,
+        refresh_family=None,
+        mfa_verified_at=None,
+    ):
         auth_session_model = get_auth_session_model()
         now = timezone.now()
         return auth_session_model.objects.create(
             token_key_hash=auth_session_model.build_token_key_hash(token_key),
             user=user,
+            device=device,
+            restaurant=restaurant,
+            refresh_family=refresh_family,
+            mfa_verified_at=mfa_verified_at,
             surface=surface,
             expires_at=now + timedelta(seconds=settings.AUTH_SESSION_TTL_SECONDS[surface]),
-            client_ip=self._get_client_ip(request),
+            client_ip=get_client_ip(request),
             user_agent=request.headers.get('User-Agent', '')[:255],
             status=auth_session_model.Status.ACTIVE,
             last_seen_at=now,
         )
-
-    @staticmethod
-    def _get_client_ip(request) -> str | None:
-        forwarded_for = request.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            return forwarded_for.split(',')[0].strip() or None
-        return request.META.get('REMOTE_ADDR')

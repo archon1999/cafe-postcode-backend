@@ -23,7 +23,7 @@ class PrintDocument(BaseModel):
         choices=OperationType.choices,
         default=OperationType.SALE,
     )
-    idempotency_key = models.CharField(max_length=80)
+    idempotency_key = models.CharField(max_length=160)
     source_model = models.CharField(max_length=80, blank=True)
     source_id = models.UUIDField(null=True, blank=True)
     data_snapshot = models.JSONField(default=dict)
@@ -71,7 +71,7 @@ class PrintJob(BaseModel):
         related_name='print_jobs',
     )
     document = models.ForeignKey(PrintDocument, on_delete=models.PROTECT, related_name='jobs')
-    idempotency_key = models.CharField(max_length=80)
+    idempotency_key = models.CharField(max_length=160)
     cash_desk = models.ForeignKey(
         'restaurants.CashDesk',
         on_delete=models.SET_NULL,

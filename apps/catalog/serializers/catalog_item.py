@@ -43,6 +43,13 @@ class CatalogItemSerializer(
 
         restaurant = get_optional_request_restaurant(request)
         if restaurant is None:
+            if getattr(request.user, "is_superuser", False):
+                return
+            self.fields["category"].queryset = CatalogCategory.objects.none()
+            self.fields["prep_station"].queryset = PrepStation.objects.none()
+            self.fields[
+                "modifier_groups"
+            ].child_relation.queryset = ModifierGroup.objects.none()
             return
 
         self.fields["category"].queryset = CatalogCategory.objects.filter(
@@ -87,6 +94,7 @@ class CatalogItemSerializer(
             "description_uz",
             "description_uz_crl",
             "description_ru",
+            "item_type",
             "price",
             "sale_unit",
             "sort_order",
@@ -143,6 +151,13 @@ class CatalogItemSerializer(
             raise serializers.ValidationError(
                 {"sale_unit": _("Marked products cannot be sold by kilogram.")}
             )
+        item_type = attrs.get(
+            "item_type",
+            getattr(self.instance, "item_type", CatalogItem.ItemType.PRODUCT),
+        )
+        if item_type == CatalogItem.ItemType.SERVICE:
+            attrs["price"] = 0
+            attrs["sale_unit"] = CatalogItem.SaleUnit.PIECE
         if not attrs.get("marking_gtin"):
             payload_item = type(
                 "PayloadItem",

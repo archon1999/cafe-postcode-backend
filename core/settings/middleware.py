@@ -10,6 +10,7 @@ MIDDLEWARE = [
 
     # Compression and security middleware
     'django.middleware.security.SecurityMiddleware',
+    'core.admin_access.DjangoAdminNetworkMiddleware',
     'django.middleware.gzip.GZipMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',

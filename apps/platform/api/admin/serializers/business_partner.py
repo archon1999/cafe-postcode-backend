@@ -1,3 +1,5 @@
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.platform.helpers import get_business_partner_model
@@ -143,12 +145,17 @@ class PartnerActivationSerializer(serializers.Serializer):
         if not username:
             errors['username'] = 'This field may not be blank.'
 
+        partner = self.context['partner']
+        owner_user = partner.owner_user
         password = attrs['password']
         if not password.strip():
             errors['password'] = 'This field may not be blank.'
+        else:
+            try:
+                validate_password(password, user=owner_user)
+            except DjangoValidationError as error:
+                errors['password'] = list(error.messages)
 
-        partner = self.context['partner']
-        owner_user = partner.owner_user
         user_queryset = self.context['user_model'].objects.all()
         if owner_user is not None:
             user_queryset = user_queryset.exclude(pk=owner_user.pk)

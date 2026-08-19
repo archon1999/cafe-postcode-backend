@@ -32,8 +32,8 @@ class TelegramReportScheduleTests(TestCase):
     @patch("apps.telegram_reports.tasks.async_task")
     def test_dispatch_fans_out_one_task_per_connected_branch(self, async_task):
         account = TelegramAccount.objects.create(telegram_user_id=1, chat_id=1)
-        first = Restaurant.objects.create(name="First", auth_code="ABC123")
-        second = Restaurant.objects.create(name="Second", auth_code="XYZ789")
+        first = Restaurant.objects.create(name="First")
+        second = Restaurant.objects.create(name="Second")
         TelegramBranchSubscription.objects.create(account=account, restaurant=first)
         TelegramBranchSubscription.objects.create(account=account, restaurant=second)
 
@@ -47,7 +47,7 @@ class TelegramReportScheduleTests(TestCase):
     def test_delivery_is_idempotent_per_branch_and_period(self, render):
         FakeDeliveryClient.calls = []
         account = TelegramAccount.objects.create(telegram_user_id=2, chat_id=2)
-        branch = Restaurant.objects.create(name="Qamish", auth_code="QAM123")
+        branch = Restaurant.objects.create(name="Qamish")
         subscription = TelegramBranchSubscription.objects.create(account=account, restaurant=branch)
 
         first = send_scheduled_report(

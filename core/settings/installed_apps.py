@@ -23,6 +23,7 @@ LOCAL_APPS = [
     'apps.telegram_reports',
     'apps.integrations',
     'apps.landing',
+    'apps.devices',
     'apps.local_agents',
     'apps.printing',
 ]

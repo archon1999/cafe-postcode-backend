@@ -1,79 +1,15 @@
-from django.db import transaction
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.local_agents.models import LocalAgent, LocalAgentEnrollmentToken
+from apps.local_agents.models import LocalAgent
 from apps.local_agents.authentication import authenticate_local_agent
 from apps.local_agents.releases import agent_update_status
 from apps.local_agents.sanitization import sanitize_remote_logs_result
-from apps.local_agents.serializers import LocalAgentEnrollmentSerializer, LocalAgentStatusSerializer
+from apps.local_agents.serializers import LocalAgentStatusSerializer
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
-from common.api.admin_permissions import AdminPermissionRequiredMixin
+from common.api.admin_permissions import AdminPermissionRequiredMixin, AdminRecentMFARequiredMixin
 from common.api.scopes import get_request_restaurant
-from common.api.throttling import AgentEnrollmentRateThrottle
-
-
-class LocalAgentEnrollmentTokenView(AdminPermissionRequiredMixin, APIView):
-    def post(self, request):
-        restaurant = get_request_restaurant(request)
-        if not restaurant.is_active:
-            return Response(
-                {'restaurantId': ['Local Agent cannot be installed for an inactive restaurant.']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        token, raw_token = LocalAgentEnrollmentToken.issue(restaurant=restaurant, issued_by=request.user)
-        return Response(
-            {
-                'enrollmentToken': raw_token,
-                'expiresAt': token.expires_at,
-                'restaurantId': str(restaurant.id),
-            },
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class LocalAgentEnrollView(APIView):
-    permission_classes = [permissions.AllowAny]
-    throttle_classes = [AgentEnrollmentRateThrottle]
-
-    @transaction.atomic
-    def post(self, request):
-        serializer = LocalAgentEnrollmentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        restaurant = serializer.validated_data['restaurant']
-        agent, token = LocalAgent.issue_for_restaurant(
-            restaurant=restaurant,
-            name=serializer.validated_data.get('name', ''),
-            version=serializer.validated_data.get('version', ''),
-        )
-        ws_url = request.build_absolute_uri('/ws/local-agent/')
-        ws_url = ws_url.replace('https://', 'wss://', 1).replace('http://', 'ws://', 1)
-        return Response(
-            {
-                'agentToken': token,
-                'wsUrl': ws_url,
-                'agent': LocalAgentStatusSerializer(agent).data,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-class LocalAgentEnrollmentPreflightView(APIView):
-    permission_classes = [permissions.AllowAny]
-    throttle_classes = [AgentEnrollmentRateThrottle]
-
-    def post(self, request):
-        serializer = LocalAgentEnrollmentSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        restaurant = serializer.validated_data['restaurant']
-        return Response(
-            {
-                'ok': True,
-                'restaurantId': str(restaurant.id),
-                'restaurantName': restaurant.name,
-            }
-        )
 
 
 class LocalAgentTokenAuthView(APIView):
@@ -147,7 +83,7 @@ class LocalAgentLogsView(AdminPermissionRequiredMixin, APIView):
         return Response({'ok': True, **sanitize_remote_logs_result(result)})
 
 
-class LocalAgentUpdateNowView(AdminPermissionRequiredMixin, APIView):
+class LocalAgentUpdateNowView(AdminRecentMFARequiredMixin, APIView):
     command_service_class = LocalAgentCommandService
 
     def post(self, request):
@@ -180,12 +116,13 @@ class LocalAgentUpdateNowView(AdminPermissionRequiredMixin, APIView):
         return Response({'ok': True, 'result': result})
 
 
-class LocalAgentPrinterCheckView(AdminPermissionRequiredMixin, APIView):
+class LocalAgentPrinterCheckView(AdminRecentMFARequiredMixin, APIView):
     command_service_class = LocalAgentCommandService
 
     def post(self, request):
         restaurant = get_request_restaurant(request)
         payload = {
+            'integrationId': request.data.get('integrationId') or request.data.get('integration_id') or '',
             'connectionType': request.data.get('connectionType') or request.data.get('connection_type') or '',
             'printerName': request.data.get('printerName') or request.data.get('printer_name') or '',
             'host': request.data.get('host') or '',

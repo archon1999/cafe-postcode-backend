@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.printing.models import PrintTemplate, PrintTemplateVersion
+from apps.printing.presets import get_preset_layout
 from apps.restaurants.models import Restaurant
 from apps.users.models import User
 
@@ -26,15 +27,14 @@ class PrintTemplateAdminApiTests(APITestCase):
         self.client.force_authenticate(self.superuser)
         self.client.credentials(HTTP_X_ADMIN_RESTAURANT_ID=str(self.restaurant.id))
 
-    def test_restaurant_creation_provisions_all_published_templates(self):
+    def test_restaurant_creation_provisions_the_three_active_published_templates(self):
         templates = PrintTemplate.objects.filter(restaurant=self.restaurant).select_related('published_version')
 
-        self.assertEqual(templates.count(), 4)
+        self.assertEqual(templates.count(), 3)
         self.assertSetEqual(
             set(templates.values_list('kind', flat=True)),
             {
                 PrintTemplate.Kind.KITCHEN_TICKET,
-                PrintTemplate.Kind.ORDER_PRECHECK,
                 PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
                 PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL,
             },
@@ -50,12 +50,12 @@ class PrintTemplateAdminApiTests(APITestCase):
         response = self.client.get('/api/v1/admin/printing/templates/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(len(response.data), 4)
+        self.assertEqual(len(response.data), 3)
         returned_ids = {item['id'] for item in response.data}
         own_ids = {str(value) for value in PrintTemplate.objects.filter(restaurant=self.restaurant).values_list('id', flat=True)}
         self.assertSetEqual(returned_ids, own_ids)
 
-    def test_preset_catalog_exposes_four_packs_variables_and_sample_data(self):
+    def test_preset_catalog_exposes_four_packs_for_the_three_active_kinds(self):
         response = self.client.get('/api/v1/admin/printing/presets/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
@@ -65,15 +65,13 @@ class PrintTemplateAdminApiTests(APITestCase):
                 set(preset['templates']),
                 {
                     PrintTemplate.Kind.KITCHEN_TICKET,
-                    PrintTemplate.Kind.ORDER_PRECHECK,
                     PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
                     PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL,
                 },
             )
         self.assertIn('variablesByKind', response.data)
         self.assertIn('sampleData', response.data)
-        self.assertIn('precheck.printedAt', response.data['variablesByKind'][PrintTemplate.Kind.ORDER_PRECHECK])
-        self.assertIn('order.zoneDisplay', response.data['variablesByKind'][PrintTemplate.Kind.ORDER_PRECHECK])
+        self.assertNotIn(PrintTemplate.Kind.ORDER_PRECHECK, response.data['variablesByKind'])
         self.assertIn('item.vat', response.data['variablesByKind'][PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL])
         for preset in response.data['presets']:
             for layout in preset['templates'].values():
@@ -86,6 +84,7 @@ class PrintTemplateAdminApiTests(APITestCase):
                 )
             plain_blocks = preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN]['blocks']
             plain_items = next(block for block in plain_blocks if block['type'] == 'items_table')
+            self.assertTrue(plain_items['showHeaders'])
             self.assertFalse(plain_items.get('showVat', False))
             self.assertFalse(
                 any('totals.vat' in str(row.get('value', '')) for block in plain_blocks for row in block.get('rows', []))
@@ -103,6 +102,26 @@ class PrintTemplateAdminApiTests(APITestCase):
             )
             self.assertEqual(fiscal_qr['align'], 'center')
             self.assertEqual(fiscal_qr['qrScale'], 2)
+
+            kitchen_blocks = preset['templates'][PrintTemplate.Kind.KITCHEN_TICKET]['blocks']
+            kitchen_items = next(block for block in kitchen_blocks if block['type'] == 'items_table')
+            self.assertTrue(kitchen_items['showHeaders'])
+            self.assertNotIn('{{restaurant.address}}', str(kitchen_blocks))
+            self.assertFalse(
+                any(
+                    block.get('id') in {'footer', 'footer-thanks', 'footer-appetite'}
+                    for block in kitchen_blocks
+                )
+            )
+
+            service_fees_index = next(
+                index for index, block in enumerate(plain_blocks) if block['id'] == 'service-fees'
+            )
+            totals_index = next(index for index, block in enumerate(plain_blocks) if block['id'] == 'totals')
+            self.assertEqual(plain_blocks[service_fees_index - 1]['type'], 'divider')
+            self.assertEqual(plain_blocks[totals_index - 1]['type'], 'divider')
+            self.assertLess(service_fees_index, totals_index)
+            self.assertEqual(plain_blocks[totals_index]['rows'][-1]['value'], '{{totals.total}}')
 
     def test_create_draft_from_preset_and_publish_retires_previous_version(self):
         template = PrintTemplate.objects.get(
@@ -159,6 +178,87 @@ class PrintTemplateAdminApiTests(APITestCase):
         self.assertNotEqual(template.published_version_id, previous.id)
         self.assertEqual(previous.status, PrintTemplateVersion.Status.RETIRED)
         self.assertIn('{{order.zoneDisplay}}', str(template.published_version.layout))
+
+    def test_unification_migration_updates_published_layouts_and_retires_precheck(self):
+        kitchen = PrintTemplate.objects.get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.KITCHEN_TICKET,
+        )
+        kitchen_previous = kitchen.published_version
+        kitchen_layout = deepcopy(kitchen_previous.layout)
+        kitchen_items = next(block for block in kitchen_layout['blocks'] if block['type'] == 'items_table')
+        kitchen_items.pop('showHeaders', None)
+        kitchen_layout['blocks'][-2:-2] = [
+            {'id': 'footer-divider', 'type': 'divider'},
+            {'id': 'footer-thanks', 'type': 'text', 'text': 'Buyurtmangiz uchun rahmat!'},
+        ]
+        kitchen_layout['blocks'].insert(
+            2,
+            {
+                'id': 'restaurant-details',
+                'type': 'metadata',
+                'rows': [{'label': 'Manzil', 'value': '{{restaurant.address}}'}],
+            },
+        )
+        kitchen_previous.layout = kitchen_layout
+        kitchen_previous.save(update_fields=('layout', 'updated_at'))
+
+        plain = PrintTemplate.objects.get(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
+        plain_previous = plain.published_version
+        plain_layout = deepcopy(plain_previous.layout)
+        service_fees = next(block for block in plain_layout['blocks'] if block['id'] == 'service-fees')
+        totals = next(block for block in plain_layout['blocks'] if block['id'] == 'totals')
+        totals['rows'][-1:-1] = service_fees['rows']
+        plain_layout['blocks'] = [
+            block
+            for block in plain_layout['blocks']
+            if block['id'] not in {'service-fees-divider', 'service-fees', 'totals-divider'}
+        ]
+        totals_index = plain_layout['blocks'].index(totals)
+        plain_layout['blocks'].insert(totals_index, {'id': 'total-top-divider', 'type': 'divider'})
+        plain_previous.layout = plain_layout
+        plain_previous.save(update_fields=('layout', 'updated_at'))
+
+        precheck = PrintTemplate.objects.create(
+            restaurant=self.restaurant,
+            kind=PrintTemplate.Kind.ORDER_PRECHECK,
+        )
+        precheck_version = PrintTemplateVersion.objects.create(
+            template=precheck,
+            revision=1,
+            status=PrintTemplateVersion.Status.PUBLISHED,
+            preset_key='legacy_80',
+            layout=get_preset_layout('legacy_80', PrintTemplate.Kind.ORDER_PRECHECK),
+        )
+        precheck.published_version = precheck_version
+        precheck.save(update_fields=('published_version', 'updated_at'))
+
+        migration = import_module('apps.printing.migrations.0010_unify_receipt_templates')
+        migration.unify_receipt_templates(django_apps, None)
+
+        kitchen.refresh_from_db()
+        kitchen_previous.refresh_from_db()
+        kitchen_blocks = kitchen.published_version.layout['blocks']
+        self.assertEqual(kitchen_previous.status, PrintTemplateVersion.Status.RETIRED)
+        self.assertTrue(next(block for block in kitchen_blocks if block['type'] == 'items_table')['showHeaders'])
+        self.assertNotIn('{{restaurant.address}}', str(kitchen_blocks))
+        self.assertNotIn('Buyurtmangiz uchun rahmat!', str(kitchen_blocks))
+
+        plain.refresh_from_db()
+        plain_blocks = plain.published_version.layout['blocks']
+        service_index = next(index for index, block in enumerate(plain_blocks) if block['id'] == 'service-fees')
+        totals_index = next(index for index, block in enumerate(plain_blocks) if block['id'] == 'totals')
+        self.assertLess(service_index, totals_index)
+        self.assertEqual(plain_blocks[totals_index - 1]['type'], 'divider')
+        self.assertEqual(plain_blocks[totals_index]['rows'][-1]['value'], '{{totals.total}}')
+
+        precheck.refresh_from_db()
+        precheck_version.refresh_from_db()
+        self.assertIsNone(precheck.published_version)
+        self.assertEqual(precheck_version.status, PrintTemplateVersion.Status.RETIRED)
 
     def test_invalid_layout_is_rejected_before_a_draft_is_created(self):
         template = PrintTemplate.objects.get(

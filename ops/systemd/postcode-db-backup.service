@@ -1,0 +1,22 @@
+[Unit]
+Description=Cafe Postcode verified PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/home/postcode/backend
+ExecStart=/home/postcode/backend/ops/backup-postgres.sh
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/home/postcode/backups/postgres
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
