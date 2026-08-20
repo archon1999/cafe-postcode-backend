@@ -37,8 +37,7 @@ jobs:
               git stash push --message "pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)"
             fi
             git fetch --prune origin production
-            git checkout production
-            git pull --ff-only origin production
+            git checkout --detach origin/production
             docker compose --env-file .env.production config >/dev/null
             docker compose --env-file .env.production build
             docker compose --env-file .env.production --profile operations run --rm migrate
