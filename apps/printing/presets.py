@@ -632,12 +632,7 @@ def build_legacy_layout(kind: str) -> dict:
             'columns': [
                 {'label': 'Mahsulot', 'value': '{{item.name}}', 'grow': 1},
                 {'label': 'Soni', 'value': 'x{{item.quantity}}', 'align': 'right'},
-                {
-                    'label': 'Summa',
-                    'value': '{{item.lineTotal}}' if is_kitchen else '{{item.unitPrice}}',
-                    'align': 'right',
-                    'format': 'money',
-                },
+                {'label': 'Summa', 'value': '{{item.unitPrice}}', 'align': 'right', 'format': 'money'},
             ],
             'showHeaders': True,
             'showNotes': True,

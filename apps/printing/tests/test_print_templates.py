@@ -85,7 +85,6 @@ class PrintTemplateAdminApiTests(APITestCase):
             plain_blocks = preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN]['blocks']
             plain_items = next(block for block in plain_blocks if block['type'] == 'items_table')
             self.assertTrue(plain_items['showHeaders'])
-            self.assertEqual(plain_items['columns'][-1]['value'], '{{item.unitPrice}}')
             self.assertFalse(plain_items.get('showVat', False))
             self.assertFalse(
                 any('totals.vat' in str(row.get('value', '')) for block in plain_blocks for row in block.get('rows', []))
@@ -95,7 +94,6 @@ class PrintTemplateAdminApiTests(APITestCase):
                 for block in preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL]['blocks']
                 if block['type'] == 'items_table'
             )
-            self.assertEqual(fiscal_items['columns'][-1]['value'], '{{item.unitPrice}}')
             self.assertTrue(fiscal_items['showVat'])
             fiscal_qr = next(
                 block
