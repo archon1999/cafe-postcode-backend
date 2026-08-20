@@ -92,9 +92,15 @@ def _issue_coordinator(*, restaurant, device=None, terminal_id='', terminal_name
     trusted_agent = _trusted_agent_context(agent, restaurant=restaurant)
     if agent.device_id is not None and not trusted_agent:
         return None
+    lan_endpoints = private_lan_endpoints(agent.lan_endpoints or [])
+    # The common deployment runs the POS browser and Local Agent on the same
+    # Windows terminal. Prefer loopback so VPN/hotspot adapters cannot make an
+    # otherwise healthy Agent appear offline. Device proof and the encrypted
+    # channel are still required by the Agent on this endpoint.
+    coordinator_urls = ['http://127.0.0.1:18181', *lan_endpoints]
     coordinator = {
         'restaurantId': str(restaurant.id),
-        'coordinatorUrls': private_lan_endpoints(agent.lan_endpoints or []),
+        'coordinatorUrls': list(dict.fromkeys(coordinator_urls)),
         **trusted_agent,
     }
 
@@ -112,7 +118,11 @@ def _issue_coordinator(*, restaurant, device=None, terminal_id='', terminal_name
         or not trusted_agent
     ):
         return None
-    terminal_id = str(terminal_id or '').strip() or str(device.id)
+    # Migrated legacy terminals retain their stable Edge terminal id. Fresh
+    # QR-paired terminals use the backend device UUID so stale browser-local
+    # terminal ids cannot collide with an older Agent binding.
+    terminal_id = str((device.metadata or {}).get('terminalId') or device.id).strip()
+    coordinator['terminalId'] = terminal_id
     try:
         result = LocalAgentCommandService().execute(
             restaurant=restaurant,

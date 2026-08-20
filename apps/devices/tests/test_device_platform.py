@@ -291,7 +291,7 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         )
         self.assertEqual(
             pairing['claimUrl'],
-            f'https://admin.cafe-postcode.uz/control/pair#{expected_fragment}',
+            f'https://control.cafe-postcode.uz/control/pair#{expected_fragment}',
         )
         self.assertNotIn(pairing['claimToken'], claim_url.query)
         fragment = parse_qs(claim_url.fragment)

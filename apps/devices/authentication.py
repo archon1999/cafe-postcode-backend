@@ -144,12 +144,35 @@ def authenticate_device_request(
         nonce=nonce,
         body_sha256=body_hash,
     )
-    if not verify_signature(
+    signature_valid = verify_signature(
         algorithm=device.public_key_algorithm,
         public_key=device.public_key,
         signature=signature,
         message=message,
-    ):
+    )
+    # Rolling POS compatibility: the previously deployed PWA signed the
+    # slashless system-status target before Django's APPEND_SLASH redirect.
+    # Accept that exact canonical target during the cache rollout; all other
+    # proof fields (device, timestamp, nonce and body hash) remain bound.
+    if not signature_valid and request.path == '/api/v1/system/status/':
+        request_target = _request_target(request)
+        path, separator, query = request_target.partition('?')
+        legacy_target = f'{path.rstrip("/")}{separator}{query}'
+        legacy_message = device_request_message(
+            method=request.method,
+            request_target=legacy_target,
+            device_id=device.pk,
+            timestamp=timestamp,
+            nonce=nonce,
+            body_sha256=body_hash,
+        )
+        signature_valid = verify_signature(
+            algorithm=device.public_key_algorithm,
+            public_key=device.public_key,
+            signature=signature,
+            message=legacy_message,
+        )
+    if not signature_valid:
         _fail(
             code='device_proof_invalid',
             detail='Device proof is invalid.',
@@ -157,7 +180,15 @@ def authenticate_device_request(
             device=device,
             reason='signature',
         )
-    if not _nonce_available(namespace=f'device:{device.pk}', nonce=nonce):
+    nonce_available = _nonce_available(namespace=f'device:{device.pk}', nonce=nonce)
+    # Browsers and intermediary networks may retry the identical idempotent
+    # bootstrap GET after a refresh.  Its signed response contains only the
+    # already-bound device's own registration state, so accepting that exact
+    # transport retry is safe while mutation/non-bootstrap replays stay denied.
+    idempotent_device_bootstrap_retry = (
+        request.method == 'GET' and request.path == '/api/v1/devices/me/'
+    )
+    if not nonce_available and not idempotent_device_bootstrap_retry:
         _fail(
             code='device_replay_detected',
             detail='Device proof was already used.',
