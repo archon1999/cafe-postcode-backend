@@ -10,7 +10,7 @@ from apps.telegram_reports.models import TelegramBranchSubscription, TelegramLin
 from apps.devices.models import SecurityEvent
 from apps.devices.security import record_security_event
 from common.api.admin_permissions import AdminPermissionRequiredMixin, AdminRecentMFARequiredMixin
-from common.api.scopes import get_request_restaurant
+from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 
 
 logger = logging.getLogger(__name__)
@@ -77,17 +77,22 @@ class TelegramLinkTokenIssueView(AdminRecentMFARequiredMixin, APIView):
 class TelegramBranchSubscriptionListView(AdminPermissionRequiredMixin, APIView):
     def get(self, request):
         _require_superuser(request)
-        restaurant = get_request_restaurant(request)
-        subscriptions = (
-            TelegramBranchSubscription.objects.filter(restaurant=restaurant)
-            .select_related("account")
-            .order_by("account__username", "account__telegram_user_id")
+        restaurant = get_optional_request_restaurant(request)
+        subscriptions = TelegramBranchSubscription.objects.select_related("account", "restaurant")
+        if restaurant is not None:
+            subscriptions = subscriptions.filter(restaurant=restaurant)
+        subscriptions = subscriptions.order_by(
+            "restaurant__name",
+            "account__username",
+            "account__telegram_user_id",
         )
         return Response(
             {
                 "data": [
                     {
                         "id": str(subscription.pk),
+                        "restaurantId": str(subscription.restaurant_id),
+                        "restaurantName": subscription.restaurant.name,
                         "telegramUserId": str(subscription.account.telegram_user_id),
                         "username": subscription.account.username,
                         "firstName": subscription.account.first_name,
@@ -103,12 +108,12 @@ class TelegramBranchSubscriptionListView(AdminPermissionRequiredMixin, APIView):
 class TelegramBranchSubscriptionRevokeView(AdminRecentMFARequiredMixin, APIView):
     def delete(self, request, pk):
         _require_superuser(request)
-        restaurant = get_request_restaurant(request)
-        subscription = get_object_or_404(
-            TelegramBranchSubscription.objects.select_related("account"),
-            pk=pk,
-            restaurant=restaurant,
-        )
+        restaurant = get_optional_request_restaurant(request)
+        subscriptions = TelegramBranchSubscription.objects.select_related("account", "restaurant")
+        if restaurant is not None:
+            subscriptions = subscriptions.filter(restaurant=restaurant)
+        subscription = get_object_or_404(subscriptions, pk=pk)
+        restaurant = subscription.restaurant
         account_id = subscription.account.telegram_user_id
         subscription.delete()
         logger.warning(

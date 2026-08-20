@@ -97,9 +97,13 @@ class TelegramLinkTokenAdminApiTests(APITestCase):
             "/api/v1/admin/telegram-reports/subscriptions/",
             **self.headers(),
         )
+        listed_all = self.client.get("/api/v1/admin/telegram-reports/subscriptions/")
         foreign_revoke = self.client.delete(
             f"/api/v1/admin/telegram-reports/subscriptions/{foreign_subscription.pk}/",
             **self.headers(),
+        )
+        all_scope_foreign_revoke = self.client.delete(
+            f"/api/v1/admin/telegram-reports/subscriptions/{foreign_subscription.pk}/"
         )
         own_revoke = self.client.delete(
             f"/api/v1/admin/telegram-reports/subscriptions/{own_subscription.pk}/",
@@ -108,6 +112,16 @@ class TelegramLinkTokenAdminApiTests(APITestCase):
 
         self.assertEqual(listed.status_code, 200)
         self.assertEqual([item["id"] for item in listed.data["data"]], [str(own_subscription.pk)])
+        self.assertEqual(listed_all.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in listed_all.data["data"]},
+            {str(own_subscription.pk), str(foreign_subscription.pk)},
+        )
+        self.assertEqual(
+            {item["restaurantName"] for item in listed_all.data["data"]},
+            {self.restaurant.name, self.second_restaurant.name},
+        )
         self.assertEqual(foreign_revoke.status_code, 404)
+        self.assertEqual(all_scope_foreign_revoke.status_code, 204)
         self.assertEqual(own_revoke.status_code, 204)
-        self.assertTrue(TelegramBranchSubscription.objects.filter(pk=foreign_subscription.pk).exists())
+        self.assertFalse(TelegramBranchSubscription.objects.filter(pk=foreign_subscription.pk).exists())
