@@ -13,7 +13,7 @@ class ItemListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         queryset = (
-            CatalogItem.objects.all()
+            CatalogItem.objects.filter(archived_at__isnull=True)
             .select_related("restaurant", "category__prep_station", "prep_station")
             .prefetch_related("modifier_groups")
         )
