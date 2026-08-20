@@ -275,11 +275,12 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         stored = DevicePairing.objects.get(pk=pairing['id'])
         self.assertNotEqual(stored.poll_token_hash, pairing['pollToken'])
         self.assertNotEqual(stored.claim_token_hash, pairing['claimToken'])
+        self.assertAlmostEqual((stored.expires_at - stored.created_at).total_seconds(), 600, delta=1)
         self.assertEqual(stored.poll_token_hash, hash_device_secret(pairing['pollToken']))
         self.assertNotIn(pairing['pollToken'], json.dumps(pairing.get('claimUrl', '')))
         claim_url = urlsplit(pairing['claimUrl'])
         self.assertEqual(claim_url.scheme, 'https')
-        self.assertEqual(claim_url.netloc, 'admin.cafe-postcode.uz')
+        self.assertEqual(claim_url.netloc, 'control.cafe-postcode.uz')
         self.assertEqual(claim_url.path, '/control/pair')
         self.assertEqual(claim_url.query, '')
         expected_fragment = urlencode(

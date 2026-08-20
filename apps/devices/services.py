@@ -17,7 +17,7 @@ from apps.devices.models import Device, DevicePairing, SecurityEvent, hash_devic
 from apps.devices.security import record_security_event
 
 
-PAIRING_TTL = timedelta(minutes=5)
+PAIRING_TTL = timedelta(minutes=10)
 DEVICE_LEASE_TTL = timedelta(hours=24)
 PAIRING_PROOF_WINDOW_SECONDS = 300
 
