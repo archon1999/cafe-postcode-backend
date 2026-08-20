@@ -88,6 +88,7 @@ class RestaurantSerializer(
             "tariff_id",
         )
         extra_kwargs = {"currency": {"required": False}}
+        read_only_fields = ("activated_at", "deactivated_at")
 
     def get_permission_codes(self, instance):
         entitlement = self._get_entitlement(instance)
@@ -154,6 +155,19 @@ class RestaurantSerializer(
         if tariff is not serializers.empty:
             raise serializers.ValidationError(
                 {"tariffId": "Tarifni faqat tarifni o‘zgartirish actioni orqali almashtiring."}
+            )
+        requested_is_active = validated_data.pop("is_active", serializers.empty)
+        if (
+            requested_is_active is not serializers.empty
+            and requested_is_active != instance.is_active
+        ):
+            raise serializers.ValidationError(
+                {
+                    "is_active": (
+                        "Restoran holatini faqat faollashtirish yoki "
+                        "faolsizlantirish actioni orqali o‘zgartiring."
+                    )
+                }
             )
         validated_data.pop("clear_pos_auth_background_image", False)
         faktura_payload = validated_data.pop("faktura_payload", serializers.empty)

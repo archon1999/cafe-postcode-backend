@@ -942,6 +942,7 @@ PERMISSION_DEFINITIONS.extend(
         detail_url='api/v1/admin/restaurants/<uuid:pk>/',
         default_roles=BUSINESS_PARTNER_ROLES,
         view_endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/restaurants/portfolio-summary/'),
             ('GET', 'api/v1/admin/restaurants/<uuid:pk>/'),
             ('GET', 'api/v1/admin/restaurants/<uuid:pk>/detail/'),
         ),

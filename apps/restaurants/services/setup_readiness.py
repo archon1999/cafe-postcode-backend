@@ -55,7 +55,16 @@ def restaurant_setup_readiness(*, restaurant, backend_url="") -> dict:
 
     users = list(
         User.objects.filter(restaurant_profile__restaurant=restaurant, is_active=True)
-        .select_related("role", "restaurant_profile")
+        .select_related(
+            "restaurant_profile",
+            "restaurant_profile__restaurant__entitlement__tariff",
+            "role",
+        )
+        .prefetch_related(
+            "restaurant_profile__restaurant__entitlement__permissions",
+            "restaurant_profile__restaurant__entitlement__tariff__permissions",
+            "role__permissions",
+        )
         .distinct()
     )
     pos_users = [user for user in users if user.can_access_pos_ui]

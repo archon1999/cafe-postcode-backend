@@ -28,11 +28,19 @@ class RestaurantEntitlement(BaseModel):
         return f'Entitlement for {self.restaurant}'
 
     def get_effective_permission_codes(self) -> set[str]:
-        tariff_codes = set(self.tariff.permissions.values_list('code', flat=True)) if self.tariff_id else set()
-        override_codes = set(self.permissions.values_list('code', flat=True))
+        tariff_codes = (
+            {permission.code for permission in self.tariff.permissions.all()}
+            if self.tariff_id
+            else set()
+        )
+        override_codes = {permission.code for permission in self.permissions.all()}
         return tariff_codes | override_codes
 
     def get_effective_role_codes(self) -> set[str]:
-        tariff_codes = set(self.tariff.allowed_roles.values_list('code', flat=True)) if self.tariff_id else set()
-        override_codes = set(self.allowed_roles.values_list('code', flat=True))
+        tariff_codes = (
+            {role.code for role in self.tariff.allowed_roles.all()}
+            if self.tariff_id
+            else set()
+        )
+        override_codes = {role.code for role in self.allowed_roles.all()}
         return tariff_codes | override_codes

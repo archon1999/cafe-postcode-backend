@@ -122,7 +122,11 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
         if self.is_superuser:
             return list(Permission.objects.values_list('code', flat=True))
 
-        role_permission_codes = set(self.role.permissions.values_list('code', flat=True)) if self.role_id else set()
+        role_permission_codes = (
+            {permission.code for permission in self.role.permissions.all()}
+            if self.role_id
+            else set()
+        )
         if not role_permission_codes:
             return []
 
