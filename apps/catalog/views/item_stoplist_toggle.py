@@ -13,7 +13,12 @@ class ItemStoplistToggleView(APIView):
 
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
-        item = generics.get_object_or_404(CatalogItem, pk=pk, restaurant=restaurant)
+        item = generics.get_object_or_404(
+            CatalogItem,
+            pk=pk,
+            restaurant=restaurant,
+            archived_at__isnull=True,
+        )
         item.is_stoplisted = not item.is_stoplisted
         item.save(update_fields=['is_stoplisted', 'updated_at'])
         return Response(CatalogItemSerializer(item).data, status=status.HTTP_200_OK)
