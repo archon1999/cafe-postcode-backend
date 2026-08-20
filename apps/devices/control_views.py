@@ -361,3 +361,35 @@ class ControlTelegramLinkIssueView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class ControlTelegramSubscriptionRevokeView(APIView):
+    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+
+    def post(self, request, restaurant_id, subscription_id):
+        subscription = (
+            TelegramBranchSubscription.objects.select_related('account', 'restaurant')
+            .filter(
+                pk=subscription_id,
+                restaurant_id=restaurant_id,
+                restaurant__in=_control_restaurants(request.user),
+            )
+            .first()
+        )
+        if subscription is None:
+            return Response(
+                {'code': 'not_found', 'detail': 'Telegram subscription was not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        restaurant = subscription.restaurant
+        subscription.delete()
+        record_security_event(
+            event_type='TELEGRAM_SUBSCRIPTION_REVOKED',
+            severity='MEDIUM',
+            request=request,
+            restaurant=restaurant,
+            actor=request.user,
+            result='SUCCESS',
+            metadata={'subscriptionId': str(subscription_id), 'source': 'control'},
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)

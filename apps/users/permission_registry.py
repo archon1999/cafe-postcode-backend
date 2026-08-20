@@ -417,6 +417,10 @@ PERMISSION_DEFINITIONS = [
                 'POST',
                 'api/v1/admin/control/branches/<uuid:restaurant_id>/telegram-link/',
             ),
+            (
+                'POST',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/telegram-subscriptions/<uuid:subscription_id>/revoke/',
+            ),
         ),
         default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
     ),

@@ -311,6 +311,14 @@ class ControlApiTests(APITestCase):
         self.assertEqual(token.restaurant, self.branch)
         self.assertEqual(token.issued_by, self.partner_user)
 
+        revoked = self.client.post(
+            f'/api/v1/admin/control/branches/{self.branch.pk}/telegram-subscriptions/{own.pk}/revoke/',
+            {},
+            format='json',
+        )
+        self.assertEqual(revoked.status_code, status.HTTP_204_NO_CONTENT, revoked.data)
+        self.assertFalse(TelegramBranchSubscription.objects.filter(pk=own.pk).exists())
+
         denied = self.client.post(
             f'/api/v1/admin/control/branches/{self.other_branch.pk}/telegram-link/',
             {},
@@ -318,6 +326,15 @@ class ControlApiTests(APITestCase):
         )
         self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
         self.assertFalse(TelegramLinkToken.objects.filter(restaurant=self.other_branch).exists())
+
+        denied_revoke = self.client.post(
+            f'/api/v1/admin/control/branches/{self.other_branch.pk}/telegram-subscriptions/'
+            f'{TelegramBranchSubscription.objects.get(restaurant=self.other_branch).pk}/revoke/',
+            {},
+            format='json',
+        )
+        self.assertEqual(denied_revoke.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(TelegramBranchSubscription.objects.filter(restaurant=self.other_branch).exists())
 
     @override_settings(
         ADMIN_AUTH_ALLOWED_ORIGINS=['https://admin.example.test'],
