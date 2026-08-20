@@ -54,3 +54,32 @@ class PaymentTemplateMigrationTests(SimpleTestCase):
             layout['blocks'][0]['rows'],
             [{'label': 'Kassir', 'value': '{{order.waiter}}'}],
         )
+
+    def test_replaces_payment_line_total_with_unit_price(self):
+        migration = import_module(
+            'apps.printing.migrations.0012_publish_unit_prices_on_payment_receipts'
+        )
+        layout = {
+            'blocks': [
+                {
+                    'type': 'items_table',
+                    'columns': [
+                        {'label': 'Mahsulot', 'value': '{{item.name}}'},
+                        {'label': 'Soni', 'value': 'x{{item.quantity}}'},
+                        {
+                            'label': 'Summa',
+                            'value': '{{item.lineTotal}}',
+                            'format': 'money',
+                        },
+                    ],
+                }
+            ]
+        }
+
+        changed = migration.replace_payment_line_totals(layout)
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            layout['blocks'][0]['columns'][2]['value'],
+            '{{item.unitPrice}}',
+        )

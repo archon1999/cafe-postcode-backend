@@ -349,7 +349,7 @@ def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = Fals
     columns = [{'label': 'Nomi', 'value': '{{item.name}}', 'grow': 1}]
     columns.append({'label': 'Soni', 'value': 'x{{item.quantity}}', 'align': 'right'})
     if show_price:
-        columns.append({'label': 'Summa', 'value': '{{item.lineTotal}}', 'align': 'right', 'format': 'money'})
+        columns.append({'label': 'Summa', 'value': '{{item.unitPrice}}', 'align': 'right', 'format': 'money'})
     block = {
         'id': 'items',
         'type': 'items_table',
@@ -632,7 +632,12 @@ def build_legacy_layout(kind: str) -> dict:
             'columns': [
                 {'label': 'Mahsulot', 'value': '{{item.name}}', 'grow': 1},
                 {'label': 'Soni', 'value': 'x{{item.quantity}}', 'align': 'right'},
-                {'label': 'Summa', 'value': '{{item.lineTotal}}', 'align': 'right', 'format': 'money'},
+                {
+                    'label': 'Summa',
+                    'value': '{{item.lineTotal}}' if is_kitchen else '{{item.unitPrice}}',
+                    'align': 'right',
+                    'format': 'money',
+                },
             ],
             'showHeaders': True,
             'showNotes': True,
