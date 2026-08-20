@@ -62,7 +62,6 @@ class CatalogItem(BaseModel):
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     is_stoplisted = models.BooleanField(default=False)
-    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     modifier_groups = models.ManyToManyField(
         'catalog.ModifierGroup',
         through='catalog.CatalogItemModifierGroup',

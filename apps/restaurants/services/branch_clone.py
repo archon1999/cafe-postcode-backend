@@ -165,7 +165,7 @@ class RestaurantBranchCloneService:
             category_map[source_category.id] = target_category
 
         item_map = {}
-        for source_item in parent.catalog_items.filter(archived_at__isnull=True).order_by('created_at'):
+        for source_item in parent.catalog_items.order_by('created_at'):
             values = _copy_concrete_values(
                 source_item,
                 exclude=(

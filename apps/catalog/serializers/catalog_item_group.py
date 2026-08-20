@@ -58,9 +58,7 @@ class CatalogItemGroupSerializer(serializers.ModelSerializer):
             self.fields['members'].child.fields['catalog_item'].queryset = CatalogItem.objects.none()
             return
         self.fields['category'].queryset = restaurant.catalog_categories.all()
-        self.fields['members'].child.fields['catalog_item'].queryset = restaurant.catalog_items.filter(
-            archived_at__isnull=True
-        )
+        self.fields['members'].child.fields['catalog_item'].queryset = restaurant.catalog_items.all()
 
     def validate_members(self, members):
         if len(members) < 2:
