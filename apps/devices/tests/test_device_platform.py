@@ -295,6 +295,9 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
             f'https://control.cafe-postcode.uz/control/pair#{expected_fragment}',
         )
         self.assertNotIn(pairing['claimToken'], claim_url.query)
+        self.assertGreater(pairing['qrSize'], 20)
+        self.assertTrue(pairing['qrPath'].startswith('M'))
+        self.assertNotIn(pairing['claimToken'], pairing['qrPath'])
         fragment = parse_qs(claim_url.fragment)
         self.assertEqual(fragment['v'], ['1'])
         self.assertEqual(fragment['pairingId'], [pairing['id']])

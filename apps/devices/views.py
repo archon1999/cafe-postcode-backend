@@ -9,6 +9,7 @@ from rest_framework import generics, permissions, serializers, status
 from rest_framework.generics import get_object_or_404
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import qrcode
 
 from apps.devices.authentication import authenticate_device_request, pairing_nonce_available
 from apps.devices.crypto import (
@@ -79,6 +80,24 @@ def _query_value(request, *names):
     return ''
 
 
+def _pairing_qr_payload(claim_url):
+    qr = qrcode.QRCode(
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=1,
+        border=4,
+    )
+    qr.add_data(claim_url)
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+    path = ''.join(
+        f'M{column} {row}h1v1h-1z'
+        for row, modules in enumerate(matrix)
+        for column, enabled in enumerate(modules)
+        if enabled
+    )
+    return {'qrPath': path, 'qrSize': len(matrix)}
+
+
 class DevicePairingCreateView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [DevicePairingRateThrottle]
@@ -105,6 +124,7 @@ class DevicePairingCreateView(APIView):
                 'displayCode': pairing.display_code,
                 'expiresAt': pairing.expires_at,
                 'status': 'pending',
+                **_pairing_qr_payload(claim_url),
             },
             status=status.HTTP_201_CREATED,
         )
