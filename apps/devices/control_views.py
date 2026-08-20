@@ -1,3 +1,6 @@
+import logging
+
+from django.conf import settings
 from django.db.models import Count, Max, Q
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -12,6 +15,7 @@ from apps.devices.control_serializers import (
     ControlPairingRejectSerializer,
     ControlPairingResolveSerializer,
     ControlResolvedPairingSerializer,
+    ControlTelegramSubscriptionSerializer,
 )
 from apps.devices.control_services import (
     CONTROL_PAIRING_MAX_FAILURES,
@@ -28,9 +32,14 @@ from apps.devices.models import Device
 from apps.devices.permissions import IsControlOperator
 from apps.devices.services import revoke_device
 from apps.restaurants.models import Restaurant
+from apps.telegram_reports.models import TelegramBranchSubscription, TelegramLinkToken
+from apps.devices.security import record_security_event
 from common.api.admin_permissions import RecentAdminMFAPermission
 from common.api.permissions import EndpointRBACPermission
 from common.api.throttling import ControlPairingDecisionRateThrottle, ControlPairingResolveRateThrottle
+
+
+logger = logging.getLogger(__name__)
 
 
 CONTROL_PERMISSIONS = [permissions.IsAuthenticated, EndpointRBACPermission, IsControlOperator]
@@ -287,3 +296,68 @@ class ControlDeviceRevokeView(APIView):
             request=request,
         )
         return Response({'device': ControlDeviceSerializer(device).data})
+
+
+class ControlTelegramSubscriptionListView(generics.ListAPIView):
+    permission_classes = CONTROL_PERMISSIONS
+    serializer_class = ControlTelegramSubscriptionSerializer
+
+    def get_queryset(self):
+        restaurant_id = self.kwargs['restaurant_id']
+        if not _control_restaurants(self.request.user).filter(pk=restaurant_id).exists():
+            return TelegramBranchSubscription.objects.none()
+        return (
+            TelegramBranchSubscription.objects.select_related('account')
+            .filter(restaurant_id=restaurant_id)
+            .order_by('account__username', 'account__telegram_user_id', 'id')
+        )
+
+
+class ControlTelegramLinkIssueView(APIView):
+    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+
+    def post(self, request, restaurant_id):
+        restaurant = _control_restaurants(request.user).filter(pk=restaurant_id, is_active=True).first()
+        if restaurant is None:
+            return Response(
+                {'code': 'not_found', 'detail': 'Restaurant was not found.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        bot_username = settings.TELEGRAM_REPORTS_BOT_USERNAME.lstrip('@').strip()
+        if not bot_username:
+            return Response(
+                {'detail': 'Telegram reports bot username is not configured.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        token, raw_token = TelegramLinkToken.issue(
+            restaurant=restaurant,
+            issued_by=request.user,
+            ttl_minutes=5,
+        )
+        logger.info(
+            'Control Telegram link token issued',
+            extra={
+                'user_id': str(request.user.pk),
+                'restaurant_id': str(restaurant.pk),
+                'telegram_link_token_id': str(token.pk),
+            },
+        )
+        record_security_event(
+            event_type='TELEGRAM_LINK_TOKEN_ISSUED',
+            severity='INFO',
+            request=request,
+            restaurant=restaurant,
+            actor=request.user,
+            result='SUCCESS',
+            metadata={'linkArtifactId': str(token.pk), 'source': 'control'},
+        )
+        return Response(
+            {
+                'id': str(token.pk),
+                'restaurantId': str(restaurant.pk),
+                'restaurantName': restaurant.name,
+                'startUrl': f'https://t.me/{bot_username}?start={raw_token}',
+                'expiresAt': token.expires_at,
+            },
+            status=status.HTTP_201_CREATED,
+        )

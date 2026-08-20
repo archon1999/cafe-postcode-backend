@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.devices.models import Device, DevicePairing
+from apps.telegram_reports.models import TelegramBranchSubscription
 
 
 CONTROL_DEVICE_TYPES = (
@@ -96,3 +97,23 @@ class ControlPairingRejectSerializer(serializers.Serializer):
 
 class ControlDeviceRevokeSerializer(serializers.Serializer):
     reason = serializers.CharField(min_length=3, max_length=500, trim_whitespace=True)
+
+
+class ControlTelegramSubscriptionSerializer(serializers.ModelSerializer):
+    telegram_user_id = serializers.CharField(source='account.telegram_user_id', read_only=True)
+    username = serializers.CharField(source='account.username', read_only=True)
+    first_name = serializers.CharField(source='account.first_name', read_only=True)
+    notifications_enabled = serializers.BooleanField(source='account.notifications_enabled', read_only=True)
+    linked_at = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = TelegramBranchSubscription
+        fields = (
+            'id',
+            'telegram_user_id',
+            'username',
+            'first_name',
+            'notifications_enabled',
+            'linked_at',
+        )
+        read_only_fields = fields

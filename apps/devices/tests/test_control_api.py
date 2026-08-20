@@ -20,6 +20,7 @@ from apps.devices.control_services import (
 from apps.devices.models import Device, DevicePairing, SecurityEvent, hash_device_secret
 from apps.platform.models import BusinessPartner
 from apps.restaurants.models import Restaurant
+from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription, TelegramLinkToken
 from apps.users.models import Role, User
 from apps.users.services import AdminAuthService
 
@@ -258,6 +259,65 @@ class ControlApiTests(APITestCase):
         self.assertEqual(own_revoke.status_code, status.HTTP_200_OK, own_revoke.data)
         own_device.refresh_from_db()
         self.assertEqual(own_device.status, Device.Status.REVOKED)
+
+    @override_settings(TELEGRAM_REPORTS_BOT_USERNAME='postcode_reports_bot')
+    def test_business_partner_lists_and_issues_telegram_links_only_for_own_branch(self):
+        own_account = TelegramAccount.objects.create(
+            telegram_user_id=101,
+            chat_id=101,
+            username='own_operator',
+            first_name='Own',
+        )
+        foreign_account = TelegramAccount.objects.create(
+            telegram_user_id=202,
+            chat_id=202,
+            username='foreign_operator',
+            first_name='Foreign',
+        )
+        own = TelegramBranchSubscription.objects.create(account=own_account, restaurant=self.branch)
+        TelegramBranchSubscription.objects.create(account=foreign_account, restaurant=self.other_branch)
+        self.client.force_authenticate(user=self.partner_user)
+
+        listed = self.client.get(
+            f'/api/v1/admin/control/branches/{self.branch.pk}/telegram-subscriptions/'
+        )
+        self.assertEqual(listed.status_code, status.HTTP_200_OK, listed.data)
+        self.assertEqual(listed.json()['total'], 1)
+        self.assertEqual(
+            set(listed.json()['data'][0]),
+            {'id', 'telegramUserId', 'username', 'firstName', 'notificationsEnabled', 'linkedAt'},
+        )
+        self.assertEqual(listed.json()['data'][0]['id'], str(own.pk))
+        self.assertNotIn('chatId', json.dumps(listed.json()))
+
+        foreign = self.client.get(
+            f'/api/v1/admin/control/branches/{self.other_branch.pk}/telegram-subscriptions/'
+        )
+        self.assertEqual(foreign.status_code, status.HTTP_200_OK)
+        self.assertEqual(foreign.json()['data'], [])
+
+        issued = self.client.post(
+            f'/api/v1/admin/control/branches/{self.branch.pk}/telegram-link/',
+            {},
+            format='json',
+        )
+        self.assertEqual(issued.status_code, status.HTTP_201_CREATED, issued.data)
+        self.assertEqual(
+            set(issued.json()),
+            {'id', 'restaurantId', 'restaurantName', 'startUrl', 'expiresAt'},
+        )
+        self.assertTrue(issued.json()['startUrl'].startswith('https://t.me/postcode_reports_bot?start='))
+        token = TelegramLinkToken.objects.get(pk=issued.json()['id'])
+        self.assertEqual(token.restaurant, self.branch)
+        self.assertEqual(token.issued_by, self.partner_user)
+
+        denied = self.client.post(
+            f'/api/v1/admin/control/branches/{self.other_branch.pk}/telegram-link/',
+            {},
+            format='json',
+        )
+        self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(TelegramLinkToken.objects.filter(restaurant=self.other_branch).exists())
 
     @override_settings(
         ADMIN_AUTH_ALLOWED_ORIGINS=['https://admin.example.test'],

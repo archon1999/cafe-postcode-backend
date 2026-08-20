@@ -7,6 +7,8 @@ from apps.devices.control_views import (
     ControlPairingApproveView,
     ControlPairingRejectView,
     ControlPairingResolveView,
+    ControlTelegramLinkIssueView,
+    ControlTelegramSubscriptionListView,
 )
 
 
@@ -18,6 +20,14 @@ urlpatterns = [
         ControlDeviceRevokeView.as_view(),
     ),
     path('pairings/resolve/', ControlPairingResolveView.as_view()),
+    path(
+        'branches/<uuid:restaurant_id>/telegram-subscriptions/',
+        ControlTelegramSubscriptionListView.as_view(),
+    ),
+    path(
+        'branches/<uuid:restaurant_id>/telegram-link/',
+        ControlTelegramLinkIssueView.as_view(),
+    ),
     path(
         'branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/approve/',
         ControlPairingApproveView.as_view(),

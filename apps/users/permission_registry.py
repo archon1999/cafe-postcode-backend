@@ -403,6 +403,23 @@ PERMISSION_DEFINITIONS = [
         ),
         default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
     ),
+    action_permission(
+        'control.telegram.manage',
+        surface='admin',
+        group_key='devices',
+        name='Control ilovasida Telegram hisobot ulanishlarini boshqarish',
+        endpoints=endpoint_specs(
+            (
+                'GET',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/telegram-subscriptions/',
+            ),
+            (
+                'POST',
+                'api/v1/admin/control/branches/<uuid:restaurant_id>/telegram-link/',
+            ),
+        ),
+        default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
+    ),
     permission_definition(
         'security_events.view',
         surface='admin',
