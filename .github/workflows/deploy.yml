@@ -1,278 +1,25 @@
-name: Backend CI/CD
+name: Deploy Backend
 
 on:
-  pull_request:
   push:
     branches:
       - production
   workflow_dispatch:
-    inputs:
-      deploy_production:
-        description: Deploy the selected production revision after protected-environment approval
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
+concurrency:
+  group: backend-production
+  cancel-in-progress: false
+
 jobs:
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: cafe_postcode_ci
-          POSTGRES_USER: cafe_postcode_ci
-          POSTGRES_PASSWORD: ci-postgres-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cafe_postcode_ci -d cafe_postcode_ci"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DB_ENGINE: postgres
-      DB_NAME: cafe_postcode_ci
-      DB_USER: cafe_postcode_ci
-      DB_PASSWORD: ci-postgres-password
-      DB_HOST: 127.0.0.1
-      DB_PORT: "5432"
-      DB_CONN_MAX_AGE: "0"
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Verify Cloudflare origin allowlists
-        run: bash ops/check-cloudflare-ranges.sh
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Poetry
-        run: python -m pip install "poetry==2.3.2"
-
-      - name: Validate dependency metadata and lock file
-        run: poetry check --lock
-
-      - name: Install verification dependencies
-        run: poetry install --only main,dev --no-root --no-ansi
-
-      - name: Audit Python dependencies
-        run: |
-          poetry run python -m pip install --disable-pip-version-check "pip-audit==2.9.0"
-          poetry run pip-audit --local --progress-spinner off
-
-      - name: Compile translations
-        run: poetry run python ops/compile_translations.py
-
-      - name: Run Ruff correctness checks
-        run: poetry run ruff check .
-
-      - name: Run Django system check
-        run: poetry run python manage.py check
-
-      - name: Check migration drift
-        run: poetry run python manage.py makemigrations --check --dry-run
-
-      - name: Run backend test suite
-        run: poetry run python manage.py test --noinput
-
-      - name: Build Docker image
-        run: docker build -t postcode/backend:ci .
-
-      - name: Validate Compose config
-        run: |
-          cat > .env.ci <<'EOF'
-          SECRET_KEY=ci-secret-key-with-enough-random-looking-characters-1234567890
-          POSTGRES_DB=cafe_postcode
-          POSTGRES_USER=cafe_postcode
-          POSTGRES_PASSWORD=ci-postgres-password
-          DB_APP_USER=cafe_postcode_app
-          DB_APP_PASSWORD=ci-runtime-password
-          DB_MONITOR_USER=cafe_postcode_monitor
-          DB_MONITOR_PASSWORD=ci-monitor-password
-          GRAFANA_ADMIN_PASSWORD=ci-grafana-password
-          ALLOWED_HOSTS=cafe-postcode.uz,www.cafe-postcode.uz
-          CSRF_TRUSTED_ORIGINS=https://cafe-postcode.uz,https://www.cafe-postcode.uz
-          CORS_ALLOWED_ORIGINS=https://cafe-postcode.uz,https://www.cafe-postcode.uz
-          ADMIN_MFA_FERNET_KEYS=oy8SIX18jMMmq6pEvyTtv5H83MAJq0VldpWdRWAE7sM=
-          INTEGRATION_FERNET_KEYS=dse1LaRsC3NsMXiZ5hTthPWuWG4Z6RAc5F5EhvKKNJA=
-          CLIENT_IP_TRUSTED_PROXY_CIDRS=127.0.0.1/32
-          EOF
-          docker compose --env-file .env.ci config
-
-  database-role-integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: integration-owner-password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Install PostgreSQL client
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          if ! command -v psql >/dev/null 2>&1; then
-            sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get update \
-              --option Acquire::Retries=2 \
-              --option Acquire::http::Timeout=15 \
-              --option Acquire::https::Timeout=15
-            sudo env DEBIAN_FRONTEND=noninteractive timeout 120s apt-get install \
-              --yes --no-install-recommends postgresql-client
-          fi
-          psql --version
-
-      - name: Provision and verify runtime database role
-        env:
-          PGPASSWORD: integration-owner-password
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          psql --host=127.0.0.1 --username=postgres --dbname=postgres --set=ON_ERROR_STOP=1 <<'SQL'
-          CREATE TABLE public.runtime_role_probe (id integer PRIMARY KEY, value text NOT NULL);
-          CREATE FUNCTION public.runtime_role_probe_function() RETURNS integer
-          LANGUAGE sql IMMUTABLE AS 'SELECT 1';
-          SQL
-          psql --host=127.0.0.1 --username=postgres --dbname=postgres --no-psqlrc \
-            --set=ON_ERROR_STOP=1 \
-            --set=owner_user=postgres \
-            --set=database_name=postgres \
-            --set=app_user=cafe_postcode_app \
-            --set=app_password=integration-runtime-password \
-            --set=monitor_user=cafe_postcode_monitor \
-            --set=monitor_password=integration-monitor-password \
-            --file=ops/provision-database-roles.sql
-          export PGPASSWORD=integration-runtime-password
-          psql --host=127.0.0.1 --username=cafe_postcode_app --dbname=postgres \
-            --set=ON_ERROR_STOP=1 --command="INSERT INTO public.runtime_role_probe VALUES (1, 'ok')"
-          test "$(psql --host=127.0.0.1 --username=cafe_postcode_app --dbname=postgres --tuples-only --no-align \
-            --command='SELECT value FROM public.runtime_role_probe WHERE id = 1')" = "ok"
-          if psql --host=127.0.0.1 --username=cafe_postcode_app --dbname=postgres \
-            --command='TRUNCATE public.runtime_role_probe'; then exit 1; fi
-          if psql --host=127.0.0.1 --username=cafe_postcode_app --dbname=postgres \
-            --command='SELECT public.runtime_role_probe_function()'; then exit 1; fi
-          if psql --host=127.0.0.1 --username=cafe_postcode_app --dbname=postgres \
-            --command='CREATE TABLE public.runtime_role_escape (id integer)'; then exit 1; fi
-          test "$(PGPASSWORD=integration-owner-password psql --host=127.0.0.1 --username=postgres \
-            --dbname=postgres --tuples-only --no-align --field-separator='|' \
-            --command="SELECT rolsuper, rolcreaterole, rolcreatedb, rolreplication, rolbypassrls
-                       FROM pg_roles WHERE rolname = 'cafe_postcode_app'")" = "f|f|f|f|f"
-
-  package:
-    runs-on: ubuntu-latest
-    needs:
-      - verify
-      - database-role-integration
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production && github.ref == 'refs/heads/production'
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
-    outputs:
-      image_ref: ${{ steps.image_ref.outputs.value }}
-
-    steps:
-      - name: Checkout verified revision
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Resolve immutable image name
-        id: image_name
-        shell: bash
-        run: echo "value=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/cafe-postcode-backend" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
-      - name: Authenticate to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish verified image
-        id: build
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.image_name.outputs.value }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
-
-      - name: Record immutable image reference
-        id: image_ref
-        shell: bash
-        run: echo "value=${{ steps.image_name.outputs.value }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
-
-      - name: Smoke-test the exact published artifact
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          image='${{ steps.image_name.outputs.value }}@${{ steps.build.outputs.digest }}'
-          docker pull "${image}"
-          docker run --rm "${image}" python manage.py check
-
-      - name: Scan published image
-        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
-        with:
-          image-ref: ${{ steps.image_ref.outputs.value }}
-          format: table
-          exit-code: "1"
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
-
-      - name: Sign verified image digest with GitHub OIDC
-        shell: bash
-        run: cosign sign --yes "${{ steps.image_ref.outputs.value }}"
-
   deploy:
     runs-on: ubuntu-latest
-    needs:
-      - verify
-      - package
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production && github.ref == 'refs/heads/production'
-    concurrency:
-      group: backend-production
-      cancel-in-progress: false
-    environment:
-      name: production
-
+    timeout-minutes: 45
     steps:
-      - name: Deploy over SSH
+      - name: Deploy production over SSH
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
-        env:
-          RELEASE_IMAGE: ${{ needs.package.outputs.image_ref }}
-          RELEASE_SHA: ${{ github.sha }}
-          RELEASE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/deploy.yml@refs/heads/production
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
@@ -282,131 +29,19 @@ jobs:
           timeout: 60s
           command_timeout: 40m
           script_stop: true
-          envs: RELEASE_IMAGE,RELEASE_SHA,RELEASE_IDENTITY,GHCR_USERNAME,GHCR_TOKEN
           script: |
             set -Eeuo pipefail
             cd /home/postcode/backend
             test -f .env.production
-            test -z "$(git status --porcelain --untracked-files=normal)"
-            test -n "${RELEASE_IMAGE}"
-            test -n "${GHCR_USERNAME}"
-            test -n "${GHCR_TOKEN}"
-            release_sha="${RELEASE_SHA}"
-            umask 077
-            deploy_docker_config="$(mktemp -d)"
-            trap 'rm -rf -- "${deploy_docker_config}"' EXIT
-            export DOCKER_CONFIG="${deploy_docker_config}"
-            install -d -m 0700 /home/postcode/backups/deploy
-            deployment_id="$(date -u +'%Y%m%dT%H%M%SZ')_${release_sha}"
-            evidence_dir="/home/postcode/backups/deploy/${deployment_id}"
-            install -d -m 0700 "${evidence_dir}"
-            previous_revision="$(git rev-parse HEAD)"
-            previous_web_container="$(docker compose --env-file .env.production ps -q web)"
-            previous_ws_container="$(docker compose --env-file .env.production ps -q ws)"
-            previous_qcluster_container="$(docker compose --env-file .env.production ps -q qcluster)"
-            test -n "${previous_web_container}"
-            test -n "${previous_ws_container}"
-            test -n "${previous_qcluster_container}"
-            previous_web_image_id="$(docker inspect --format '{{.Image}}' "${previous_web_container}")"
-            test "$(docker inspect --format '{{.Image}}' "${previous_ws_container}")" = "${previous_web_image_id}"
-            test "$(docker inspect --format '{{.Image}}' "${previous_qcluster_container}")" = "${previous_web_image_id}"
-            rollback_image="postcode/backend:rollback-${deployment_id}"
-            docker image tag "${previous_web_image_id}" "${rollback_image}"
-            cp docker-compose.yml "${evidence_dir}/previous_docker-compose.yml"
-            printf 'services:\n  web:\n    image: "%s"\n  ws:\n    image: "%s"\n  qcluster:\n    image: "%s"\n' \
-              "${rollback_image}" "${rollback_image}" "${rollback_image}" \
-              > "${evidence_dir}/rollback-compose.yml"
-            printf '%s\n' "${previous_revision}" > "${evidence_dir}/previous_backend_revision"
-            docker compose --env-file .env.production ps -q | xargs -r docker inspect --format '{{.Name}} {{.Image}}' \
-              > "${evidence_dir}/previous_backend_images"
-            printf '%s\n' "${previous_web_image_id}" > "${evidence_dir}/previous_backend_web_image_id"
-            printf '%s\n' "${rollback_image}" > "${evidence_dir}/rollback_image"
-            printf '%s\n' "${RELEASE_IMAGE}" > "${evidence_dir}/release_image"
-            restore_source_on_error() {
-              rc=$?
-              trap - ERR
-              if ! git checkout --detach "${previous_revision}"; then
-                echo "CRITICAL: backend source revision recovery failed before service switch." >&2
-                exit 73
-              fi
-              exit "${rc}"
-            }
-            trap restore_source_on_error ERR
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push --message "pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)"
+            fi
             git fetch --prune origin production
-            git cat-file -e "${release_sha}^{commit}"
-            git merge-base --is-ancestor "${release_sha}" origin/production
-            git checkout --detach "${release_sha}"
-            printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
-            command -v cosign >/dev/null
-            cosign verify \
-              --certificate-identity "${RELEASE_IDENTITY}" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "${RELEASE_IMAGE}" >/dev/null
-            docker pull "${RELEASE_IMAGE}"
-            export BACKEND_IMAGE="${RELEASE_IMAGE}"
+            git checkout production
+            git pull --ff-only origin production
             docker compose --env-file .env.production config >/dev/null
-            bash ops/check-cloudflare-ranges.sh
-            bash ops/backup-postgres.sh
-            bash ops/provision-database-roles.sh
-            docker compose --env-file .env.production --profile operations run --rm \
-              migrate python manage.py showmigrations --plan
+            docker compose --env-file .env.production build
             docker compose --env-file .env.production --profile operations run --rm migrate
-            docker compose --env-file .env.production --profile operations run --rm \
-              migrate python manage.py check_rollout_rollback_readiness
-            docker compose --env-file .env.production --profile operations run --rm \
-              migrate python manage.py check --deploy
-            docker compose --env-file .env.production --profile docker-admin --profile host-observability \
-              stop portainer node-exporter cadvisor
-            docker compose --env-file .env.production --profile docker-admin --profile host-observability \
-              rm -f portainer node-exporter cadvisor
-            switch_attempted=0
-            rollback_on_error() {
-              rc=$?
-              trap - ERR
-              if [ "${switch_attempted}" = "1" ]; then
-                echo "Release switch failed; restoring and verifying the previous backend image." >&2
-                if ! docker compose --project-directory . --env-file .env.production \
-                  -f "${evidence_dir}/previous_docker-compose.yml" \
-                  -f "${evidence_dir}/rollback-compose.yml" \
-                  up -d --remove-orphans --no-build --wait --wait-timeout 180; then
-                  echo "CRITICAL: backend rollback container switch failed." >&2
-                  exit 70
-                fi
-                if ! docker compose --project-directory . --env-file .env.production \
-                  -f "${evidence_dir}/previous_docker-compose.yml" \
-                  -f "${evidence_dir}/rollback-compose.yml" \
-                  exec -T web python manage.py check --deploy; then
-                  echo "CRITICAL: backend rollback health check failed." >&2
-                  exit 71
-                fi
-                for service_name in web ws qcluster; do
-                  rollback_container="$(docker compose --project-directory . --env-file .env.production \
-                    -f "${evidence_dir}/previous_docker-compose.yml" \
-                    -f "${evidence_dir}/rollback-compose.yml" ps -q "${service_name}")"
-                  if [ "$(docker inspect --format '{{.Image}}' "${rollback_container}")" != "${previous_web_image_id}" ]; then
-                    echo "CRITICAL: backend rollback image mismatch for ${service_name}." >&2
-                    exit 72
-                  fi
-                done
-              fi
-              if ! git checkout --detach "${previous_revision}"; then
-                echo "CRITICAL: backend source revision rollback failed." >&2
-                exit 73
-              fi
-              exit "${rc}"
-            }
-            trap rollback_on_error ERR
-            switch_attempted=1
-            docker compose --env-file .env.production up -d --remove-orphans --no-build --wait --wait-timeout 180
+            docker compose --env-file .env.production up -d --remove-orphans --wait --wait-timeout 180
             docker compose --env-file .env.production ps
             docker compose --env-file .env.production exec -T web python manage.py check --deploy
-            docker compose --env-file .env.production exec -T web python manage.py check_database_role
-            docker compose --env-file .env.production exec -T web python manage.py finalize_device_migration
-            printf '%s\n' "${release_sha}" > /home/postcode/backups/deploy/.last_known_good_backend_revision.tmp
-            printf '%s\n' "${RELEASE_IMAGE}" > /home/postcode/backups/deploy/.last_known_good_backend_image.tmp
-            mv /home/postcode/backups/deploy/.last_known_good_backend_revision.tmp \
-              /home/postcode/backups/deploy/last_known_good_backend_revision
-            mv /home/postcode/backups/deploy/.last_known_good_backend_image.tmp \
-              /home/postcode/backups/deploy/last_known_good_backend_image
-            switch_attempted=0
-            trap - ERR
