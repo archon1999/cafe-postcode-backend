@@ -375,6 +375,35 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(throttled.status_code, status.HTTP_429_TOO_MANY_REQUESTS, throttled.data)
         self.assertEqual(DevicePairing.objects.count(), 6)
 
+    def test_tv_pairing_fresh_proof_replaces_inaccessible_pending_request(self):
+        key = TestKey()
+        payload = {
+            'deviceType': Device.Type.TV_MONITOR,
+            'name': 'Kitchen TV',
+            'platform': 'Linux armv7l',
+            'appVersion': 'web',
+            'publicKeyAlgorithm': key.algorithm,
+            'publicKey': key.public_key,
+            'keyProof': self.key_proof(key),
+        }
+        first = self.client.post('/api/v1/devices/pairings/', payload, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+
+        payload['keyProof'] = self.key_proof(key)
+        replacement = self.client.post('/api/v1/devices/pairings/', payload, format='json')
+        self.assertEqual(replacement.status_code, status.HTTP_201_CREATED, replacement.data)
+        self.assertNotEqual(replacement.json()['id'], first.json()['id'])
+
+        first_row = DevicePairing.objects.get(pk=first.json()['id'])
+        self.assertEqual(first_row.status, DevicePairing.Status.EXPIRED)
+        self.assertEqual(
+            DevicePairing.objects.filter(
+                public_key_fingerprint=key.fingerprint,
+                status=DevicePairing.Status.PENDING,
+            ).count(),
+            1,
+        )
+
     def test_pos_session_is_device_bound_replay_safe_lockable_and_revocable(self):
         key, _pairing, device = self.pair_device()
         login, _ = self.signed_request(

@@ -101,11 +101,18 @@ def create_pairing(
             )
         if Device.objects.filter(public_key_fingerprint=fingerprint).exists():
             raise DevicePairingConflict('This device key is already registered.')
-        if DevicePairing.objects.select_for_update().filter(
+        active_pairings = DevicePairing.objects.select_for_update().filter(
             public_key_fingerprint=fingerprint,
             status=DevicePairing.Status.PENDING,
-        ).exists():
-            raise DevicePairingConflict('This device key already has an active pairing request.')
+        )
+        if active_pairings.exists():
+            # TV WebViews do not reliably persist IndexedDB across power loss or
+            # browser restarts. A fresh possession proof from the same private
+            # key may therefore replace its inaccessible pending request. POS
+            # and Agent requests retain the stricter duplicate-conflict rule.
+            if device_type != Device.Type.TV_MONITOR:
+                raise DevicePairingConflict('This device key already has an active pairing request.')
+            active_pairings.update(status=DevicePairing.Status.EXPIRED, updated_at=now)
         try:
             with transaction.atomic():
                 pairing = DevicePairing.objects.create(
