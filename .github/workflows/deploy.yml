@@ -31,6 +31,8 @@ jobs:
           script_stop: true
           script: |
             set -Eeuo pipefail
+            exec 9>/home/postcode/.cafe-postcode-deploy.lock
+            flock --wait 1800 9
             cd /home/postcode/backend
             test -f .env.production
             if ! git diff --quiet || ! git diff --cached --quiet; then
