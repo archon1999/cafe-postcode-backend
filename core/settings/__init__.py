@@ -255,7 +255,7 @@ class CoreSettings(Settings):
     DISABLE_CSRF_CHECKS = env_bool('DISABLE_CSRF_CHECKS', DEBUG_VALUE and not PRODUCTION_MODE)
     DEVICE_PAIRING_CLAIM_BASE_URL = os.getenv(
         'DEVICE_PAIRING_CLAIM_BASE_URL',
-        'https://admin.cafe-postcode.uz/control/pair',
+        'https://control.cafe-postcode.uz/control/pair',
     ).strip()
     DEVICE_LEGACY_POS_MIGRATION_ENABLED = DEVICE_LEGACY_POS_MIGRATION_ENABLED_VALUE
     DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED = DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED_VALUE
@@ -269,19 +269,26 @@ class CoreSettings(Settings):
     ADMIN_MFA_REQUIRED = ADMIN_MFA_REQUIRED_VALUE
     SECURITY_EVENT_RETENTION_DAYS = env_int('SECURITY_EVENT_RETENTION_DAYS', 180)
     DEVICE_PAIRING_RETENTION_DAYS = env_int('DEVICE_PAIRING_RETENTION_DAYS', 30)
-    ADMIN_AUTH_ALLOWED_ORIGINS = env_list(
-        'ADMIN_AUTH_ALLOWED_ORIGINS',
-        ['https://admin.cafe-postcode.uz']
-        if PRODUCTION_MODE
-        else [
-            'http://localhost:4200',
-            'http://localhost:4500',
-            'http://localhost:5173',
-            'http://127.0.0.1:4200',
-            'http://127.0.0.1:4500',
-            'http://127.0.0.1:5173',
-            'https://admin.cafe-postcode.uz',
-        ],
+    ADMIN_AUTH_ALLOWED_ORIGINS = list(
+        dict.fromkeys(
+            [
+                *env_list(
+                    'ADMIN_AUTH_ALLOWED_ORIGINS',
+                    ['https://admin.cafe-postcode.uz', 'https://control.cafe-postcode.uz']
+                    if PRODUCTION_MODE
+                    else [
+                        'http://localhost:4200',
+                        'http://localhost:4500',
+                        'http://localhost:5173',
+                        'http://127.0.0.1:4200',
+                        'http://127.0.0.1:4500',
+                        'http://127.0.0.1:5173',
+                    ],
+                ),
+                'https://admin.cafe-postcode.uz',
+                'https://control.cafe-postcode.uz',
+            ]
+        )
     )
     ADMIN_REFRESH_COOKIE_NAME = '__Host-cafe_admin_refresh'
     ADMIN_REFRESH_COOKIE_SECURE = True
@@ -289,7 +296,8 @@ class CoreSettings(Settings):
     ADMIN_REFRESH_COOKIE_PATH = '/'
     ADMIN_REFRESH_ABSOLUTE_TTL_SECONDS = env_int('ADMIN_REFRESH_ABSOLUTE_TTL_SECONDS', 30 * 24 * 60 * 60)
     ADMIN_REFRESH_RACE_GRACE_SECONDS = env_int('ADMIN_REFRESH_RACE_GRACE_SECONDS', 5)
-    ADMIN_IDLE_LOCK_SECONDS = env_int('ADMIN_IDLE_LOCK_SECONDS', 20 * 60)
+    # Zero disables the automatic idle lock. Explicit lock/logout flows remain available.
+    ADMIN_IDLE_LOCK_SECONDS = env_int('ADMIN_IDLE_LOCK_SECONDS', 0)
     ADMIN_MFA_CHALLENGE_TTL_SECONDS = env_int('ADMIN_MFA_CHALLENGE_TTL_SECONDS', 5 * 60)
     ADMIN_MFA_MAX_ATTEMPTS = env_int('ADMIN_MFA_MAX_ATTEMPTS', 5)
     ADMIN_LOGIN_LOCKOUT_SECONDS = env_int('ADMIN_LOGIN_LOCKOUT_SECONDS', 15 * 60)

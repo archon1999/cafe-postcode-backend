@@ -535,7 +535,10 @@ class AdminAuthService:
         if settings.ADMIN_MFA_REQUIRED and family.user.is_superuser and family.mfa_verified_at is None:
             self._revoke_family(family, now=now)
             raise AdminAuthError('mfa_required', 'MFA verification is required.', http_status=403)
-        idle_expired = family.last_activity_at <= now - timedelta(seconds=settings.ADMIN_IDLE_LOCK_SECONDS)
+        idle_expired = (
+            settings.ADMIN_IDLE_LOCK_SECONDS > 0
+            and family.last_activity_at <= now - timedelta(seconds=settings.ADMIN_IDLE_LOCK_SECONDS)
+        )
         if idle_expired and family.locked_at is None:
             family.locked_at = now
             family.save(update_fields=['locked_at', 'updated_at'])

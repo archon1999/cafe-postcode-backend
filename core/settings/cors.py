@@ -34,6 +34,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://cafe-postcode.uz',
     'https://www.cafe-postcode.uz',
     'https://admin.cafe-postcode.uz',
+    'https://control.cafe-postcode.uz',
     'https://pos.cafe-postcode.uz',
     'https://dashboard.cafe-postcode.uz',
 ]

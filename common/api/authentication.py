@@ -165,7 +165,8 @@ class ExpiringSessionTokenAuthentication(BaseAuthentication):
                     {'code': 'mfa_required', 'detail': 'MFA verification is required.'},
                 )
             elif family.locked_at is not None or (
-                family.last_activity_at <= now - timedelta(seconds=settings.ADMIN_IDLE_LOCK_SECONDS)
+                settings.ADMIN_IDLE_LOCK_SECONDS > 0
+                and family.last_activity_at <= now - timedelta(seconds=settings.ADMIN_IDLE_LOCK_SECONDS)
             ):
                 if family.locked_at is None:
                     family.locked_at = now
