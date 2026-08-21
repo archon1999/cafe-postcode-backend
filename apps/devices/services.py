@@ -106,11 +106,12 @@ def create_pairing(
             status=DevicePairing.Status.PENDING,
         )
         if active_pairings.exists():
-            # TV WebViews do not reliably persist IndexedDB across power loss or
-            # browser restarts. A fresh possession proof from the same private
-            # key may therefore replace its inaccessible pending request. POS
-            # and Agent requests retain the stricter duplicate-conflict rule.
-            if device_type != Device.Type.TV_MONITOR:
+            # Browser POS and TV WebViews do not reliably retain the local
+            # poll-token metadata across reloads/power loss. A fresh possession
+            # proof from the same private key safely replaces only that key's
+            # inaccessible pending request. Agent requests retain the stricter
+            # duplicate-conflict rule.
+            if device_type not in {Device.Type.POS_TERMINAL, Device.Type.TV_MONITOR}:
                 raise DevicePairingConflict('This device key already has an active pairing request.')
             active_pairings.update(status=DevicePairing.Status.EXPIRED, updated_at=now)
         try:

@@ -346,10 +346,13 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
 
         payload['keyProof'] = self.key_proof(key)
         duplicate = self.client.post('/api/v1/devices/pairings/', payload, format='json')
-        self.assertEqual(duplicate.status_code, status.HTTP_409_CONFLICT, duplicate.data)
-        self.assertEqual(duplicate.json()['code'], 'pairing_conflict')
+        self.assertEqual(duplicate.status_code, status.HTTP_201_CREATED, duplicate.data)
+        self.assertNotEqual(duplicate.json()['id'], created.json()['id'])
 
         first = DevicePairing.objects.get(pk=created.json()['id'])
+        first.refresh_from_db()
+        self.assertEqual(first.status, DevicePairing.Status.EXPIRED)
+        first = DevicePairing.objects.get(pk=duplicate.json()['id'])
         DevicePairing.objects.filter(pk=first.pk).update(expires_at=timezone.now() - timedelta(seconds=1))
         payload['keyProof'] = self.key_proof(key)
         replacement = self.client.post('/api/v1/devices/pairings/', payload, format='json')
