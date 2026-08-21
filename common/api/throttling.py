@@ -64,9 +64,7 @@ class RestaurantCodeMigrationRateThrottle(TrustedClientRateThrottle):
 
 class _ControlPairingUserRateThrottle(TrustedClientRateThrottle):
     def get_cache_key(self, request, view):
-        user_id = getattr(getattr(request, 'user', None), 'pk', None) or 'anonymous'
-        ident = f'{user_id}:{self.get_trusted_ident(request)}'
-        return self.cache_format % {'scope': self.scope, 'ident': ident}
+        return None
 
 
 class ControlPairingResolveRateThrottle(_ControlPairingUserRateThrottle):
