@@ -7,6 +7,15 @@ on:
     paths-ignore:
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Production operation
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - inspect_agent_status
 
 permissions:
   contents: read
@@ -37,6 +46,64 @@ jobs:
             flock --wait 1800 9
             cd /home/postcode/backend
             test -f .env.production
+            operation='${{ inputs.operation }}'
+            if [ "$operation" = 'inspect_agent_status' ]; then
+              docker compose --env-file .env.production exec -T web python manage.py shell <<'PY'
+            import json
+            from apps.devices.models import Device, DevicePairing, SecurityEvent
+            from apps.restaurants.models import Restaurant
+            from django.utils import timezone
+
+            print(json.dumps({'serverNow': timezone.now()}, default=str))
+            for restaurant_name in ('SHARIPOV GAFFUR AXMEDOVICH', "OLTIN JO'JA"):
+                restaurant = Restaurant.objects.filter(name__iexact=restaurant_name).first()
+                print(json.dumps({'restaurant': restaurant_name, 'found': bool(restaurant), 'id': str(restaurant.pk) if restaurant else None}))
+                if not restaurant:
+                    continue
+                devices = Device.objects.filter(restaurant=restaurant, type=Device.Type.LOCAL_AGENT).order_by('-paired_at')
+                for device in devices:
+                    print(json.dumps({
+                        'kind': 'device',
+                        'restaurant': restaurant.name,
+                        'id': str(device.pk),
+                        'name': device.name,
+                        'version': device.app_version,
+                        'status': device.status,
+                        'pairedAt': device.paired_at,
+                        'lastSeenAt': device.last_seen_at,
+                        'leaseExpiresAt': device.lease_expires_at,
+                        'revokedAt': device.revoked_at,
+                        'revokeReason': device.revoke_reason,
+                        'fingerprint': f'{device.public_key_fingerprint[:6]}...{device.public_key_fingerprint[-6:]}',
+                    }, default=str))
+                    pairings = DevicePairing.objects.filter(public_key_fingerprint=device.public_key_fingerprint).order_by('-created_at')[:3]
+                    for pairing in pairings:
+                        print(json.dumps({
+                            'kind': 'pairing',
+                            'restaurant': restaurant.name,
+                            'deviceId': str(device.pk),
+                            'id': str(pairing.pk),
+                            'status': pairing.status,
+                            'createdAt': pairing.created_at,
+                            'expiresAt': pairing.expires_at,
+                            'approvedAt': pairing.approved_at,
+                        }, default=str))
+                events = SecurityEvent.objects.filter(restaurant=restaurant).order_by('-created_at')[:15]
+                for event in events:
+                    print(json.dumps({
+                        'kind': 'securityEvent',
+                        'restaurant': restaurant.name,
+                        'createdAt': event.created_at,
+                        'eventType': event.event_type,
+                        'result': event.result,
+                        'deviceId': str(event.device_id) if event.device_id else None,
+                        'metadata': event.metadata,
+                    }, default=str))
+            PY
+              docker compose --env-file .env.production ps
+              docker compose --env-file .env.production logs --since 30m --no-color web ws qcluster | grep -Ei '9D7IH87|OB1DGDK|b94edc|685da1|local.agent|heartbeat' | tail -n 200 || true
+              exit 0
+            fi
             migration_deadline='2026-09-19T19:30:00Z'
             if grep -q '^DEVICE_LEGACY_MIGRATION_DEADLINE=' .env.production; then
               sed -i "s|^DEVICE_LEGACY_MIGRATION_DEADLINE=.*$|DEVICE_LEGACY_MIGRATION_DEADLINE=${migration_deadline}|" .env.production
