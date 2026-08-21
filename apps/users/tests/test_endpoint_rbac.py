@@ -405,7 +405,13 @@ class EndpointRBACPermissionTests(TestCase):
         fast_food_cashier_permission_codes = set(DEFAULT_ROLE_MAP["fast_food_cashier"]["permissions"])
 
         self.assertIn("pos_halls.view", cashier_permission_codes)
+        self.assertIn("pos_tables.manage", cashier_permission_codes)
+        self.assertIn("pos_table_menu.view", cashier_permission_codes)
+        self.assertIn("pos_table_reservations.manage", cashier_permission_codes)
         self.assertNotIn("pos_halls.view", fast_food_cashier_permission_codes)
+        self.assertNotIn("pos_tables.manage", fast_food_cashier_permission_codes)
+        self.assertNotIn("pos_table_menu.view", fast_food_cashier_permission_codes)
+        self.assertNotIn("pos_table_reservations.manage", fast_food_cashier_permission_codes)
 
     def test_payment_page_item_add_defaults_only_to_fast_food_cashier_flow(self):
         cashier_permission_codes = set(DEFAULT_ROLE_MAP["cashier"]["permissions"])
