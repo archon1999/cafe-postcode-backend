@@ -127,6 +127,7 @@ class LocalAgentAdminMonitoringTests(APITestCase):
             'auto_update',
             'context_refresh',
             'remote_restart',
+            'remote_repair',
             'remote_logs',
             'outbox_management',
         ]
@@ -384,3 +385,17 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data['succeeded'], 1)
         self.assertEqual(service.calls[0]['command_type'], 'agent.refresh_context')
+
+    def test_superuser_can_repair_agent_autostart_without_shell_payload(self):
+        service = _SuccessfulAgentCommandService()
+        with patch.object(LocalAgentFleetBulkActionView, 'command_service_class', return_value=service):
+            response = self.client.post(
+                '/api/v1/admin/local-agents/bulk-action/',
+                {'action': 'repair_autostart', 'agentIds': [str(self.agent.id)]},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['succeeded'], 1)
+        self.assertEqual(service.calls[0]['command_type'], 'agent.repair_autostart')
+        self.assertEqual(service.calls[0]['payload'], {})

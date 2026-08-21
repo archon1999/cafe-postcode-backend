@@ -31,6 +31,7 @@ REMOTE_ACTIONS = {
     'update': ('agent.update_now', 'auto_update', 8),
     'refresh_context': ('agent.refresh_context', 'context_refresh', 30),
     'restart': ('agent.restart', 'remote_restart', 8),
+    'repair_autostart': ('agent.repair_autostart', 'remote_repair', 15),
 }
 OUTBOX_ACTIONS = {
     'retry': 'agent.outbox.retry',
