@@ -152,7 +152,9 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             return agent, device
         if not legacy_local_agent_auth_enabled():
             return None, None
-        agent = LocalAgent.authenticate_token(token)
+        # See HTTP authentication: a legacy process may still need the
+        # bounded bridge long enough to update and re-key itself.
+        agent = LocalAgent.authenticate_token(token, allow_migrated=True)
         if agent is None or not legacy_cohort_eligible(created_at=agent.created_at):
             return None, None
         return agent, None

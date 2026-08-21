@@ -15,7 +15,11 @@ def authenticate_local_agent(request):
     if not legacy_local_agent_auth_enabled():
         return None
     token = str(request.headers.get('Authorization', '')).removeprefix('Bearer ').strip()
-    agent = LocalAgent.authenticate_token(token) if token else None
+    # The bounded incident/migration window must also let an older duplicate
+    # installation finish sync and receive its signed update after another
+    # copy already marked the server credential as migrated. Outside that
+    # window this entire bearer path remains disabled.
+    agent = LocalAgent.authenticate_token(token, allow_migrated=True) if token else None
     if agent is None or not legacy_cohort_eligible(created_at=agent.created_at):
         return None
     return agent

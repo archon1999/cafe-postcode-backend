@@ -662,10 +662,16 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(agent.device.public_key_fingerprint, key.fingerprint)
         migrated_device_id = agent.device_id
 
-        retired_credential = self.client.get(
+        bounded_bridge = self.client.get(
             '/api/v1/local-agent/auth/token/',
             HTTP_AUTHORIZATION=f'Bearer {raw_token}',
         )
+        self.assertEqual(bounded_bridge.status_code, status.HTTP_200_OK)
+        with override_settings(DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED=False):
+            retired_credential = self.client.get(
+                '/api/v1/local-agent/auth/token/',
+                HTTP_AUTHORIZATION=f'Bearer {raw_token}',
+            )
         self.assertEqual(retired_credential.status_code, status.HTTP_401_UNAUTHORIZED)
 
         idempotent = self.client.post(
