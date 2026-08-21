@@ -10,8 +10,9 @@ from apps.devices.security import record_security_event
 from apps.devices.services import DevicePairingError, approve_pairing, reject_pairing
 
 
-CONTROL_PAIRING_MAX_FAILURES = 5
-CONTROL_PAIRING_FAILURE_TTL_SECONDS = 5 * 60
+CONTROL_PAIRING_MAX_FAILURES = 20
+CONTROL_PAIRING_FAILURE_TTL_SECONDS = 60
+CONTROL_PAIRING_FAILURE_KEY_VERSION = 'v2'
 
 
 class ControlPairingInvalid(Exception):
@@ -23,7 +24,10 @@ class ControlPairingAttemptsExceeded(ControlPairingInvalid):
 
 
 def _failure_key(pairing_id, phase: str) -> str:
-    return f'control-pairing-failures:{phase}:{pairing_id}'
+    # Version the operational lock key so a rollout can release stale locks
+    # without flushing unrelated cache state. The claim token and six-digit
+    # display code remain mandatory for every decision.
+    return f'control-pairing-failures:{CONTROL_PAIRING_FAILURE_KEY_VERSION}:{phase}:{pairing_id}'
 
 
 def pairing_failure_count(pairing_id, *, phase: str) -> int:

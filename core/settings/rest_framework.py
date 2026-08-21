@@ -53,7 +53,7 @@ REST_FRAMEWORK = {
         'device_migration': '30/min',
         'restaurant_code_migration': '10/min',
         'control_pairing_resolve': '30/min',
-        'control_pairing_decision': '10/min',
+        'control_pairing_decision': '60/min',
         'catalog_translation': '30/min',
     }
 }
