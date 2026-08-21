@@ -34,7 +34,6 @@ from apps.devices.services import revoke_device
 from apps.restaurants.models import Restaurant
 from apps.telegram_reports.models import TelegramBranchSubscription, TelegramLinkToken
 from apps.devices.security import record_security_event
-from common.api.admin_permissions import RecentAdminMFAPermission
 from common.api.permissions import EndpointRBACPermission
 from common.api.throttling import ControlPairingDecisionRateThrottle, ControlPairingResolveRateThrottle
 
@@ -43,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 CONTROL_PERMISSIONS = [permissions.IsAuthenticated, EndpointRBACPermission, IsControlOperator]
-CONTROL_SECURE_ACTION_PERMISSIONS = [*CONTROL_PERMISSIONS, RecentAdminMFAPermission]
 
 
 def _control_restaurants(user):
@@ -186,7 +184,7 @@ class ControlPairingResolveView(APIView):
 
 
 class _ControlPairingDecisionView(APIView):
-    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+    permission_classes = CONTROL_PERMISSIONS
     throttle_classes = [ControlPairingDecisionRateThrottle]
     serializer_class = None
 
@@ -273,7 +271,7 @@ class ControlPairingRejectView(_ControlPairingDecisionView):
 
 
 class ControlDeviceRevokeView(APIView):
-    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+    permission_classes = CONTROL_PERMISSIONS
 
     def post(self, request, restaurant_id, device_id):
         device = Device.objects.filter(
@@ -314,7 +312,7 @@ class ControlTelegramSubscriptionListView(generics.ListAPIView):
 
 
 class ControlTelegramLinkIssueView(APIView):
-    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+    permission_classes = CONTROL_PERMISSIONS
 
     def post(self, request, restaurant_id):
         restaurant = _control_restaurants(request.user).filter(pk=restaurant_id, is_active=True).first()
@@ -364,7 +362,7 @@ class ControlTelegramLinkIssueView(APIView):
 
 
 class ControlTelegramSubscriptionRevokeView(APIView):
-    permission_classes = CONTROL_SECURE_ACTION_PERMISSIONS
+    permission_classes = CONTROL_PERMISSIONS
 
     def post(self, request, restaurant_id, subscription_id):
         subscription = (

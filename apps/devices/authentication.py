@@ -2,7 +2,9 @@ import re
 from datetime import timedelta
 
 from django.core.cache import cache
+from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
+from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 from apps.devices.crypto import device_request_message, sha256_hex, verify_signature
@@ -17,6 +19,17 @@ NONCE_RE = re.compile(r'^[A-Za-z0-9_-]{22,128}$')
 class DeviceAuthenticationFailed(AuthenticationFailed):
     def __init__(self, code: str, detail: str):
         super().__init__({'code': code, 'detail': detail}, code=code)
+
+
+class DeviceLeaseRecoveryAuthentication(BaseAuthentication):
+    """Authenticate one signed device proof while allowing lease recovery."""
+
+    def authenticate(self, request):
+        device = authenticate_device_request(request, allow_expired_lease=True)
+        return AnonymousUser(), device
+
+    def authenticate_header(self, request):
+        return 'Device'
 
 
 def _fail(*, code, detail, request, device=None, reason=''):

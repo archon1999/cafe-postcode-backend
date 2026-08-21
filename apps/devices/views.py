@@ -11,7 +11,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 import qrcode
 
-from apps.devices.authentication import authenticate_device_request, pairing_nonce_available
+from apps.devices.authentication import (
+    DeviceLeaseRecoveryAuthentication,
+    authenticate_device_request,
+    pairing_nonce_available,
+)
 from apps.devices.crypto import (
     pairing_key_proof_message,
     pos_migration_attestation_message,
@@ -177,6 +181,12 @@ class DeviceMeView(APIView):
 
 
 class DeviceLeaseRenewView(APIView):
+    # A POS client normally carries its session token on every request.  The
+    # default session authentication would validate the bound device before
+    # this view can deliberately recover an expired lease.  Keep this endpoint
+    # independent of session authentication and authenticate the signed device
+    # proof exactly once below.
+    authentication_classes = [DeviceLeaseRecoveryAuthentication]
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
@@ -184,7 +194,7 @@ class DeviceLeaseRenewView(APIView):
         # rolling lease gates ordinary privileged traffic, but possession of
         # the registered private key is sufficient to recover an ACTIVE
         # device after it has been offline for longer than one lease period.
-        device = authenticate_device_request(request, allow_expired_lease=True)
+        device = request.auth
         try:
             device = renew_device_lease(device=device, request=request)
         except DeviceLeaseExpired as error:

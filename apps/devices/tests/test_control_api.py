@@ -515,7 +515,7 @@ class ControlApiTests(APITestCase):
         self.assertEqual(unsupported_response.json(), invalid_payload)
 
     @override_settings(ADMIN_MFA_REQUIRED=True)
-    def test_pairing_approve_requires_recent_mfa_when_rollback_flag_is_enabled(self):
+    def test_pairing_approve_does_not_require_recent_mfa(self):
         pairing, claim_token = self.create_pairing()
         approve_url = (
             f'/api/v1/admin/control/branches/{self.branch.pk}/pairings/{pairing.pk}/approve/'
@@ -523,11 +523,6 @@ class ControlApiTests(APITestCase):
         payload = {'claimToken': claim_token, 'displayCode': pairing.display_code, 'name': 'Main POS'}
 
         self.authenticate_superuser(recent=False)
-        stale = self.client.post(approve_url, payload, format='json')
-        self.assertEqual(stale.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(stale.json()['code'], 'mfa_step_up_required')
-
-        self.authenticate_superuser(recent=True)
         wrong_code = self.client.post(
             approve_url,
             {**payload, 'displayCode': '000000'},
@@ -670,7 +665,7 @@ class ControlApiTests(APITestCase):
         self.assertEqual(own_device.revoke_reason, reason)
 
     @override_settings(ADMIN_MFA_REQUIRED=True)
-    def test_revoke_with_stale_mfa_is_denied_when_rollback_flag_is_enabled(self):
+    def test_revoke_does_not_require_recent_mfa(self):
         device = self.create_device(restaurant=self.branch)
         self.authenticate_superuser(recent=False)
         response = self.client.post(
@@ -678,7 +673,6 @@ class ControlApiTests(APITestCase):
             {'reason': 'Terminal was retired'},
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(response.json()['code'], 'mfa_step_up_required')
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         device.refresh_from_db()
-        self.assertEqual(device.status, Device.Status.ACTIVE)
+        self.assertEqual(device.status, Device.Status.REVOKED)

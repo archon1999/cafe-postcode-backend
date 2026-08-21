@@ -533,6 +533,39 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         recovered_me, _ = self.signed_request('GET', '/api/v1/devices/me/', key=key, device=device)
         self.assertEqual(recovered_me.status_code, status.HTTP_200_OK, recovered_me.data)
 
+    def test_expired_device_lease_recovers_when_pos_session_token_is_present(self):
+        key, _pairing, device = self.pair_device()
+        login, _ = self.signed_request(
+            'POST',
+            '/api/v1/pos/auth/pin-login/',
+            key=key,
+            device=device,
+            payload={'pin': '1111'},
+        )
+        self.assertEqual(login.status_code, status.HTTP_200_OK, login.data)
+        token = login.json()['token']
+
+        Device.objects.filter(pk=device.pk).update(
+            lease_expires_at=timezone.now() - timedelta(seconds=1),
+        )
+        device.refresh_from_db()
+
+        recovered, _ = self.signed_request(
+            'POST',
+            '/api/v1/devices/lease/renew/',
+            key=key,
+            device=device,
+            token=token,
+            payload={},
+        )
+
+        self.assertEqual(recovered.status_code, status.HTTP_200_OK, recovered.data)
+        device.refresh_from_db()
+        self.assertGreater(device.lease_expires_at, timezone.now())
+        self.assertTrue(
+            SecurityEvent.objects.filter(event_type='DEVICE_LEASE_RECOVERED', device=device).exists()
+        )
+
     @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
     def test_restaurant_code_endpoint_is_context_only_and_rejects_invalid_code(self, execute):
         response = self.client.post(

@@ -133,6 +133,28 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
 
         async_to_sync(run_scenario)()
 
+    def test_disconnect_preserves_online_state_until_heartbeat_ttl(self):
+        from core.asgi import application
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.receive_json_from()
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        self.assertEqual(agent.status, LocalAgent.Status.ONLINE)
+        self.assertTrue(agent.is_online())
+
     def test_reconnect_receives_device_authority_and_replays_durable_revoke(self):
         from core.asgi import application
 

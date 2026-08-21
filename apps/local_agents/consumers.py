@@ -69,7 +69,11 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, close_code):
         if self.agent is not None:
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
-            await self._mark_offline()
+            # More than one valid socket can briefly exist during reconnects
+            # and deployments.  Marking the shared agent row offline when any
+            # one socket closes hides the still-connected socket and makes
+            # commands fail spuriously.  Online state already expires through
+            # LocalAgent.is_online() when heartbeats stop.
 
     async def receive_json(self, content, **kwargs):
         if len(json.dumps(content, separators=(',', ':')).encode('utf-8')) > 256 * 1024:
@@ -195,15 +199,6 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         if rollout_state is not None:
             values['rollout_state'] = rollout_state
         _with_database_lock_retry(lambda: LocalAgent.objects.filter(pk=self.agent.pk).update(**values))
-
-    @database_sync_to_async
-    def _mark_offline(self):
-        _with_database_lock_retry(
-            lambda: LocalAgent.objects.filter(pk=self.agent.pk).update(
-                status=LocalAgent.Status.OFFLINE,
-                updated_at=timezone.now(),
-            )
-        )
 
     @database_sync_to_async
     def _mark_command_sent(self, command_id):
