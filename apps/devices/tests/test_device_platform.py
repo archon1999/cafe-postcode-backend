@@ -429,8 +429,24 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         replay, _ = self.signed_request(
             'GET', '/api/v1/pos/auth/me/', key=key, device=device, token=token, proof=proof
         )
-        self.assertEqual(replay.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(replay.json()['code'], 'device_replay_detected')
+        self.assertEqual(replay.status_code, status.HTTP_200_OK, replay.data)
+
+        changed_proof = dict(proof)
+        changed_proof['HTTP_X_DEVICE_SIGNATURE'] = key.sign(
+            device_request_message(
+                method='GET',
+                request_target='/api/v1/system/status/',
+                device_id=device.pk,
+                timestamp=int(proof['HTTP_X_DEVICE_TIMESTAMP']),
+                nonce=proof['HTTP_X_DEVICE_NONCE'],
+                body_sha256=proof['HTTP_X_DEVICE_CONTENT_SHA256'],
+            )
+        )
+        changed_target_replay, _ = self.signed_request(
+            'GET', '/api/v1/system/status/', key=key, device=device, token=token, proof=changed_proof
+        )
+        self.assertEqual(changed_target_replay.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(changed_target_replay.json()['code'], 'device_replay_detected')
 
         locked, _ = self.signed_request(
             'POST', '/api/v1/pos/auth/lock/', key=key, device=device, token=token, payload={}

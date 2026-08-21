@@ -42,9 +42,15 @@ def _request_target(request) -> str:
     return django_request.get_full_path()
 
 
-def _nonce_available(*, namespace: str, nonce: str) -> bool:
+def _reserve_nonce(*, namespace: str, nonce: str, fingerprint: str = '1') -> str:
     key = f'device-proof:{namespace}:{sha256_hex(nonce)}'
-    return cache.add(key, '1', timeout=DEVICE_PROOF_WINDOW_SECONDS * 2)
+    if cache.add(key, fingerprint, timeout=DEVICE_PROOF_WINDOW_SECONDS * 2):
+        return 'new'
+    return 'same' if cache.get(key) == fingerprint else 'conflict'
+
+
+def _nonce_available(*, namespace: str, nonce: str) -> bool:
+    return _reserve_nonce(namespace=namespace, nonce=nonce) == 'new'
 
 
 def pairing_nonce_available(*, pairing, nonce: str) -> bool:
@@ -180,15 +186,20 @@ def authenticate_device_request(
             device=device,
             reason='signature',
         )
-    nonce_available = _nonce_available(namespace=f'device:{device.pk}', nonce=nonce)
-    # Browsers and intermediary networks may retry the identical idempotent
-    # bootstrap GET after a refresh.  Its signed response contains only the
-    # already-bound device's own registration state, so accepting that exact
-    # transport retry is safe while mutation/non-bootstrap replays stay denied.
-    idempotent_device_bootstrap_retry = (
-        request.method == 'GET' and request.path == '/api/v1/devices/me/'
+    proof_fingerprint = sha256_hex(f'{message}\n{signature}')
+    nonce_state = _reserve_nonce(
+        namespace=f'device:{device.pk}',
+        nonce=nonce,
+        fingerprint=proof_fingerprint,
     )
-    if not nonce_available and not idempotent_device_bootstrap_retry:
+    # Browsers, mobile WebViews and intermediary networks can retry an
+    # identical safe request at the transport layer.  Accept only the exact
+    # same signed GET/HEAD proof; a changed target/body/signature with the same
+    # nonce and every mutation replay remain denied.
+    identical_safe_transport_retry = (
+        nonce_state == 'same' and request.method in {'GET', 'HEAD'}
+    )
+    if nonce_state != 'new' and not identical_safe_transport_retry:
         _fail(
             code='device_replay_detected',
             detail='Device proof was already used.',
