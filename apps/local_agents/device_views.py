@@ -78,12 +78,75 @@ class LocalAgentDeviceMigrationView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         if agent.device_id is not None:
-            if agent.device.public_key_fingerprint != fingerprint or not agent.device.is_active:
+            device = Device.objects.select_for_update().get(pk=agent.device_id)
+            if not device.is_active:
                 return Response(
                     {'code': 'agent_already_migrated', 'detail': 'Local Agent is already bound to another device.'},
                     status=status.HTTP_409_CONFLICT,
                 )
-            return Response({'device': DeviceSerializer(agent.device).data})
+            if device.public_key_fingerprint != fingerprint:
+                # Some legacy Windows installations generated a fresh device
+                # key while upgrading. During the strictly bounded legacy
+                # window the still-valid per-agent bearer plus proof of the new
+                # private key is sufficient to repair that binding without
+                # sending a branch operator through manual QR enrollment.
+                now = timezone.now()
+                device.name = data['name'] or agent.name or 'Local Agent'
+                device.platform = data['platform']
+                device.app_version = data['app_version'] or agent.version
+                device.public_key_algorithm = data['public_key_algorithm']
+                device.public_key = data['public_key']
+                device.public_key_fingerprint = fingerprint
+                device.capabilities = CAPABILITIES_BY_TYPE[Device.Type.LOCAL_AGENT]
+                device.lease_expires_at = now + DEVICE_LEASE_TTL
+                device.last_seen_at = now
+                metadata = dict(device.metadata or {})
+                metadata.update(
+                    {
+                        'migration': 'legacy-cpa',
+                        'legacyAgentId': str(agent.pk),
+                        'legacyRekeyedAt': now.isoformat(),
+                    }
+                )
+                device.metadata = metadata
+                try:
+                    device.save(
+                        update_fields=[
+                            'name',
+                            'platform',
+                            'app_version',
+                            'public_key_algorithm',
+                            'public_key',
+                            'public_key_fingerprint',
+                            'capabilities',
+                            'lease_expires_at',
+                            'last_seen_at',
+                            'metadata',
+                            'updated_at',
+                        ]
+                    )
+                except IntegrityError:
+                    return Response(
+                        {
+                            'code': 'device_already_registered',
+                            'detail': 'Device key or Local Agent slot is already registered.',
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                agent.name = device.name
+                agent.version = device.app_version
+                agent.credential_migrated_at = now
+                agent.save(update_fields=['name', 'version', 'credential_migrated_at', 'updated_at'])
+                record_security_event(
+                    event_type='LEGACY_LOCAL_AGENT_MIGRATED',
+                    severity=SecurityEvent.Severity.MEDIUM,
+                    request=request,
+                    restaurant=agent.restaurant,
+                    device=device,
+                    result='SUCCESS',
+                    metadata={'legacyAgentId': str(agent.pk), 'rekeyed': True},
+                )
+            return Response({'device': DeviceSerializer(device).data})
         now = timezone.now()
         try:
             device = Device.objects.create(

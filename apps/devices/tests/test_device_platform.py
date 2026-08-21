@@ -660,6 +660,7 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         self.assertIsNotNone(agent.device_id)
         self.assertIsNotNone(agent.credential_migrated_at)
         self.assertEqual(agent.device.public_key_fingerprint, key.fingerprint)
+        migrated_device_id = agent.device_id
 
         retired_credential = self.client.get(
             '/api/v1/local-agent/auth/token/',
@@ -674,6 +675,29 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
             HTTP_AUTHORIZATION=f'Bearer {raw_token}',
         )
         self.assertEqual(idempotent.status_code, status.HTTP_200_OK, idempotent.data)
+        self.assertEqual(Device.objects.filter(type=Device.Type.LOCAL_AGENT).count(), 1)
+
+        replacement_key = TestKey(Device.PublicKeyAlgorithm.ED25519)
+        replacement_payload = {
+            **payload,
+            'name': 'Recovered Local Agent',
+            'appVersion': '2.0.1',
+            'publicKey': replacement_key.public_key,
+            'keyProof': self.key_proof(replacement_key),
+        }
+        recovered = self.client.post(
+            '/api/v1/local-agent/device-migration/',
+            replacement_payload,
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {raw_token}',
+        )
+        self.assertEqual(recovered.status_code, status.HTTP_200_OK, recovered.data)
+        agent.refresh_from_db()
+        agent.device.refresh_from_db()
+        device = agent.device
+        self.assertEqual(agent.device_id, migrated_device_id)
+        self.assertEqual(device.public_key_fingerprint, replacement_key.fingerprint)
+        self.assertEqual(device.app_version, '2.0.1')
         self.assertEqual(Device.objects.filter(type=Device.Type.LOCAL_AGENT).count(), 1)
 
     def test_post_cutover_local_agent_cannot_enter_legacy_migration_cohort(self):
