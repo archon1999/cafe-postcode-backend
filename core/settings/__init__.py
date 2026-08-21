@@ -212,9 +212,9 @@ def validate_production_environment() -> None:
             raise ImproperlyConfigured(
                 'DEVICE_LEGACY_MIGRATION_DEADLINE must be later than DEVICE_LEGACY_MIGRATION_STARTED_AT.'
             )
-        if deadline - started_at > timedelta(hours=24):
+        if deadline - started_at > timedelta(days=31):
             raise ImproperlyConfigured(
-                'The legacy device migration window cannot exceed 24 hours.'
+                'The legacy device migration window cannot exceed 31 days.'
             )
 
 
