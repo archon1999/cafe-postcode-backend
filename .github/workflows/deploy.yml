@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - production
+    paths-ignore:
+      - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
 permissions:
@@ -52,6 +54,3 @@ jobs:
             docker compose --env-file .env.production up -d --remove-orphans --wait --wait-timeout 180
             docker compose --env-file .env.production ps
             docker compose --env-file .env.production exec -T web python manage.py check --deploy
-            docker container prune --force
-            docker image prune --all --force
-            docker builder prune --all --force
