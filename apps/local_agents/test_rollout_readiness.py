@@ -48,6 +48,18 @@ class LegacyPOSBridgeHeartbeatValidationTests(SimpleTestCase):
 
         self.assertEqual(sanitized, payload)
 
+    def test_thirty_day_payload_is_valid(self):
+        now = timezone.now().replace(microsecond=0)
+        payload = _bridge_payload(
+            now,
+            builtAt=_utc_seconds(now - timedelta(minutes=1)),
+            notAfter=_utc_seconds(now + timedelta(days=30) - timedelta(minutes=1)),
+        )
+
+        sanitized = sanitize_legacy_pos_bridge_heartbeat(payload, received_at=now)
+
+        self.assertEqual(sanitized, payload)
+
     def test_unknown_or_cross_field_invalid_payload_fails_closed(self):
         now = timezone.now().replace(microsecond=0)
         cases = (
@@ -57,7 +69,7 @@ class LegacyPOSBridgeHeartbeatValidationTests(SimpleTestCase):
             _bridge_payload(now, terminalCount=True),
             _bridge_payload(
                 now,
-                notAfter=_utc_seconds(now + timedelta(hours=25)),
+                notAfter=_utc_seconds(now + timedelta(days=32)),
             ),
             _bridge_payload(
                 now,

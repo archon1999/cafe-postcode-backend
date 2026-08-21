@@ -35,6 +35,12 @@ jobs:
             flock --wait 1800 9
             cd /home/postcode/backend
             test -f .env.production
+            migration_deadline='2026-09-19T19:30:00Z'
+            if grep -q '^DEVICE_LEGACY_MIGRATION_DEADLINE=' .env.production; then
+              sed -i "s|^DEVICE_LEGACY_MIGRATION_DEADLINE=.*$|DEVICE_LEGACY_MIGRATION_DEADLINE=${migration_deadline}|" .env.production
+            else
+              printf '\nDEVICE_LEGACY_MIGRATION_DEADLINE=%s\n' "$migration_deadline" >> .env.production
+            fi
             if ! git diff --quiet || ! git diff --cached --quiet; then
               git stash push --message "pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)"
             fi

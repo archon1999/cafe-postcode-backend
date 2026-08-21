@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 
-LEGACY_POS_BRIDGE_MAX_LIFETIME = timedelta(hours=24)
+LEGACY_POS_BRIDGE_MAX_LIFETIME = timedelta(days=31)
 LEGACY_POS_BRIDGE_KEYS = frozenset(
     {
         'configured',

@@ -1,0 +1,71 @@
+name: Audit production device pairings
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Read production pairing state
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.HOST_FINGERPRINT }}
+          port: ${{ secrets.PORT }}
+          timeout: 60s
+          command_timeout: 5m
+          script_stop: true
+          script: |
+            set -Eeuo pipefail
+            cd /home/postcode/backend
+            docker compose --env-file .env.production exec -T web python manage.py shell <<'PY'
+            from django.utils import timezone
+            from apps.devices.models import Device, DevicePairing
+
+            now = timezone.now()
+            pending = DevicePairing.objects.filter(
+                device_type=Device.Type.POS_TERMINAL,
+                status=DevicePairing.Status.PENDING,
+                expires_at__gt=now,
+            ).order_by('created_at')
+            print(f'PENDING_POS_PAIRINGS={pending.count()}')
+            for pairing in pending:
+                existing = Device.objects.filter(
+                    public_key_fingerprint=pairing.public_key_fingerprint,
+                ).select_related('restaurant').first()
+                branch = existing.restaurant.name if existing and existing.restaurant else 'UNASSIGNED'
+                existing_status = existing.status if existing else 'NONE'
+                print(
+                    'PENDING_POS '
+                    f'branch={branch!r} name={pairing.requested_name!r} platform={pairing.platform!r} '
+                    f'existing_device_status={existing_status} created_at={pairing.created_at.isoformat()}'
+                )
+
+            active_branches = {}
+            for device in Device.objects.filter(
+                status=Device.Status.ACTIVE,
+                revoked_at__isnull=True,
+                restaurant__is_active=True,
+                type__in=(Device.Type.POS_TERMINAL, Device.Type.LOCAL_AGENT),
+            ).select_related('restaurant').order_by('restaurant__name', 'type', 'name'):
+                row = active_branches.setdefault(
+                    device.restaurant_id,
+                    {'name': device.restaurant.name, 'pos': [], 'agents': []},
+                )
+                row['pos' if device.type == Device.Type.POS_TERMINAL else 'agents'].append(device)
+
+            suspicious = []
+            for row in active_branches.values():
+                if row['agents'] and not row['pos']:
+                    suspicious.append(row)
+            print(f'ACTIVE_AGENT_WITHOUT_ACTIVE_POS={len(suspicious)}')
+            for row in suspicious:
+                print(f"NO_ACTIVE_POS branch={row['name']!r} active_agents={len(row['agents'])}")
+            PY
