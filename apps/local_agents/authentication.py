@@ -31,7 +31,6 @@ def _recover_bounded_legacy_token(request, token):
     with transaction.atomic():
         agent = (
             LocalAgent.objects.select_for_update()
-            .select_related('restaurant', 'device')
             .filter(restaurant_id=restaurant_id, is_active=True)
             .first()
         )
