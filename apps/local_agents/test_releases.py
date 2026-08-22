@@ -16,7 +16,7 @@ from apps.local_agents.admin_views import (
     LocalAgentFleetOutboxActionView,
     LocalAgentFleetUpdateView,
 )
-from apps.local_agents.models import LocalAgent
+from apps.local_agents.models import LocalAgent, LocalAgentMutationReceipt
 from apps.local_agents.releases import compare_release_versions
 from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentLogsView, LocalAgentUpdateNowView
 from apps.platform.models import RestaurantEntitlement
@@ -340,6 +340,16 @@ class LocalAgentAdminMonitoringTests(APITestCase):
     def test_superuser_can_retry_and_resolve_actionable_outbox_operation(self):
         service = _SuccessfulAgentCommandService()
         url = f'/api/v1/admin/local-agents/{self.agent.id}/outbox/failed-payment/'
+        LocalAgentMutationReceipt.objects.create(
+            restaurant=self.restaurant,
+            operation_id='failed-payment',
+            user_id=self.admin.id,
+            method='POST',
+            path='/api/v1/pos/billing/orders/00000000-0000-0000-0000-000000000001/pay/',
+            request_hash='a' * 64,
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'detail': 'The previous validation failed.'},
+        )
         with patch.object(LocalAgentFleetOutboxActionView, 'command_service_class', return_value=service):
             retried = self.client.post(
                 url,
@@ -360,6 +370,29 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         )
         self.assertEqual(service.calls[0]['payload']['operationId'], 'failed-payment')
         self.assertEqual(service.calls[1]['payload']['reason'], 'The order was already closed on the server.')
+        self.assertFalse(LocalAgentMutationReceipt.objects.filter(operation_id='failed-payment').exists())
+
+    def test_outbox_retry_preserves_successful_mutation_receipt(self):
+        LocalAgentMutationReceipt.objects.create(
+            restaurant=self.restaurant,
+            operation_id='successful-payment',
+            user_id=self.admin.id,
+            method='POST',
+            path='/api/v1/pos/billing/orders/00000000-0000-0000-0000-000000000001/pay/',
+            request_hash='b' * 64,
+            response_status=status.HTTP_201_CREATED,
+            response_body={'id': 'payment-1'},
+        )
+        service = _SuccessfulAgentCommandService()
+        with patch.object(LocalAgentFleetOutboxActionView, 'command_service_class', return_value=service):
+            response = self.client.post(
+                f'/api/v1/admin/local-agents/{self.agent.id}/outbox/successful-payment/',
+                {'action': 'retry', 'reason': 'Verify that a successful replay stays idempotent.'},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(LocalAgentMutationReceipt.objects.filter(operation_id='successful-payment').exists())
 
     def test_outbox_retry_requires_reason_but_resolve_does_not(self):
         service = _SuccessfulAgentCommandService()

@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.local_agents.admin_serializers import LocalAgentFleetSerializer
-from apps.local_agents.models import LocalAgent
+from apps.local_agents.models import LocalAgent, LocalAgentMutationReceipt
 from apps.local_agents.releases import agent_update_status
 from apps.local_agents.sanitization import sanitize_remote_logs_result, sanitize_remote_text
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
@@ -194,6 +194,18 @@ class LocalAgentFleetOutboxActionView(LocalAgentFleetActionView):
                 {'reason': ['Reason must not exceed 500 characters.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if action == 'retry':
+            # A terminal (<500) replay response is retained for idempotency. An
+            # operator retry explicitly authorizes reprocessing after the
+            # underlying validation/configuration problem has been corrected.
+            # Never remove a successful receipt: replaying it must stay
+            # side-effect free.
+            LocalAgentMutationReceipt.objects.filter(
+                restaurant=agent.restaurant,
+                operation_id=operation_id,
+                response_status__gte=status.HTTP_400_BAD_REQUEST,
+            ).delete()
 
         try:
             result = self.command_service_class().execute(
