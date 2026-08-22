@@ -498,7 +498,8 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(revoked_renew.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(revoked_renew.json()['code'], 'device_revoked')
         self.assertTrue(SecurityEvent.objects.filter(event_type='PIN_FAILED', device=device).exists())
-        self.assertTrue(SecurityEvent.objects.filter(event_type='DEVICE_REVOKED', device=device).exists())
+        revoked_event = SecurityEvent.objects.get(event_type='DEVICE_REVOKED', device=device)
+        self.assertEqual(revoked_event.severity, SecurityEvent.Severity.MEDIUM)
         revoke_command = LocalAgentCommand.objects.get(command_type='edge.terminal.revoke')
         self.assertEqual(revoke_command.payload, {'backendDeviceId': str(device.id)})
 

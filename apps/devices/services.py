@@ -368,7 +368,10 @@ def revoke_device(*, device: Device, revoked_by, reason: str, request=None) -> D
                 )
     record_security_event(
         event_type='DEVICE_REVOKED',
-        severity=SecurityEvent.Severity.HIGH,
+        # Revocation is a successful, intentional administrative control.
+        # Keep it in the audit trail without turning a healthy branch into an
+        # active HIGH-risk incident.
+        severity=SecurityEvent.Severity.MEDIUM,
         request=request,
         actor=revoked_by,
         device=device,
