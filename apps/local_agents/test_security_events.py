@@ -146,6 +146,47 @@ class LocalAgentSecurityEventBatchTests(APITestCase):
             self.assertEqual(event.restaurant, self.restaurant)
             self.assertEqual(event.device, self.device)
 
+    def test_single_stale_channel_after_agent_restart_is_accepted_without_security_incident(self):
+        event_id = '44444444-4444-4444-8444-444444444444'
+
+        response = self.signed_post(
+            {
+                'events': [
+                    self.event(
+                        id=event_id,
+                        eventType='LOCAL_DEVICE_PROOF_DENIED',
+                        reason='secure_channel_invalid',
+                        count=1,
+                    )
+                ]
+            }
+        )
+
+        self.assertEqual(response.status_code, 202, response.data)
+        self.assertEqual(response.data['acceptedIds'], [event_id])
+        self.assertFalse(SecurityEvent.objects.filter(request_id=f'la:{self.device.pk}:{event_id}').exists())
+
+    def test_repeated_stale_channel_remains_visible_as_medium_operational_incident(self):
+        event_id = '55555555-5555-4555-8555-555555555555'
+
+        response = self.signed_post(
+            {
+                'events': [
+                    self.event(
+                        id=event_id,
+                        eventType='LOCAL_DEVICE_PROOF_DENIED',
+                        reason='secure_channel_invalid',
+                        count=3,
+                    )
+                ]
+            }
+        )
+
+        self.assertEqual(response.status_code, 202, response.data)
+        event = SecurityEvent.objects.get(request_id=f'la:{self.device.pk}:{event_id}')
+        self.assertEqual(event.severity, SecurityEvent.Severity.MEDIUM)
+        self.assertEqual(event.metadata['count'], 3)
+
     def test_legacy_bearer_cannot_upload_security_events(self):
         response = self.client.post(
             self.path,

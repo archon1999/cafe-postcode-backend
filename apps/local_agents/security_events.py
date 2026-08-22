@@ -29,6 +29,33 @@ LOCAL_EVENT_SEVERITIES = {
 }
 LOCAL_EVENT_BATCH_MAX_BODY = 128 * 1024
 LOCAL_EVENT_BATCHES_PER_MINUTE = 10
+TRANSIENT_SECURE_CHANNEL_REASON = 'secure_channel_invalid'
+
+
+def _is_single_stale_secure_channel(event) -> bool:
+    """Ignore the expected first request made with a pre-restart channel.
+
+    Local Agent channel sessions intentionally live only in process memory.  A
+    valid, device-signed POS request can therefore present one stale channel ID
+    immediately after an Agent update or restart.  The POS renews the channel
+    and retries automatically, so treating that first request as a HIGH device
+    proof denial creates a false security incident.  Repeated failures remain
+    auditable because their coalesced count is greater than one.
+    """
+    return (
+        event['event_type'] == 'LOCAL_DEVICE_PROOF_DENIED'
+        and event['reason'] == TRANSIENT_SECURE_CHANNEL_REASON
+        and event['count'] == 1
+    )
+
+
+def _event_severity(event):
+    if (
+        event['event_type'] == 'LOCAL_DEVICE_PROOF_DENIED'
+        and event['reason'] == TRANSIENT_SECURE_CHANNEL_REASON
+    ):
+        return SecurityEvent.Severity.MEDIUM
+    return LOCAL_EVENT_SEVERITIES[event['event_type']]
 
 
 def _batch_rate_allowed(device_id) -> bool:
@@ -122,10 +149,13 @@ class LocalAgentSecurityEventBatchView(APIView):
             for event in serializer.validated_data['events']:
                 event_id = str(event['id'])
                 request_id = f'la:{agent.device_id}:{event_id}'
+                if _is_single_stale_secure_channel(event):
+                    accepted_ids.append(event_id)
+                    continue
                 if not SecurityEvent.objects.filter(request_id=request_id).exists():
                     SecurityEvent.objects.create(
                         event_type=event['event_type'],
-                        severity=LOCAL_EVENT_SEVERITIES[event['event_type']],
+                        severity=_event_severity(event),
                         restaurant=agent.restaurant,
                         device=agent.device,
                         request_id=request_id,

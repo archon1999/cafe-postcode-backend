@@ -3,7 +3,7 @@ import time
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from django.utils import timezone
 
 from apps.local_agents.lan import private_lan_endpoints
@@ -198,7 +198,20 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             values['protocol_version'] = protocol_version
         if rollout_state is not None:
             values['rollout_state'] = rollout_state
-        _with_database_lock_retry(lambda: LocalAgent.objects.filter(pk=self.agent.pk).update(**values))
+
+        def persist_heartbeat():
+            with transaction.atomic():
+                LocalAgent.objects.filter(pk=self.agent.pk).update(**values)
+                if self.device is not None:
+                    device_values = {
+                        'last_seen_at': now,
+                        'updated_at': now,
+                    }
+                    if version:
+                        device_values['app_version'] = version
+                    Device.objects.filter(pk=self.device.pk).update(**device_values)
+
+        _with_database_lock_retry(persist_heartbeat)
 
     @database_sync_to_async
     def _mark_command_sent(self, command_id):

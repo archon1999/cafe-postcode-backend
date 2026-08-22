@@ -249,6 +249,39 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         self.assertEqual(agent.protocol_version, 2)
         self.assertEqual(agent.lan_endpoints, ['http://192.168.1.20:18181'])
 
+    def test_paired_agent_heartbeat_updates_device_runtime_version_and_last_seen(self):
+        from apps.local_agents.consumers import LocalAgentConsumer
+
+        now = timezone.now()
+        device = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.LOCAL_AGENT,
+            name='Paired Local Agent',
+            platform='windows-amd64',
+            app_version='1.0.5',
+            public_key_algorithm=Device.PublicKeyAlgorithm.ED25519,
+            public_key='test-public-key',
+            public_key_fingerprint='b' * 64,
+            paired_at=now - timedelta(days=1),
+            lease_expires_at=now + timedelta(days=1),
+            last_seen_at=now - timedelta(hours=1),
+        )
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        agent.device = device
+        agent.save(update_fields=['device', 'updated_at'])
+        consumer = LocalAgentConsumer()
+        consumer.agent = agent
+        consumer.device = device
+
+        before = timezone.now()
+        async_to_sync(consumer._mark_online)(version='1.1.1')
+
+        agent.refresh_from_db()
+        device.refresh_from_db()
+        self.assertEqual(agent.version, '1.1.1')
+        self.assertEqual(device.app_version, '1.1.1')
+        self.assertGreaterEqual(device.last_seen_at, before)
+
     def test_query_token_is_rejected(self):
         from core.asgi import application
 
