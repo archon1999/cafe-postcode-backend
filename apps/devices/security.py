@@ -1,5 +1,9 @@
+import hashlib
+import json
 import logging
 import re
+
+from django.core.cache import cache
 
 from apps.devices.models import SecurityEvent
 from common.api.client_ip import get_client_ip
@@ -70,6 +74,7 @@ def record_security_event(
     auth_session=None,
     result='',
     metadata=None,
+    deduplicate_for_seconds: int = 0,
 ):
     safe_metadata = sanitize_security_metadata(metadata)
     # Never access request.user while authentication itself is still running;
@@ -78,6 +83,34 @@ def record_security_event(
     request_actor = getattr(request, '_user', None) if request is not None else None
     if request_actor is not None and not getattr(request_actor, 'is_authenticated', False):
         request_actor = None
+    client_ip = get_client_ip(request) if request is not None else None
+    deduplication_cache_key = None
+    if deduplicate_for_seconds > 0:
+        identity = json.dumps(
+            {
+                'eventType': str(event_type)[:80],
+                'severity': severity,
+                'restaurantId': str(getattr(restaurant or getattr(device, 'restaurant', None), 'pk', '') or ''),
+                'actorId': str(getattr(actor or request_actor, 'pk', '') or ''),
+                'deviceId': str(getattr(device, 'pk', '') or ''),
+                'authSessionId': str(getattr(auth_session, 'pk', '') or ''),
+                'clientIp': str(client_ip or ''),
+                'result': str(result or '')[:32],
+                'metadata': safe_metadata,
+            },
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(',', ':'),
+        )
+        deduplication_cache_key = f'security-event-dedupe:{hashlib.sha256(identity.encode()).hexdigest()}'
+        try:
+            if not cache.add(deduplication_cache_key, 1, timeout=deduplicate_for_seconds):
+                return None
+        except Exception:
+            # Audit persistence must remain available when the optional cache
+            # is degraded; database writes are still the source of truth.
+            logger.exception('Unable to deduplicate security event %s', event_type)
+            deduplication_cache_key = None
     try:
         return SecurityEvent.objects.create(
             event_type=str(event_type)[:80],
@@ -94,10 +127,15 @@ def record_security_event(
                 if request is not None
                 else ''
             ),
-            client_ip=get_client_ip(request) if request is not None else None,
+            client_ip=client_ip,
             result=str(result or '')[:32],
             metadata=safe_metadata,
         )
     except Exception:
+        if deduplication_cache_key is not None:
+            try:
+                cache.delete(deduplication_cache_key)
+            except Exception:
+                logger.exception('Unable to release security event deduplication key %s', event_type)
         logger.exception('Unable to persist security event %s', event_type)
         return None

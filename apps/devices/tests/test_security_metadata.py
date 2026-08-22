@@ -1,6 +1,8 @@
-from django.test import SimpleTestCase
+from django.core.cache import cache
+from django.test import SimpleTestCase, TestCase
 
-from apps.devices.security import sanitize_security_metadata
+from apps.devices.models import SecurityEvent
+from apps.devices.security import record_security_event, sanitize_security_metadata
 
 
 class SecurityMetadataSanitizationTests(SimpleTestCase):
@@ -35,3 +37,36 @@ class SecurityMetadataSanitizationTests(SimpleTestCase):
         self.assertLessEqual(len(result['long']), 512)
         self.assertEqual(result['many'][-1], '[TRUNCATED]')
         self.assertIn('[TRUNCATED]', str(result['deep']))
+
+
+class SecurityEventDeduplicationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
+    def test_identical_events_are_persisted_once_inside_the_deduplication_window(self):
+        first = record_security_event(
+            event_type='DEVICE_PROOF_FAILED',
+            severity=SecurityEvent.Severity.HIGH,
+            result='DENIED',
+            metadata={'reason': 'nonce_replay', 'path': '/api/v1/pos/orders/'},
+            deduplicate_for_seconds=60,
+        )
+        duplicate = record_security_event(
+            event_type='DEVICE_PROOF_FAILED',
+            severity=SecurityEvent.Severity.HIGH,
+            result='DENIED',
+            metadata={'reason': 'nonce_replay', 'path': '/api/v1/pos/orders/'},
+            deduplicate_for_seconds=60,
+        )
+        distinct = record_security_event(
+            event_type='DEVICE_PROOF_FAILED',
+            severity=SecurityEvent.Severity.HIGH,
+            result='DENIED',
+            metadata={'reason': 'nonce_replay', 'path': '/api/v1/pos/payments/'},
+            deduplicate_for_seconds=60,
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(duplicate)
+        self.assertIsNotNone(distinct)
+        self.assertEqual(SecurityEvent.objects.count(), 2)

@@ -14,6 +14,9 @@ from apps.telegram_reports.models import TelegramBranchSubscription
 from common.api.admin_permissions import ADMIN_PERMISSION_CLASSES
 
 
+ACTIVE_SECURITY_RISK_WINDOW = timedelta(hours=24)
+
+
 class MonitoringOverviewView(APIView):
     """Return a read-only, database-backed operational fleet snapshot."""
 
@@ -21,6 +24,7 @@ class MonitoringOverviewView(APIView):
 
     def get(self, request):
         now = timezone.now()
+        active_security_risk_cutoff = now - ACTIVE_SECURITY_RISK_WINDOW
         business_partner_id = str(
             request.query_params.get('business_partner_id')
             or request.query_params.get('businessPartnerId')
@@ -99,7 +103,10 @@ class MonitoringOverviewView(APIView):
         }
         security_aggregates = {
             row['restaurant_id']: row
-            for row in SecurityEvent.objects.filter(restaurant_id__in=restaurant_ids)
+            for row in SecurityEvent.objects.filter(
+                restaurant_id__in=restaurant_ids,
+                created_at__gte=active_security_risk_cutoff,
+            )
             .values('restaurant_id')
             .annotate(
                 unacknowledged_high=Count(
@@ -149,7 +156,10 @@ class MonitoringOverviewView(APIView):
                 bucket['high'] = row['high']
                 bucket['critical'] = row['critical']
 
-        global_security = scoped_security_events.filter(acknowledged_at__isnull=True).aggregate(
+        global_security = scoped_security_events.filter(
+            acknowledged_at__isnull=True,
+            created_at__gte=active_security_risk_cutoff,
+        ).aggregate(
             unacknowledged_high=Count(
                 'id',
                 filter=Q(severity=SecurityEvent.Severity.HIGH),
@@ -268,6 +278,7 @@ class MonitoringOverviewView(APIView):
                         status=DevicePairing.Status.PENDING,
                         expires_at__gt=now,
                     ).count(),
+                    'riskWindowHours': int(ACTIVE_SECURITY_RISK_WINDOW.total_seconds() // 3600),
                     'unacknowledgedHigh': global_security['unacknowledged_high'],
                     'unacknowledgedCritical': global_security['unacknowledged_critical'],
                 },

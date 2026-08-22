@@ -13,6 +13,7 @@ from apps.devices.security import record_security_event
 
 
 DEVICE_PROOF_WINDOW_SECONDS = 300
+DEVICE_PROOF_FAILURE_DEDUPLICATION_SECONDS = 60
 NONCE_RE = re.compile(r'^[A-Za-z0-9_-]{22,128}$')
 
 
@@ -34,13 +35,25 @@ class DeviceLeaseRecoveryAuthentication(BaseAuthentication):
 
 def _fail(*, code, detail, request, device=None, reason=''):
     if device is not None:
+        failure_reason = reason or code
         record_security_event(
             event_type='DEVICE_PROOF_FAILED',
-            severity=SecurityEvent.Severity.HIGH,
+            # A rolling lease reaching its deadline is an expected recovery
+            # condition, not evidence of an attack. The following signed
+            # renewal recovers the ACTIVE device with the same key.
+            severity=(
+                SecurityEvent.Severity.MEDIUM
+                if failure_reason == 'lease_expired'
+                else SecurityEvent.Severity.HIGH
+            ),
             request=request,
             device=device,
             result='DENIED',
-            metadata={'reason': reason or code, 'path': request.path[:500]},
+            metadata={'reason': failure_reason, 'path': request.path[:500]},
+            # Browser/network retry storms must not turn one authentication
+            # failure into thousands of identical audit rows. Distinct
+            # device, path, reason or client IP combinations remain visible.
+            deduplicate_for_seconds=DEVICE_PROOF_FAILURE_DEDUPLICATION_SECONDS,
         )
     raise DeviceAuthenticationFailed(code, detail)
 

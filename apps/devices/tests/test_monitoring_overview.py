@@ -223,6 +223,7 @@ class MonitoringOverviewApiTests(APITestCase):
                 'revokedDevices': 1,
                 'activePOSTerminals': 1,
                 'pendingPairings': 1,
+                'riskWindowHours': 24,
                 'unacknowledgedHigh': 2,
                 'unacknowledgedCritical': 1,
             },
@@ -337,6 +338,35 @@ class MonitoringOverviewApiTests(APITestCase):
             ],
         )
 
+    def test_branch_health_risk_counts_only_include_the_last_24_hours(self):
+        now = timezone.now()
+        restaurant = Restaurant.objects.create(name='Current risk window branch')
+        old_event = SecurityEvent.objects.create(
+            event_type='OLD_UNACKNOWLEDGED_HIGH',
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=restaurant,
+        )
+        SecurityEvent.objects.filter(pk=old_event.pk).update(created_at=now - timedelta(hours=25))
+        SecurityEvent.objects.create(
+            event_type='CURRENT_UNACKNOWLEDGED_CRITICAL',
+            severity=SecurityEvent.Severity.CRITICAL,
+            restaurant=restaurant,
+        )
+
+        self.client.force_authenticate(self.superuser)
+        with patch('apps.devices.monitoring_views.timezone.now', return_value=now):
+            response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['summary']['riskWindowHours'], 24)
+        self.assertEqual(response.data['summary']['unacknowledgedHigh'], 0)
+        self.assertEqual(response.data['summary']['unacknowledgedCritical'], 1)
+        self.assertEqual(response.data['branches'][0]['security']['unacknowledgedHigh'], 0)
+        self.assertEqual(response.data['branches'][0]['security']['unacknowledgedCritical'], 1)
+        self.assertTrue(
+            SecurityEvent.objects.filter(pk=old_event.pk, acknowledged_at__isnull=True).exists(),
+        )
+
     def test_device_online_count_uses_a_five_minute_last_seen_window(self):
         now = timezone.now()
         restaurant = Restaurant.objects.create(name='Five minute device branch')
@@ -425,6 +455,7 @@ class MonitoringOverviewApiTests(APITestCase):
                 'revokedDevices': 0,
                 'activePOSTerminals': 1,
                 'pendingPairings': 0,
+                'riskWindowHours': 24,
                 'unacknowledgedHigh': 1,
                 'unacknowledgedCritical': 0,
             },

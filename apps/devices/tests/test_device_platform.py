@@ -519,6 +519,12 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         expired, _ = self.signed_request('GET', '/api/v1/devices/me/', key=key, device=device)
         self.assertEqual(expired.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(expired.json()['code'], 'device_lease_expired')
+        expired_event = SecurityEvent.objects.get(
+            event_type='DEVICE_PROOF_FAILED',
+            device=device,
+            metadata__reason='lease_expired',
+        )
+        self.assertEqual(expired_event.severity, SecurityEvent.Severity.MEDIUM)
 
         recovered, _ = self.signed_request(
             'POST', '/api/v1/devices/lease/renew/', key=key, device=device, payload={}
