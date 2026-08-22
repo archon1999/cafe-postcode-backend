@@ -255,7 +255,7 @@ class CoreSettings(Settings):
     DISABLE_CSRF_CHECKS = env_bool('DISABLE_CSRF_CHECKS', DEBUG_VALUE and not PRODUCTION_MODE)
     DEVICE_PAIRING_CLAIM_BASE_URL = os.getenv(
         'DEVICE_PAIRING_CLAIM_BASE_URL',
-        'https://control.cafe-postcode.uz/control/pair',
+        'https://control.cafe-postcode.uz/pair',
     ).strip()
     DEVICE_LEGACY_POS_MIGRATION_ENABLED = DEVICE_LEGACY_POS_MIGRATION_ENABLED_VALUE
     DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED = DEVICE_LEGACY_POS_SESSION_AUTH_ENABLED_VALUE

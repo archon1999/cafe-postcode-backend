@@ -281,7 +281,7 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         claim_url = urlsplit(pairing['claimUrl'])
         self.assertEqual(claim_url.scheme, 'https')
         self.assertEqual(claim_url.netloc, 'control.cafe-postcode.uz')
-        self.assertEqual(claim_url.path, '/control/pair')
+        self.assertEqual(claim_url.path, '/pair')
         self.assertEqual(claim_url.query, '')
         expected_fragment = urlencode(
             {
@@ -292,7 +292,7 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         )
         self.assertEqual(
             pairing['claimUrl'],
-            f'https://control.cafe-postcode.uz/control/pair#{expected_fragment}',
+            f'https://control.cafe-postcode.uz/pair#{expected_fragment}',
         )
         self.assertNotIn(pairing['claimToken'], claim_url.query)
         self.assertGreater(pairing['qrSize'], 20)
