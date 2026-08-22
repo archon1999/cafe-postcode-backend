@@ -71,6 +71,19 @@ For local HTTP-only smoke tests, temporarily set those three values to `0` in `.
 
 API docs and the browsable API must remain disabled in production.
 
+Faktura-backed company lookup requires these credentials in `.env.production`:
+
+```bash
+FAKTURA_USERNAME=<faktura-username>
+FAKTURA_PASSWORD=<faktura-password>
+FAKTURA_CLIENT_ID=<faktura-client-id>
+FAKTURA_CLIENT_SECRET=<faktura-client-secret>
+```
+
+Compose passes these credentials only to the `web` service. The Faktura URLs,
+timeout, and optional proxy can also be overridden with the corresponding
+`FAKTURA_*` values documented in `.env.production.example`.
+
 ## Telegram Sales Reports Bot
 
 Configure these values in the production environment:
