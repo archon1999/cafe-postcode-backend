@@ -39,6 +39,12 @@ class OrderItemSerializer(serializers.ModelSerializer):
     kitchen_dispatched = serializers.SerializerMethodField()
     kitchen_dispatch_number = serializers.SerializerMethodField()
     quantity = QuantityDecimalField(max_digits=12, decimal_places=3)
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=500,
+        trim_whitespace=True,
+    )
     manual_price = serializers.IntegerField(
         write_only=True,
         required=False,
