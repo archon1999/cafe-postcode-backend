@@ -15,6 +15,30 @@ from common.api.admin_permissions import ADMIN_PERMISSION_CLASSES
 
 
 ACTIVE_SECURITY_RISK_WINDOW = timedelta(hours=24)
+BRANCH_ACTIVITY_STALE_WINDOW = timedelta(hours=24)
+
+
+def _branch_health_priority(branch, *, now):
+    agent = branch['agent']
+    devices = branch['devices']
+    security = branch['security']
+    critical = (
+        security['unacknowledgedCritical'] > 0
+        or agent is None
+        or agent['deviceStatus'] != Device.Status.ACTIVE
+        or not agent['online']
+    )
+    if critical:
+        return 2
+
+    last_seen_at = devices['lastSeenAt']
+    attention = (
+        security['unacknowledgedHigh'] > 0
+        or devices['activePOS'] == 0
+        or last_seen_at is None
+        or now - datetime.fromisoformat(last_seen_at) > BRANCH_ACTIVITY_STALE_WINDOW
+    )
+    return 1 if attention else 0
 
 
 class MonitoringOverviewView(APIView):
@@ -252,6 +276,14 @@ class MonitoringOverviewView(APIView):
                     },
                 }
             )
+
+        branch_payloads.sort(
+            key=lambda branch: (
+                _branch_health_priority(branch, now=now),
+                branch['restaurantName'].casefold(),
+                branch['restaurantId'],
+            )
+        )
 
         active_devices = sum(item['active'] for item in device_aggregates.values())
         revoked_devices = sum(item['revoked'] for item in device_aggregates.values())

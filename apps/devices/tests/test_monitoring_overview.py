@@ -392,6 +392,50 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(branch['devices']['active'], 2)
         self.assertEqual(branch['devices']['online'], 1)
 
+    def test_overview_orders_healthy_then_attention_then_critical(self):
+        now = timezone.now()
+        healthy = Restaurant.objects.create(name='Zulu Healthy')
+        attention = Restaurant.objects.create(name='Bravo Attention')
+        Restaurant.objects.create(name='Alpha Critical')
+
+        for index, restaurant in enumerate((healthy, attention), start=401):
+            agent_device = self.create_device(
+                restaurant=restaurant,
+                index=index,
+                device_type=Device.Type.LOCAL_AGENT,
+                last_seen_at=now,
+            )
+            self.create_device(
+                restaurant=restaurant,
+                index=index + 10,
+                device_type=Device.Type.POS_TERMINAL,
+                last_seen_at=now,
+            )
+            agent, _ = LocalAgent.issue_for_restaurant(
+                restaurant=restaurant,
+                name=f'{restaurant.name} agent',
+                version='1.1.0',
+            )
+            agent.device = agent_device
+            agent.status = LocalAgent.Status.ONLINE
+            agent.last_seen_at = now
+            agent.save(update_fields=['device', 'status', 'last_seen_at', 'updated_at'])
+
+        SecurityEvent.objects.create(
+            event_type='ATTENTION_HIGH',
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=attention,
+        )
+
+        self.client.force_authenticate(self.superuser)
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(
+            [branch['restaurantName'] for branch in response.data['branches']],
+            ['Zulu Healthy', 'Bravo Attention', 'Alpha Critical'],
+        )
+
     def test_business_partner_filter_scopes_the_complete_monitoring_snapshot(self):
         now = timezone.now()
         selected_partner = BusinessPartner.objects.create(
