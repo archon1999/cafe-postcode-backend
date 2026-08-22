@@ -21,6 +21,11 @@ class MonitoringOverviewView(APIView):
 
     def get(self, request):
         now = timezone.now()
+        business_partner_id = str(
+            request.query_params.get('business_partner_id')
+            or request.query_params.get('businessPartnerId')
+            or ''
+        ).strip()
         device_online_cutoff = now - timedelta(minutes=5)
         current_timezone = timezone.get_current_timezone()
         today = timezone.localdate(now, current_timezone)
@@ -34,12 +39,20 @@ class MonitoringOverviewView(APIView):
             datetime.combine(activity_end_date, time.min),
             current_timezone,
         )
+        branch_queryset = Restaurant.objects.filter(is_active=True)
+        if business_partner_id:
+            branch_queryset = branch_queryset.filter(business_partner_id=business_partner_id)
         branches = list(
-            Restaurant.objects.filter(is_active=True)
+            branch_queryset
             .select_related('local_agent', 'local_agent__device')
             .order_by('name', 'id')
         )
         restaurant_ids = [restaurant.id for restaurant in branches]
+        scoped_security_events = SecurityEvent.objects.all()
+        scoped_pending_pairings = DevicePairing.objects.all()
+        if business_partner_id:
+            scoped_security_events = scoped_security_events.filter(restaurant_id__in=restaurant_ids)
+            scoped_pending_pairings = scoped_pending_pairings.filter(device__restaurant_id__in=restaurant_ids)
         device_aggregates = {
             row['restaurant_id']: row
             for row in Device.objects.filter(restaurant_id__in=restaurant_ids)
@@ -117,7 +130,7 @@ class MonitoringOverviewView(APIView):
             )
         }
         security_activity_rows = (
-            SecurityEvent.objects.filter(
+            scoped_security_events.filter(
                 created_at__gte=activity_start,
                 created_at__lt=activity_end,
                 severity__in=(SecurityEvent.Severity.HIGH, SecurityEvent.Severity.CRITICAL),
@@ -136,7 +149,7 @@ class MonitoringOverviewView(APIView):
                 bucket['high'] = row['high']
                 bucket['critical'] = row['critical']
 
-        global_security = SecurityEvent.objects.filter(acknowledged_at__isnull=True).aggregate(
+        global_security = scoped_security_events.filter(acknowledged_at__isnull=True).aggregate(
             unacknowledged_high=Count(
                 'id',
                 filter=Q(severity=SecurityEvent.Severity.HIGH),
@@ -251,7 +264,7 @@ class MonitoringOverviewView(APIView):
                     'activeDevices': active_devices,
                     'revokedDevices': revoked_devices,
                     'activePOSTerminals': active_pos_terminals,
-                    'pendingPairings': DevicePairing.objects.filter(
+                    'pendingPairings': scoped_pending_pairings.filter(
                         status=DevicePairing.Status.PENDING,
                         expires_at__gt=now,
                     ).count(),

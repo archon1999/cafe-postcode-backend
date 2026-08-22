@@ -810,6 +810,13 @@ class SecurityEventListView(generics.ListAPIView):
             restaurant_id = _query_value(self.request, 'restaurant_id', 'restaurantId')
             if restaurant_id:
                 queryset = queryset.filter(restaurant_id=restaurant_id)
+            business_partner_id = _query_value(
+                self.request,
+                'business_partner_id',
+                'businessPartnerId',
+            )
+            if business_partner_id:
+                queryset = queryset.filter(restaurant__business_partner_id=business_partner_id)
         else:
             queryset = queryset.filter(restaurant=self.request.user.get_restaurant_scope())
         filters = {

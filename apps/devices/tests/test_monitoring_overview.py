@@ -12,6 +12,7 @@ from rest_framework.test import APITestCase
 from apps.devices.migration_window import legacy_pos_migration_enabled
 from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
+from apps.platform.models import BusinessPartner
 from apps.restaurants.models import Restaurant
 from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription
 from apps.users.models import AuthSession, Role, User
@@ -360,6 +361,128 @@ class MonitoringOverviewApiTests(APITestCase):
         branch = response.data['branches'][0]
         self.assertEqual(branch['devices']['active'], 2)
         self.assertEqual(branch['devices']['online'], 1)
+
+    def test_business_partner_filter_scopes_the_complete_monitoring_snapshot(self):
+        now = timezone.now()
+        selected_partner = BusinessPartner.objects.create(
+            inn='monitoring-partner-1',
+            company_name='Selected partner',
+        )
+        other_partner = BusinessPartner.objects.create(
+            inn='monitoring-partner-2',
+            company_name='Other partner',
+        )
+        selected_branch = Restaurant.objects.create(
+            name='Selected branch',
+            business_partner=selected_partner,
+        )
+        other_branch = Restaurant.objects.create(
+            name='Other branch',
+            business_partner=other_partner,
+        )
+        self.create_device(
+            restaurant=selected_branch,
+            index=301,
+            device_type=Device.Type.POS_TERMINAL,
+            last_seen_at=now,
+        )
+        self.create_device(
+            restaurant=other_branch,
+            index=302,
+            device_type=Device.Type.TV_MONITOR,
+            last_seen_at=now,
+        )
+        SecurityEvent.objects.create(
+            event_type='SELECTED_HIGH',
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=selected_branch,
+        )
+        SecurityEvent.objects.create(
+            event_type='OTHER_CRITICAL',
+            severity=SecurityEvent.Severity.CRITICAL,
+            restaurant=other_branch,
+        )
+        SecurityEvent.objects.create(
+            event_type='PLATFORM_HIGH',
+            severity=SecurityEvent.Severity.HIGH,
+        )
+
+        self.client.force_authenticate(self.superuser)
+        response = self.client.get(
+            self.endpoint,
+            {'business_partner_id': str(selected_partner.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(
+            response.data['summary'],
+            {
+                'totalBranches': 1,
+                'agentOnline': 0,
+                'agentOffline': 0,
+                'agentMissing': 1,
+                'activeDevices': 1,
+                'revokedDevices': 0,
+                'activePOSTerminals': 1,
+                'pendingPairings': 0,
+                'unacknowledgedHigh': 1,
+                'unacknowledgedCritical': 0,
+            },
+        )
+        self.assertEqual(
+            response.data['insights']['deviceTypes'],
+            {'localAgent': 0, 'pos': 1, 'tv': 0, 'control': 0},
+        )
+        self.assertEqual(
+            response.data['insights']['securityActivity'][-1],
+            {'date': timezone.localdate().isoformat(), 'high': 1, 'critical': 0},
+        )
+        self.assertEqual(
+            [branch['restaurantName'] for branch in response.data['branches']],
+            ['Selected branch'],
+        )
+
+    def test_security_event_list_can_be_scoped_by_business_partner(self):
+        selected_partner = BusinessPartner.objects.create(
+            inn='security-partner-1',
+            company_name='Selected security partner',
+        )
+        other_partner = BusinessPartner.objects.create(
+            inn='security-partner-2',
+            company_name='Other security partner',
+        )
+        selected_branch = Restaurant.objects.create(
+            name='Selected security branch',
+            business_partner=selected_partner,
+        )
+        other_branch = Restaurant.objects.create(
+            name='Other security branch',
+            business_partner=other_partner,
+        )
+        selected_event = SecurityEvent.objects.create(
+            event_type='SELECTED_PARTNER_EVENT',
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=selected_branch,
+        )
+        SecurityEvent.objects.create(
+            event_type='OTHER_PARTNER_EVENT',
+            severity=SecurityEvent.Severity.CRITICAL,
+            restaurant=other_branch,
+        )
+        SecurityEvent.objects.create(
+            event_type='PLATFORM_EVENT',
+            severity=SecurityEvent.Severity.HIGH,
+        )
+
+        self.client.force_authenticate(self.superuser)
+        response = self.client.get(
+            '/api/v1/admin/security-events/',
+            {'business_partner_id': str(selected_partner.id)},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['total'], 1)
+        self.assertEqual(response.data['data'][0]['id'], str(selected_event.id))
 
     def test_endpoint_allows_superuser_and_product_owner_but_denies_other_accounts(self):
         for user in (self.superuser, self.product_owner):
