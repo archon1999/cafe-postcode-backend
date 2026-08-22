@@ -187,7 +187,7 @@ class LocalAgentFleetOutboxActionView(LocalAgentFleetActionView):
         reason = str(request.data.get('reason') or '').strip()
         if action not in OUTBOX_ACTIONS:
             return Response({'action': ['Unsupported action.']}, status=status.HTTP_400_BAD_REQUEST)
-        if not reason:
+        if action == 'retry' and not reason:
             return Response({'reason': ['Reason is required.']}, status=status.HTTP_400_BAD_REQUEST)
         if len(reason) > 500:
             return Response(
