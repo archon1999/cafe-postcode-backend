@@ -14,41 +14,49 @@ from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
 from apps.platform.models import BusinessPartner
 from apps.restaurants.models import Restaurant
+from apps.sales.models import Order
 from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription
 from apps.users.models import AuthSession, Role, User
 
 
 class MonitoringOverviewApiTests(APITestCase):
-    endpoint = '/api/v1/admin/monitoring/overview/'
+    endpoint = "/api/v1/admin/monitoring/overview/"
 
     @classmethod
     def setUpTestData(cls):
         cls.superuser = User.objects.create_superuser(
-            username='monitoring-superuser',
-            password='Strong-Monitoring-Password-123!',
+            username="monitoring-superuser",
+            password="Strong-Monitoring-Password-123!",
         )
         cls.product_owner = User.objects.create_user(
-            username='monitoring-product-owner',
-            password='Strong-Monitoring-Password-123!',
-            role=Role.objects.get(code='product_owner'),
+            username="monitoring-product-owner",
+            password="Strong-Monitoring-Password-123!",
+            role=Role.objects.get(code="product_owner"),
             is_active=True,
             is_staff=True,
         )
         cls.regular_user = User.objects.create_user(
-            username='monitoring-regular-user',
-            password='Strong-Monitoring-Password-123!',
+            username="monitoring-regular-user",
+            password="Strong-Monitoring-Password-123!",
         )
 
     @staticmethod
-    def create_device(*, restaurant, index, device_type, device_status=Device.Status.ACTIVE, last_seen_at=None):
+    def create_device(
+        *,
+        restaurant,
+        index,
+        device_type,
+        device_status=Device.Status.ACTIVE,
+        last_seen_at=None,
+    ):
         now = timezone.now()
         return Device.objects.create(
             restaurant=restaurant,
             type=device_type,
-            name=f'Monitoring device {index}',
+            name=f"Monitoring device {index}",
             public_key_algorithm=Device.PublicKeyAlgorithm.ED25519,
-            public_key=f'public-key-{index}',
-            public_key_fingerprint=f'{index:064x}',
+            public_key=f"public-key-{index}",
+            public_key_fingerprint=f"{index:064x}",
             status=device_status,
             paired_at=now,
             lease_expires_at=now + timedelta(days=30),
@@ -58,11 +66,11 @@ class MonitoringOverviewApiTests(APITestCase):
 
     def test_overview_returns_branch_device_agent_and_security_aggregates(self):
         now = timezone.now()
-        alpha = Restaurant.objects.create(name='Alpha branch')
-        beta = Restaurant.objects.create(name='Beta branch')
-        delta = Restaurant.objects.create(name='Delta branch')
-        Restaurant.objects.create(name='Gamma branch')
-        inactive = Restaurant.objects.create(name='Inactive branch', is_active=False)
+        alpha = Restaurant.objects.create(name="Alpha branch")
+        beta = Restaurant.objects.create(name="Beta branch")
+        delta = Restaurant.objects.create(name="Delta branch")
+        Restaurant.objects.create(name="Gamma branch")
+        inactive = Restaurant.objects.create(name="Inactive branch", is_active=False)
 
         alpha_agent_device = self.create_device(
             restaurant=alpha,
@@ -72,34 +80,36 @@ class MonitoringOverviewApiTests(APITestCase):
         )
         alpha_agent, _ = LocalAgent.issue_for_restaurant(
             restaurant=alpha,
-            name='Alpha agent',
-            version='1.1.0',
+            name="Alpha agent",
+            version="1.1.0",
         )
         alpha_agent.device = alpha_agent_device
         alpha_agent.status = LocalAgent.Status.ONLINE
         alpha_agent.last_seen_at = now
         alpha_agent.protocol_version = 3
-        alpha_agent.capabilities = ['local_http', 'printer']
+        alpha_agent.capabilities = ["local_http", "printer"]
         alpha_agent.save()
 
         beta_agent, _ = LocalAgent.issue_for_restaurant(
             restaurant=beta,
-            name='Beta agent',
-            version='1.0.4',
+            name="Beta agent",
+            version="1.0.4",
         )
         beta_agent.status = LocalAgent.Status.ONLINE
         beta_agent.last_seen_at = now - timedelta(minutes=5)
-        beta_agent.save(update_fields=['status', 'last_seen_at', 'updated_at'])
+        beta_agent.save(update_fields=["status", "last_seen_at", "updated_at"])
 
         delta_agent, _ = LocalAgent.issue_for_restaurant(
             restaurant=delta,
-            name='Inactive Delta agent',
-            version='   ',
+            name="Inactive Delta agent",
+            version="   ",
         )
         delta_agent.is_active = False
         delta_agent.status = LocalAgent.Status.ONLINE
         delta_agent.last_seen_at = now
-        delta_agent.save(update_fields=['is_active', 'status', 'last_seen_at', 'updated_at'])
+        delta_agent.save(
+            update_fields=["is_active", "status", "last_seen_at", "updated_at"]
+        )
 
         alpha_pos = self.create_device(
             restaurant=alpha,
@@ -161,48 +171,48 @@ class MonitoringOverviewApiTests(APITestCase):
         )
 
         SecurityEvent.objects.create(
-            event_type='ALPHA_HIGH',
+            event_type="ALPHA_HIGH",
             severity=SecurityEvent.Severity.HIGH,
             restaurant=alpha,
             device=alpha_pos,
         )
         SecurityEvent.objects.create(
-            event_type='ALPHA_ACKNOWLEDGED_CRITICAL',
+            event_type="ALPHA_ACKNOWLEDGED_CRITICAL",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=alpha,
             acknowledged_at=now,
             acknowledged_by=self.superuser,
         )
         SecurityEvent.objects.create(
-            event_type='BETA_CRITICAL',
+            event_type="BETA_CRITICAL",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=beta,
         )
         SecurityEvent.objects.create(
-            event_type='PLATFORM_HIGH',
+            event_type="PLATFORM_HIGH",
             severity=SecurityEvent.Severity.HIGH,
         )
 
         DevicePairing.objects.create(
             device_type=Device.Type.POS_TERMINAL,
-            requested_name='Pending POS',
+            requested_name="Pending POS",
             public_key_algorithm=Device.PublicKeyAlgorithm.ED25519,
-            public_key='pending-key',
-            public_key_fingerprint='a' * 64,
-            poll_token_hash='b' * 64,
-            claim_token_hash='c' * 64,
-            display_code='123456',
+            public_key="pending-key",
+            public_key_fingerprint="a" * 64,
+            poll_token_hash="b" * 64,
+            claim_token_hash="c" * 64,
+            display_code="123456",
             expires_at=now + timedelta(minutes=5),
         )
         DevicePairing.objects.create(
             device_type=Device.Type.POS_TERMINAL,
-            requested_name='Expired POS',
+            requested_name="Expired POS",
             public_key_algorithm=Device.PublicKeyAlgorithm.ED25519,
-            public_key='expired-key',
-            public_key_fingerprint='d' * 64,
-            poll_token_hash='e' * 64,
-            claim_token_hash='f' * 64,
-            display_code='654321',
+            public_key="expired-key",
+            public_key_fingerprint="d" * 64,
+            poll_token_hash="e" * 64,
+            claim_token_hash="f" * 64,
+            display_code="654321",
             expires_at=now - timedelta(seconds=1),
         )
 
@@ -211,101 +221,131 @@ class MonitoringOverviewApiTests(APITestCase):
             response = self.client.get(self.endpoint)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertIsNotNone(response.data['generatedAt'])
+        self.assertIsNotNone(response.data["generatedAt"])
         self.assertEqual(
-            response.data['summary'],
+            response.data["summary"],
             {
-                'totalBranches': 4,
-                'agentOnline': 1,
-                'agentOffline': 1,
-                'agentMissing': 2,
-                'activeDevices': 4,
-                'revokedDevices': 1,
-                'activePOSTerminals': 1,
-                'pendingPairings': 1,
-                'riskWindowHours': 24,
-                'unacknowledgedHigh': 2,
-                'unacknowledgedCritical': 1,
+                "totalBranches": 4,
+                "agentOnline": 1,
+                "agentOffline": 1,
+                "agentExpectedOffline": 0,
+                "agentAttentionRequired": 1,
+                "agentMissing": 2,
+                "activeDevices": 4,
+                "revokedDevices": 1,
+                "activePOSTerminals": 1,
+                "pendingPairings": 1,
+                "riskWindowHours": 24,
+                "unacknowledgedHigh": 2,
+                "unacknowledgedCritical": 1,
             },
         )
         expected_security_activity = [
             {
-                'date': (timezone.localdate() - timedelta(days=offset)).isoformat(),
-                'high': 2 if offset == 0 else 0,
-                'critical': 2 if offset == 0 else 0,
+                "date": (timezone.localdate() - timedelta(days=offset)).isoformat(),
+                "high": 2 if offset == 0 else 0,
+                "critical": 2 if offset == 0 else 0,
             }
             for offset in range(6, -1, -1)
         ]
         self.assertEqual(
-            response.data['insights'],
+            response.data["insights"],
             {
-                'securityActivity': expected_security_activity,
-                'agentVersions': [
-                    {'version': '1.0.4', 'total': 1, 'online': 0, 'offline': 1},
-                    {'version': '1.1.0', 'total': 1, 'online': 1, 'offline': 0},
-                    {'version': 'unknown', 'total': 1, 'online': 0, 'offline': 1},
+                "securityActivity": expected_security_activity,
+                "agentVersions": [
+                    {"version": "1.0.4", "total": 1, "online": 0, "offline": 1},
+                    {"version": "1.1.0", "total": 1, "online": 1, "offline": 0},
+                    {"version": "unknown", "total": 1, "online": 0, "offline": 1},
                 ],
-                'deviceTypes': {'localAgent': 1, 'pos': 1, 'tv': 1, 'control': 1},
+                "deviceTypes": {"localAgent": 1, "pos": 1, "tv": 1, "control": 1},
             },
         )
         self.assertEqual(
-            sum(response.data['insights']['deviceTypes'].values()),
-            response.data['summary']['activeDevices'],
+            sum(response.data["insights"]["deviceTypes"].values()),
+            response.data["summary"]["activeDevices"],
         )
 
-        branches = {branch['restaurantName']: branch for branch in response.data['branches']}
-        self.assertEqual(list(branches), ['Alpha branch', 'Beta branch', 'Delta branch', 'Gamma branch'])
+        branches = {
+            branch["restaurantName"]: branch for branch in response.data["branches"]
+        }
         self.assertEqual(
-            branches['Alpha branch']['devices'],
+            list(branches),
+            ["Alpha branch", "Gamma branch", "Beta branch", "Delta branch"],
+        )
+        self.assertEqual(
+            branches["Alpha branch"]["devices"],
             {
-                'active': 3,
-                'online': 3,
-                'revoked': 1,
-                'activeLocalAgent': 1,
-                'activePOS': 1,
-                'activeTV': 1,
-                'activeControl': 0,
-                'telegramSubscriptions': 2,
-                'lastSeenAt': alpha_pos.last_seen_at.isoformat(),
+                "active": 3,
+                "online": 3,
+                "revoked": 1,
+                "activeLocalAgent": 1,
+                "activePOS": 1,
+                "activeTV": 1,
+                "activeControl": 0,
+                "telegramSubscriptions": 2,
+                "lastSeenAt": alpha_pos.last_seen_at.isoformat(),
             },
         )
-        self.assertEqual(branches['Beta branch']['devices']['activeLocalAgent'], 0)
-        self.assertEqual(branches['Beta branch']['devices']['telegramSubscriptions'], 1)
-        self.assertEqual(branches['Gamma branch']['devices']['activeLocalAgent'], 0)
-        self.assertEqual(branches['Gamma branch']['devices']['telegramSubscriptions'], 0)
+        self.assertEqual(branches["Beta branch"]["devices"]["activeLocalAgent"], 0)
+        self.assertEqual(branches["Beta branch"]["devices"]["telegramSubscriptions"], 1)
+        self.assertEqual(branches["Gamma branch"]["devices"]["activeLocalAgent"], 0)
+        self.assertEqual(
+            branches["Gamma branch"]["devices"]["telegramSubscriptions"], 0
+        )
         telegram_subscription_queries = [
-            query['sql']
+            query["sql"]
             for query in captured_queries.captured_queries
-            if 'telegram_reports_telegrambranchsubscription' in query['sql'].lower()
+            if "telegram_reports_telegrambranchsubscription" in query["sql"].lower()
         ]
         self.assertEqual(len(telegram_subscription_queries), 1)
-        self.assertEqual(branches['Alpha branch']['security']['unacknowledgedHigh'], 1)
-        self.assertEqual(branches['Alpha branch']['security']['unacknowledgedCritical'], 0)
-        self.assertIsNotNone(branches['Alpha branch']['security']['lastEventAt'])
-        self.assertEqual(branches['Alpha branch']['agent']['id'], str(alpha_agent.id))
-        self.assertEqual(branches['Alpha branch']['agent']['version'], '1.1.0')
-        self.assertEqual(branches['Alpha branch']['agent']['protocolVersion'], 3)
-        self.assertEqual(branches['Alpha branch']['agent']['deviceStatus'], Device.Status.ACTIVE)
-        self.assertTrue(branches['Alpha branch']['agent']['online'])
-        self.assertFalse(branches['Beta branch']['agent']['online'])
-        self.assertFalse(branches['Delta branch']['agent']['online'])
-        self.assertFalse(branches['Delta branch']['agent']['isActive'])
-        self.assertIsNone(branches['Gamma branch']['agent'])
+        self.assertEqual(branches["Alpha branch"]["security"]["unacknowledgedHigh"], 1)
+        self.assertEqual(
+            branches["Alpha branch"]["security"]["unacknowledgedCritical"], 0
+        )
+        self.assertIsNotNone(branches["Alpha branch"]["security"]["lastEventAt"])
+        self.assertEqual(branches["Alpha branch"]["agent"]["id"], str(alpha_agent.id))
+        self.assertEqual(branches["Alpha branch"]["agent"]["version"], "1.1.0")
+        self.assertEqual(branches["Alpha branch"]["agent"]["protocolVersion"], 3)
+        self.assertEqual(
+            branches["Alpha branch"]["agent"]["deviceStatus"], Device.Status.ACTIVE
+        )
+        self.assertTrue(branches["Alpha branch"]["agent"]["online"])
+        self.assertFalse(branches["Beta branch"]["agent"]["online"])
+        self.assertFalse(branches["Delta branch"]["agent"]["online"])
+        self.assertFalse(branches["Delta branch"]["agent"]["isActive"])
+        self.assertIsNone(branches["Gamma branch"]["agent"])
 
-    def test_security_activity_uses_current_timezone_calendar_days_and_includes_acknowledged_events(self):
-        report_timezone = ZoneInfo('Asia/Tashkent')
+    def test_security_activity_uses_current_timezone_calendar_days_and_includes_acknowledged_events(
+        self,
+    ):
+        report_timezone = ZoneInfo("Asia/Tashkent")
         report_now = datetime(2026, 1, 7, 20, 30, tzinfo=datetime_timezone.utc)
 
         event_timestamps = (
-            (SecurityEvent.Severity.HIGH, datetime(2026, 1, 1, 18, 59, tzinfo=datetime_timezone.utc)),
-            (SecurityEvent.Severity.HIGH, datetime(2026, 1, 1, 19, 0, tzinfo=datetime_timezone.utc)),
-            (SecurityEvent.Severity.CRITICAL, datetime(2026, 1, 6, 18, 59, tzinfo=datetime_timezone.utc)),
-            (SecurityEvent.Severity.HIGH, datetime(2026, 1, 7, 20, 29, tzinfo=datetime_timezone.utc)),
-            (SecurityEvent.Severity.CRITICAL, datetime(2026, 1, 8, 19, 0, tzinfo=datetime_timezone.utc)),
+            (
+                SecurityEvent.Severity.HIGH,
+                datetime(2026, 1, 1, 18, 59, tzinfo=datetime_timezone.utc),
+            ),
+            (
+                SecurityEvent.Severity.HIGH,
+                datetime(2026, 1, 1, 19, 0, tzinfo=datetime_timezone.utc),
+            ),
+            (
+                SecurityEvent.Severity.CRITICAL,
+                datetime(2026, 1, 6, 18, 59, tzinfo=datetime_timezone.utc),
+            ),
+            (
+                SecurityEvent.Severity.HIGH,
+                datetime(2026, 1, 7, 20, 29, tzinfo=datetime_timezone.utc),
+            ),
+            (
+                SecurityEvent.Severity.CRITICAL,
+                datetime(2026, 1, 8, 19, 0, tzinfo=datetime_timezone.utc),
+            ),
         )
         for index, (severity, created_at) in enumerate(event_timestamps):
             event = SecurityEvent.objects.create(
-                event_type=f'TIMEZONE_BOUNDARY_{index}',
+                event_type=f"TIMEZONE_BOUNDARY_{index}",
                 severity=severity,
                 acknowledged_at=report_now if index == 2 else None,
                 acknowledged_by=self.superuser if index == 2 else None,
@@ -313,63 +353,74 @@ class MonitoringOverviewApiTests(APITestCase):
             SecurityEvent.objects.filter(pk=event.pk).update(created_at=created_at)
 
         SecurityEvent.objects.create(
-            event_type='IGNORED_INFO',
+            event_type="IGNORED_INFO",
             severity=SecurityEvent.Severity.INFO,
         )
 
         self.client.force_authenticate(self.superuser)
-        with timezone.override(report_timezone), patch(
-            'apps.devices.monitoring_views.timezone.now',
-            return_value=report_now,
+        with (
+            timezone.override(report_timezone),
+            patch(
+                "apps.devices.monitoring_views.timezone.now",
+                return_value=report_now,
+            ),
         ):
             response = self.client.get(self.endpoint)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
-            response.data['insights']['securityActivity'],
+            response.data["insights"]["securityActivity"],
             [
-                {'date': '2026-01-02', 'high': 1, 'critical': 0},
-                {'date': '2026-01-03', 'high': 0, 'critical': 0},
-                {'date': '2026-01-04', 'high': 0, 'critical': 0},
-                {'date': '2026-01-05', 'high': 0, 'critical': 0},
-                {'date': '2026-01-06', 'high': 0, 'critical': 1},
-                {'date': '2026-01-07', 'high': 0, 'critical': 0},
-                {'date': '2026-01-08', 'high': 1, 'critical': 0},
+                {"date": "2026-01-02", "high": 1, "critical": 0},
+                {"date": "2026-01-03", "high": 0, "critical": 0},
+                {"date": "2026-01-04", "high": 0, "critical": 0},
+                {"date": "2026-01-05", "high": 0, "critical": 0},
+                {"date": "2026-01-06", "high": 0, "critical": 1},
+                {"date": "2026-01-07", "high": 0, "critical": 0},
+                {"date": "2026-01-08", "high": 1, "critical": 0},
             ],
         )
 
     def test_branch_health_risk_counts_only_include_the_last_24_hours(self):
         now = timezone.now()
-        restaurant = Restaurant.objects.create(name='Current risk window branch')
+        restaurant = Restaurant.objects.create(name="Current risk window branch")
         old_event = SecurityEvent.objects.create(
-            event_type='OLD_UNACKNOWLEDGED_HIGH',
+            event_type="OLD_UNACKNOWLEDGED_HIGH",
             severity=SecurityEvent.Severity.HIGH,
             restaurant=restaurant,
         )
-        SecurityEvent.objects.filter(pk=old_event.pk).update(created_at=now - timedelta(hours=25))
+        SecurityEvent.objects.filter(pk=old_event.pk).update(
+            created_at=now - timedelta(hours=25)
+        )
         SecurityEvent.objects.create(
-            event_type='CURRENT_UNACKNOWLEDGED_CRITICAL',
+            event_type="CURRENT_UNACKNOWLEDGED_CRITICAL",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=restaurant,
         )
 
         self.client.force_authenticate(self.superuser)
-        with patch('apps.devices.monitoring_views.timezone.now', return_value=now):
+        with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
             response = self.client.get(self.endpoint)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(response.data['summary']['riskWindowHours'], 24)
-        self.assertEqual(response.data['summary']['unacknowledgedHigh'], 0)
-        self.assertEqual(response.data['summary']['unacknowledgedCritical'], 1)
-        self.assertEqual(response.data['branches'][0]['security']['unacknowledgedHigh'], 0)
-        self.assertEqual(response.data['branches'][0]['security']['unacknowledgedCritical'], 1)
+        self.assertEqual(response.data["summary"]["riskWindowHours"], 24)
+        self.assertEqual(response.data["summary"]["unacknowledgedHigh"], 0)
+        self.assertEqual(response.data["summary"]["unacknowledgedCritical"], 1)
+        self.assertEqual(
+            response.data["branches"][0]["security"]["unacknowledgedHigh"], 0
+        )
+        self.assertEqual(
+            response.data["branches"][0]["security"]["unacknowledgedCritical"], 1
+        )
         self.assertTrue(
-            SecurityEvent.objects.filter(pk=old_event.pk, acknowledged_at__isnull=True).exists(),
+            SecurityEvent.objects.filter(
+                pk=old_event.pk, acknowledged_at__isnull=True
+            ).exists(),
         )
 
     def test_device_online_count_uses_a_five_minute_last_seen_window(self):
         now = timezone.now()
-        restaurant = Restaurant.objects.create(name='Five minute device branch')
+        restaurant = Restaurant.objects.create(name="Five minute device branch")
         self.create_device(
             restaurant=restaurant,
             index=201,
@@ -384,19 +435,19 @@ class MonitoringOverviewApiTests(APITestCase):
         )
 
         self.client.force_authenticate(self.superuser)
-        with patch('apps.devices.monitoring_views.timezone.now', return_value=now):
+        with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
             response = self.client.get(self.endpoint)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        branch = response.data['branches'][0]
-        self.assertEqual(branch['devices']['active'], 2)
-        self.assertEqual(branch['devices']['online'], 1)
+        branch = response.data["branches"][0]
+        self.assertEqual(branch["devices"]["active"], 2)
+        self.assertEqual(branch["devices"]["online"], 1)
 
     def test_overview_orders_healthy_then_attention_then_critical(self):
         now = timezone.now()
-        healthy = Restaurant.objects.create(name='Zulu Healthy')
-        attention = Restaurant.objects.create(name='Bravo Attention')
-        Restaurant.objects.create(name='Alpha Critical')
+        healthy = Restaurant.objects.create(name="Zulu Healthy")
+        attention = Restaurant.objects.create(name="Bravo Attention")
+        Restaurant.objects.create(name="Alpha Critical")
 
         for index, restaurant in enumerate((healthy, attention), start=401):
             agent_device = self.create_device(
@@ -413,18 +464,23 @@ class MonitoringOverviewApiTests(APITestCase):
             )
             agent, _ = LocalAgent.issue_for_restaurant(
                 restaurant=restaurant,
-                name=f'{restaurant.name} agent',
-                version='1.1.0',
+                name=f"{restaurant.name} agent",
+                version="1.1.0",
             )
             agent.device = agent_device
             agent.status = LocalAgent.Status.ONLINE
             agent.last_seen_at = now
-            agent.save(update_fields=['device', 'status', 'last_seen_at', 'updated_at'])
+            agent.save(update_fields=["device", "status", "last_seen_at", "updated_at"])
 
         SecurityEvent.objects.create(
-            event_type='ATTENTION_HIGH',
+            event_type="ATTENTION_HIGH",
             severity=SecurityEvent.Severity.HIGH,
             restaurant=attention,
+        )
+        SecurityEvent.objects.create(
+            event_type="CRITICAL_EVENT",
+            severity=SecurityEvent.Severity.CRITICAL,
+            restaurant=Restaurant.objects.get(name="Alpha Critical"),
         )
 
         self.client.force_authenticate(self.superuser)
@@ -432,26 +488,100 @@ class MonitoringOverviewApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
-            [branch['restaurantName'] for branch in response.data['branches']],
-            ['Zulu Healthy', 'Bravo Attention', 'Alpha Critical'],
+            [branch["restaurantName"] for branch in response.data["branches"]],
+            ["Zulu Healthy", "Bravo Attention", "Alpha Critical"],
         )
+
+    def test_offline_agent_is_healthy_when_business_stopped_naturally(self):
+        now = timezone.now()
+        natural = Restaurant.objects.create(name="Natural offline")
+        orders_after_stop = Restaurant.objects.create(name="Orders after stop")
+        risk_before_stop = Restaurant.objects.create(name="Risk before stop")
+
+        agents = {}
+        for index, restaurant in enumerate(
+            (natural, orders_after_stop, risk_before_stop), start=501
+        ):
+            stopped_at = now - timedelta(minutes=10)
+            agent_device = self.create_device(
+                restaurant=restaurant,
+                index=index,
+                device_type=Device.Type.LOCAL_AGENT,
+                last_seen_at=stopped_at,
+            )
+            self.create_device(
+                restaurant=restaurant,
+                index=index + 10,
+                device_type=Device.Type.POS_TERMINAL,
+                last_seen_at=stopped_at,
+            )
+            agent, _ = LocalAgent.issue_for_restaurant(
+                restaurant=restaurant,
+                name=f"{restaurant.name} agent",
+                version="1.1.0",
+            )
+            agent.device = agent_device
+            agent.status = LocalAgent.Status.ONLINE
+            agent.last_seen_at = stopped_at
+            agent.save(update_fields=["device", "status", "last_seen_at", "updated_at"])
+            agents[restaurant.name] = agent
+
+        Order.objects.create(restaurant=orders_after_stop)
+        risk_event = SecurityEvent.objects.create(
+            event_type="AGENT_STOP_FAILURE",
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=risk_before_stop,
+            device=agents[risk_before_stop.name].device,
+            result="DENIED",
+        )
+        SecurityEvent.objects.filter(pk=risk_event.pk).update(
+            created_at=agents[risk_before_stop.name].last_seen_at - timedelta(minutes=1)
+        )
+
+        self.client.force_authenticate(self.superuser)
+        with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
+            response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        branches = {
+            branch["restaurantName"]: branch for branch in response.data["branches"]
+        }
+        self.assertTrue(branches[natural.name]["agent"]["expectedOffline"])
+        self.assertEqual(
+            branches[natural.name]["agent"]["offlineReason"], "natural_inactivity"
+        )
+        self.assertFalse(branches[orders_after_stop.name]["agent"]["expectedOffline"])
+        self.assertEqual(
+            branches[orders_after_stop.name]["agent"]["offlineReason"],
+            "orders_after_offline",
+        )
+        self.assertFalse(branches[risk_before_stop.name]["agent"]["expectedOffline"])
+        self.assertEqual(
+            branches[risk_before_stop.name]["agent"]["offlineReason"],
+            "risk_before_offline",
+        )
+        self.assertEqual(
+            branches[risk_before_stop.name]["agent"]["recentRiskEventCount"], 1
+        )
+        self.assertEqual(response.data["summary"]["agentExpectedOffline"], 1)
+        self.assertEqual(response.data["summary"]["agentAttentionRequired"], 2)
 
     def test_business_partner_filter_scopes_the_complete_monitoring_snapshot(self):
         now = timezone.now()
         selected_partner = BusinessPartner.objects.create(
-            inn='monitoring-partner-1',
-            company_name='Selected partner',
+            inn="monitoring-partner-1",
+            company_name="Selected partner",
         )
         other_partner = BusinessPartner.objects.create(
-            inn='monitoring-partner-2',
-            company_name='Other partner',
+            inn="monitoring-partner-2",
+            company_name="Other partner",
         )
         selected_branch = Restaurant.objects.create(
-            name='Selected branch',
+            name="Selected branch",
             business_partner=selected_partner,
         )
         other_branch = Restaurant.objects.create(
-            name='Other branch',
+            name="Other branch",
             business_partner=other_partner,
         )
         self.create_device(
@@ -467,104 +597,110 @@ class MonitoringOverviewApiTests(APITestCase):
             last_seen_at=now,
         )
         SecurityEvent.objects.create(
-            event_type='SELECTED_HIGH',
+            event_type="SELECTED_HIGH",
             severity=SecurityEvent.Severity.HIGH,
             restaurant=selected_branch,
         )
         SecurityEvent.objects.create(
-            event_type='OTHER_CRITICAL',
+            event_type="OTHER_CRITICAL",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=other_branch,
         )
         SecurityEvent.objects.create(
-            event_type='PLATFORM_HIGH',
+            event_type="PLATFORM_HIGH",
             severity=SecurityEvent.Severity.HIGH,
         )
 
         self.client.force_authenticate(self.superuser)
         response = self.client.get(
             self.endpoint,
-            {'business_partner_id': str(selected_partner.id)},
+            {"business_partner_id": str(selected_partner.id)},
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(
-            response.data['summary'],
+            response.data["summary"],
             {
-                'totalBranches': 1,
-                'agentOnline': 0,
-                'agentOffline': 0,
-                'agentMissing': 1,
-                'activeDevices': 1,
-                'revokedDevices': 0,
-                'activePOSTerminals': 1,
-                'pendingPairings': 0,
-                'riskWindowHours': 24,
-                'unacknowledgedHigh': 1,
-                'unacknowledgedCritical': 0,
+                "totalBranches": 1,
+                "agentOnline": 0,
+                "agentOffline": 0,
+                "agentExpectedOffline": 0,
+                "agentAttentionRequired": 0,
+                "agentMissing": 1,
+                "activeDevices": 1,
+                "revokedDevices": 0,
+                "activePOSTerminals": 1,
+                "pendingPairings": 0,
+                "riskWindowHours": 24,
+                "unacknowledgedHigh": 1,
+                "unacknowledgedCritical": 0,
             },
         )
         self.assertEqual(
-            response.data['insights']['deviceTypes'],
-            {'localAgent': 0, 'pos': 1, 'tv': 0, 'control': 0},
+            response.data["insights"]["deviceTypes"],
+            {"localAgent": 0, "pos": 1, "tv": 0, "control": 0},
         )
         self.assertEqual(
-            response.data['insights']['securityActivity'][-1],
-            {'date': timezone.localdate().isoformat(), 'high': 1, 'critical': 0},
+            response.data["insights"]["securityActivity"][-1],
+            {"date": timezone.localdate().isoformat(), "high": 1, "critical": 0},
         )
         self.assertEqual(
-            [branch['restaurantName'] for branch in response.data['branches']],
-            ['Selected branch'],
+            [branch["restaurantName"] for branch in response.data["branches"]],
+            ["Selected branch"],
         )
 
     def test_security_event_list_can_be_scoped_by_business_partner(self):
         selected_partner = BusinessPartner.objects.create(
-            inn='security-partner-1',
-            company_name='Selected security partner',
+            inn="security-partner-1",
+            company_name="Selected security partner",
         )
         other_partner = BusinessPartner.objects.create(
-            inn='security-partner-2',
-            company_name='Other security partner',
+            inn="security-partner-2",
+            company_name="Other security partner",
         )
         selected_branch = Restaurant.objects.create(
-            name='Selected security branch',
+            name="Selected security branch",
             business_partner=selected_partner,
         )
         other_branch = Restaurant.objects.create(
-            name='Other security branch',
+            name="Other security branch",
             business_partner=other_partner,
         )
         selected_event = SecurityEvent.objects.create(
-            event_type='SELECTED_PARTNER_EVENT',
+            event_type="SELECTED_PARTNER_EVENT",
             severity=SecurityEvent.Severity.HIGH,
             restaurant=selected_branch,
         )
         SecurityEvent.objects.create(
-            event_type='OTHER_PARTNER_EVENT',
+            event_type="OTHER_PARTNER_EVENT",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=other_branch,
         )
         SecurityEvent.objects.create(
-            event_type='PLATFORM_EVENT',
+            event_type="PLATFORM_EVENT",
             severity=SecurityEvent.Severity.HIGH,
         )
 
         self.client.force_authenticate(self.superuser)
         response = self.client.get(
-            '/api/v1/admin/security-events/',
-            {'business_partner_id': str(selected_partner.id)},
+            "/api/v1/admin/security-events/",
+            {"business_partner_id": str(selected_partner.id)},
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(response.data['total'], 1)
-        self.assertEqual(response.data['data'][0]['id'], str(selected_event.id))
+        self.assertEqual(response.data["total"], 1)
+        self.assertEqual(response.data["data"][0]["id"], str(selected_event.id))
 
-    def test_endpoint_allows_superuser_and_product_owner_but_denies_other_accounts(self):
+    def test_endpoint_allows_superuser_and_product_owner_but_denies_other_accounts(
+        self,
+    ):
         for user in (self.superuser, self.product_owner):
             with self.subTest(username=user.username):
                 self.client.force_authenticate(user)
                 response = self.client.get(self.endpoint)
-                self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+                self.assertEqual(
+                    response.status_code, status.HTTP_200_OK, response.data
+                )
 
         self.client.force_authenticate(self.regular_user)
         denied = self.client.get(self.endpoint)
@@ -577,26 +713,28 @@ class MonitoringOverviewApiTests(APITestCase):
     @override_settings(
         DJANGO_PRODUCTION=True,
         DEVICE_LEGACY_POS_MIGRATION_ENABLED=True,
-        DEVICE_LEGACY_MIGRATION_STARTED_AT='2026-08-01T00:00:00Z',
-        DEVICE_LEGACY_MIGRATION_DEADLINE='2026-09-01T00:00:00Z',
+        DEVICE_LEGACY_MIGRATION_STARTED_AT="2026-08-01T00:00:00Z",
+        DEVICE_LEGACY_MIGRATION_DEADLINE="2026-09-01T00:00:00Z",
     )
     def test_get_is_read_only_and_does_not_change_migration_or_pos_session_state(self):
         now = timezone.now()
-        restaurant = Restaurant.objects.create(name='Read-only branch')
+        restaurant = Restaurant.objects.create(name="Read-only branch")
         employee = User.objects.create_user(
-            username='read-only-employee',
-            password='unused',
+            username="read-only-employee",
+            password="unused",
             restaurant=restaurant,
         )
         session = AuthSession.objects.create(
             user=employee,
             restaurant=restaurant,
-            token_key_hash='9' * 64,
+            token_key_hash="9" * 64,
             surface=AuthSession.Surface.POS,
             status=AuthSession.Status.ACTIVE,
             expires_at=now + timedelta(hours=1),
         )
-        agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant, name='Read-only agent')
+        agent, _ = LocalAgent.issue_for_restaurant(
+            restaurant=restaurant, name="Read-only agent"
+        )
         pos = self.create_device(
             restaurant=restaurant,
             index=99,
@@ -615,9 +753,9 @@ class MonitoringOverviewApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         mutating_queries = [
-            query['sql']
+            query["sql"]
             for query in captured_queries.captured_queries
-            if query['sql'].lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE'))
+            if query["sql"].lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))
         ]
         self.assertEqual(mutating_queries, [])
         session.refresh_from_db()
