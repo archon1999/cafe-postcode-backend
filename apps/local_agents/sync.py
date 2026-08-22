@@ -13,7 +13,8 @@ from apps.billing.models import CashExpense, CashShift, ExpenseCategory
 from apps.billing.serializers import CashExpenseSerializer, CashShiftSerializer
 from apps.billing.services import CashExpenseService
 from apps.floor.api.admin.serializers import HallSerializer, TableSessionSerializer
-from apps.floor.models import Hall, TableSession
+from apps.floor.models import TableSession
+from apps.floor.selectors.pos_halls import pos_hall_queryset
 from apps.local_agents.authentication import authenticate_local_agent
 from apps.local_agents.device_state import pos_device_state_snapshot
 from apps.local_agents.selectors import bootstrap_kitchen_tickets
@@ -46,13 +47,7 @@ def _menu_snapshot(restaurant):
 
 
 def _hall_snapshot(restaurant):
-    halls = (
-        Hall.objects.filter(zone_or_cabin__restaurant=restaurant, is_active=True)
-        .select_related('zone_or_cabin')
-        .prefetch_related('tables__table_sessions__orders__kitchen_tickets', 'tables__table_sessions__assigned_waiter')
-        .order_by('sort_order', 'name')
-    )
-    return HallSerializer(halls, many=True).data
+    return HallSerializer(pos_hall_queryset(restaurant=restaurant), many=True).data
 
 
 def _order_snapshot(restaurant, now):

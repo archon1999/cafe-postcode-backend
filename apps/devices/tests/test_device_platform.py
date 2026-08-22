@@ -976,6 +976,47 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         own_event.refresh_from_db()
         self.assertEqual(own_event.acknowledged_by, self.user)
 
+    def test_security_event_list_filters_an_inclusive_datetime_range(self):
+        range_start = timezone.now().replace(microsecond=0) - timedelta(days=2)
+        range_end = range_start + timedelta(days=1)
+        before = SecurityEvent.objects.create(
+            event_type='BEFORE_RANGE',
+            severity=SecurityEvent.Severity.INFO,
+            restaurant=self.restaurant,
+        )
+        at_start = SecurityEvent.objects.create(
+            event_type='AT_RANGE_START',
+            severity=SecurityEvent.Severity.HIGH,
+            restaurant=self.restaurant,
+        )
+        at_end = SecurityEvent.objects.create(
+            event_type='AT_RANGE_END',
+            severity=SecurityEvent.Severity.CRITICAL,
+            restaurant=self.restaurant,
+        )
+        after = SecurityEvent.objects.create(
+            event_type='AFTER_RANGE',
+            severity=SecurityEvent.Severity.INFO,
+            restaurant=self.restaurant,
+        )
+        SecurityEvent.objects.filter(pk=before.pk).update(created_at=range_start - timedelta(seconds=1))
+        SecurityEvent.objects.filter(pk=at_start.pk).update(created_at=range_start)
+        SecurityEvent.objects.filter(pk=at_end.pk).update(created_at=range_end)
+        SecurityEvent.objects.filter(pk=after.pk).update(created_at=range_end + timedelta(seconds=1))
+
+        self.client.force_authenticate(self.user)
+        response = self.client.get(
+            '/api/v1/admin/security-events/',
+            {'from': range_start.isoformat(), 'to': range_end.isoformat(), 'page_size': 10},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.json()['total'], 2)
+        self.assertEqual(
+            {event['eventType'] for event in response.json()['data']},
+            {'AT_RANGE_START', 'AT_RANGE_END'},
+        )
+
     @override_settings(ADMIN_MFA_REQUIRED=True)
     def test_sensitive_device_decisions_require_recent_mfa_when_rollback_flag_is_enabled(self):
         self.client.credentials()

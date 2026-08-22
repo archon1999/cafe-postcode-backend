@@ -716,6 +716,16 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
             status=Order.Status.OPEN,
             guest_count=1,
         )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.takeaway_user,
+            quantity=1,
+            unit_price=30000,
+        )
+        order.recalculate_totals()
+        self.assertEqual(order.total, 30000)
 
         self.client.force_authenticate(self.takeaway_user)
         response = self.client.patch(
@@ -728,5 +738,19 @@ class PosPermissionBranchingApiTests(PosAPITestCase):
         order.refresh_from_db()
         self.assertEqual(order.channel, Order.Channel.HALL)
         self.assertEqual(order.distribution_point.kind, Order.Channel.HALL)
+        self.assertEqual(order.service_fee_percent, 10)
+        self.assertEqual(order.total, 33000)
+
+        response = self.client.patch(
+            f'/api/v1/pos/sales/orders/{order.id}/',
+            {'channel': Order.Channel.TAKEAWAY},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.channel, Order.Channel.TAKEAWAY)
+        self.assertEqual(order.service_fee_percent, 0)
+        self.assertEqual(order.total, 30000)
 
 

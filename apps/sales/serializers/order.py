@@ -139,11 +139,17 @@ class OrderSerializer(serializers.ModelSerializer):
         return attrs
 
     def update(self, instance, validated_data):
+        channel_changed = 'channel' in validated_data and validated_data['channel'] != instance.channel
         update_fields = set(validated_data)
         for field_name, value in validated_data.items():
             setattr(instance, field_name, value)
+        if channel_changed:
+            instance.capture_service_fee_snapshot()
+            update_fields.update(self.SERVER_CONTROLLED_FIELDS)
         if update_fields:
             instance.save(update_fields=[*sorted(update_fields), 'updated_at'])
+        if channel_changed:
+            instance.recalculate_totals()
         return instance
 
     def get_service_fee(self, obj):

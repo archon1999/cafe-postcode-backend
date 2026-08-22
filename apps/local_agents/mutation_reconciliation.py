@@ -19,6 +19,7 @@ MUTATION_PATHS = (
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/serve-ready/$"),
     re.compile(r"^/api/v1/pos/sales/orders/[0-9a-f-]+/scan-marking/$"),
     re.compile(r"^/api/v1/pos/floor/table-sessions/$"),
+    re.compile(r"^/api/v1/pos/floor/table-sessions/[0-9a-f-]+/(?:move|merge|transfer|group|ungroup)/$"),
     re.compile(r"^/api/v1/pos/floor/tables/[0-9a-f-]+/reserve/$"),
     re.compile(r"^/api/v1/pos/billing/shifts/open/$"),
     re.compile(r"^/api/v1/pos/billing/shifts/current/close/$"),

@@ -182,7 +182,7 @@ class OrderPaymentServiceTests(PosTestCase):
         self.assertEqual(session.status, TableSession.Status.CLOSED)
         self.assertEqual(self.table.status, DiningTable.Status.AVAILABLE)
 
-    def test_process_takeaway_payment_applies_service_fee_when_enabled(self):
+    def test_process_takeaway_payment_skips_restaurant_service_fee(self):
         order = self._create_order_with_item(channel=Order.Channel.TAKEAWAY, quantity=2)
 
         with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal:
@@ -196,7 +196,7 @@ class OrderPaymentServiceTests(PosTestCase):
 
         order.refresh_from_db()
         self.assertEqual(order.subtotal, 60000)
-        self.assertEqual(order.total, 66000)
+        self.assertEqual(order.total, 60000)
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(result['receipt'].status, Receipt.Status.SENT)
         self.assertEqual(order.receipts.count(), 1)

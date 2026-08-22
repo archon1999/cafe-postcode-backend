@@ -114,6 +114,12 @@ class Order(BaseModel):
         return int((Decimal(subtotal) * rate / Decimal('100')).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
     def capture_service_fee_snapshot(self):
+        if self.channel != self.Channel.HALL:
+            self.restaurant_service_fee_percent = Decimal('0')
+            self.hall_service_fee_percent = Decimal('0')
+            self.table_service_fee_percent = Decimal('0')
+            return
+
         self.restaurant_service_fee_percent = self._enabled_service_fee_percent(self.restaurant)
         hall = None
         table = None
@@ -130,6 +136,8 @@ class Order(BaseModel):
 
     @property
     def service_fee_percent(self) -> Decimal:
+        if self.channel != self.Channel.HALL:
+            return Decimal('0')
         return sum(
             (
                 self.restaurant_service_fee_percent or Decimal('0'),
@@ -144,6 +152,8 @@ class Order(BaseModel):
         return self.service_fee_percent > 0
 
     def get_service_fee_components(self) -> list[dict]:
+        if self.channel != self.Channel.HALL:
+            return []
         table_session = self.table_session if self.table_session_id else None
         hall = getattr(table_session, 'hall', None)
         table = getattr(table_session, 'table', None)
@@ -181,14 +191,16 @@ class Order(BaseModel):
 
         active_items = self.items.exclude(status=OrderItem.Status.CANCELLED)
         subtotal = active_items.aggregate(total=models.Sum('line_total')).get('total') or 0
-        service_fee = sum(
-            self.calculate_service_fee_amount(subtotal, percent)
-            for percent in (
-                self.restaurant_service_fee_percent,
-                self.hall_service_fee_percent,
-                self.table_service_fee_percent,
+        service_fee = 0
+        if self.channel == self.Channel.HALL:
+            service_fee = sum(
+                self.calculate_service_fee_amount(subtotal, percent)
+                for percent in (
+                    self.restaurant_service_fee_percent,
+                    self.hall_service_fee_percent,
+                    self.table_service_fee_percent,
+                )
             )
-        )
 
         calculated_total = subtotal + service_fee
         self.subtotal = subtotal

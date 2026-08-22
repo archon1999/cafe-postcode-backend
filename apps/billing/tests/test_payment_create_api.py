@@ -134,12 +134,19 @@ class PaymentCreateApiTests(APITestCase):
         order.recalculate_totals()
         return order
 
-    def test_takeaway_order_applies_service_fee_when_enabled(self):
+    def test_takeaway_order_does_not_apply_restaurant_service_fee(self):
         self.order.refresh_from_db()
 
         self.assertEqual(self.order.subtotal, 30000)
-        self.assertEqual(self.order.total, 33000)
-        self.assertEqual(self.order.calculated_total, 33000)
+        self.assertEqual(self.order.total, 30000)
+        self.assertEqual(self.order.calculated_total, 30000)
+
+    def test_delivery_order_does_not_apply_restaurant_service_fee(self):
+        order = self.create_delivery_order()
+
+        self.assertEqual(order.subtotal, 30000)
+        self.assertEqual(order.total, 30000)
+        self.assertEqual(order.calculated_total, 30000)
 
     @patch(
         'apps.billing.services.order_payment.charge_payment',
@@ -172,7 +179,7 @@ class PaymentCreateApiTests(APITestCase):
         item = self.order.items.get()
         self.assertEqual(item.line_total, 30000)
         self.assertEqual(self.order.subtotal, 30000)
-        self.assertEqual(self.order.calculated_total, 33000)
+        self.assertEqual(self.order.calculated_total, 30000)
         self.assertEqual(self.order.total, 15000)
         self.assertEqual(self.order.total_override, 15000)
         self.assertEqual(self.order.total_overridden_by_id, self.user.id)
@@ -194,7 +201,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn('finalTotal', response.data)
         self.order.refresh_from_db()
-        self.assertEqual(self.order.total, 33000)
+        self.assertEqual(self.order.total, 30000)
         self.assertIsNone(self.order.total_override)
 
     def test_invalid_payment_does_not_persist_prepared_total_override(self):
@@ -217,7 +224,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
         self.assertIn("method", response.data)
         self.order.refresh_from_db()
-        self.assertEqual(self.order.total, 33000)
+        self.assertEqual(self.order.total, 30000)
         self.assertIsNone(self.order.total_override)
 
     def test_rejects_qr_payment_method_for_new_pos_flow(self):
@@ -274,11 +281,11 @@ class PaymentCreateApiTests(APITestCase):
         payment = Payment.objects.get(order=self.order)
         self.assertEqual(payment.method, Payment.Method.MIXED)
         self.assertEqual(payment.cash_amount, 20000)
-        self.assertEqual(payment.card_amount, 13000)
+        self.assertEqual(payment.card_amount, 10000)
         self.assertEqual(payment.fiscal_cash_amount, 20000)
-        self.assertEqual(payment.fiscal_card_amount, 13000)
+        self.assertEqual(payment.fiscal_card_amount, 10000)
         transaction_call = local_http_request.call_args_list[1]
-        self.assertEqual(transaction_call.kwargs['query']['amount'], 1300000)
+        self.assertEqual(transaction_call.kwargs['query']['amount'], 1000000)
 
     def test_mixed_payment_rejects_invalid_breakdown_sum(self):
         response = self.client.post(
@@ -748,7 +755,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(payment.status, Payment.Status.PENDING)
         self.assertEqual(payment.method, Payment.Method.CARD)
         self.assertEqual(response.data['marta']['endpointUrl'], 'http://192.168.88.125:8090')
-        self.assertEqual(response.data['marta']['amount'], 3300000)
+        self.assertEqual(response.data['marta']['amount'], 3000000)
         self.assertEqual(response.data['marta']['taxNumber'], '307678400')
         self.assertNotIn('hmac_secret', response.data['marta'])
 

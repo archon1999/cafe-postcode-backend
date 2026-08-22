@@ -1,10 +1,11 @@
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.floor.models import DiningTable, TableSession
+from apps.floor.models import DiningTable, TableSession, TableSessionTable
 from apps.floor.services import (
     available_seat_count,
     restaurant_has_multiple_active_zones,
+    session_physical_tables,
 )
 from apps.sales.helpers import get_order_model
 from apps.users.helpers import get_user_model
@@ -44,6 +45,8 @@ class TableSessionSerializer(serializers.ModelSerializer):
     show_zone_name = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     service_fee_components = serializers.SerializerMethodField()
+    tables = serializers.SerializerMethodField()
+    group_table_count = serializers.SerializerMethodField()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -104,6 +107,22 @@ class TableSessionSerializer(serializers.ModelSerializer):
             0,
         )
 
+    @staticmethod
+    def get_tables(obj):
+        return [
+            {
+                "id": str(table.pk),
+                "name": table.name,
+                "table_number": table.table_number,
+                "hall_id": str(table.hall_id),
+                "is_primary": table.pk == obj.table_id,
+            }
+            for table in session_physical_tables(obj)
+        ]
+
+    def get_group_table_count(self, obj):
+        return len(self.get_tables(obj))
+
     class Meta:
         model = TableSession
         fields = (
@@ -119,6 +138,8 @@ class TableSessionSerializer(serializers.ModelSerializer):
             "table",
             "table_name",
             "table_number",
+            "tables",
+            "group_table_count",
             "opened_by",
             "assigned_waiter",
             "guest_count",
@@ -208,6 +229,15 @@ class TableSessionSerializer(serializers.ModelSerializer):
 
         if table.status == DiningTable.Status.BLOCKED:
             raise serializers.ValidationError({"table": _("This table is blocked.")})
+
+        if self.instance is None and TableSessionTable.objects.filter(
+            table=table,
+            released_at__isnull=True,
+            session__status__in=(TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT),
+        ).exists():
+            raise serializers.ValidationError(
+                {"table": _("This table is already part of an active table group.")}
+            )
 
         if guest_count is not None and guest_count > int(table.seat_count or 0):
             raise serializers.ValidationError(

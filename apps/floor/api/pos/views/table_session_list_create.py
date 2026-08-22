@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, permissions, serializers
 
-from apps.floor.models import DiningTable, TableSession
+from apps.floor.models import DiningTable, TableSession, TableSessionTable
 from apps.floor.api.admin.serializers import TableSessionSerializer
 from apps.floor.services import (
     annotate_zone_name_visibility,
@@ -54,6 +54,14 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
         guest_count = serializer.validated_data.get('guest_count', 1)
         if table.status == DiningTable.Status.BLOCKED:
             raise serializers.ValidationError({'table': _('This table is blocked.')})
+        if TableSessionTable.objects.select_for_update(of=('self',)).filter(
+            table=table,
+            released_at__isnull=True,
+            session__status__in=(TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT),
+        ).exists():
+            raise serializers.ValidationError(
+                {'table': _('This table is already part of an active table group.')}
+            )
         if guest_count > available_seat_count(table):
             raise serializers.ValidationError(
                 {'guest_count': _('Guest count exceeds the seats currently available at this table.')}

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.floor.models import TableSession
+from apps.floor.services import session_physical_tables
 from apps.kitchen.models import KitchenTicket
 from apps.sales.helpers import get_order_model
 
@@ -65,10 +66,31 @@ def resolve_service_state(session: TableSession) -> str:
 
 class ActiveSessionSummarySerializer(serializers.ModelSerializer):
     service_state = serializers.SerializerMethodField()
+    primary_table_id = serializers.UUIDField(source='table_id', read_only=True)
+    table_ids = serializers.SerializerMethodField()
+    table_numbers = serializers.SerializerMethodField()
 
     class Meta:
         model = TableSession
-        fields = ('id', 'guest_count', 'status', 'assigned_waiter_id', 'created_at', 'service_state')
+        fields = (
+            'id',
+            'guest_count',
+            'status',
+            'assigned_waiter_id',
+            'created_at',
+            'service_state',
+            'primary_table_id',
+            'table_ids',
+            'table_numbers',
+        )
 
     def get_service_state(self, obj):
         return resolve_service_state(obj)
+
+    @staticmethod
+    def get_table_ids(obj):
+        return [str(table.pk) for table in session_physical_tables(obj)]
+
+    @staticmethod
+    def get_table_numbers(obj):
+        return [table.table_number for table in session_physical_tables(obj)]

@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.db import models
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -14,6 +15,7 @@ from .active_session_summary import ActiveSessionSummarySerializer
 
 
 PREFETCHED_ACTIVE_SESSIONS_ATTR = "serialized_active_sessions"
+PREFETCHED_ACTIVE_ATTACHED_SESSION_LINKS_ATTR = "serialized_active_attached_session_links"
 _SERIALIZER_ACTIVE_SESSIONS_CACHE_ATTR = "_serializer_active_sessions"
 _SERIALIZER_OCCUPIED_GUEST_COUNT_CACHE_ATTR = "_serializer_occupied_guest_count"
 _MISSING = object()
@@ -90,8 +92,15 @@ class DiningTableSerializer(serializers.ModelSerializer):
             return cached_sessions
 
         optimized_sessions = getattr(obj, PREFETCHED_ACTIVE_SESSIONS_ATTR, _MISSING)
-        if optimized_sessions is not _MISSING:
-            active_sessions = list(optimized_sessions)
+        optimized_links = getattr(obj, PREFETCHED_ACTIVE_ATTACHED_SESSION_LINKS_ATTR, _MISSING)
+        if optimized_sessions is not _MISSING or optimized_links is not _MISSING:
+            direct_sessions = [] if optimized_sessions is _MISSING else list(optimized_sessions)
+            attached_sessions = [] if optimized_links is _MISSING else [link.session for link in optimized_links]
+            active_sessions = sorted(
+                {session.pk: session for session in [*direct_sessions, *attached_sessions]}.values(),
+                key=lambda item: item.created_at,
+                reverse=True,
+            )
             setattr(obj, _SERIALIZER_ACTIVE_SESSIONS_CACHE_ATTR, active_sessions)
             return active_sessions
 
@@ -100,9 +109,14 @@ class DiningTableSerializer(serializers.ModelSerializer):
         )
         if prefetched_sessions is None:
             active_sessions = list(
-                obj.table_sessions.filter(status__in=ACTIVE_SESSION_STATUSES).order_by(
-                    "-created_at"
-                )
+                TableSession.objects.filter(
+                    models.Q(table=obj)
+                    | models.Q(
+                        attached_table_links__table=obj,
+                        attached_table_links__released_at__isnull=True,
+                    ),
+                    status__in=ACTIVE_SESSION_STATUSES,
+                ).distinct().order_by("-created_at")
             )
         else:
             active_sessions = sorted(

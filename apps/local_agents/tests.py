@@ -19,6 +19,7 @@ from apps.local_agents.mutations import _allowed_mutation, _request_hash
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, Receipt
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.devices.models import Device
+from apps.floor.models import DiningTable, TableSession
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintDocument, PrintTemplate
@@ -732,6 +733,39 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             ['restaurant', 'hall', 'table'],
         )
 
+    def test_bootstrap_keeps_grouped_secondary_table_on_the_same_session(self):
+        source = self.create_table_session(table=self.table, guest_count=2)
+        self.table.status = DiningTable.Status.OCCUPIED
+        self.table.save(update_fields=['status', 'updated_at'])
+        secondary = DiningTable.objects.create(
+            hall=self.hall,
+            zone=self.zone,
+            name='Grouped secondary',
+            table_number=2,
+            seat_count=4,
+        )
+        grouped = self.client.post(
+            f'/api/v1/pos/floor/table-sessions/{source.pk}/group/',
+            {'tableIds': [str(secondary.pk)]},
+            format='json',
+        )
+        self.assertEqual(grouped.status_code, status.HTTP_200_OK, grouped.data)
+
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        hall = next(row for row in response.data['halls'] if str(row['id']) == str(self.hall.pk))
+        by_id = {str(row['id']): row for row in hall['tables']}
+        for table_id in (str(self.table.pk), str(secondary.pk)):
+            self.assertEqual(str(by_id[table_id]['active_session']['id']), str(source.pk))
+            self.assertCountEqual(
+                [str(value) for value in by_id[table_id]['active_session']['table_ids']],
+                [str(self.table.pk), str(secondary.pk)],
+            )
+
     def test_bootstrap_excludes_stale_kitchen_ticket_for_closed_order(self):
         order = Order.objects.create(
             restaurant=self.restaurant,
@@ -879,6 +913,53 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertFalse(first.data['results'][0]['replayed'])
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(Order.objects.filter(id=order_id, restaurant=self.restaurant).count(), 1)
+
+    def test_table_transfer_mutation_is_replayed_once(self):
+        source = self.create_table_session(table=self.table, guest_count=2)
+        self.table.status = DiningTable.Status.OCCUPIED
+        self.table.save(update_fields=['status', 'updated_at'])
+        target = DiningTable.objects.create(
+            hall=self.hall,
+            zone=self.zone,
+            name='Replay target',
+            table_number=2,
+            seat_count=4,
+        )
+        operation = {
+            'operationId': 'edge-table-transfer-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/floor/table-sessions/{source.pk}/transfer/',
+            'body': {
+                'targetTableId': str(target.pk),
+                'expectedTargetSessionIds': [],
+            },
+        }
+
+        first = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        second = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertEqual(first.data['results'][0]['status'], status.HTTP_200_OK, first.data)
+        self.assertFalse(first.data['results'][0]['replayed'])
+        self.assertTrue(second.data['results'][0]['replayed'])
+        source.refresh_from_db()
+        self.table.refresh_from_db()
+        target.refresh_from_db()
+        self.assertEqual(source.status, TableSession.Status.OPEN)
+        self.assertEqual(source.table_id, target.pk)
+        self.assertEqual(self.table.status, DiningTable.Status.AVAILABLE)
+        self.assertEqual(target.status, DiningTable.Status.OCCUPIED)
 
     def test_revoked_originating_pos_device_is_denied_even_for_inflight_batch(self):
         now = timezone.now()

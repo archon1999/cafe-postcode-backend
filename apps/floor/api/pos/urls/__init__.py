@@ -7,6 +7,9 @@ from apps.floor.api.pos.views import (
     TableSessionListCreateView,
     TableSessionMergeView,
     TableSessionMoveView,
+    TableSessionGroupView,
+    TableSessionTransferView,
+    TableSessionUngroupView,
 )
 
 urlpatterns = [
@@ -16,4 +19,7 @@ urlpatterns = [
     path('table-sessions/<uuid:pk>/', TableSessionDetailView.as_view()),
     path('table-sessions/<uuid:pk>/move/', TableSessionMoveView.as_view()),
     path('table-sessions/<uuid:pk>/merge/', TableSessionMergeView.as_view()),
+    path('table-sessions/<uuid:pk>/transfer/', TableSessionTransferView.as_view()),
+    path('table-sessions/<uuid:pk>/group/', TableSessionGroupView.as_view()),
+    path('table-sessions/<uuid:pk>/ungroup/', TableSessionUngroupView.as_view()),
 ]

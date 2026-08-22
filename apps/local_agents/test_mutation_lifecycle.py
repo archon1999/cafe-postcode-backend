@@ -19,6 +19,13 @@ class LocalAgentMutationLifecycleTests(SimpleTestCase):
                 "/api/v1/pos/billing/expenses/00000000-0000-4000-8000-000000000001/void/",
             )
         )
+        for action in ("transfer", "group", "ungroup"):
+            self.assertTrue(
+                allowed_mutation(
+                    "POST",
+                    f"/api/v1/pos/floor/table-sessions/00000000-0000-4000-8000-000000000001/{action}/",
+                )
+            )
 
     def test_contract_failures_are_quarantined_with_machine_readable_code(self):
         result = LocalAgentMutationProcessor().process(

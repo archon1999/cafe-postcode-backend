@@ -33,6 +33,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/local-agents/', include('apps.local_agents.admin_urls')),
     path(f'{API_V1_PREFIX}admin/telegram-reports/', include('apps.telegram_reports.api.admin_urls')),
     path(f'{API_V1_PREFIX}admin/devices/', include('apps.devices.admin_urls')),
+    path(f'{API_V1_PREFIX}admin/monitoring/', include('apps.devices.monitoring_urls')),
     path(f'{API_V1_PREFIX}admin/control/', include('apps.devices.control_urls')),
     path(
         f'{API_V1_PREFIX}admin/security-events/',
