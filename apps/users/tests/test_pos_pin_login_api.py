@@ -148,7 +148,7 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
     def test_device_bound_session_prebinds_public_key_without_returning_a_token(self, execute):
         _agent, agent_device, pos_device = self._paired_transport_session()
         execute.return_value = {
-            'terminalId': 'pos-terminal-12345678',
+            'terminalId': str(pos_device.id),
             'deviceId': str(pos_device.id),
             'restaurantId': str(self.restaurant.id),
             'coordinatorUrls': ['http://192.168.1.20:18181'],
@@ -166,14 +166,17 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['coordinator']['restaurantId'], str(self.restaurant.id))
         self.assertNotIn('edgeToken', response.data['coordinator'])
-        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.20:18181'])
+        self.assertEqual(
+            response.data['coordinator']['coordinatorUrls'],
+            ['http://127.0.0.1:18181', 'http://192.168.1.20:18181'],
+        )
         self.assertEqual(response.data['coordinator']['agentDeviceId'], str(agent_device.id))
         self.assertEqual(response.data['coordinator']['agentSigningPublicKey'], agent_device.public_key)
         execute.assert_called_once_with(
             restaurant=self.restaurant,
             command_type='edge.terminal.bind',
             payload={
-                'terminalId': 'pos-terminal-12345678',
+                'terminalId': str(pos_device.id),
                 'terminalName': 'Main POS',
                 'deviceId': str(pos_device.id),
                 'publicKeyAlgorithm': 'P256_SHA256',
@@ -197,7 +200,10 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
         response = self.client.post('/api/v1/pos/auth/transport/', {}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.20:18181'])
+        self.assertEqual(
+            response.data['coordinator']['coordinatorUrls'],
+            ['http://127.0.0.1:18181', 'http://192.168.1.20:18181'],
+        )
         self.assertNotIn('edgeToken', response.data['coordinator'])
 
     @patch('apps.users.api.pos.views.auth.LocalAgentCommandService.execute')
@@ -222,7 +228,10 @@ class PosPinLoginApiTests(PosTestDataMixin, APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertNotIn('edgeToken', response.data['coordinator'])
-        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.20:18181'])
+        self.assertEqual(
+            response.data['coordinator']['coordinatorUrls'],
+            ['http://127.0.0.1:18181', 'http://192.168.1.20:18181'],
+        )
 
     def test_pos_pin_login_rejects_inactive_employee_with_explicit_message(self):
         response = self.client.post(

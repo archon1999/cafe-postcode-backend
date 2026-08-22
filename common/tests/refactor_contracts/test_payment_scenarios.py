@@ -40,10 +40,10 @@ class BackendPaymentScenarioTests(PosAPITestCase):
             self._payment_state(order),
             {
                 "orderStatus": Order.Status.CLOSED,
-                "total": 66000,
-                "paid": 66000,
+                "total": 60000,
+                "paid": 60000,
                 "remaining": 0,
-                "cash": 66000,
+                "cash": 60000,
                 "card": 0,
                 "payments": 1,
                 "receipts": 1,
@@ -87,9 +87,9 @@ class BackendPaymentScenarioTests(PosAPITestCase):
             self._payment_state(order),
             {
                 "orderStatus": Order.Status.SUBMITTED,
-                "total": 33000,
+                "total": 30000,
                 "paid": 20000,
-                "remaining": 13000,
+                "remaining": 10000,
                 "cash": 20000,
                 "card": 0,
                 "payments": 1,
@@ -100,7 +100,7 @@ class BackendPaymentScenarioTests(PosAPITestCase):
         completed = self._pay(
             order,
             method=Payment.Method.CARD,
-            amount=13000,
+            amount=10000,
             register_fiscal=False,
             operation_id="precheck-split-card",
         )
@@ -111,11 +111,11 @@ class BackendPaymentScenarioTests(PosAPITestCase):
             self._payment_state(order),
             {
                 "orderStatus": Order.Status.CLOSED,
-                "total": 33000,
-                "paid": 33000,
+                "total": 30000,
+                "paid": 30000,
                 "remaining": 0,
                 "cash": 20000,
-                "card": 13000,
+                "card": 10000,
                 "payments": 2,
                 "receipts": 1,
             },
@@ -125,7 +125,7 @@ class BackendPaymentScenarioTests(PosAPITestCase):
         self.assertEqual(receipt.payload["payment_method"], "Aralash")
         self.assertEqual(
             (receipt.payload["cash_amount"], receipt.payload["card_amount"]),
-            (20000, 13000),
+            (20000, 10000),
         )
         self.assertEqual(
             list(

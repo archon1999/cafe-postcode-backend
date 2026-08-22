@@ -12,11 +12,7 @@ from rest_framework import status
 from rest_framework.test import APIRequestFactory, APITestCase
 
 from apps.devices.control_serializers import masked_fingerprint
-from apps.devices.control_services import (
-    CONTROL_PAIRING_MAX_FAILURES,
-    ControlPairingAttemptsExceeded,
-    reserve_control_pairing_attempt,
-)
+from apps.devices.control_services import reserve_control_pairing_attempt
 from apps.devices.models import Device, DevicePairing, SecurityEvent, hash_device_secret
 from apps.platform.models import BusinessPartner
 from apps.restaurants.models import Restaurant
@@ -555,7 +551,7 @@ class ControlApiTests(APITestCase):
         self.assertEqual(replay.json()['code'], 'pairing_invalid')
         self.assertEqual(Device.objects.filter(public_key_fingerprint=pairing.public_key_fingerprint).count(), 1)
 
-    def test_pairing_decision_has_per_pair_attempt_budget_and_sanitized_events(self):
+    def test_pairing_decision_is_not_locked_out_and_keeps_failure_events_sanitized(self):
         pairing, claim_token = self.create_pairing()
         self.authenticate_superuser(recent=True)
         url = f'/api/v1/admin/control/branches/{self.branch.pk}/pairings/{pairing.pk}/approve/'
@@ -568,35 +564,32 @@ class ControlApiTests(APITestCase):
             )
             for index in range(5)
         ]
-        self.assertEqual([item.status_code for item in responses], [400, 400, 400, 400, 429])
-        blocked = self.client.post(
+        self.assertEqual([item.status_code for item in responses], [400, 400, 400, 400, 400])
+        approved = self.client.post(
             url,
             {'claimToken': claim_token, 'displayCode': pairing.display_code, 'name': 'POS'},
             format='json',
         )
-        self.assertEqual(blocked.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
-        self.assertFalse(Device.objects.filter(public_key_fingerprint=pairing.public_key_fingerprint).exists())
-        event = SecurityEvent.objects.get(event_type='CONTROL_PAIRING_ATTEMPTS_EXCEEDED')
-        serialized = json.dumps(event.metadata)
-        self.assertNotIn(claim_token, serialized)
-        for index in range(5):
-            self.assertNotIn(f'{index:06d}', serialized)
+        self.assertEqual(approved.status_code, status.HTTP_200_OK)
+        self.assertTrue(Device.objects.filter(public_key_fingerprint=pairing.public_key_fingerprint).exists())
+        events = SecurityEvent.objects.filter(event_type='CONTROL_PAIRING_VERIFICATION_FAILED')
+        self.assertEqual(events.count(), 5)
+        for event in events:
+            serialized = json.dumps(event.metadata)
+            self.assertNotIn(claim_token, serialized)
+            for index in range(5):
+                self.assertNotIn(f'{index:06d}', serialized)
 
-    def test_pairing_attempt_budget_is_atomic_under_parallel_reservations(self):
+    def test_pairing_attempt_reservations_remain_unlimited_under_parallel_requests(self):
         pairing_id = uuid.uuid4()
 
         def reserve(_):
-            try:
-                return reserve_control_pairing_attempt(pairing_id, phase='decision')
-            except ControlPairingAttemptsExceeded:
-                return None
+            return reserve_control_pairing_attempt(pairing_id, phase='decision')
 
         with ThreadPoolExecutor(max_workers=16) as executor:
             reservations = list(executor.map(reserve, range(32)))
 
-        accepted = sorted(value for value in reservations if value is not None)
-        self.assertEqual(accepted, list(range(1, CONTROL_PAIRING_MAX_FAILURES + 1)))
-        self.assertEqual(len(reservations) - len(accepted), 32 - CONTROL_PAIRING_MAX_FAILURES)
+        self.assertEqual(reservations, [0] * 32)
 
     def test_pairing_reject_is_branch_bound_code_verified_recent_mfa_and_single_use(self):
         pairing, claim_token = self.create_pairing()

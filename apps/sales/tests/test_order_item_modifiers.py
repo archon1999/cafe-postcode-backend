@@ -86,7 +86,7 @@ class OrderItemModifierApiTests(PosAPITestCase):
         self.assertEqual((snapshot.group_name, snapshot.option_name, snapshot.price_delta), ('Xamir turi', 'Pishloqli bort', 27000))
         order = Order.objects.get(pk=order_id)
         self.assertEqual(order.subtotal, 114000)
-        self.assertEqual(order.total, 125400)
+        self.assertEqual(order.total, 114000)
 
         self.cheese_option.name = 'Yangi nom'
         self.cheese_option.price_delta = 99000

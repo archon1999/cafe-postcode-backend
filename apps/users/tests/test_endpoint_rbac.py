@@ -362,6 +362,7 @@ class EndpointRBACPermissionTests(TestCase):
                 "control.branches.view",
                 "control.pairings.manage",
                 "control.devices.revoke",
+                "control.telegram.manage",
             },
         )
 

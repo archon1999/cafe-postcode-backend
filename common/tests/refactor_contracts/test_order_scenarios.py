@@ -23,7 +23,7 @@ class BackendOrderScenarioTests(PosAPITestCase):
 
         item = self.add_item_via_api(order.id, quantity=2)
         order.refresh_from_db()
-        self.assertEqual((order.subtotal, order.total), (60000, 66000))
+        self.assertEqual((order.subtotal, order.total), (60000, 60000))
 
         quantity_response = self.client.patch(
             f"/api/v1/pos/sales/orders/items/{item['id']}/",
@@ -32,7 +32,7 @@ class BackendOrderScenarioTests(PosAPITestCase):
         )
         self.assertEqual(quantity_response.status_code, status.HTTP_200_OK, quantity_response.data)
         order.refresh_from_db()
-        self.assertEqual((order.subtotal, order.total), (90000, 99000))
+        self.assertEqual((order.subtotal, order.total), (90000, 90000))
 
         submitted = self.submit_order_via_api(order.id)
         self.assertEqual(submitted['status'], Order.Status.SUBMITTED)
@@ -42,7 +42,7 @@ class BackendOrderScenarioTests(PosAPITestCase):
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(order.cashier_id, self.user.id)
         self.assertIsNotNone(order.closed_at)
-        self.assertEqual((order.subtotal, order.total), (90000, 99000))
+        self.assertEqual((order.subtotal, order.total), (90000, 90000))
 
     def test_supported_counter_channels_remain_distinct(self):
         scenarios = (

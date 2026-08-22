@@ -206,7 +206,7 @@ class BackendRBACCharacterizationTests(APITestCase):
                     "pos_takeaway_menu.view": True,
                     "pos_open_checks.view": True,
                     "pos_payments.create": True,
-                    "pos_halls.view": False,
+                    "pos_halls.view": True,
                     "pos_payment_order_items.create": False,
                 },
                 "fast_food_cashier": {

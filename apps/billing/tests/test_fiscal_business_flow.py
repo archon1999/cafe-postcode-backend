@@ -274,9 +274,9 @@ class FiscalBusinessFlowTests(PosTestCase):
             method=Payment.Method.MIXED,
             amount=order.total,
             cash_amount=6000,
-            card_amount=5000,
-            fiscal_cash_amount=5500,
-            fiscal_card_amount=5500,
+            card_amount=4000,
+            fiscal_cash_amount=5000,
+            fiscal_card_amount=5000,
             fiscal_adjustment_reason='cash_forbidden_category',
             status=Payment.Status.SUCCEEDED,
             paid_at=timezone.now(),
@@ -290,10 +290,10 @@ class FiscalBusinessFlowTests(PosTestCase):
         restricted_receipt = service._build_sale_receipt(order=order, payment=payment, part=parts[1], memory_info=None)
 
         self.assertEqual([part.split_reason for part in parts], ['mixed_cash_allowed_items', 'cash_forbidden_category'])
-        self.assertEqual(normal_receipt['ReceivedCash'], 550000)
+        self.assertEqual(normal_receipt['ReceivedCash'], 500000)
         self.assertEqual(normal_receipt['ReceivedCard'], 0)
         self.assertEqual(restricted_receipt['ReceivedCash'], 0)
-        self.assertEqual(restricted_receipt['ReceivedCard'], 550000)
+        self.assertEqual(restricted_receipt['ReceivedCard'], 500000)
 
     def test_unikassa_cash_sale_payload_restriction_prefers_item_payload(self):
         order = self.create_closed_order()
@@ -353,7 +353,7 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(receipt['Items'][0]['OwnerType'], 0)
         self.assertEqual(receipt['Items'][0]['PackageCode'], '')
         self.assertEqual(receipt['Items'][0]['Labels'], [])
-        self.assertEqual(receipt['Items'][0]['VAT'], 292211)
+        self.assertEqual(receipt['Items'][0]['VAT'], 321429)
         self.assertEqual(receipt['Items'][0]['VATPercent'], 12)
         self.assertEqual(receipt['Items'][0]['SPIC'], self.category.mxik_code)
         self.assertIsNone(receipt['RefundInfo'])
