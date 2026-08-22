@@ -618,6 +618,8 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Site coordinator')
 
     def test_bootstrap_returns_offline_context_scoped_to_agent_restaurant(self):
+        self.restaurant.payment_total_mode = Restaurant.PaymentTotalMode.CASHIER_EDITABLE
+        self.restaurant.save(update_fields=['payment_total_mode', 'updated_at'])
         shift = CashShift.objects.create(
             cash_desk=self.cash_desk,
             cashier=self.user,
@@ -634,6 +636,7 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['schemaVersion'], 1)
         self.assertEqual(response.data['restaurant']['restaurant_id'], str(self.restaurant.id))
+        self.assertEqual(response.data['restaurant']['payment_total_mode'], 'cashier_editable')
         self.assertEqual(response.data['users'][0]['userId'], str(self.user.id))
         self.assertTrue(response.data['users'][0]['pinHash'].startswith('pbkdf2_'))
         self.assertGreaterEqual(len(response.data['menu']), 1)

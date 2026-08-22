@@ -168,7 +168,6 @@ class PaymentCreateApiTests(APITestCase):
                 'method': Payment.Method.CASH,
                 'amount': 15000,
                 'finalTotal': 15000,
-                'totalOverrideReason': 'Mijoz bilan kelishilgan narx',
                 'register_fiscal': False,
             },
             format='json',
@@ -182,6 +181,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(self.order.calculated_total, 30000)
         self.assertEqual(self.order.total, 15000)
         self.assertEqual(self.order.total_override, 15000)
+        self.assertEqual(self.order.total_override_reason, '')
         self.assertEqual(self.order.total_overridden_by_id, self.user.id)
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(response.data['payment']['amount'], 15000)

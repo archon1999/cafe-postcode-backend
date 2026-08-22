@@ -55,18 +55,9 @@ class OrderPaymentPolicyMixin:
             order.total_overridden_by = None
             order.total_overridden_at = None
         else:
-            normalized_reason = str(reason or "").strip()
-            if not normalized_reason:
-                raise ValidationError(
-                    {
-                        "totalOverrideReason": _(
-                            "Enter a reason for changing the final total."
-                        )
-                    }
-                )
             order.total = final_total
             order.total_override = final_total
-            order.total_override_reason = normalized_reason
+            order.total_override_reason = ""
             order.total_overridden_by = overridden_by
             order.total_overridden_at = timezone.now()
         if save:
