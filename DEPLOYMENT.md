@@ -82,7 +82,9 @@ FAKTURA_CLIENT_SECRET=<faktura-client-secret>
 
 Compose passes these credentials only to the `web` service. The Faktura URLs,
 timeout, and optional proxy can also be overridden with the corresponding
-`FAKTURA_*` values documented in `.env.production.example`.
+`FAKTURA_*` values documented in `.env.production.example`. The backend can
+start without these credentials, but Faktura company lookup remains unavailable
+until all four credential values are configured.
 
 ## Telegram Sales Reports Bot
 
