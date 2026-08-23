@@ -889,12 +889,19 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             completed_age=timedelta(minutes=1),
             channel=Order.Channel.HALL,
         )
-        stale_done_active = create_ticket(
+        done_within_pos_history = create_ticket(
             number=9105,
             order_status=Order.Status.OPEN,
             ticket_status=KitchenTicket.Status.DONE,
             age=timedelta(minutes=3),
             completed_age=timedelta(minutes=3),
+        )
+        done_outside_pos_history = create_ticket(
+            number=9106,
+            order_status=Order.Status.OPEN,
+            ticket_status=KitchenTicket.Status.DONE,
+            age=timedelta(hours=25),
+            completed_age=timedelta(hours=25),
         )
 
         response = self.client.get(
@@ -908,7 +915,8 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertIn(str(closed_fresh.id), ticket_ids)
         self.assertNotIn(str(closed_stale.id), ticket_ids)
         self.assertIn(str(recently_done_closed.id), ticket_ids)
-        self.assertNotIn(str(stale_done_active.id), ticket_ids)
+        self.assertIn(str(done_within_pos_history.id), ticket_ids)
+        self.assertNotIn(str(done_outside_pos_history.id), ticket_ids)
         self.assertLess(ticket_ids.index(str(active_old.id)), ticket_ids.index(str(closed_fresh.id)))
 
 

@@ -162,11 +162,29 @@ class KitchenStatusApiTests(APITestCase):
         response = self.client.get('/api/v1/pos/kitchen/queue/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data['data']), 1)
-        self.assertEqual(str(response.data['data'][0]['id']), str(self.ticket.id))
-        self.assertEqual(response.data['data'][0]['items'][0]['sale_unit'], 'piece')
-        self.assertEqual(response.data['data'][0]['display_name'], '17')
-        self.assertEqual(response.data['data'][0]['channel'], Order.Channel.HALL)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]['id']), str(self.ticket.id))
+        self.assertEqual(response.data[0]['items'][0]['sale_unit'], 'piece')
+        self.assertEqual(response.data[0]['display_name'], '17')
+        self.assertEqual(response.data[0]['channel'], Order.Channel.HALL)
+
+    def test_queue_is_not_limited_to_default_page_size(self):
+        KitchenTicket.objects.bulk_create([
+            KitchenTicket(
+                restaurant=self.restaurant,
+                order=self.order,
+                prep_station=self.prep_station,
+                dispatch_number=dispatch_number,
+                status=KitchenTicket.Status.NEW,
+                routed_via=KitchenTicket.RouteMode.DISPLAY,
+            )
+            for dispatch_number in range(2, 12)
+        ])
+
+        response = self.client.get('/api/v1/pos/kitchen/queue/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 11)
 
     def test_queue_excludes_stale_new_ticket_for_closed_order(self):
         self.order.status = Order.Status.CLOSED
@@ -177,7 +195,7 @@ class KitchenStatusApiTests(APITestCase):
         response = self.client.get('/api/v1/pos/kitchen/queue/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['data'], [])
+        self.assertEqual(response.data, [])
 
     def test_status_updates_reject_foreign_resources_without_an_oracle(self):
         other_restaurant = Restaurant.objects.create(name='Foreign kitchen tenant')

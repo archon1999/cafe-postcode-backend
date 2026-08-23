@@ -1,10 +1,9 @@
-from datetime import timedelta
-
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, permissions
 
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
+from apps.kitchen.constants import KITCHEN_POS_QUEUE_WINDOW
 from apps.kitchen.models import KitchenTicket
 from apps.kitchen.services import complete_stale_closed_order_kitchen_work
 from apps.floor.services import annotate_zone_name_visibility
@@ -20,6 +19,7 @@ from common.api.scopes import get_request_restaurant
 
 class KitchenQueueView(generics.ListAPIView):
     serializer_class = KitchenTicketSerializer
+    pagination_class = None
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     feature_gate_service_class = FeatureGateService
 
@@ -48,7 +48,7 @@ class KitchenQueueView(generics.ListAPIView):
         if status_value:
             queryset = queryset.filter(status=status_value)
         else:
-            cutoff = timezone.now() - timedelta(days=1)
+            cutoff = timezone.now() - KITCHEN_POS_QUEUE_WINDOW
             active_order_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
             queryset = queryset.filter(
                 Q(

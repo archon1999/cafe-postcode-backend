@@ -113,9 +113,7 @@ class KitchenDispatchFullFlowTests(PosAPITestCase):
 
         queue_response = self.client.get('/api/v1/pos/kitchen/queue/')
         self.assertEqual(queue_response.status_code, 200, queue_response.data)
-        addition_row = next(
-            row for row in queue_response.data['data'] if str(row['id']) == str(addition_ticket.id)
-        )
+        addition_row = next(row for row in queue_response.data if str(row['id']) == str(addition_ticket.id))
         self.assertTrue(addition_row['is_addition'])
         self.assertEqual(addition_row['zone_name'], self.zone.name)
         self.assertTrue(addition_row['show_zone_name'])
