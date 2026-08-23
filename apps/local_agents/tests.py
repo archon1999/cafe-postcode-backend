@@ -919,9 +919,11 @@ class LocalAgentMutationPushTests(PosAPITestCase):
 
     def test_order_create_mutation_is_replayed_once(self):
         order_id = uuid.uuid4()
+        occurred_at = (timezone.now() - timedelta(hours=8)).replace(microsecond=123456)
         operation = {
             'operationId': 'edge-order-create-1',
             'userId': str(self.user.id),
+            'occurredAt': occurred_at.isoformat(),
             'method': 'POST',
             'path': '/api/v1/pos/sales/orders/',
             'body': {
@@ -949,6 +951,39 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertFalse(first.data['results'][0]['replayed'])
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(Order.objects.filter(id=order_id, restaurant=self.restaurant).count(), 1)
+        order = Order.objects.get(id=order_id, restaurant=self.restaurant)
+        self.assertEqual(order.created_at, occurred_at)
+
+    def test_future_order_occurrence_time_is_quarantined(self):
+        order_id = uuid.uuid4()
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [
+                    {
+                        'operationId': 'edge-order-future-time',
+                        'userId': str(self.user.id),
+                        'occurredAt': (timezone.now() + timedelta(hours=1)).isoformat(),
+                        'method': 'POST',
+                        'path': '/api/v1/pos/sales/orders/',
+                        'body': {
+                            'id': str(order_id),
+                            'channel': 'takeaway',
+                            'guestCount': 1,
+                        },
+                    }
+                ]
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        result = response.data['results'][0]
+        self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(result['code'], 'INVALID_OPERATION_OCCURRED_AT')
+        self.assertEqual(result['classification'], 'quarantined')
+        self.assertFalse(Order.objects.filter(id=order_id).exists())
 
     def test_table_transfer_mutation_is_replayed_once(self):
         source = self.create_table_session(table=self.table, guest_count=2)
