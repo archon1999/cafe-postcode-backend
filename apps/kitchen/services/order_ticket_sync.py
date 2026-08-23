@@ -172,7 +172,7 @@ class OrderTicketSyncService:
             ticket.save(update_fields=[*updates, 'updated_at'])
 
     def _sync_order_status(self, order: Order):
-        if order.status in (Order.Status.OPEN, Order.Status.CLOSED, Order.Status.CANCELLED):
+        if order.status in (Order.Status.OPEN, Order.Status.CANCELLED):
             return
 
         routed_items = order.items.exclude(status=OrderItem.Status.CANCELLED).filter(
@@ -188,13 +188,17 @@ class OrderTicketSyncService:
             and not routed_items.exclude(status__in=self.kitchen_complete_item_statuses).exists()
         )
 
-        if is_ready and order.status != Order.Status.READY:
-            order.status = Order.Status.READY
-            order.save(update_fields=['status', 'updated_at'])
+        if is_ready:
+            if order.status not in (Order.Status.READY, Order.Status.CLOSED):
+                order.status = Order.Status.READY
+                order.save(update_fields=['status', 'updated_at'])
             from apps.kitchen.services.kitchen_announcements import create_ready_announcement
 
             create_ready_announcement(order=order)
-            logger.info('Order moved to ready state', extra={'order_id': str(order.pk)})
+            logger.info(
+                'Order ready announcement ensured',
+                extra={'order_id': str(order.pk), 'order_status': order.status},
+            )
         elif not is_ready and order.status == Order.Status.READY:
             order.status = Order.Status.SUBMITTED
             order.save(update_fields=['status', 'updated_at'])

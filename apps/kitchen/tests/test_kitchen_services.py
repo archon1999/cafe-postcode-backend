@@ -1,4 +1,4 @@
-from apps.kitchen.models import KitchenTicket, KitchenTicketLine
+from apps.kitchen.models import KitchenAnnouncement, KitchenTicket, KitchenTicketLine
 from apps.kitchen.services import OrderTicketSyncService
 from apps.kitchen.services.kitchen_status import KitchenStatusService
 from apps.integrations.models import IntegrationConfig
@@ -213,3 +213,22 @@ class KitchenStatusServiceTests(PosTestCase):
         self.assertEqual(self.order_item.status, OrderItem.Status.DONE)
         self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
         self.assertEqual(self.order.status, Order.Status.READY)
+
+    def test_update_ticket_status_done_announces_closed_order_idempotently(self):
+        self.order.status = Order.Status.CLOSED
+        self.order.save(update_fields=['status', 'updated_at'])
+
+        for _attempt in range(2):
+            self.service.update_ticket_status(ticket=self.ticket, status=KitchenTicket.Status.DONE)
+
+        self.order.refresh_from_db()
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.status, KitchenTicket.Status.DONE)
+        self.assertEqual(self.order.status, Order.Status.CLOSED)
+        self.assertEqual(
+            KitchenAnnouncement.objects.filter(
+                order=self.order,
+                kind=KitchenAnnouncement.Kind.AUTO,
+            ).count(),
+            1,
+        )
