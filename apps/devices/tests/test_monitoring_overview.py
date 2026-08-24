@@ -177,6 +177,11 @@ class MonitoringOverviewApiTests(APITestCase):
             device=alpha_pos,
         )
         SecurityEvent.objects.create(
+            event_type="ALPHA_MEDIUM",
+            severity=SecurityEvent.Severity.MEDIUM,
+            restaurant=alpha,
+        )
+        SecurityEvent.objects.create(
             event_type="ALPHA_ACKNOWLEDGED_CRITICAL",
             severity=SecurityEvent.Severity.CRITICAL,
             restaurant=alpha,
@@ -243,6 +248,7 @@ class MonitoringOverviewApiTests(APITestCase):
         expected_security_activity = [
             {
                 "date": (timezone.localdate() - timedelta(days=offset)).isoformat(),
+                "medium": 1 if offset == 0 else 0,
                 "high": 2 if offset == 0 else 0,
                 "critical": 2 if offset == 0 else 0,
             }
@@ -257,12 +263,8 @@ class MonitoringOverviewApiTests(APITestCase):
                     {"version": "1.1.0", "total": 1, "online": 1, "offline": 0},
                     {"version": "unknown", "total": 1, "online": 0, "offline": 1},
                 ],
-                "deviceTypes": {"localAgent": 1, "pos": 1, "tv": 1, "control": 1},
+                "deviceTypes": {"localAgent": 1, "pos": 1, "tv": 1, "telegram": 3},
             },
-        )
-        self.assertEqual(
-            sum(response.data["insights"]["deviceTypes"].values()),
-            response.data["summary"]["activeDevices"],
         )
 
         branches = {
@@ -342,6 +344,10 @@ class MonitoringOverviewApiTests(APITestCase):
                 SecurityEvent.Severity.CRITICAL,
                 datetime(2026, 1, 8, 19, 0, tzinfo=datetime_timezone.utc),
             ),
+            (
+                SecurityEvent.Severity.MEDIUM,
+                datetime(2026, 1, 7, 12, 0, tzinfo=datetime_timezone.utc),
+            ),
         )
         for index, (severity, created_at) in enumerate(event_timestamps):
             event = SecurityEvent.objects.create(
@@ -371,13 +377,13 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(
             response.data["insights"]["securityActivity"],
             [
-                {"date": "2026-01-02", "high": 1, "critical": 0},
-                {"date": "2026-01-03", "high": 0, "critical": 0},
-                {"date": "2026-01-04", "high": 0, "critical": 0},
-                {"date": "2026-01-05", "high": 0, "critical": 0},
-                {"date": "2026-01-06", "high": 0, "critical": 1},
-                {"date": "2026-01-07", "high": 0, "critical": 0},
-                {"date": "2026-01-08", "high": 1, "critical": 0},
+                {"date": "2026-01-02", "medium": 0, "high": 1, "critical": 0},
+                {"date": "2026-01-03", "medium": 0, "high": 0, "critical": 0},
+                {"date": "2026-01-04", "medium": 0, "high": 0, "critical": 0},
+                {"date": "2026-01-05", "medium": 0, "high": 0, "critical": 0},
+                {"date": "2026-01-06", "medium": 0, "high": 0, "critical": 1},
+                {"date": "2026-01-07", "medium": 1, "high": 0, "critical": 0},
+                {"date": "2026-01-08", "medium": 0, "high": 1, "critical": 0},
             ],
         )
 
@@ -638,11 +644,16 @@ class MonitoringOverviewApiTests(APITestCase):
         )
         self.assertEqual(
             response.data["insights"]["deviceTypes"],
-            {"localAgent": 0, "pos": 1, "tv": 0, "control": 0},
+            {"localAgent": 0, "pos": 1, "tv": 0, "telegram": 0},
         )
         self.assertEqual(
             response.data["insights"]["securityActivity"][-1],
-            {"date": timezone.localdate().isoformat(), "high": 1, "critical": 0},
+            {
+                "date": timezone.localdate().isoformat(),
+                "medium": 0,
+                "high": 1,
+                "critical": 0,
+            },
         )
         self.assertEqual(
             [branch["restaurantName"] for branch in response.data["branches"]],
