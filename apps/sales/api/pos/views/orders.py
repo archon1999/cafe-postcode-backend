@@ -77,7 +77,7 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
                 restaurant=restaurant,
                 user=self.request.user,
             )
-        serializer.save(
+        order = serializer.save(
             restaurant=restaurant,
             opened_by=self.request.user,
             distribution_point=distribution_point,
@@ -87,6 +87,10 @@ class PosOrderListCreateView(generics.ListCreateAPIView):
             display_name=display_name or str(order_number),
             status=Order.Status.OPEN,
         )
+        edge_occurred_at = getattr(self.request._request, 'trusted_edge_occurred_at', None)
+        if trusted_edge_replay and edge_occurred_at is not None:
+            Order.objects.filter(pk=order.pk).update(created_at=edge_occurred_at)
+            order.created_at = edge_occurred_at
 
 
 class PosOrderDetailView(generics.RetrieveUpdateAPIView):

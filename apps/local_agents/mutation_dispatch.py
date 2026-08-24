@@ -81,7 +81,7 @@ class LocalAgentMutationDispatchMixin:
         return dispatch_path, None
 
     def _dispatch(
-        self, *, agent, user, operation_id, method, path, dispatch_path, body, digest
+        self, *, agent, user, operation_id, method, path, dispatch_path, body, digest, occurred_at
     ):
         try:
             match = resolve(dispatch_path)
@@ -104,6 +104,7 @@ class LocalAgentMutationDispatchMixin:
             HTTP_X_EDGE_OPERATION_ID=operation_id,
         )
         internal_request.trusted_edge_replay = True
+        internal_request.trusted_edge_occurred_at = occurred_at
         internal_request.resolver_match = match
         force_authenticate(internal_request, user=user)
         response = match.func(internal_request, *match.args, **match.kwargs)
