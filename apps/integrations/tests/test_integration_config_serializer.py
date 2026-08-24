@@ -34,8 +34,50 @@ class IntegrationConfigSerializerTests(TestCase):
                 'transport': 'local-agent',
                 'encoding': 'cp1251',
                 'code_page': 46,
+                'print_mode': 'text',
+                'qr_mode': 'native',
             },
         )
+
+    def test_printer_output_modes_accept_aliases_and_are_canonicalized(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.PRINTER,
+                'provider': 'windows-raw',
+                'is_enabled': True,
+                'settings': {
+                    'connection_type': 'system_printer',
+                    'printer_name': 'XP-H200N',
+                    'printMode': ' RASTER ',
+                    'qrMode': ' raster ',
+                },
+            }
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        settings = serializer.validated_data['settings']
+        self.assertEqual(settings['print_mode'], 'raster')
+        self.assertEqual(settings['qr_mode'], 'raster')
+        self.assertNotIn('printMode', settings)
+        self.assertNotIn('qrMode', settings)
+
+    def test_printer_rejects_unknown_output_modes(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.PRINTER,
+                'provider': 'windows-raw',
+                'is_enabled': True,
+                'settings': {
+                    'connection_type': 'system_printer',
+                    'printer_name': 'POS-80 USB',
+                    'print_mode': 'pdf',
+                    'qr_mode': 'native',
+                },
+            }
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('print_mode', serializer.errors['settings'])
 
     def test_fiscal_drive_removes_parser_normalized_transport_aliases(self):
         serializer = IntegrationConfigSerializer(

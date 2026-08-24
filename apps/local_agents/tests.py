@@ -370,7 +370,30 @@ class LocalAgentPrintDocumentTests(APITestCase):
         self.assertEqual(response.data['templateVersion']['revision'], 1)
         self.assertEqual(response.data['route']['printer']['connectionType'], 'socket')
         self.assertEqual(response.data['route']['printer']['codePage'], 18)
+        self.assertEqual(response.data['route']['printer']['paperWidthMm'], 80)
+        self.assertEqual(response.data['route']['printer']['printMode'], 'text')
+        self.assertEqual(response.data['route']['printer']['qrMode'], 'native')
         self.assertNotIn('settings', response.data['route']['printer'])
+
+    def test_agent_receives_explicit_raster_output_modes(self):
+        self.printer.settings = {
+            **self.printer.settings,
+            'paper_width_mm': 80,
+            'print_mode': 'raster',
+            'qr_mode': 'raster',
+        }
+        self.printer.save(update_fields=['settings'])
+
+        response = self.client.get(
+            f'/api/v1/local-agent/print-documents/{self.document.id}/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        printer = response.data['route']['printer']
+        self.assertEqual(printer['paperWidthMm'], 80)
+        self.assertEqual(printer['printMode'], 'raster')
+        self.assertEqual(printer['qrMode'], 'raster')
 
     def test_agent_cannot_fetch_another_restaurants_document(self):
         ensure_restaurant_templates(restaurant=self.foreign_restaurant)
@@ -679,6 +702,39 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['cashier'], str(self.user.id))
         self.assertEqual(response.data['cashShifts'][0]['openingCashAmount'], 125000)
         self.assertEqual(response.data['posDevices'], [])
+
+    def test_bootstrap_carries_printer_output_modes_for_offline_printing(self):
+        printer = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+            settings={
+                'connection_type': 'system_printer',
+                'printer_name': 'XP-H200N',
+                'paper_width_mm': 80,
+                'print_mode': 'raster',
+                'qr_mode': 'raster',
+            },
+        )
+        self.cash_desk.printer_integration = printer
+        self.cash_desk.save(update_fields=['printer_integration'])
+
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        integration = next(
+            item for item in response.data['bindings']['integrations']
+            if item['id'] == str(printer.id)
+        )
+        self.assertEqual(integration['settings']['print_mode'], 'raster')
+        self.assertEqual(integration['settings']['qr_mode'], 'raster')
+        self.assertEqual(
+            response.data['bindings']['cashDesks'][0]['printerIntegrationId'],
+            str(printer.id),
+        )
 
     def test_device_state_endpoint_is_complete_and_restaurant_scoped(self):
         now = timezone.now()

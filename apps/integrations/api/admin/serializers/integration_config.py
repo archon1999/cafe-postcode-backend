@@ -24,6 +24,8 @@ _SECRET_KEY_PARTS = (
     "credential",
 )
 _ENDPOINT_KEYS = frozenset({"endpoint_url", "endpointurl", "service_url", "serviceurl"})
+_PRINT_MODES = frozenset({"text", "raster"})
+_QR_MODES = frozenset({"native", "raster"})
 
 
 def _normalized_key(value):
@@ -168,6 +170,27 @@ def _validate_printer_target(settings):
         )
 
 
+def _normalize_printer_output_modes(settings):
+    normalized = dict(settings)
+    print_mode = str(
+        normalized.pop("printMode", None) or normalized.get("print_mode") or "text"
+    ).strip().lower()
+    qr_mode = str(
+        normalized.pop("qrMode", None) or normalized.get("qr_mode") or "native"
+    ).strip().lower()
+    if print_mode not in _PRINT_MODES:
+        raise serializers.ValidationError(
+            {"print_mode": "Print mode must be either text or raster."}
+        )
+    if qr_mode not in _QR_MODES:
+        raise serializers.ValidationError(
+            {"qr_mode": "QR mode must be either native or raster."}
+        )
+    normalized["print_mode"] = print_mode
+    normalized["qr_mode"] = qr_mode
+    return normalized
+
+
 class IntegrationConfigSerializer(serializers.ModelSerializer):
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     display_name = serializers.SerializerMethodField()
@@ -230,6 +253,7 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
 
         if kind == IntegrationConfig.Kind.PRINTER:
             _validate_printer_target(settings)
+            settings = _normalize_printer_output_modes(settings)
 
         if kind == IntegrationConfig.Kind.PRINTER and provider == "windows-raw":
             settings = _normalize_local_agent_transport_settings(settings)
