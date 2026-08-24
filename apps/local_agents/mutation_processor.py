@@ -1,5 +1,8 @@
 import uuid
+from datetime import timedelta, timezone as datetime_timezone
 
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework.test import APIRequestFactory
 
 from apps.billing.services import CashShiftService
@@ -40,12 +43,23 @@ class LocalAgentMutationProcessor(
         method = str(operation.get("method") or "").strip().upper()
         path = str(operation.get("path") or "").strip()
         body = operation.get("body") if isinstance(operation.get("body"), dict) else {}
+        occurred_at, occurred_at_error = self._parse_occurred_at(
+            operation.get("occurredAt") or operation.get("occurred_at")
+        )
         if not operation_id or len(operation_id) > 128:
             return mutation_error_result(
                 operation_id=operation_id,
                 response_status=400,
                 error="Invalid operationId.",
                 code="INVALID_OPERATION_ID",
+                classification=CLASSIFICATION_QUARANTINED,
+            )
+        if occurred_at_error:
+            return mutation_error_result(
+                operation_id=operation_id,
+                response_status=400,
+                error=occurred_at_error,
+                code="INVALID_OPERATION_OCCURRED_AT",
                 classification=CLASSIFICATION_QUARANTINED,
             )
         if not allowed_mutation(method, path):
@@ -152,7 +166,22 @@ class LocalAgentMutationProcessor(
             dispatch_path=dispatch_path,
             body=body,
             digest=digest,
+            occurred_at=occurred_at,
         )
+
+    @staticmethod
+    def _parse_occurred_at(raw_value):
+        if raw_value in (None, ""):
+            return None, ""
+        if not isinstance(raw_value, str):
+            return None, "Operation occurredAt must be an ISO-8601 datetime."
+        occurred_at = parse_datetime(raw_value.strip())
+        if occurred_at is None or timezone.is_naive(occurred_at):
+            return None, "Operation occurredAt must be an ISO-8601 datetime with timezone."
+        occurred_at = occurred_at.astimezone(datetime_timezone.utc)
+        if occurred_at > timezone.now() + timedelta(minutes=5):
+            return None, "Operation occurredAt is too far in the future."
+        return occurred_at, ""
 
     @staticmethod
     def _drop_implicit_invalid_cashier(body, user):
