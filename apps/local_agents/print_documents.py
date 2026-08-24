@@ -8,6 +8,11 @@ from apps.restaurants.models import CashDesk, PrepStation
 from common.utils.settings import coerce_bool, coerce_int, get_setting
 
 
+def _printer_mode(settings, snake_case_key, camel_case_key, *, default, allowed):
+    value = str(get_setting(settings, snake_case_key, camel_case_key, default=default)).strip().lower()
+    return value if value in allowed else default
+
+
 def _cash_desk_for_document(document: PrintDocument):
     cash_desk_id = (document.metadata or {}).get('cashDeskId')
     if cash_desk_id:
@@ -74,6 +79,26 @@ def _printer_route(document: PrintDocument) -> dict:
             'host': host,
             'port': coerce_int(settings.get('port'), default=9100, minimum=1, maximum=65535),
             'encoding': str(settings.get('encoding') or settings.get('charset') or 'cp1251').strip(),
+            'paperWidthMm': coerce_int(
+                get_setting(settings, 'paper_width_mm', 'paperWidthMm'),
+                default=80,
+                minimum=80,
+                maximum=80,
+            ),
+            'printMode': _printer_mode(
+                settings,
+                'print_mode',
+                'printMode',
+                default='text',
+                allowed={'text', 'raster'},
+            ),
+            'qrMode': _printer_mode(
+                settings,
+                'qr_mode',
+                'qrMode',
+                default='native',
+                allowed={'native', 'raster'},
+            ),
             'codePage': coerce_int(code_page, default=46, minimum=0, maximum=255) if code_page is not None else None,
             'escposEnabled': coerce_bool(
                 get_setting(settings, 'escpos_enabled', 'escposEnabled'),
