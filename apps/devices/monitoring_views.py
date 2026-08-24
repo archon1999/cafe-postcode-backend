@@ -237,6 +237,7 @@ class MonitoringOverviewView(APIView):
         security_activity = {
             activity_date: {
                 "date": activity_date.isoformat(),
+                "medium": 0,
                 "high": 0,
                 "critical": 0,
             }
@@ -249,6 +250,7 @@ class MonitoringOverviewView(APIView):
                 created_at__gte=activity_start,
                 created_at__lt=activity_end,
                 severity__in=(
+                    SecurityEvent.Severity.MEDIUM,
                     SecurityEvent.Severity.HIGH,
                     SecurityEvent.Severity.CRITICAL,
                 ),
@@ -256,6 +258,7 @@ class MonitoringOverviewView(APIView):
             .annotate(activity_date=TruncDate("created_at", tzinfo=current_timezone))
             .values("activity_date")
             .annotate(
+                medium=Count("id", filter=Q(severity=SecurityEvent.Severity.MEDIUM)),
                 high=Count("id", filter=Q(severity=SecurityEvent.Severity.HIGH)),
                 critical=Count(
                     "id", filter=Q(severity=SecurityEvent.Severity.CRITICAL)
@@ -266,6 +269,7 @@ class MonitoringOverviewView(APIView):
         for row in security_activity_rows:
             bucket = security_activity.get(row["activity_date"])
             if bucket is not None:
+                bucket["medium"] = row["medium"]
                 bucket["high"] = row["high"]
                 bucket["critical"] = row["critical"]
 
@@ -450,9 +454,7 @@ class MonitoringOverviewView(APIView):
             ),
             "pos": active_pos_terminals,
             "tv": sum(item["active_tv"] for item in device_aggregates.values()),
-            "control": sum(
-                item["active_control"] for item in device_aggregates.values()
-            ),
+            "telegram": sum(telegram_subscription_counts.values()),
         }
 
         return Response(
