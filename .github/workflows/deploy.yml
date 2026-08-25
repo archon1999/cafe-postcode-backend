@@ -45,7 +45,6 @@ jobs:
           timeout: 60s
           command_timeout: 40m
           envs: FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
-          script_stop: true
           script: |
             set -Eeuo pipefail
             exec 9>/home/postcode/.cafe-postcode-deploy.lock
