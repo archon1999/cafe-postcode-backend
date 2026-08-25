@@ -684,6 +684,30 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             opened_at=timezone.now(),
             opening_cash_amount=125000,
         )
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=77,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=40000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_shift=shift,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=40000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=False,
+            paid_at=timezone.now(),
+        )
         response = self.client.get(
             '/api/v1/local-agent/sync/bootstrap/',
             HTTP_AUTHORIZATION=f'Bearer {self.token}',
@@ -701,6 +725,12 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['id'], str(shift.id))
         self.assertEqual(response.data['cashShifts'][0]['cashier'], str(self.user.id))
         self.assertEqual(response.data['cashShifts'][0]['openingCashAmount'], 125000)
+        self.assertEqual(response.data['cashShifts'][0]['cashPrecheckTotal'], 40000)
+        self.assertEqual(response.data['cashShifts'][0]['cashReceiptTotal'], 0)
+        self.assertEqual(response.data['cashShifts'][0]['cardPrecheckTotal'], 0)
+        self.assertEqual(response.data['cashShifts'][0]['cardReceiptTotal'], 0)
+        self.assertEqual(response.data['cashShifts'][0]['saleCount'], 1)
+        self.assertEqual(response.data['cashShifts'][0]['totalSaleAmount'], 40000)
         self.assertEqual(response.data['posDevices'], [])
 
     def test_bootstrap_carries_printer_output_modes_for_offline_printing(self):
