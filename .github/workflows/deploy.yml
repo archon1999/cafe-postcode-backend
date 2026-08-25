@@ -30,6 +30,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Deploy production over SSH
+        env:
+          FAKTURA_USERNAME_B64: ${{ secrets.FAKTURA_USERNAME_B64 }}
+          FAKTURA_PASSWORD_B64: ${{ secrets.FAKTURA_PASSWORD_B64 }}
+          FAKTURA_CLIENT_ID_B64: ${{ secrets.FAKTURA_CLIENT_ID_B64 }}
+          FAKTURA_CLIENT_SECRET_B64: ${{ secrets.FAKTURA_CLIENT_SECRET_B64 }}
         uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: ${{ secrets.HOST }}
@@ -39,13 +44,58 @@ jobs:
           port: ${{ secrets.PORT }}
           timeout: 60s
           command_timeout: 40m
-          script_stop: true
+          envs: FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
           script: |
             set -Eeuo pipefail
             exec 9>/home/postcode/.cafe-postcode-deploy.lock
             flock --wait 1800 9
             cd /home/postcode/backend
             test -f .env.production
+            python3 - <<'PY'
+            import base64
+            import os
+            from pathlib import Path
+
+            keys = (
+                'FAKTURA_USERNAME',
+                'FAKTURA_PASSWORD',
+                'FAKTURA_CLIENT_ID',
+                'FAKTURA_CLIENT_SECRET',
+            )
+            values = {}
+            for key in keys:
+                encoded = os.environ.get(f'{key}_B64', '')
+                if not encoded:
+                    raise SystemExit(f'Missing GitHub Actions secret: {key}_B64')
+                value = base64.b64decode(encoded, validate=True).decode('utf-8')
+                if not value:
+                    raise SystemExit(f'Empty Faktura credential: {key}')
+                values[key] = value
+
+            env_path = Path('.env.production')
+            original_lines = env_path.read_text(encoding='utf-8').splitlines()
+            remaining = dict(values)
+            updated_lines = []
+
+            def encode_env_value(value):
+                return "'" + value.replace('\\', '\\\\').replace("'", "\\'") + "'"
+
+            for line in original_lines:
+                key, separator, _ = line.partition('=')
+                if separator and key in remaining:
+                    updated_lines.append(f'{key}={encode_env_value(remaining.pop(key))}')
+                else:
+                    updated_lines.append(line)
+            if remaining:
+                updated_lines.append('')
+                updated_lines.extend(
+                    f'{key}={encode_env_value(value)}'
+                    for key, value in remaining.items()
+                )
+            env_path.write_text('\n'.join(updated_lines) + '\n', encoding='utf-8')
+            env_path.chmod(0o600)
+            print('Faktura production credentials synchronized.')
+            PY
             operation='${{ inputs.operation }}'
             if [ "$operation" = 'inspect_agent_status' ]; then
               docker compose --env-file .env.production exec -T web python manage.py shell <<'PY'
@@ -121,3 +171,12 @@ jobs:
             docker compose --env-file .env.production up -d --remove-orphans --wait --wait-timeout 180
             docker compose --env-file .env.production ps
             docker compose --env-file .env.production exec -T web python manage.py check --deploy
+            docker compose --env-file .env.production exec -T web python manage.py shell <<'PY'
+            from apps.platform.services import FakturaClient
+
+            expected_inn = '311926992'
+            payload = FakturaClient().lookup_company_basic_details(expected_inn)
+            if str(payload.get('CompanyInn') or '').strip() != expected_inn:
+                raise SystemExit('Faktura production lookup returned an unexpected company.')
+            print('Faktura production lookup: OK')
+            PY
