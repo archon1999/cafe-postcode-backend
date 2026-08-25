@@ -1,6 +1,41 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 
+TELEGRAM_MESSAGE_TEXT_LIMIT = 4096
+
+
+def split_telegram_message(
+    text: str,
+    *,
+    limit: int = TELEGRAM_MESSAGE_TEXT_LIMIT,
+) -> list[str]:
+    """Split rendered report HTML on line boundaries into Bot API-safe messages."""
+    text = text.strip()
+    if not text:
+        return []
+    if limit <= 0:
+        raise ValueError("Telegram message limit must be positive.")
+    if len(text) <= limit:
+        return [text]
+
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    for line in text.splitlines():
+        if len(line) > limit:
+            raise ValueError("A Telegram report line exceeds the message length limit.")
+
+        candidate = "\n".join((*current_lines, line))
+        if current_lines and len(candidate) > limit:
+            chunks.append("\n".join(current_lines).rstrip())
+            current_lines = [] if not line else [line]
+            continue
+        current_lines.append(line)
+
+    if current_lines:
+        chunks.append("\n".join(current_lines).rstrip())
+    return [chunk for chunk in chunks if chunk]
+
+
 def _decimal_text(value: Decimal, *, places: int = 2) -> str:
     quantum = Decimal(1).scaleb(-places)
     text = format(value.quantize(quantum, rounding=ROUND_HALF_UP), "f")
@@ -55,4 +90,3 @@ def build_weekly_grid(rows: list[dict]) -> str:
             line(differences, align="right"),
         )
     )
-

@@ -70,3 +70,25 @@ class TelegramReportScheduleTests(TestCase):
         delivery = TelegramReportDelivery.objects.get()
         self.assertEqual(delivery.status, TelegramReportDelivery.Status.SENT)
         self.assertEqual(delivery.telegram_message_id, 991)
+
+    @patch(
+        "apps.telegram_reports.tasks.TelegramReportService.render",
+        return_value=f"{'a' * 3000}\n{'b' * 3000}",
+    )
+    @patch("apps.telegram_reports.tasks.TelegramBotClient", FakeDeliveryClient)
+    def test_long_scheduled_report_is_sent_as_multiple_messages(self, render):
+        FakeDeliveryClient.calls = []
+        account = TelegramAccount.objects.create(telegram_user_id=3, chat_id=3)
+        branch = Restaurant.objects.create(name="Long report branch")
+        subscription = TelegramBranchSubscription.objects.create(account=account, restaurant=branch)
+
+        sent = send_scheduled_report(
+            str(subscription.id),
+            TelegramReportDelivery.ReportType.DAILY,
+            "2026-07-24",
+            "2026-07-25",
+        )
+
+        self.assertTrue(sent)
+        self.assertEqual(len(FakeDeliveryClient.calls), 2)
+        self.assertTrue(all(len(call["text"]) <= 4096 for call in FakeDeliveryClient.calls))

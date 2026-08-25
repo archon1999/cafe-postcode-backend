@@ -10,6 +10,7 @@ from apps.reporting.services import CommonReportService
 from apps.devices.models import SecurityEvent
 from apps.devices.security import record_security_event
 from apps.telegram_reports.client import TelegramBotClient
+from apps.telegram_reports.formatters import split_telegram_message
 from apps.telegram_reports.models import (
     TelegramAccount,
     TelegramBranchSubscription,
@@ -197,7 +198,8 @@ class TelegramUpdateHandler:
                 report_type=report_type,
                 period=period,
             )
-            self.send(account, text)
+            for message in split_telegram_message(text):
+                self.send(account, message)
 
     def show_disconnect_menu(self, account: TelegramAccount) -> None:
         subscriptions = list(account.branch_subscriptions.select_related("restaurant").all())

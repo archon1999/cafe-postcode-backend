@@ -20,7 +20,7 @@ class OwnerDashboardBaseService(
     OwnerDashboardPeriodMixin,
 ):
     common_report_service_class = CommonReportService
-    overview_top_item_limit = 6
+    overview_top_item_limit = None
     overview_staff_limit = 5
     overview_open_checks_limit = 5
     overview_shift_limit = 4

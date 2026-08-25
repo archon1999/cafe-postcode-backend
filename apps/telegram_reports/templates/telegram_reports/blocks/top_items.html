@@ -1,3 +1,3 @@
-<b>TOP-5 mahsulot</b>
+<b>Barcha mahsulotlar</b>
 {% for item in top_items %}{{ item.position }}. {{ item.item_name }} — {{ item.quantity }} ta · {{ item.formatted_revenue }}{% if not forloop.last %}
 {% endif %}{% empty %}Bu davrda sotilgan mahsulot yo‘q.{% endfor %}

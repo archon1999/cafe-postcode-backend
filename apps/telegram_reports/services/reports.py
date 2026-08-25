@@ -68,7 +68,7 @@ class TelegramReportService:
         report = self.common_report_service_class().build(
             restaurant=restaurant,
             period=period,
-            top_item_limit=5,
+            top_item_limit=None,
             include_daily_breakdown=include_daily,
         )
         context = {

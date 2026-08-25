@@ -25,13 +25,14 @@ class FakeTelegramClient:
 
 class FakeReportService:
     calls = []
+    render_text = None
 
     def build_current_period(self, report_type):
         return f"current-{report_type}"
 
     def render(self, *, restaurant, report_type, period):
         self.__class__.calls.append((restaurant.name, report_type, period))
-        return f"{restaurant.name}: {report_type}"
+        return self.__class__.render_text or f"{restaurant.name}: {report_type}"
 
 
 class TelegramUpdateHandlerTests(TestCase):
@@ -39,6 +40,7 @@ class TelegramUpdateHandlerTests(TestCase):
         FakeTelegramClient.sent_messages = []
         FakeTelegramClient.callback_answers = []
         FakeReportService.calls = []
+        FakeReportService.render_text = None
         self.handler = TelegramUpdateHandler()
         self.handler.client_class = FakeTelegramClient
         self.branch = Restaurant.objects.create(name="Qamish")
@@ -129,6 +131,22 @@ class TelegramUpdateHandlerTests(TestCase):
         self.assertEqual(account.state, TelegramAccount.State.IDLE)
         self.assertEqual(account.branch_subscriptions.count(), 0)
         self.assertIn("5 daqiqalik", FakeTelegramClient.sent_messages[-1]["text"])
+
+    def test_long_manual_report_is_sent_as_multiple_messages(self):
+        account = self.handler.get_account(
+            sender={"id": 1234567890123, "first_name": "Ali", "language_code": "uz"},
+            chat={"id": 1234567890123, "type": "private"},
+        )
+        TelegramBranchSubscription.objects.create(account=account, restaurant=self.branch)
+        FakeReportService.render_text = f"{'a' * 3000}\n{'b' * 3000}"
+        self.handler.report_service_class = FakeReportService
+
+        self.handler.handle(self.message("/today"))
+
+        self.assertEqual(len(FakeTelegramClient.sent_messages), 2)
+        self.assertTrue(
+            all(len(message["text"]) <= 4096 for message in FakeTelegramClient.sent_messages)
+        )
 
     def test_disconnect_callback_only_removes_subscription(self):
         account = self.handler.get_account(

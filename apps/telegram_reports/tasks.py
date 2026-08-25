@@ -6,6 +6,7 @@ from django_q.tasks import async_task
 
 from apps.reporting.services import CommonReportService
 from apps.telegram_reports.client import TelegramAPIError, TelegramBotClient
+from apps.telegram_reports.formatters import split_telegram_message
 from apps.telegram_reports.models import (
     TelegramBranchSubscription,
     TelegramReportDelivery,
@@ -98,10 +99,13 @@ def send_scheduled_report(
             report_type=report_type,
             period=period,
         )
-        result = TelegramBotClient().send_message(
-            chat_id=subscription.account.chat_id,
-            text=text,
-        )
+        client = TelegramBotClient()
+        result = None
+        for message in split_telegram_message(text):
+            result = client.send_message(
+                chat_id=subscription.account.chat_id,
+                text=message,
+            )
     except TelegramAPIError as error:
         delivery.status = TelegramReportDelivery.Status.FAILED
         delivery.error = str(error)[:2000]

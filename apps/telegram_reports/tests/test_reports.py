@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 from apps.reporting.services import CommonReportService
 from apps.telegram_reports.models import TelegramReportDelivery
 from apps.telegram_reports.services import TelegramReportService
+from apps.telegram_reports.formatters import split_telegram_message
 
 
 class Branch:
@@ -12,7 +13,10 @@ class Branch:
 
 
 class FakeCommonReportService(CommonReportService):
+    last_build_kwargs = None
+
     def build(self, **kwargs):
+        self.__class__.last_build_kwargs = kwargs
         period = kwargs["period"]
         return {
             "period": period,
@@ -38,6 +42,7 @@ class FakeCommonReportService(CommonReportService):
 
 class TelegramReportTemplateTests(SimpleTestCase):
     def setUp(self):
+        FakeCommonReportService.last_build_kwargs = None
         self.service = TelegramReportService()
         self.service.common_report_service_class = FakeCommonReportService
 
@@ -53,6 +58,8 @@ class TelegramReportTemplateTests(SimpleTestCase):
         self.assertIn("1,2 mln so‘m", text)
         self.assertIn("Qamish", text)
         self.assertNotIn("Restaurant", text)
+        self.assertNotIn("TOP-5", text)
+        self.assertIsNone(FakeCommonReportService.last_build_kwargs["top_item_limit"])
 
     def test_weekly_report_contains_monospaced_three_row_grid(self):
         period = CommonReportService.build_range_period(date(2026, 7, 20), date(2026, 7, 26))
@@ -83,3 +90,36 @@ class TelegramReportTemplateTests(SimpleTestCase):
 
         self.assertEqual(period.start.date(), date(2026, 7, 1))
         self.assertEqual(period.end.date(), date(2026, 8, 1))
+
+    def test_all_products_are_rendered_across_multiple_messages(self):
+        class ManyItemsReportService(FakeCommonReportService):
+            def build(self, **kwargs):
+                report = super().build(**kwargs)
+                report["top_items"] = [
+                    {
+                        "catalog_item_id": None,
+                        "item_name": f"Mahsulot {index} {'x' * 180}",
+                        "category_id": None,
+                        "category_name": None,
+                        "quantity": index,
+                        "revenue": index * 10_000,
+                    }
+                    for index in range(1, 31)
+                ]
+                return report
+
+        self.service.common_report_service_class = ManyItemsReportService
+        period = CommonReportService.build_day_period(date(2026, 7, 24))
+
+        messages = split_telegram_message(
+            self.service.render(
+                restaurant=Branch(),
+                report_type=TelegramReportDelivery.ReportType.DAILY,
+                period=period,
+            )
+        )
+
+        self.assertGreater(len(messages), 1)
+        rendered = "\n".join(messages)
+        for index in range(1, 31):
+            self.assertIn(f"Mahsulot {index} ", rendered)

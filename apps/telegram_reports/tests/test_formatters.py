@@ -3,9 +3,11 @@ from datetime import date
 from django.test import SimpleTestCase
 
 from apps.telegram_reports.formatters import (
+    TELEGRAM_MESSAGE_TEXT_LIMIT,
     build_weekly_grid,
     format_compact_money,
     format_mln_money,
+    split_telegram_message,
 )
 
 
@@ -46,3 +48,11 @@ class TelegramReportFormatterTests(SimpleTestCase):
         self.assertIn("+0,5", lines[2])
         self.assertIn("-1", lines[2])
 
+    def test_long_report_is_split_on_line_boundaries(self):
+        text = "\n".join(f"{index}. {'x' * 220}" for index in range(30))
+
+        messages = split_telegram_message(text)
+
+        self.assertGreater(len(messages), 1)
+        self.assertTrue(all(len(message) <= TELEGRAM_MESSAGE_TEXT_LIMIT for message in messages))
+        self.assertEqual("\n".join(messages), text)

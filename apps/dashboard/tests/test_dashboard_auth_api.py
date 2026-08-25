@@ -661,6 +661,37 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.data['expense_snapshot']['category_breakdown'][0]['name'], 'Transport')
         self.assertEqual(response.data['expense_snapshot']['rows'][0]['comment'], 'Day delivery')
 
+    def test_dashboard_overview_returns_all_top_items(self):
+        extra_order = self.create_order(
+            restaurant=self.restaurant,
+            order_number=107,
+            created_at=self.dt(2026, 4, 7, 16, 0),
+            total=75_000,
+            opened_by=self.waiter_user,
+            cashier=self.cashier_user,
+            closed_at=self.dt(2026, 4, 7, 16, 30),
+        )
+        for index in range(1, 6):
+            item = CatalogItem.objects.create(
+                restaurant=self.restaurant,
+                category=self.category,
+                name=f'Extra item {index}',
+                price=index * 5_000,
+            )
+            self.create_order_item(
+                order=extra_order,
+                catalog_item=item,
+                quantity=1,
+                unit_price=index * 5_000,
+            )
+        self.client.force_authenticate(self.owner_user)
+
+        response = self.client.get('/api/v1/dashboard/overview/?period_type=day&date=2026-04-07')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['top_items']), 7)
+        self.assertIn('Extra item 1', {item['item_name'] for item in response.data['top_items']})
+
     def test_dashboard_overview_returns_month_and_year_payload(self):
         self.client.force_authenticate(self.owner_user)
 

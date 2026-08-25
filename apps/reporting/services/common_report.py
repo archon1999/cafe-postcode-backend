@@ -49,7 +49,7 @@ class CommonReportService:
         restaurant,
         period: ReportPeriod,
         comparison_period: ReportPeriod | None = None,
-        top_item_limit: int = 5,
+        top_item_limit: int | None = 5,
         include_daily_breakdown: bool = False,
     ) -> dict:
         comparison_period = comparison_period or self.get_previous_period(period)
@@ -82,10 +82,17 @@ class CommonReportService:
         return {key: int(value or 0) for key, value in build_summary_payload(restaurant, period).items()}
 
     @staticmethod
-    def build_top_items(restaurant, period: ReportPeriod, *, limit: int = 5) -> list[dict]:
+    def build_top_items(
+        restaurant,
+        period: ReportPeriod,
+        *,
+        limit: int | None = 5,
+    ) -> list[dict]:
         queryset = get_top_items_report_queryset(restaurant, period).order_by(
             "-revenue", "-quantity", "catalog_item_name"
-        )[:limit]
+        )
+        if limit is not None:
+            queryset = queryset[:limit]
         return [
             {
                 "catalog_item_id": row.get("catalog_item_id"),
