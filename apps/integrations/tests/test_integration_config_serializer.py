@@ -36,6 +36,7 @@ class IntegrationConfigSerializerTests(TestCase):
                 'code_page': 46,
                 'print_mode': 'text',
                 'qr_mode': 'native',
+                'raster_font': 'go_mono',
             },
         )
 
@@ -50,6 +51,7 @@ class IntegrationConfigSerializerTests(TestCase):
                     'printer_name': 'XP-H200N',
                     'printMode': ' RASTER ',
                     'qrMode': ' raster ',
+                    'rasterFont': ' Noto_Sans ',
                 },
             }
         )
@@ -58,8 +60,10 @@ class IntegrationConfigSerializerTests(TestCase):
         settings = serializer.validated_data['settings']
         self.assertEqual(settings['print_mode'], 'raster')
         self.assertEqual(settings['qr_mode'], 'raster')
+        self.assertEqual(settings['raster_font'], 'noto_sans')
         self.assertNotIn('printMode', settings)
         self.assertNotIn('qrMode', settings)
+        self.assertNotIn('rasterFont', settings)
 
     def test_printer_rejects_unknown_output_modes(self):
         serializer = IntegrationConfigSerializer(
@@ -78,6 +82,23 @@ class IntegrationConfigSerializerTests(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('print_mode', serializer.errors['settings'])
+
+    def test_printer_rejects_unknown_raster_font(self):
+        serializer = IntegrationConfigSerializer(
+            data={
+                'kind': IntegrationConfig.Kind.PRINTER,
+                'provider': 'windows-raw',
+                'is_enabled': True,
+                'settings': {
+                    'connection_type': 'system_printer',
+                    'printer_name': 'POS-80 USB',
+                    'raster_font': 'comic_sans',
+                },
+            }
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('raster_font', serializer.errors['settings'])
 
     def test_fiscal_drive_removes_parser_normalized_transport_aliases(self):
         serializer = IntegrationConfigSerializer(

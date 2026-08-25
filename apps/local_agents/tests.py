@@ -373,6 +373,7 @@ class LocalAgentPrintDocumentTests(APITestCase):
         self.assertEqual(response.data['route']['printer']['paperWidthMm'], 80)
         self.assertEqual(response.data['route']['printer']['printMode'], 'text')
         self.assertEqual(response.data['route']['printer']['qrMode'], 'native')
+        self.assertEqual(response.data['route']['printer']['rasterFont'], 'go_mono')
         self.assertNotIn('settings', response.data['route']['printer'])
 
     def test_agent_receives_explicit_raster_output_modes(self):
@@ -381,6 +382,7 @@ class LocalAgentPrintDocumentTests(APITestCase):
             'paper_width_mm': 80,
             'print_mode': 'raster',
             'qr_mode': 'raster',
+            'raster_font': 'inter',
         }
         self.printer.save(update_fields=['settings'])
 
@@ -394,6 +396,7 @@ class LocalAgentPrintDocumentTests(APITestCase):
         self.assertEqual(printer['paperWidthMm'], 80)
         self.assertEqual(printer['printMode'], 'raster')
         self.assertEqual(printer['qrMode'], 'raster')
+        self.assertEqual(printer['rasterFont'], 'inter')
 
     def test_agent_cannot_fetch_another_restaurants_document(self):
         ensure_restaurant_templates(restaurant=self.foreign_restaurant)

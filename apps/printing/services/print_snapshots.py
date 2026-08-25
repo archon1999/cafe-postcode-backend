@@ -110,14 +110,13 @@ def _print_item_values(item) -> tuple[dict, tuple, str]:
         (str(row.modifier_option_id or ""), row.group_name, row.option_name, _money(row.price_delta))
         for row in modifier_rows
     )
-    modifier_text = " · ".join(f"{row.group_name}: {row.option_name}" for row in modifier_rows)
+    modifier_text = "\n".join(f"{row.group_name}: {row.option_name}" for row in modifier_rows)
     item_note = item.note or ""
-    note = " · ".join(value for value in (modifier_text, item_note) if value)
     return (
         {
             "name": name,
             "unitPrice": unit_price,
-            "note": note,
+            "note": item_note,
             "modifierText": modifier_text,
             "modifiers": [
                 {

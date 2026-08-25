@@ -26,6 +26,7 @@ _SECRET_KEY_PARTS = (
 _ENDPOINT_KEYS = frozenset({"endpoint_url", "endpointurl", "service_url", "serviceurl"})
 _PRINT_MODES = frozenset({"text", "raster"})
 _QR_MODES = frozenset({"native", "raster"})
+_RASTER_FONTS = frozenset({"go_mono", "inter", "noto_sans", "roboto_mono"})
 
 
 def _normalized_key(value):
@@ -178,6 +179,11 @@ def _normalize_printer_output_modes(settings):
     qr_mode = str(
         normalized.pop("qrMode", None) or normalized.get("qr_mode") or "native"
     ).strip().lower()
+    raster_font = str(
+        normalized.pop("rasterFont", None)
+        or normalized.get("raster_font")
+        or "go_mono"
+    ).strip().lower()
     if print_mode not in _PRINT_MODES:
         raise serializers.ValidationError(
             {"print_mode": "Print mode must be either text or raster."}
@@ -186,8 +192,17 @@ def _normalize_printer_output_modes(settings):
         raise serializers.ValidationError(
             {"qr_mode": "QR mode must be either native or raster."}
         )
+    if raster_font not in _RASTER_FONTS:
+        raise serializers.ValidationError(
+            {
+                "raster_font": (
+                    "Raster font must be go_mono, inter, noto_sans, or roboto_mono."
+                )
+            }
+        )
     normalized["print_mode"] = print_mode
     normalized["qr_mode"] = qr_mode
+    normalized["raster_font"] = raster_font
     return normalized
 
 
