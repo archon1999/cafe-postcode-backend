@@ -91,7 +91,9 @@ GitHub repository secrets named `FAKTURA_USERNAME_B64`,
 `FAKTURA_PASSWORD_B64`, `FAKTURA_CLIENT_ID_B64`, and
 `FAKTURA_CLIENT_SECRET_B64`. Each deploy synchronizes them into the server-side
 `.env.production` file without logging plaintext values, restricts the file to
-mode `0600`, and verifies a live company lookup after the containers start.
+mode `0600`, and verifies a live company lookup after the containers start. The
+remote deploy script uses `set -Eeuo pipefail` for fail-fast execution while
+preserving the Python heredoc blocks used by production checks.
 
 ## Telegram Sales Reports Bot
 
