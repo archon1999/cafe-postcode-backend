@@ -203,6 +203,7 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     if restaurant is not None and not hasattr(restaurant, 'pk'):
         return queryset.values(
             'sale_unit',
+            item_type=F('catalog_item__item_type'),
             catalog_item_name=F('catalog_item__name'),
             category_name=F('catalog_item__category__name'),
         ).annotate(
@@ -214,6 +215,7 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     return queryset.values(
         'catalog_item_id',
         'sale_unit',
+        item_type=F('catalog_item__item_type'),
         catalog_item_name=F('catalog_item__name'),
         category_id=F('catalog_item__category_id'),
         category_name=F('catalog_item__category__name'),

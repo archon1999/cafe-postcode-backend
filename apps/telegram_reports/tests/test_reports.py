@@ -27,7 +27,16 @@ class FakeCommonReportService(CommonReportService):
                 "average_check": {"current": 40_000, "previous": 31_250, "difference": 8_750, "change_percent": 28.0},
             },
             "top_items": [
-                {"catalog_item_id": None, "item_name": "Burger", "category_id": None, "category_name": None, "quantity": 12, "revenue": 1_200_000}
+                {
+                    "catalog_item_id": None,
+                    "item_name": "Burger",
+                    "category_id": None,
+                    "category_name": None,
+                    "item_type": "product",
+                    "sale_unit": "piece",
+                    "quantity": 12,
+                    "revenue": 1_200_000,
+                }
             ],
             "daily_breakdown": [
                 {
@@ -59,7 +68,43 @@ class TelegramReportTemplateTests(SimpleTestCase):
         self.assertIn("Qamish", text)
         self.assertNotIn("Restaurant", text)
         self.assertNotIn("TOP-5", text)
+        self.assertIn("<b>🍽 Barcha mahsulotlar</b>", text)
+        self.assertIn("1. Burger — <b>1,2 mln so‘m</b>, 12 ta", text)
         self.assertIsNone(FakeCommonReportService.last_build_kwargs["top_item_limit"])
+
+    def test_report_formats_kilogram_and_service_quantities(self):
+        class MixedItemReportService(FakeCommonReportService):
+            def build(self, **kwargs):
+                report = super().build(**kwargs)
+                report["top_items"] = [
+                    {
+                        "item_name": "Salat",
+                        "item_type": "product",
+                        "sale_unit": "kg",
+                        "quantity": 3.25,
+                        "revenue": 980_000,
+                    },
+                    {
+                        "item_name": "Yetkazib berish",
+                        "item_type": "service",
+                        "sale_unit": "piece",
+                        "quantity": 4,
+                        "revenue": 200_000,
+                    },
+                ]
+                return report
+
+        self.service.common_report_service_class = MixedItemReportService
+        period = CommonReportService.build_day_period(date(2026, 7, 24))
+
+        text = self.service.render(
+            restaurant=Branch(),
+            report_type=TelegramReportDelivery.ReportType.DAILY,
+            period=period,
+        )
+
+        self.assertIn("Salat — <b>980 ming so‘m</b>, 3,25 kg", text)
+        self.assertIn("Yetkazib berish — <b>200 ming so‘m</b>, 4 ta xizmat", text)
 
     def test_weekly_report_contains_monospaced_three_row_grid(self):
         period = CommonReportService.build_range_period(date(2026, 7, 20), date(2026, 7, 26))
@@ -101,6 +146,8 @@ class TelegramReportTemplateTests(SimpleTestCase):
                         "item_name": f"Mahsulot {index} {'x' * 180}",
                         "category_id": None,
                         "category_name": None,
+                        "item_type": "product",
+                        "sale_unit": "piece",
                         "quantity": index,
                         "revenue": index * 10_000,
                     }

@@ -9,6 +9,7 @@ from apps.telegram_reports.formatters import (
     build_weekly_grid,
     format_compact_money,
     format_percent,
+    format_quantity,
 )
 from apps.telegram_reports.models import TelegramReportDelivery
 from common.utils.date import as_edate, tashkent_today
@@ -80,6 +81,8 @@ class TelegramReportService:
                     **row,
                     "position": index,
                     "formatted_revenue": format_compact_money(row["revenue"]),
+                    "formatted_quantity": format_quantity(row["quantity"]),
+                    "quantity_unit": self.get_quantity_unit(row),
                 }
                 for index, row in enumerate(report["top_items"], start=1)
             ],
@@ -87,6 +90,14 @@ class TelegramReportService:
         if include_daily:
             context["weekly_grid"] = build_weekly_grid(report["daily_breakdown"])
         return render_to_string(f"telegram_reports/{report_type}_report.html", context).strip()
+
+    @staticmethod
+    def get_quantity_unit(row: dict) -> str:
+        if row.get("sale_unit") == "kg":
+            return "kg"
+        if row.get("item_type") == "service":
+            return "ta xizmat"
+        return "ta"
 
     @staticmethod
     def build_metric_rows(report: dict) -> list[dict]:

@@ -7,6 +7,7 @@ from apps.telegram_reports.formatters import (
     build_weekly_grid,
     format_compact_money,
     format_mln_money,
+    format_quantity,
     split_telegram_message,
 )
 
@@ -18,6 +19,8 @@ class TelegramReportFormatterTests(SimpleTestCase):
         self.assertEqual(format_compact_money(2_500_000), "2,5 mln so‘m")
         self.assertEqual(format_mln_money(500_000, signed=True), "+0,5")
         self.assertEqual(format_mln_money(-1_000_000, signed=True), "-1")
+        self.assertEqual(format_quantity(3.25), "3,25")
+        self.assertEqual(format_quantity(12), "12")
 
     def test_weekly_grid_has_three_equal_width_rows(self):
         rows = [
@@ -56,3 +59,17 @@ class TelegramReportFormatterTests(SimpleTestCase):
         self.assertGreater(len(messages), 1)
         self.assertTrue(all(len(message) <= TELEGRAM_MESSAGE_TEXT_LIMIT for message in messages))
         self.assertEqual("\n".join(messages), text)
+
+    def test_content_blocks_are_not_split_between_messages(self):
+        blocks = [
+            f"<blockquote><b>{index}. Mahsulot {'x' * 120}</b>\n"
+            f"📦 <b>{index} ta</b> · 💰 <b>{index * 10} ming so‘m</b></blockquote>"
+            for index in range(1, 7)
+        ]
+
+        messages = split_telegram_message("\n\n".join(blocks), limit=500)
+
+        self.assertGreater(len(messages), 1)
+        self.assertTrue(all(len(message) <= 500 for message in messages))
+        for block in blocks:
+            self.assertEqual(sum(block in message for message in messages), 1)

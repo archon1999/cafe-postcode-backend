@@ -85,12 +85,22 @@ class DashboardAuthApiTests(APITestCase):
         return cls.stamp_created_at(order, created_at)
 
     @classmethod
-    def create_order_item(cls, *, order, catalog_item, quantity, unit_price, created_by=None):
+    def create_order_item(
+        cls,
+        *,
+        order,
+        catalog_item,
+        quantity,
+        unit_price,
+        created_by=None,
+        sale_unit=OrderItem.SaleUnit.PIECE,
+    ):
         return OrderItem.objects.create(
             order=order,
             catalog_item=catalog_item,
             created_by=created_by or order.opened_by,
             quantity=quantity,
+            sale_unit=sale_unit,
             unit_price=unit_price,
         )
 
@@ -691,6 +701,57 @@ class DashboardAuthApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data['top_items']), 7)
         self.assertIn('Extra item 1', {item['item_name'] for item in response.data['top_items']})
+
+    def test_dashboard_top_items_preserve_kilogram_and_service_types(self):
+        weighted_item = CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=self.category,
+            name='Weighted salad',
+            item_type=CatalogItem.ItemType.PRODUCT,
+            sale_unit=CatalogItem.SaleUnit.KILOGRAM,
+            price=10_000,
+        )
+        service_item = CatalogItem.objects.create(
+            restaurant=self.restaurant,
+            category=self.category,
+            name='Delivery service',
+            item_type=CatalogItem.ItemType.SERVICE,
+            sale_unit=CatalogItem.SaleUnit.PIECE,
+            price=20_000,
+        )
+        order = self.create_order(
+            restaurant=self.restaurant,
+            order_number=108,
+            created_at=self.dt(2026, 4, 7, 17, 0),
+            total=32_500,
+            opened_by=self.waiter_user,
+            cashier=self.cashier_user,
+            closed_at=self.dt(2026, 4, 7, 17, 30),
+        )
+        self.create_order_item(
+            order=order,
+            catalog_item=weighted_item,
+            quantity=1.25,
+            unit_price=10_000,
+            sale_unit=OrderItem.SaleUnit.KILOGRAM,
+        )
+        self.create_order_item(
+            order=order,
+            catalog_item=service_item,
+            quantity=1,
+            unit_price=20_000,
+        )
+        self.client.force_authenticate(self.owner_user)
+
+        response = self.client.get('/api/v1/dashboard/overview/?period_type=day&date=2026-04-07')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = {row['item_name']: row for row in response.data['top_items']}
+        self.assertEqual(rows['Weighted salad']['quantity'], 1.25)
+        self.assertEqual(rows['Weighted salad']['sale_unit'], 'kg')
+        self.assertEqual(rows['Weighted salad']['item_type'], 'product')
+        self.assertEqual(rows['Delivery service']['sale_unit'], 'piece')
+        self.assertEqual(rows['Delivery service']['item_type'], 'service')
 
     def test_dashboard_overview_returns_month_and_year_payload(self):
         self.client.force_authenticate(self.owner_user)

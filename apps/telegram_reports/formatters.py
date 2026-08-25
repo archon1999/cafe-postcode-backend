@@ -9,7 +9,7 @@ def split_telegram_message(
     *,
     limit: int = TELEGRAM_MESSAGE_TEXT_LIMIT,
 ) -> list[str]:
-    """Split rendered report HTML on line boundaries into Bot API-safe messages."""
+    """Split report HTML into Bot API-safe messages without breaking content blocks."""
     text = text.strip()
     if not text:
         return []
@@ -18,6 +18,25 @@ def split_telegram_message(
     if len(text) <= limit:
         return [text]
 
+    chunks: list[str] = []
+    current_blocks: list[str] = []
+    for block in text.split("\n\n"):
+        candidate = "\n\n".join((*current_blocks, block))
+        if current_blocks and len(candidate) > limit:
+            chunks.append("\n\n".join(current_blocks).rstrip())
+            current_blocks = []
+
+        if len(block) > limit:
+            chunks.extend(_split_telegram_lines(block, limit=limit))
+        else:
+            current_blocks.append(block)
+
+    if current_blocks:
+        chunks.append("\n\n".join(current_blocks).rstrip())
+    return [chunk for chunk in chunks if chunk]
+
+
+def _split_telegram_lines(text: str, *, limit: int) -> list[str]:
     chunks: list[str] = []
     current_lines: list[str] = []
     for line in text.splitlines():
@@ -55,6 +74,12 @@ def format_compact_money(value: int, *, include_currency: bool = True) -> str:
     else:
         text = f"{value}"
     return f"{text} so‘m" if include_currency else text
+
+
+def format_quantity(value: int | float) -> str:
+    quantity = Decimal(str(value or 0))
+    text = format(quantity.normalize(), "f")
+    return text.replace(".", ",")
 
 
 def format_mln_money(value: int, *, signed: bool = False) -> str:

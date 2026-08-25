@@ -99,6 +99,8 @@ class CommonReportService:
                 "item_name": row.get("catalog_item_name") or "Noma'lum",
                 "category_id": row.get("category_id"),
                 "category_name": row.get("category_name"),
+                "item_type": row.get("item_type") or "product",
+                "sale_unit": row.get("sale_unit") or "piece",
                 "quantity": CommonReportService._json_quantity(row.get("quantity")),
                 "revenue": int(row.get("revenue") or 0),
             }

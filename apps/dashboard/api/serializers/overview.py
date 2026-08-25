@@ -46,7 +46,9 @@ class DashboardTopItemSerializer(serializers.Serializer):
     item_name = serializers.CharField(allow_null=True)
     category_id = serializers.UUIDField(allow_null=True, required=False)
     category_name = serializers.CharField(allow_null=True, required=False)
-    quantity = serializers.IntegerField()
+    item_type = serializers.CharField()
+    sale_unit = serializers.CharField()
+    quantity = serializers.FloatField()
     revenue = serializers.IntegerField()
 
 

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from apps.reporting.services import ReportPeriod
 
 
@@ -53,6 +55,11 @@ class OwnerDashboardRowsMixin:
     @staticmethod
     def get_safe_number(value) -> int:
         return int(value or 0)
+
+    @staticmethod
+    def get_safe_quantity(value) -> int | float:
+        quantity = Decimal(str(value or 0))
+        return int(quantity) if quantity == quantity.to_integral_value() else float(quantity)
 
     def build_choice_breakdown(
         self, rows: list[dict], choices, *, total_sales: int
@@ -120,7 +127,9 @@ class OwnerDashboardRowsMixin:
                     "item_name": row.get("catalog_item_name"),
                     "category_id": row.get("category_id"),
                     "category_name": row.get("category_name"),
-                    "quantity": self.get_safe_number(row.get("quantity")),
+                    "item_type": row.get("item_type") or "product",
+                    "sale_unit": row.get("sale_unit") or "piece",
+                    "quantity": self.get_safe_quantity(row.get("quantity")),
                     "revenue": self.get_safe_number(row.get("revenue")),
                 }
             )
