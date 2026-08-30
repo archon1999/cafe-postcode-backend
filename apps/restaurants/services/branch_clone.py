@@ -20,7 +20,9 @@ from apps.restaurants.models import PrepStation
 BASE_EXCLUDED_FIELDS = {'id', 'created_at', 'updated_at'}
 SAFE_RESTAURANT_SETTING_FIELDS = (
     'service_fee_enabled',
+    'service_fee_mode',
     'service_fee_percent',
+    'service_fee_hourly_rate',
     'vat_enabled',
     'vat_percent',
     'marking_check_enabled',

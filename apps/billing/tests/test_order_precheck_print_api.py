@@ -90,10 +90,31 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         order = Order.objects.get(id=self.order['id'])
         order.hall_service_fee_percent = 3
         order.table_service_fee_percent = 2
+        order.service_fee_snapshot = [
+            {
+                'scope': 'restaurant',
+                'source_name': self.restaurant.name,
+                'mode': 'percentage',
+                'percent': 10,
+            },
+            {
+                'scope': 'hall',
+                'source_name': self.hall.name,
+                'mode': 'percentage',
+                'percent': 3,
+            },
+            {
+                'scope': 'table',
+                'source_name': self.table.name,
+                'mode': 'percentage',
+                'percent': 2,
+            },
+        ]
         order.save(
             update_fields=[
                 'hall_service_fee_percent',
                 'table_service_fee_percent',
+                'service_fee_snapshot',
                 'updated_at',
             ]
         )

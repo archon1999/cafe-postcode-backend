@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from common.api.fields import SecureImageField
+from common.service_fees import validate_service_fee_configuration
 
 
 class RestaurantEntitlementFieldsMixin(serializers.Serializer):
@@ -52,6 +53,7 @@ class RestaurantSettingsFieldsMixin(serializers.Serializer):
         max_value=Decimal("99"),
         required=False,
     )
+    service_fee_hourly_rate = serializers.IntegerField(min_value=0, required=False)
 
     def get_pos_auth_background_image_url(self, instance):
         image = getattr(instance, "pos_auth_background_image", None)
@@ -71,6 +73,26 @@ class RestaurantSettingsFieldsMixin(serializers.Serializer):
             )
         if clear_image:
             attrs["pos_auth_background_image"] = None
+        errors = validate_service_fee_configuration(
+            enabled=attrs.get(
+                "service_fee_enabled",
+                getattr(self.instance, "service_fee_enabled", False),
+            ),
+            mode=attrs.get(
+                "service_fee_mode",
+                getattr(self.instance, "service_fee_mode", "percentage"),
+            ),
+            percent=attrs.get(
+                "service_fee_percent",
+                getattr(self.instance, "service_fee_percent", 0),
+            ),
+            hourly_rate=attrs.get(
+                "service_fee_hourly_rate",
+                getattr(self.instance, "service_fee_hourly_rate", 0),
+            ),
+        )
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
     @staticmethod

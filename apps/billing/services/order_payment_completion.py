@@ -15,7 +15,7 @@ Receipt = get_receipt_model()
 
 class OrderPaymentCompletionMixin:
     def _complete_successful_payment(
-        self, *, order, payment, received_by, fiscal_results=None
+        self, *, order, payment, received_by, fiscal_results=None, service_fee_quote_at=None
     ):
         if (
             order.channel == Order.Channel.TAKEAWAY
@@ -23,6 +23,7 @@ class OrderPaymentCompletionMixin:
         ):
             self.order_submission_service_class().submit(order)
 
+        order.freeze_service_fee(at=service_fee_quote_at)
         totals = self._succeeded_payment_totals(order=order)
         paid_total = int(totals.get("amount") or 0)
         is_fully_paid = paid_total >= int(order.total or 0)

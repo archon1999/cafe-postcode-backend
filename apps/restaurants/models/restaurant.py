@@ -7,6 +7,7 @@ from django.db import models
 
 from common.storages import RestaurantAuthBackgroundStorage
 from common.models import BaseModel
+from common.service_fees import ServiceFeeMode
 
 
 AUTH_CODE_ALPHABET = string.ascii_letters + string.digits
@@ -54,7 +55,13 @@ class Restaurant(BaseModel):
     faktura_payload = models.JSONField(default=dict, blank=True)
     currency = models.CharField(max_length=10, default='UZS')
     service_fee_enabled = models.BooleanField(default=False)
+    service_fee_mode = models.CharField(
+        max_length=20,
+        choices=ServiceFeeMode.choices,
+        default=ServiceFeeMode.PERCENTAGE,
+    )
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    service_fee_hourly_rate = models.PositiveIntegerField(default=0)
     vat_enabled = models.BooleanField(default=True)
     vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=12)
     marking_check_enabled = models.BooleanField(default=False)

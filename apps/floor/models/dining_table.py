@@ -1,6 +1,7 @@
 from django.db import models
 
 from common.models import BaseModel
+from common.service_fees import ServiceFeeMode
 
 from .hall import Hall
 from .zone_or_cabin import ZoneOrCabin
@@ -70,7 +71,13 @@ class DiningTable(BaseModel):
     height = models.DecimalField(max_digits=8, decimal_places=2, default=1)
     rotation = models.DecimalField(max_digits=7, decimal_places=2, default=0)
     service_fee_enabled = models.BooleanField(default=False)
+    service_fee_mode = models.CharField(
+        max_length=20,
+        choices=ServiceFeeMode.choices,
+        default=ServiceFeeMode.PERCENTAGE,
+    )
     service_fee_percent = models.PositiveSmallIntegerField(default=0)
+    service_fee_hourly_rate = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 
     class Meta:

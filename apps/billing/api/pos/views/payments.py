@@ -129,6 +129,7 @@ class MartaCardPaymentInitiateView(APIView):
             total_override_reason=request.data.get(
                 'total_override_reason', request.data.get('totalOverrideReason', '')
             ),
+            service_fee_quote=request.data.get('service_fee_quote', request.data.get('serviceFeeQuote')),
             register_fiscal=bool(request.data.get('register_fiscal', True)),
             received_by=request.user,
             cash_shift=cash_shift,

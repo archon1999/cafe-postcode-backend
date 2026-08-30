@@ -4,6 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException
 
 from apps.billing.helpers import get_payment_model
 from apps.billing.services.cash_shift import CashShiftService
@@ -29,6 +30,12 @@ Order = get_order_model()
 Payment = get_payment_model()
 
 
+class ServiceFeeQuoteStale(APIException):
+    status_code = 409
+    default_code = "SERVICE_FEE_QUOTE_STALE"
+    default_detail = "Service fee quote is stale. Refresh the order and confirm the payment again."
+
+
 class OrderPaymentService(
     OrderPaymentCompletionMixin,
     OrderPaymentPolicyMixin,
@@ -38,6 +45,53 @@ class OrderPaymentService(
     order_submission_service_class = OrderSubmissionService
     state_service_class = OrderStateService
     shift_service_class = CashShiftService
+
+    @staticmethod
+    def _prepare_service_fee_quote(
+        *,
+        order,
+        quote,
+        trusted_edge_replay,
+        trusted_frozen_at=None,
+    ):
+        if not order.has_hourly_service_fee or order.service_fee_frozen_at is not None:
+            order.recalculate_totals(preserve_override=True)
+            return order.service_fee_frozen_at
+
+        quote_at = trusted_frozen_at if trusted_edge_replay and trusted_frozen_at else timezone.now()
+        current = {
+            "quotedAt": quote_at.isoformat(),
+            "billableMinutes": order.get_service_fee_billable_minutes(as_of=quote_at),
+            "serviceFee": order.get_service_fee_amount(as_of=quote_at),
+            "calculatedTotal": order.get_calculated_total(as_of=quote_at),
+        }
+        if not trusted_edge_replay:
+            quote = quote if isinstance(quote, dict) else {}
+            def quote_int(*names):
+                for name in names:
+                    if name in quote and quote[name] is not None:
+                        try:
+                            return int(quote[name])
+                        except (TypeError, ValueError):
+                            return -1
+                return -1
+
+            expected = {
+                "billableMinutes": quote_int("billableMinutes", "billable_minutes"),
+                "serviceFee": quote_int("serviceFee", "service_fee"),
+                "calculatedTotal": quote_int("calculatedTotal", "calculated_total"),
+            }
+            if expected != {key: current[key] for key in expected}:
+                raise ServiceFeeQuoteStale(
+                    detail={
+                        "code": "SERVICE_FEE_QUOTE_STALE",
+                        "detail": ServiceFeeQuoteStale.default_detail,
+                        "currentQuote": current,
+                    }
+                )
+
+        order.recalculate_totals(preserve_override=True, as_of=quote_at)
+        return quote_at
 
     @transaction.atomic
     def process(
@@ -104,6 +158,18 @@ class OrderPaymentService(
         self._validate_shift(order=order, cash_shift=cash_shift)
         serializer = PaymentSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
+        service_fee_quote = serializer.validated_data.pop("service_fee_quote", None)
+        service_fee_frozen_at = serializer.validated_data.pop("service_fee_frozen_at", None)
+        if service_fee_frozen_at is not None and not trusted_edge_replay:
+            raise ValidationError(
+                {"serviceFeeFrozenAt": _("Only a trusted local agent may freeze service-fee time.")}
+            )
+        service_fee_quote_at = self._prepare_service_fee_quote(
+            order=order,
+            quote=service_fee_quote,
+            trusted_edge_replay=trusted_edge_replay,
+            trusted_frozen_at=service_fee_frozen_at,
+        )
         manual_card_override = bool(
             serializer.validated_data.pop("manual_card_override", False)
         )
@@ -280,6 +346,7 @@ class OrderPaymentService(
             payment=payment,
             received_by=received_by,
             fiscal_results=validated_edge_fiscal_results,
+            service_fee_quote_at=service_fee_quote_at,
         )
 
 

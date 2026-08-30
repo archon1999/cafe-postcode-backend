@@ -23,8 +23,8 @@ def _included_vat(*, amount: int, percent) -> int:
     return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _service_fee_totals(order) -> dict:
-    components = order.get_service_fee_components()
+def _service_fee_totals(order, *, as_of=None) -> dict:
+    components = order.get_service_fee_components(as_of=as_of)
     by_scope = {component["scope"]: component for component in components}
 
     def value(scope: str, field: str, default=0):
@@ -35,16 +35,26 @@ def _service_fee_totals(order) -> dict:
         "serviceFeeComponents": [
             {
                 **component,
-                "percent": _json_number(component["percent"]),
+                **(
+                    {"percent": _json_number(component["percent"])}
+                    if "percent" in component
+                    else {}
+                ),
             }
             for component in components
         ],
         "restaurantServiceFee": value("restaurant", "amount"),
         "restaurantServiceFeePercent": _json_number(value("restaurant", "percent")),
+        "restaurantServiceFeeHourlyRate": value("restaurant", "hourly_rate"),
+        "restaurantServiceFeeDurationMinutes": value("restaurant", "duration_minutes"),
         "hallServiceFee": value("hall", "amount"),
         "hallServiceFeePercent": _json_number(value("hall", "percent")),
+        "hallServiceFeeHourlyRate": value("hall", "hourly_rate"),
+        "hallServiceFeeDurationMinutes": value("hall", "duration_minutes"),
         "tableServiceFee": value("table", "amount"),
         "tableServiceFeePercent": _json_number(value("table", "percent")),
+        "tableServiceFeeHourlyRate": value("table", "hourly_rate"),
+        "tableServiceFeeDurationMinutes": value("table", "duration_minutes"),
     }
 
 
@@ -303,9 +313,10 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
     active_items = order.items.exclude(
         status=order.items.model.Status.CANCELLED
     ).select_related("catalog_item").prefetch_related("modifiers")
-    total = _money(order.total)
+    as_of = timezone.now()
+    total = order.get_total(as_of=as_of)
     subtotal = _money(order.subtotal)
-    calculated_total = _money(order.calculated_total)
+    calculated_total = order.get_calculated_total(as_of=as_of)
     vat_enabled = bool(getattr(restaurant, "vat_enabled", False))
     vat_percent = getattr(restaurant, "vat_percent", 0) or 0
 
@@ -345,8 +356,8 @@ def build_order_precheck_print_snapshot(*, order) -> dict:
         "precheck": {"printedAt": _local_datetime(timezone.now())},
         "totals": {
             "subtotal": subtotal,
-            "serviceFee": _money(getattr(order, "service_fee", 0)) or max(calculated_total - subtotal, 0),
-            **_service_fee_totals(order),
+            "serviceFee": order.get_service_fee_amount(as_of=as_of),
+            **_service_fee_totals(order, as_of=as_of),
             **(
                 {
                     "calculatedTotal": calculated_total,

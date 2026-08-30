@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.floor.models import Hall, ZoneOrCabin
 from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
+from common.service_fees import validate_service_fee_configuration
 
 from .dining_table import DiningTableSerializer
 from .zone_or_cabin import ZoneOrCabinSerializer
@@ -47,7 +48,9 @@ class HallSerializer(serializers.ModelSerializer):
             "description",
             "grid_columns",
             "service_fee_enabled",
+            "service_fee_mode",
             "service_fee_percent",
+            "service_fee_hourly_rate",
             "sort_order",
             "is_active",
             "zone_or_cabin_id",
@@ -75,6 +78,17 @@ class HallSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
+        service_fee_errors = validate_service_fee_configuration(
+            enabled=attrs.get("service_fee_enabled", getattr(self.instance, "service_fee_enabled", False)),
+            mode=attrs.get("service_fee_mode", getattr(self.instance, "service_fee_mode", "percentage")),
+            percent=attrs.get("service_fee_percent", getattr(self.instance, "service_fee_percent", 0)),
+            hourly_rate=attrs.get(
+                "service_fee_hourly_rate",
+                getattr(self.instance, "service_fee_hourly_rate", 0),
+            ),
+        )
+        if service_fee_errors:
+            raise serializers.ValidationError(service_fee_errors)
         zone_or_cabin = attrs.get("zone_or_cabin")
         if zone_or_cabin is None:
             return attrs

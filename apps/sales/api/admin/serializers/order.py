@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.utils import timezone
 
 from apps.billing.api.admin.serializers import (
     AdminPaymentSerializer,
@@ -33,20 +34,40 @@ class AdminOrderSerializer(serializers.ModelSerializer):
     service_fee = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     service_fee_components = serializers.SerializerMethodField()
+    service_fee_billable_minutes = serializers.SerializerMethodField()
+    calculated_total = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
     items_count = serializers.SerializerMethodField()
     payments_count = serializers.SerializerMethodField()
     receipts_count = serializers.SerializerMethodField()
 
+    def _service_fee_as_of(self, obj):
+        if obj.service_fee_frozen_at is not None:
+            return obj.service_fee_frozen_at
+        cache = getattr(self, "_service_fee_quote_times", None)
+        if cache is None:
+            cache = self._service_fee_quote_times = {}
+        if obj.pk not in cache:
+            cache[obj.pk] = timezone.now()
+        return cache[obj.pk]
+
     def get_service_fee(self, obj):
-        subtotal = obj.subtotal or 0
-        total = obj.calculated_total or 0
-        return max(total - subtotal, 0)
+        return obj.get_service_fee_amount(as_of=self._service_fee_as_of(obj))
+
+    def get_calculated_total(self, obj):
+        return obj.get_calculated_total(as_of=self._service_fee_as_of(obj))
+
+    def get_total(self, obj):
+        return obj.get_total(as_of=self._service_fee_as_of(obj))
 
     def get_service_fee_percent(self, obj):
         return obj.service_fee_percent
 
     def get_service_fee_components(self, obj):
-        return obj.get_service_fee_components()
+        return obj.get_service_fee_components(as_of=self._service_fee_as_of(obj))
+
+    def get_service_fee_billable_minutes(self, obj):
+        return obj.get_service_fee_billable_minutes(as_of=self._service_fee_as_of(obj))
 
     def get_items_count(self, obj):
         return obj.items.count()
@@ -88,9 +109,12 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             "service_fee",
             "service_fee_percent",
             "service_fee_components",
+            "service_fee_billable_minutes",
             "restaurant_service_fee_percent",
             "hall_service_fee_percent",
             "table_service_fee_percent",
+            "service_fee_started_at",
+            "service_fee_frozen_at",
             "total",
             "closed_at",
             "items_count",

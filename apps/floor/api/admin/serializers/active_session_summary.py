@@ -78,6 +78,7 @@ class ActiveSessionSummarySerializer(serializers.ModelSerializer):
             'status',
             'assigned_waiter_id',
             'created_at',
+            'opened_at',
             'service_state',
             'primary_table_id',
             'table_ids',

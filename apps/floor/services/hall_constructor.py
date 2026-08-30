@@ -117,7 +117,9 @@ class HallConstructorService:
         hall: Hall,
         grid_columns: int,
         service_fee_enabled: bool,
+        service_fee_mode: str,
         service_fee_percent,
+        service_fee_hourly_rate: int,
         tables_payload: list[dict],
         deleted_table_ids: Iterable[str],
     ):
@@ -149,7 +151,9 @@ class HallConstructorService:
                 'height': item['height'],
                 'rotation': 0,
                 'service_fee_enabled': item.get('service_fee_enabled', False),
+                'service_fee_mode': item.get('service_fee_mode', 'percentage'),
                 'service_fee_percent': item.get('service_fee_percent', 0),
+                'service_fee_hourly_rate': item.get('service_fee_hourly_rate', 0),
                 'is_active': item.get('is_active', True),
             }
 
@@ -168,12 +172,16 @@ class HallConstructorService:
 
         hall.grid_columns = grid_columns
         hall.service_fee_enabled = service_fee_enabled
+        hall.service_fee_mode = service_fee_mode
         hall.service_fee_percent = service_fee_percent
+        hall.service_fee_hourly_rate = service_fee_hourly_rate
         hall.save(
             update_fields=[
                 'grid_columns',
                 'service_fee_enabled',
+                'service_fee_mode',
                 'service_fee_percent',
+                'service_fee_hourly_rate',
                 'updated_at',
             ]
         )

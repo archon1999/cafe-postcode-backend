@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, Hall
+from common.service_fees import ServiceFeeMode, validate_service_fee_configuration
 
 
 class HallConstructorTableReadSerializer(serializers.ModelSerializer):
@@ -22,7 +23,9 @@ class HallConstructorTableReadSerializer(serializers.ModelSerializer):
             'width',
             'height',
             'service_fee_enabled',
+            'service_fee_mode',
             'service_fee_percent',
+            'service_fee_hourly_rate',
             'is_active',
         )
 
@@ -39,7 +42,9 @@ class HallConstructorSerializer(serializers.ModelSerializer):
             'hall_name',
             'grid_columns',
             'service_fee_enabled',
+            'service_fee_mode',
             'service_fee_percent',
+            'service_fee_hourly_rate',
             'tables',
         )
 
@@ -59,27 +64,61 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
     width = serializers.IntegerField(min_value=1)
     height = serializers.IntegerField(min_value=1)
     service_fee_enabled = serializers.BooleanField(required=False, default=False)
+    service_fee_mode = serializers.ChoiceField(
+        choices=ServiceFeeMode.choices,
+        required=False,
+        default=ServiceFeeMode.PERCENTAGE,
+    )
     service_fee_percent = serializers.IntegerField(
         min_value=0,
         max_value=99,
         required=False,
         default=0,
     )
+    service_fee_hourly_rate = serializers.IntegerField(min_value=0, required=False, default=0)
     is_active = serializers.BooleanField(required=False, default=True)
+
+    def validate(self, attrs):
+        errors = validate_service_fee_configuration(
+            enabled=attrs['service_fee_enabled'],
+            mode=attrs['service_fee_mode'],
+            percent=attrs['service_fee_percent'],
+            hourly_rate=attrs['service_fee_hourly_rate'],
+        )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 class HallConstructorUpdateSerializer(serializers.Serializer):
     grid_columns = serializers.IntegerField(min_value=1, max_value=24)
     service_fee_enabled = serializers.BooleanField(required=False, default=False)
+    service_fee_mode = serializers.ChoiceField(
+        choices=ServiceFeeMode.choices,
+        required=False,
+        default=ServiceFeeMode.PERCENTAGE,
+    )
     service_fee_percent = serializers.IntegerField(
         min_value=0,
         max_value=99,
         required=False,
         default=0,
     )
+    service_fee_hourly_rate = serializers.IntegerField(min_value=0, required=False, default=0)
     tables = HallConstructorTableWriteSerializer(many=True)
     deleted_table_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
         allow_empty=True,
     )
+
+    def validate(self, attrs):
+        errors = validate_service_fee_configuration(
+            enabled=attrs['service_fee_enabled'],
+            mode=attrs['service_fee_mode'],
+            percent=attrs['service_fee_percent'],
+            hourly_rate=attrs['service_fee_hourly_rate'],
+        )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs

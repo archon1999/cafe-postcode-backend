@@ -30,6 +30,7 @@ class MartaPaymentFlowMixin:
         amount,
         final_total=None,
         total_override_reason='',
+        service_fee_quote=None,
         register_fiscal=True,
         received_by,
         cash_shift=None,
@@ -80,6 +81,11 @@ class MartaPaymentFlowMixin:
             }
         )
         serializer.is_valid(raise_exception=True)
+        service_fee_quote_at = self._prepare_service_fee_quote(
+            order=order,
+            quote=service_fee_quote,
+            trusted_edge_replay=False,
+        )
         total_override_prepared = self._apply_total_override(
             order=order,
             final_total=serializer.validated_data.pop("final_total", None),
@@ -180,6 +186,9 @@ class MartaPaymentFlowMixin:
             "tax_number": tax_number,
             "timeout_seconds": timeout_seconds,
             "initiated_at": timezone.now().isoformat(),
+            "service_fee_quote_at": service_fee_quote_at.isoformat()
+            if service_fee_quote_at is not None
+            else None,
         }
         payment.save(update_fields=["provider_payload", "updated_at"])
         return {"payment": payment, "marta": marta_payload}
@@ -310,8 +319,18 @@ class MartaPaymentFlowMixin:
             )
 
         return self._complete_successful_payment(
-            order=payment.order, payment=payment, received_by=received_by
+            order=payment.order,
+            payment=payment,
+            received_by=received_by,
+            service_fee_quote_at=self._parse_service_fee_quote_at(payment.provider_payload),
         )
+
+    @staticmethod
+    def _parse_service_fee_quote_at(provider_payload):
+        from django.utils.dateparse import parse_datetime
+
+        raw = str((provider_payload or {}).get("service_fee_quote_at") or "")
+        return parse_datetime(raw) if raw else None
 
     @staticmethod
     def _positive_int(value, fallback):

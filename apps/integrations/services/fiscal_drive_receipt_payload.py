@@ -14,6 +14,11 @@ SERVICE_FEE_NAMES = {
 }
 
 
+def _service_fee_name(component):
+    name = SERVICE_FEE_NAMES.get(component.get('scope'), 'Xizmat haqi')
+    return f"{name} (soatlik)" if component.get('mode') == 'hourly' else name
+
+
 class FiscalDriveReceiptPayloadMixin:
     def _build_sale_receipt(self, *, order, payment, memory_info: dict | None) -> dict:
         total = int(order.total or 0)
@@ -97,7 +102,7 @@ class FiscalDriveReceiptPayloadMixin:
             if fiscal_service_fee <= 0:
                 continue
             service_payload = {
-                'Name': SERVICE_FEE_NAMES.get(component.get('scope'), 'Xizmat haqi'),
+                'Name': _service_fee_name(component),
                 'Amount': 1000,
                 'Price': self._money_to_fiscal(fiscal_service_fee),
                 'SPIC': SERVICE_FEE_SPIC,

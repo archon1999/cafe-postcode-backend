@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from rest_framework import serializers
+from django.utils import timezone
 
 from apps.billing.helpers import get_payment_model, get_receipt_model
 from apps.floor.services import restaurant_has_multiple_active_zones
@@ -101,6 +102,9 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     service_fee_enabled = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     service_fee_components = serializers.SerializerMethodField()
+    service_fee_billable_minutes = serializers.SerializerMethodField()
+    service_fee_quote = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
     vat_enabled = serializers.SerializerMethodField()
     vat_percent = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
@@ -130,11 +134,18 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             cache[restaurant_id] = restaurant_has_multiple_active_zones(restaurant_id)
         return cache[restaurant_id]
 
-    @staticmethod
-    def get_service_fee(obj):
-        subtotal = obj.subtotal or 0
-        total = obj.calculated_total or 0
-        return max(total - subtotal, 0)
+    def _service_fee_as_of(self, obj):
+        if obj.service_fee_frozen_at is not None:
+            return obj.service_fee_frozen_at
+        cache = getattr(self, '_service_fee_quote_times', None)
+        if cache is None:
+            cache = self._service_fee_quote_times = {}
+        if obj.pk not in cache:
+            cache[obj.pk] = timezone.now()
+        return cache[obj.pk]
+
+    def get_service_fee(self, obj):
+        return obj.get_service_fee_amount(as_of=self._service_fee_as_of(obj))
 
     @staticmethod
     def get_service_fee_percent(obj):
@@ -144,9 +155,25 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     def get_service_fee_enabled(obj):
         return obj.service_fee_enabled
 
-    @staticmethod
-    def get_service_fee_components(obj):
-        return obj.get_service_fee_components()
+    def get_service_fee_components(self, obj):
+        return obj.get_service_fee_components(as_of=self._service_fee_as_of(obj))
+
+    def get_service_fee_billable_minutes(self, obj):
+        return obj.get_service_fee_billable_minutes(as_of=self._service_fee_as_of(obj))
+
+    def get_service_fee_quote(self, obj):
+        if not obj.has_hourly_service_fee:
+            return None
+        as_of = self._service_fee_as_of(obj)
+        return {
+            'quoted_at': as_of,
+            'billable_minutes': obj.get_service_fee_billable_minutes(as_of=as_of),
+            'service_fee': obj.get_service_fee_amount(as_of=as_of),
+            'calculated_total': obj.get_calculated_total(as_of=as_of),
+        }
+
+    def get_total(self, obj):
+        return obj.get_total(as_of=self._service_fee_as_of(obj))
 
     @staticmethod
     def _included_vat_amount(*, amount: int, percent) -> int:
@@ -171,7 +198,7 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     def get_vat_amount(self, obj):
         if not self.get_vat_enabled(obj):
             return 0
-        return self._included_vat_amount(amount=int(obj.total or 0), percent=self.get_vat_percent(obj))
+        return self._included_vat_amount(amount=self.get_total(obj), percent=self.get_vat_percent(obj))
 
     class Meta:
         model = Order
@@ -200,9 +227,13 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
             'service_fee_enabled',
             'service_fee_percent',
             'service_fee_components',
+            'service_fee_billable_minutes',
+            'service_fee_quote',
             'restaurant_service_fee_percent',
             'hall_service_fee_percent',
             'table_service_fee_percent',
+            'service_fee_started_at',
+            'service_fee_frozen_at',
             'vat_enabled',
             'vat_percent',
             'vat_amount',

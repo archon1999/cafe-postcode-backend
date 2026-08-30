@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import uuid4
 from unittest.mock import patch
 
@@ -13,6 +14,7 @@ from apps.integrations.models import IntegrationConfig
 from apps.kitchen.models import KitchenTicket
 from apps.printing.models import PrintTemplate
 from apps.sales.models import Order, OrderItem
+from apps.sales.serializers import OrderSerializer
 from apps.sales.services import OrderSubmissionService
 from apps.restaurants.models import CashDesk, DistributionPoint, PrepStation, Restaurant
 from apps.platform.models import RestaurantEntitlement
@@ -134,6 +136,51 @@ class PaymentCreateApiTests(APITestCase):
         order.recalculate_totals()
         return order
 
+    def create_hourly_hall_order(self):
+        self.restaurant.service_fee_mode = 'hourly'
+        self.restaurant.service_fee_hourly_rate = 60_000
+        self.restaurant.save(
+            update_fields=['service_fee_mode', 'service_fee_hourly_rate', 'updated_at']
+        )
+        zone = ZoneOrCabin.objects.create(
+            restaurant=self.restaurant,
+            name=f'Hourly zone {uuid4()}',
+        )
+        hall = Hall.objects.create(zone_or_cabin=zone, name='Hourly hall')
+        table = DiningTable.objects.create(
+            hall=hall,
+            name='Hourly table',
+            table_number=99,
+            seat_count=4,
+        )
+        opened_at = timezone.now() - timedelta(minutes=61)
+        table_session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=hall,
+            table=table,
+            opened_by=self.user,
+            assigned_waiter=self.user,
+            opened_at=opened_at,
+        )
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            table_session=table_session,
+            distribution_point=self.distribution_point,
+            opened_by=self.user,
+            order_number=2001,
+            channel=Order.Channel.HALL,
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30_000,
+        )
+        order.recalculate_totals()
+        return order
+
     def test_takeaway_order_does_not_apply_restaurant_service_fee(self):
         self.order.refresh_from_db()
 
@@ -147,6 +194,77 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.subtotal, 30000)
         self.assertEqual(order.total, 30000)
         self.assertEqual(order.calculated_total, 30000)
+
+    @patch('apps.billing.services.order_payment.charge_payment')
+    def test_hourly_payment_rejects_stale_quote_before_charge(self, charge_payment):
+        order = self.create_hourly_hall_order()
+        quote = dict(OrderSerializer(order).data['service_fee_quote'])
+        quote['billable_minutes'] -= 1
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 1_000,
+                'serviceFeeQuote': quote,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT, response.data)
+        self.assertEqual(response.data['code'], 'SERVICE_FEE_QUOTE_STALE')
+        self.assertIn('currentQuote', response.data)
+        charge_payment.assert_not_called()
+        order.refresh_from_db()
+        self.assertIsNone(order.service_fee_frozen_at)
+
+    @patch(
+        'apps.billing.services.order_payment.charge_payment',
+        return_value={'ok': False, 'provider': 'cash', 'detail': 'failed'},
+    )
+    def test_failed_hourly_payment_does_not_freeze_timer(self, _charge_payment):
+        order = self.create_hourly_hall_order()
+        quote = OrderSerializer(order).data['service_fee_quote']
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 1_000,
+                'serviceFeeQuote': quote,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        order.refresh_from_db()
+        self.assertIsNone(order.service_fee_frozen_at)
+        self.assertEqual(response.data['payment']['status'], Payment.Status.FAILED)
+
+    @patch(
+        'apps.billing.services.order_payment.charge_payment',
+        return_value={'ok': True, 'provider': 'cash', 'reference': ''},
+    )
+    def test_first_successful_partial_hourly_payment_freezes_timer(self, _charge_payment):
+        order = self.create_hourly_hall_order()
+        quote = OrderSerializer(order).data['service_fee_quote']
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            {
+                'method': Payment.Method.CASH,
+                'amount': 1_000,
+                'serviceFeeQuote': quote,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order.refresh_from_db()
+        self.assertIsNotNone(order.service_fee_frozen_at)
+        frozen_amount = order.get_service_fee_amount()
+        order.recalculate_totals(as_of=timezone.now() + timedelta(hours=5))
+        self.assertEqual(order.get_service_fee_amount(), frozen_amount)
 
     @patch(
         'apps.billing.services.order_payment.charge_payment',

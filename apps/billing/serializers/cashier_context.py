@@ -100,7 +100,9 @@ class RestaurantFiscalProfileSerializer(serializers.Serializer):
     social = serializers.CharField()
     address = serializers.CharField()
     service_fee_enabled = serializers.BooleanField()
+    service_fee_mode = serializers.CharField()
     service_fee_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
+    service_fee_hourly_rate = serializers.IntegerField()
     vat_enabled = serializers.BooleanField()
     vat_percent = serializers.DecimalField(max_digits=5, decimal_places=2)
 

@@ -160,7 +160,10 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                 "service_fee_enabled": bool(
                     getattr(restaurant, "service_fee_enabled", False)
                 ),
+                "service_fee_mode": getattr(restaurant, "service_fee_mode", "percentage"),
                 "service_fee_percent": getattr(restaurant, "service_fee_percent", 0)
+                or 0,
+                "service_fee_hourly_rate": getattr(restaurant, "service_fee_hourly_rate", 0)
                 or 0,
                 "vat_enabled": bool(getattr(restaurant, "vat_enabled", False)),
                 "vat_percent": getattr(restaurant, "vat_percent", 0) or 0,

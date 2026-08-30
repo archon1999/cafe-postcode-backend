@@ -27,6 +27,8 @@ class PaymentSerializer(serializers.ModelSerializer):
         default='',
         max_length=255,
     )
+    service_fee_quote = serializers.JSONField(required=False, write_only=True)
+    service_fee_frozen_at = serializers.DateTimeField(required=False, write_only=True)
 
     def validate_method(self, value):
         if value not in {Payment.Method.CASH, Payment.Method.CARD, Payment.Method.MIXED}:
@@ -73,6 +75,8 @@ class PaymentSerializer(serializers.ModelSerializer):
         validated_data.pop('edge_fiscal_results_json', None)
         validated_data.pop('final_total', None)
         validated_data.pop('total_override_reason', None)
+        validated_data.pop('service_fee_quote', None)
+        validated_data.pop('service_fee_frozen_at', None)
         return super().create(validated_data)
 
     class Meta:
@@ -101,6 +105,8 @@ class PaymentSerializer(serializers.ModelSerializer):
             'edge_fiscal_results_json',
             'final_total',
             'total_override_reason',
+            'service_fee_quote',
+            'service_fee_frozen_at',
             'refunds',
             'manual_card_override',
             'manual_card_reason',

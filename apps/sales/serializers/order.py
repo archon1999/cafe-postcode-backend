@@ -2,6 +2,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import re
 
 from django.utils.translation import gettext_lazy as _
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.billing.serializers import PaymentSerializer, ReceiptSerializer
@@ -23,6 +24,9 @@ class OrderSerializer(serializers.ModelSerializer):
         'restaurant_service_fee_percent',
         'hall_service_fee_percent',
         'table_service_fee_percent',
+        'service_fee_snapshot',
+        'service_fee_started_at',
+        'service_fee_frozen_at',
     )
     UPDATE_ALLOWED_FIELDS = frozenset(
         {
@@ -50,6 +54,10 @@ class OrderSerializer(serializers.ModelSerializer):
     service_fee_enabled = serializers.SerializerMethodField()
     service_fee_percent = serializers.SerializerMethodField()
     service_fee_components = serializers.SerializerMethodField()
+    service_fee_billable_minutes = serializers.SerializerMethodField()
+    service_fee_quote = serializers.SerializerMethodField()
+    calculated_total = serializers.SerializerMethodField()
+    total = serializers.SerializerMethodField()
     vat_enabled = serializers.SerializerMethodField()
     vat_percent = serializers.SerializerMethodField()
     vat_amount = serializers.SerializerMethodField()
@@ -153,9 +161,23 @@ class OrderSerializer(serializers.ModelSerializer):
         return instance
 
     def get_service_fee(self, obj):
-        subtotal = obj.subtotal or 0
-        total = obj.calculated_total or 0
-        return max(total - subtotal, 0)
+        return obj.get_service_fee_amount(as_of=self._service_fee_as_of(obj))
+
+    def _service_fee_as_of(self, obj):
+        if obj.service_fee_frozen_at is not None:
+            return obj.service_fee_frozen_at
+        cache = getattr(self, '_service_fee_quote_times', None)
+        if cache is None:
+            cache = self._service_fee_quote_times = {}
+        if obj.pk not in cache:
+            cache[obj.pk] = timezone.now()
+        return cache[obj.pk]
+
+    def get_calculated_total(self, obj):
+        return obj.get_calculated_total(as_of=self._service_fee_as_of(obj))
+
+    def get_total(self, obj):
+        return obj.get_total(as_of=self._service_fee_as_of(obj))
 
     @staticmethod
     def get_payment_total_editable(obj):
@@ -168,7 +190,21 @@ class OrderSerializer(serializers.ModelSerializer):
         return obj.service_fee_enabled
 
     def get_service_fee_components(self, obj):
-        return obj.get_service_fee_components()
+        return obj.get_service_fee_components(as_of=self._service_fee_as_of(obj))
+
+    def get_service_fee_billable_minutes(self, obj):
+        return obj.get_service_fee_billable_minutes(as_of=self._service_fee_as_of(obj))
+
+    def get_service_fee_quote(self, obj):
+        if not obj.has_hourly_service_fee:
+            return None
+        as_of = self._service_fee_as_of(obj)
+        return {
+            'quoted_at': as_of,
+            'billable_minutes': obj.get_service_fee_billable_minutes(as_of=as_of),
+            'service_fee': obj.get_service_fee_amount(as_of=as_of),
+            'calculated_total': obj.get_calculated_total(as_of=as_of),
+        }
 
     @staticmethod
     def _included_vat_amount(*, amount: int, percent) -> int:
@@ -192,7 +228,10 @@ class OrderSerializer(serializers.ModelSerializer):
     def get_vat_amount(self, obj):
         if not self.get_vat_enabled(obj):
             return 0
-        return self._included_vat_amount(amount=int(obj.total or 0), percent=self.get_vat_percent(obj))
+        return self._included_vat_amount(
+            amount=self.get_total(obj),
+            percent=self.get_vat_percent(obj),
+        )
 
     def get_items(self, obj):
         prefetched_items = getattr(obj, '_prefetched_objects_cache', {}).get('items')
@@ -236,9 +275,13 @@ class OrderSerializer(serializers.ModelSerializer):
             'service_fee_enabled',
             'service_fee_percent',
             'service_fee_components',
+            'service_fee_billable_minutes',
+            'service_fee_quote',
             'restaurant_service_fee_percent',
             'hall_service_fee_percent',
             'table_service_fee_percent',
+            'service_fee_started_at',
+            'service_fee_frozen_at',
             'vat_enabled',
             'vat_percent',
             'vat_amount',

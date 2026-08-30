@@ -1,6 +1,7 @@
 from django.db import models
 
 from common.models import BaseModel
+from common.service_fees import ServiceFeeMode
 
 
 class Hall(BaseModel):
@@ -13,7 +14,13 @@ class Hall(BaseModel):
     description = models.CharField(max_length=255, blank=True)
     grid_columns = models.PositiveIntegerField(default=8)
     service_fee_enabled = models.BooleanField(default=False)
+    service_fee_mode = models.CharField(
+        max_length=20,
+        choices=ServiceFeeMode.choices,
+        default=ServiceFeeMode.PERCENTAGE,
+    )
     service_fee_percent = models.PositiveSmallIntegerField(default=0)
+    service_fee_hourly_rate = models.PositiveIntegerField(default=0)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

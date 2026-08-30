@@ -1,4 +1,8 @@
 from apps.sales.models import Order, OrderItem
+from datetime import timedelta
+
+from django.utils import timezone
+
 from apps.billing.models import Payment, Receipt
 from apps.floor.models import TableSession, ZoneOrCabin
 from apps.sales.serializers import OrderSerializer
@@ -55,18 +59,21 @@ class OrderSerializerTests(PosTestCase):
                 {
                     'scope': 'restaurant',
                     'source_name': 'Test restaurant',
+                    'mode': 'percentage',
                     'percent': 10,
                     'amount': 3000,
                 },
                 {
                     'scope': 'hall',
                     'source_name': 'Asosiy zal',
+                    'mode': 'percentage',
                     'percent': 3,
                     'amount': 900,
                 },
                 {
                     'scope': 'table',
                     'source_name': 'Asosiy zal 1',
+                    'mode': 'percentage',
                     'percent': 2,
                     'amount': 600,
                 },
@@ -114,6 +121,57 @@ class OrderSerializerTests(PosTestCase):
 
         self.assertEqual(data['service_fee_percent'], 13)
         self.assertEqual(data['service_fee'], 3900)
+
+    def test_combines_percentage_and_hourly_snapshot_using_frozen_minutes(self):
+        self.table.service_fee_enabled = True
+        self.table.service_fee_mode = 'hourly'
+        self.table.service_fee_hourly_rate = 100_000
+        self.table.save(
+            update_fields=[
+                'service_fee_enabled',
+                'service_fee_mode',
+                'service_fee_hourly_rate',
+            ]
+        )
+        opened_at = timezone.now() - timedelta(minutes=90)
+        table_session = TableSession.objects.create(
+            restaurant=self.restaurant,
+            hall=self.hall,
+            table=self.table,
+            opened_by=self.user,
+            assigned_waiter=self.user,
+            guest_count=4,
+            opened_at=opened_at,
+        )
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            table_session=table_session,
+            distribution_point=self.hall_distribution,
+            opened_by=self.user,
+            order_number=101,
+            channel=Order.Channel.HALL,
+            service_fee_frozen_at=opened_at + timedelta(minutes=90),
+        )
+        OrderItem.objects.create(
+            order=order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+        )
+        order.recalculate_totals()
+
+        data = OrderSerializer(order).data
+
+        self.assertEqual(data['service_fee_percent'], 10)
+        self.assertEqual(data['service_fee_billable_minutes'], 90)
+        self.assertEqual(data['service_fee'], 153_000)
+        self.assertEqual(data['total'], 183_000)
+        self.assertEqual(data['service_fee_components'][1]['mode'], 'hourly')
+        self.assertEqual(data['service_fee_components'][1]['hourly_rate'], 100_000)
+        self.assertEqual(data['service_fee_components'][1]['duration_minutes'], 90)
+        self.assertEqual(data['service_fee_components'][1]['amount'], 150_000)
 
     def test_no_service_fee_when_all_three_levels_are_disabled(self):
         self.restaurant.service_fee_enabled = False
