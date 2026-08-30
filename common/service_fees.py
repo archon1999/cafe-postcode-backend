@@ -1,4 +1,4 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 
 from django.db import models
 from django.utils import timezone
@@ -11,6 +11,8 @@ class ServiceFeeMode(models.TextChoices):
 
 SERVICE_FEE_SCOPES = ("restaurant", "hall", "table")
 SERVICE_FEE_BILLING_INTERVAL_MINUTES = 5
+SERVICE_FEE_MINIMUM_BILLABLE_MINUTES = 60
+SERVICE_FEE_AMOUNT_ROUNDING_QUANTUM = Decimal("1E3")
 
 
 def _json_number(value):
@@ -98,7 +100,10 @@ def service_fee_billable_minutes(*, started_at, ended_at=None) -> int:
     ended_at = ended_at or timezone.now()
     seconds = max((ended_at - started_at).total_seconds(), 0)
     interval_seconds = SERVICE_FEE_BILLING_INTERVAL_MINUTES * 60
-    return int(seconds // interval_seconds) * SERVICE_FEE_BILLING_INTERVAL_MINUTES
+    complete_interval_minutes = (
+        int(seconds // interval_seconds) * SERVICE_FEE_BILLING_INTERVAL_MINUTES
+    )
+    return max(SERVICE_FEE_MINIMUM_BILLABLE_MINUTES, complete_interval_minutes)
 
 
 def calculate_percentage_service_fee(*, subtotal: int, percent) -> int:
@@ -117,7 +122,8 @@ def calculate_hourly_service_fee(*, hourly_rate: int, minutes: int) -> int:
         return 0
     return int(
         (Decimal(hourly_rate) * Decimal(minutes) / Decimal("60")).quantize(
-            Decimal("1"), rounding=ROUND_HALF_UP
+            SERVICE_FEE_AMOUNT_ROUNDING_QUANTUM,
+            rounding=ROUND_HALF_DOWN,
         )
     )
 

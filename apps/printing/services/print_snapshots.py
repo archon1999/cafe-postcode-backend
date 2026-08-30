@@ -30,6 +30,13 @@ def _service_fee_totals(order, *, as_of=None) -> dict:
     def value(scope: str, field: str, default=0):
         return by_scope.get(scope, {}).get(field, default)
 
+    def rate_label(scope: str) -> str:
+        component = by_scope.get(scope, {})
+        if component.get("mode") == "hourly":
+            return "Soatlik"
+        percent = _json_number(component.get("percent"))
+        return f"{percent}%"
+
     return {
         "serviceFeePercent": _json_number(order.service_fee_percent),
         "serviceFeeComponents": [
@@ -44,14 +51,17 @@ def _service_fee_totals(order, *, as_of=None) -> dict:
             for component in components
         ],
         "restaurantServiceFee": value("restaurant", "amount"),
+        "restaurantServiceFeeRateLabel": rate_label("restaurant"),
         "restaurantServiceFeePercent": _json_number(value("restaurant", "percent")),
         "restaurantServiceFeeHourlyRate": value("restaurant", "hourly_rate"),
         "restaurantServiceFeeDurationMinutes": value("restaurant", "duration_minutes"),
         "hallServiceFee": value("hall", "amount"),
+        "hallServiceFeeRateLabel": rate_label("hall"),
         "hallServiceFeePercent": _json_number(value("hall", "percent")),
         "hallServiceFeeHourlyRate": value("hall", "hourly_rate"),
         "hallServiceFeeDurationMinutes": value("hall", "duration_minutes"),
         "tableServiceFee": value("table", "amount"),
+        "tableServiceFeeRateLabel": rate_label("table"),
         "tableServiceFeePercent": _json_number(value("table", "percent")),
         "tableServiceFeeHourlyRate": value("table", "hourly_rate"),
         "tableServiceFeeDurationMinutes": value("table", "duration_minutes"),

@@ -20,6 +20,13 @@ class ServiceFeeCalculatorTests(SimpleTestCase):
     def test_duration_is_rounded_down_to_complete_five_minute_blocks(self):
         started_at = timezone.now()
         for duration, expected in (
+            (timedelta(0), 60),
+            (timedelta(minutes=5), 60),
+            (timedelta(minutes=55), 60),
+            (timedelta(minutes=60), 60),
+            (timedelta(minutes=60, seconds=1), 60),
+            (timedelta(minutes=64, seconds=59), 60),
+            (timedelta(minutes=65), 65),
             (timedelta(minutes=91), 90),
             (timedelta(minutes=94, seconds=59), 90),
             (timedelta(minutes=95), 95),
@@ -32,6 +39,16 @@ class ServiceFeeCalculatorTests(SimpleTestCase):
                     ),
                     expected,
                 )
+
+    def test_hourly_amount_is_rounded_to_thousands_with_half_ties_down(self):
+        self.assertEqual(
+            calculate_hourly_service_fee(hourly_rate=66_000, minutes=15),
+            16_000,
+        )
+        self.assertEqual(
+            calculate_hourly_service_fee(hourly_rate=66_004, minutes=15),
+            17_000,
+        )
 
     def test_percentage_and_hourly_components_are_additive(self):
         started_at = timezone.now()
