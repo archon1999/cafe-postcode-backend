@@ -17,15 +17,21 @@ class ServiceFeeCalculatorTests(SimpleTestCase):
             150_000,
         )
 
-    def test_every_started_minute_is_billable(self):
+    def test_duration_is_rounded_down_to_complete_five_minute_blocks(self):
         started_at = timezone.now()
-        self.assertEqual(
-            service_fee_billable_minutes(
-                started_at=started_at,
-                ended_at=started_at + timedelta(minutes=60, seconds=1),
-            ),
-            61,
-        )
+        for duration, expected in (
+            (timedelta(minutes=91), 90),
+            (timedelta(minutes=94, seconds=59), 90),
+            (timedelta(minutes=95), 95),
+        ):
+            with self.subTest(duration=duration):
+                self.assertEqual(
+                    service_fee_billable_minutes(
+                        started_at=started_at,
+                        ended_at=started_at + duration,
+                    ),
+                    expected,
+                )
 
     def test_percentage_and_hourly_components_are_additive(self):
         started_at = timezone.now()

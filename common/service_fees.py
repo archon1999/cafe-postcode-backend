@@ -1,4 +1,3 @@
-import math
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
@@ -11,6 +10,7 @@ class ServiceFeeMode(models.TextChoices):
 
 
 SERVICE_FEE_SCOPES = ("restaurant", "hall", "table")
+SERVICE_FEE_BILLING_INTERVAL_MINUTES = 5
 
 
 def _json_number(value):
@@ -97,7 +97,8 @@ def service_fee_billable_minutes(*, started_at, ended_at=None) -> int:
         return 0
     ended_at = ended_at or timezone.now()
     seconds = max((ended_at - started_at).total_seconds(), 0)
-    return int(math.ceil(seconds / 60))
+    interval_seconds = SERVICE_FEE_BILLING_INTERVAL_MINUTES * 60
+    return int(seconds // interval_seconds) * SERVICE_FEE_BILLING_INTERVAL_MINUTES
 
 
 def calculate_percentage_service_fee(*, subtotal: int, percent) -> int:
