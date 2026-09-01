@@ -12,6 +12,7 @@ from apps.integrations.services import (
     open_fiscal_shift as open_fiscal_shift,
 )
 from apps.restaurants.helpers import get_cash_desk_model
+from apps.sales.helpers import get_order_model
 from apps.users.models import EmployeeProfile, User
 from common.api.permissions import POS_CASH_SHIFT_MANAGE_PERMISSION, has_permission_code
 
@@ -20,6 +21,7 @@ from .fiscal_shift_lifecycle import FiscalShiftLifecycleMixin
 
 CashDesk = get_cash_desk_model()
 CashShift = get_cash_shift_model()
+Order = get_order_model()
 
 
 class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
@@ -192,6 +194,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         cashier=None,
         opening_cash_amount=0,
         notes_open="",
+        shift_id=None,
     ):
         restaurant = restaurant or branch
         if restaurant is None:
@@ -268,7 +271,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                     {"cashDeskId": "Selected cash desk already has an active shift."}
                 )
 
-            shift = CashShift.objects.create(
+            shift_values = dict(
                 cash_desk=cash_desk,
                 cashier=cashier,
                 opened_by=opened_by,
@@ -276,7 +279,37 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                 opening_cash_amount=max(0, opening_cash_amount or 0),
                 notes_open=notes_open or "",
             )
+            if shift_id is not None:
+                shift_values["id"] = shift_id
+            shift = CashShift.objects.create(**shift_values)
         return shift
+
+    def ensure_shift_can_close(self, *, shift):
+        """Protect the last register from closing while checks are still active."""
+        has_other_open_shift = CashShift.objects.filter(
+            cash_desk__restaurant_id=shift.cash_desk.restaurant_id,
+            status=CashShift.Status.OPEN,
+        ).exclude(pk=shift.pk).exists()
+        if has_other_open_shift:
+            return
+
+        open_orders = Order.objects.filter(
+            restaurant_id=shift.cash_desk.restaurant_id,
+            status__in=(
+                Order.Status.OPEN,
+                Order.Status.SUBMITTED,
+                Order.Status.READY,
+            ),
+        )
+        open_order_count = open_orders.count()
+        if open_order_count:
+            raise ValidationError(
+                {
+                    "code": "CASH_SHIFT_HAS_OPEN_ORDERS",
+                    "detail": "Oxirgi kassa smenasini yopishdan oldin barcha ochiq hisoblarni yakunlang.",
+                    "openOrderCount": open_order_count,
+                }
+            )
 
     def _is_valid_cashier(self, *, restaurant, cashier):
         if not cashier or not cashier.is_active:
@@ -309,6 +342,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         if shift.status != CashShift.Status.OPEN:
             raise ValidationError({"detail": "Only open shifts can be closed."})
 
+        self.ensure_shift_can_close(shift=shift)
         self.ensure_no_unresolved_fiscal_payments(shift=shift)
         snapshot = self.build_shift_snapshot(shift=shift)
         expected = snapshot["expected_closing_cash_amount"]

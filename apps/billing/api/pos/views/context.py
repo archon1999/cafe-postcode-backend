@@ -49,6 +49,14 @@ class CashShiftOpenView(APIView):
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         serializer = CashShiftOpenSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        edge_cash_shift_id = serializer.validated_data.get("edge_cash_shift_id")
+        trusted_edge_replay = bool(
+            getattr(request._request, "trusted_edge_replay", False)
+        )
+        if edge_cash_shift_id is not None and not trusted_edge_replay:
+            raise ValidationError(
+                {"edgeCashShiftId": "Only a trusted local agent may bind a shift ID."}
+            )
 
         available_cash_desks = self.shift_service_class().get_available_cash_desks(
             restaurant=restaurant
@@ -97,6 +105,7 @@ class CashShiftOpenView(APIView):
             cashier=cashier,
             opening_cash_amount=serializer.validated_data.get("opening_cash_amount", 0),
             notes_open=serializer.validated_data.get("notes_open", ""),
+            shift_id=edge_cash_shift_id,
         )
         payload = self.shift_service_class().build_context(
             restaurant=restaurant, user=request.user
@@ -129,6 +138,9 @@ class CashShiftCloseView(APIView):
             return Response({"detail": "There is no active cashier shift."}, status=400)
 
         shift_service = self.shift_service_class()
+        # Validate before a fiscal Z-report is closed. The same invariant is
+        # checked again under the cash-shift row lock by close_shift().
+        shift_service.ensure_shift_can_close(shift=shift)
         fiscal_shift_payload = None
         print_report_error = ""
         fiscal_shift_open = shift_service.has_open_fiscal_shift(restaurant=restaurant)

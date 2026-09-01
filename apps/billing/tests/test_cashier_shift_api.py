@@ -9,6 +9,29 @@ from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
 class CashierShiftApiTests(PosAPITestCase):
+    def test_last_shift_cannot_close_while_orders_are_open(self):
+        self.open_shift_via_api(cash_desk_id=self.cash_desk.id)
+        Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=991,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.SUBMITTED,
+        )
+
+        response = self.client.post(
+            '/api/v1/pos/billing/shifts/current/close/', {}, format='json'
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertEqual(response.data['code'], 'CASH_SHIFT_HAS_OPEN_ORDERS')
+        self.assertEqual(int(response.data['openOrderCount']), 1)
+        self.assertTrue(
+            CashShift.objects.filter(cash_desk=self.cash_desk, status=CashShift.Status.OPEN).exists()
+        )
+
     def test_cashier_context_returns_restaurant_fiscal_profile_and_cash_desks(self):
         response = self.client.get('/api/v1/pos/billing/context/')
 

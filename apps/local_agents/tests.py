@@ -1480,13 +1480,18 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                 self.assertTrue(_allowed_mutation('POST', path))
 
     def test_offline_shift_close_maps_edge_shift_to_canonical_shift(self):
+        edge_shift_id = uuid.uuid4()
         operations = [
             {
                 'operationId': 'edge-shift-open-1',
                 'userId': str(self.user.id),
                 'method': 'POST',
                 'path': '/api/v1/pos/billing/shifts/open/',
-                'body': {'cashDeskId': str(self.cash_desk.id), 'openingCashAmount': 10000},
+                'body': {
+                    'edgeCashShiftId': str(edge_shift_id),
+                    'cashDeskId': str(self.cash_desk.id),
+                    'openingCashAmount': 10000,
+                },
             },
             {
                 'operationId': 'edge-shift-close-1',
@@ -1494,6 +1499,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                 'method': 'POST',
                 'path': '/api/v1/pos/billing/shifts/current/close/',
                 'body': {
+                    'edgeCashShiftId': str(edge_shift_id),
                     'edgeCashDeskId': str(self.cash_desk.id),
                     'edgeCashierId': str(self.user.id),
                     'actualClosingCashAmount': 10000,
@@ -1512,7 +1518,44 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual([item['status'] for item in response.data['results']], [201, 200], response.data)
         shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
+        self.assertEqual(shift.id, edge_shift_id)
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
+
+    def test_delayed_edge_payment_never_moves_to_new_shift(self):
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        old_shift = self.create_cash_shift()
+        old_shift.status = CashShift.Status.CLOSED
+        old_shift.closed_at = timezone.now()
+        old_shift.save(update_fields=['status', 'closed_at', 'updated_at'])
+        new_shift = self.create_cash_shift()
+        order = Order.objects.get(pk=order_data['id'])
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [{
+                    'operationId': 'edge-payment-old-shift-1',
+                    'userId': str(self.user.id),
+                    'method': 'POST',
+                    'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+                    'body': {
+                        'edgeCashShiftId': str(old_shift.id),
+                        'method': 'cash',
+                        'amount': order.total,
+                        'registerFiscal': False,
+                    },
+                }],
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        result = response.data['results'][0]
+        self.assertFalse(result['ok'], response.data)
+        self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Payment.objects.filter(cash_shift=new_shift).exists())
 
     def test_offline_shift_open_reconciles_same_existing_canonical_shift(self):
         existing_shift = self.create_cash_shift(cash_desk=self.cash_desk, opened_by=self.user)

@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.billing.helpers import get_payment_model
+from apps.billing.models import CashShift
 from apps.billing.serializers import (
     MartaTerminalResultSerializer,
     PaymentRefundCreateSerializer,
@@ -68,19 +69,44 @@ class PaymentCreateView(APIView):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
         payment_payload = _payment_request_payload(request)
+        trusted_edge_replay = bool(
+            getattr(request._request, 'trusted_edge_replay', False)
+        )
+        edge_cash_shift_id = payment_payload.pop(
+            'edgeCashShiftId', payment_payload.pop('edge_cash_shift_id', None)
+        )
+        if edge_cash_shift_id and not trusted_edge_replay:
+            raise ValidationError(
+                {'edgeCashShiftId': _('Only a trusted local agent may bind a payment to a shift.')}
+            )
         order = generics.get_object_or_404(
             Order.objects.select_related('restaurant', 'table_session__table'),
             pk=pk,
             restaurant=restaurant,
         )
         existing_kitchen_documents = _kitchen_print_document_ids(order)
-        cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
+        if edge_cash_shift_id:
+            cash_shift = CashShift.objects.filter(
+                pk=edge_cash_shift_id,
+                cash_desk__restaurant=restaurant,
+            ).first()
+            if cash_shift is None:
+                raise ValidationError(
+                    {
+                        'code': 'EDGE_CASH_SHIFT_NOT_FOUND',
+                        'edgeCashShiftId': _('The originating cashier shift was not found.'),
+                    }
+                )
+        else:
+            cash_shift = self.shift_service_class().get_active_shift(
+                restaurant=restaurant, user=request.user
+            )
         result = self.order_payment_service_class().process(
             order=order,
             payload=payment_payload,
             received_by=request.user,
             cash_shift=cash_shift,
-            trusted_edge_replay=bool(getattr(request._request, 'trusted_edge_replay', False)),
+            trusted_edge_replay=trusted_edge_replay,
         )
         payment = result['payment']
         if payment.status == Payment.Status.FAILED:

@@ -30,13 +30,31 @@ class LocalAgentMutationDispatchMixin:
     def _prepare_dispatch(*, agent, operation_id, path, body):
         dispatch_path = path
         if path == "/api/v1/pos/billing/shifts/current/close/":
+            edge_cash_shift_id = body.pop(
+                "edgeCashShiftId", body.pop("edge_cash_shift_id", None)
+            )
             edge_cashier_id = body.pop(
                 "edgeCashierId", body.pop("edge_cashier_id", None)
             )
             edge_cash_desk_id = body.pop(
                 "edgeCashDeskId", body.pop("edge_cash_desk_id", None)
             )
-            if edge_cashier_id and edge_cash_desk_id:
+            if edge_cash_shift_id:
+                shift = CashShift.objects.filter(
+                    pk=edge_cash_shift_id,
+                    cash_desk__restaurant=agent.restaurant,
+                    status=CashShift.Status.OPEN,
+                ).first()
+                if shift is None:
+                    return dispatch_path, mutation_error_result(
+                        operation_id=operation_id,
+                        response_status=409,
+                        error="Originating cashier shift is not synchronized or is no longer open.",
+                        retryable=False,
+                        code="EDGE_CASH_SHIFT_NOT_OPEN",
+                    )
+                body["cashShiftId"] = str(shift.id)
+            elif edge_cashier_id and edge_cash_desk_id:
                 shift = (
                     CashShift.objects.filter(
                         cash_desk__restaurant=agent.restaurant,
@@ -163,6 +181,9 @@ class LocalAgentMutationDispatchMixin:
 
     @staticmethod
     def _reconcile_open_shift(*, agent, user, operation_id, method, path, digest, body):
+        edge_cash_shift_id = body.get("edgeCashShiftId") or body.get(
+            "edge_cash_shift_id"
+        )
         cash_desk_id = body.get("cashDeskId") or body.get("cash_desk_id")
         requested_cashier_id = str(
             body.get("cashierId") or body.get("cashier_id") or user.id
@@ -173,6 +194,8 @@ class LocalAgentMutationDispatchMixin:
         ).select_related("cash_desk", "cashier", "opened_by")
         if cash_desk_id:
             shifts = shifts.filter(cash_desk_id=cash_desk_id)
+        if edge_cash_shift_id:
+            shifts = shifts.filter(pk=edge_cash_shift_id)
 
         matching = [
             shift

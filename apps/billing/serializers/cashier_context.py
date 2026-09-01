@@ -135,6 +135,7 @@ class CashierContextSerializer(serializers.Serializer):
 
 
 class CashShiftOpenSerializer(serializers.Serializer):
+    edge_cash_shift_id = serializers.UUIDField(required=False, allow_null=True)
     cash_desk_id = serializers.UUIDField(required=False, allow_null=True)
     cashier_id = serializers.UUIDField(required=False, allow_null=True)
     opening_cash_amount = serializers.IntegerField(min_value=0, default=0)
