@@ -51,6 +51,7 @@ REST_FRAMEWORK = {
         'submit': '10/min',
         'device_pairing': '6/min',
         'device_migration': '30/min',
+        'local_agent': '600/min',
         'restaurant_code_migration': '10/min',
         'control_pairing_resolve': '30/min',
         'control_pairing_decision': '60/min',

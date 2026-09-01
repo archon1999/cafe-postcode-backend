@@ -11,10 +11,12 @@ from apps.local_agents.mutation_reconciliation import (
     allowed_mutation as _allowed_mutation,
     request_hash as _request_hash,
 )
+from common.api.throttling import LocalAgentRateThrottle
 
 
 class LocalAgentMutationPushView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
     request_factory_class = APIRequestFactory
 
     def post(self, request):

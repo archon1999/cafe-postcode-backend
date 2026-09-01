@@ -9,6 +9,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.api.throttling import LocalAgentRateThrottle
+
 from apps.local_agents.authentication import authenticate_local_agent
 
 
@@ -113,6 +115,7 @@ def agent_update_status(agent):
 
 class LocalAgentLatestReleaseView(APIView):
     permission_classes = []
+    throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request):
         if authenticate_local_agent(request) is None:

@@ -1,7 +1,7 @@
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from common.api.client_ip import get_client_ip
-from common.api.throttling import LoginRateThrottle, PinDeviceRateThrottle
+from common.api.throttling import LocalAgentRateThrottle, LoginRateThrottle, PinDeviceRateThrottle
 
 
 class TrustedClientIPTests(SimpleTestCase):
@@ -64,3 +64,15 @@ class TrustedClientIPTests(SimpleTestCase):
         self.assertIn('11111111-1111-4111-8111-111111111111', throttle.get_cache_key(request, None))
         malformed = self.factory.post('/', HTTP_X_DEVICE_ID='spoofed')
         self.assertIsNone(throttle.get_cache_key(malformed, None))
+
+    def test_local_agent_traffic_uses_a_separate_high_capacity_bucket(self):
+        request = self.factory.get('/', REMOTE_ADDR='198.51.100.20')
+        local_agent = LocalAgentRateThrottle()
+        anonymous = LoginRateThrottle()
+
+        self.assertEqual(local_agent.rate, '600/min')
+        self.assertIn('throttle_local_agent_', local_agent.get_cache_key(request, None))
+        self.assertNotEqual(
+            local_agent.get_cache_key(request, None),
+            anonymous.get_cache_key(request, None),
+        )

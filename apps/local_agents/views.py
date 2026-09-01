@@ -10,10 +10,12 @@ from apps.local_agents.serializers import LocalAgentStatusSerializer
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from common.api.admin_permissions import AdminPermissionRequiredMixin, AdminRecentMFARequiredMixin
 from common.api.scopes import get_request_restaurant
+from common.api.throttling import LocalAgentRateThrottle
 
 
 class LocalAgentTokenAuthView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request):
         agent = authenticate_local_agent(request)

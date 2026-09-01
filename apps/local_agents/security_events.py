@@ -8,6 +8,8 @@ from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.api.throttling import LocalAgentRateThrottle
+
 from apps.devices.models import SecurityEvent
 from apps.devices.security import sanitize_security_metadata
 from apps.local_agents.authentication import authenticate_local_agent
@@ -101,6 +103,7 @@ class LocalSecurityEventBatchSerializer(serializers.Serializer):
 
 class LocalAgentSecurityEventBatchView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
 
     def post(self, request):
         # This ingestion surface is intentionally device-proof only. The

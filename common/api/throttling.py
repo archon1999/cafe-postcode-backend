@@ -54,6 +54,16 @@ class DeviceMigrationRateThrottle(TrustedClientRateThrottle):
         return self.cache_format % {'scope': self.scope, 'ident': ident}
 
 
+class LocalAgentRateThrottle(TrustedClientRateThrottle):
+    """Keep signed Local Agent traffic out of the shared anonymous IP bucket."""
+
+    scope = 'local_agent'
+
+    def get_cache_key(self, request, view):
+        ident = self.get_trusted_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
 class RestaurantCodeMigrationRateThrottle(TrustedClientRateThrottle):
     scope = 'restaurant_code_migration'
 

@@ -6,6 +6,7 @@ from apps.local_agents.authentication import authenticate_local_agent
 from apps.printing.models import PrintDocument, PrintTemplate
 from apps.restaurants.models import CashDesk, PrepStation
 from common.utils.settings import coerce_bool, coerce_int, get_setting
+from common.api.throttling import LocalAgentRateThrottle
 
 
 def _printer_mode(settings, snake_case_key, camel_case_key, *, default, allowed):
@@ -127,6 +128,7 @@ def _printer_route(document: PrintDocument) -> dict:
 
 class LocalAgentPrintDocumentView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request, document_id):
         agent = authenticate_local_agent(request)

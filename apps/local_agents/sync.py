@@ -6,6 +6,8 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from common.api.throttling import LocalAgentRateThrottle
+
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.serializers import CatalogMenuCategorySerializer
 from apps.catalog.selectors import active_modifier_assignments_prefetch
@@ -292,6 +294,7 @@ def _print_templates(restaurant):
 
 class LocalAgentBootstrapView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request):
         agent = authenticate_local_agent(request)
@@ -326,6 +329,7 @@ class LocalAgentBootstrapView(APIView):
 
 class LocalAgentPOSDeviceStateView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request):
         agent = authenticate_local_agent(request)
