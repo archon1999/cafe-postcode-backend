@@ -68,6 +68,7 @@ def reconciled_fully_paid_order(*, agent, method, path, response_status, respons
     if (
         "payment amount cannot exceed the remaining total" not in detail
         and "order is already fully paid" not in detail
+        and "closed orders cannot be paid again" not in detail
     ):
         return None
     order = Order.objects.filter(

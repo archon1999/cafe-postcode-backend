@@ -1465,6 +1465,54 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         receipt.refresh_from_db()
         self.assertEqual(receipt.response_status, status.HTTP_200_OK)
 
+    def test_duplicate_payment_on_closed_fully_paid_order_is_reconciled_immediately(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=9091,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            subtotal=48000,
+            total=48000,
+            closed_at=timezone.now(),
+        )
+        Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=48000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+        operation = {
+            'operationId': 'edge-duplicate-closed-payment-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            'body': {'method': 'cash', 'amount': 40000},
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertFalse(result['replayed'])
+        self.assertEqual(result['status'], status.HTTP_200_OK)
+        self.assertEqual(result['body']['reason'], 'order_already_fully_paid')
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        receipt = LocalAgentMutationReceipt.objects.get(operation_id=operation['operationId'])
+        self.assertEqual(receipt.response_status, status.HTTP_200_OK)
+        self.assertEqual(receipt.response_body['reason'], 'order_already_fully_paid')
+
     def test_online_only_pos_commands_are_allowed_through_agent_replay(self):
         payment_id = uuid.uuid4()
         paths = (
