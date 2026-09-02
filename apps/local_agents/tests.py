@@ -16,7 +16,8 @@ from apps.local_agents.models import (
     LocalAgentMutationReceipt,
 )
 from apps.local_agents.mutations import _allowed_mutation, _request_hash
-from apps.billing.models import CashShift, FiscalShiftSession, Payment, Receipt
+from apps.billing.models import CashShift, FiscalShiftSession, Payment, PaymentRefund, Receipt
+from apps.local_agents.mutation_reconciliation import reconciled_terminal_noop
 from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommandService, LocalAgentUnavailableError
 from apps.devices.models import Device
 from apps.floor.models import DiningTable, TableSession
@@ -1512,6 +1513,69 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         receipt = LocalAgentMutationReceipt.objects.get(operation_id=operation['operationId'])
         self.assertEqual(receipt.response_status, status.HTTP_200_OK)
         self.assertEqual(receipt.response_body['reason'], 'order_already_fully_paid')
+
+    def test_report_without_active_shift_is_reconciled_immediately(self):
+        operation = {
+            'operationId': 'edge-report-without-shift-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/billing/shifts/current/print-report/',
+            'body': {},
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['status'], status.HTTP_200_OK)
+        self.assertEqual(result['body']['reason'], 'report_shift_already_absent')
+
+    def test_already_refunded_payment_is_a_reconciled_noop(self):
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=9092,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            subtotal=52000,
+            total=52000,
+            closed_at=timezone.now(),
+        )
+        payment = Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=52000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=timezone.now(),
+        )
+        PaymentRefund.objects.create(
+            payment=payment,
+            amount=52000,
+            refunded_by=self.user,
+            status=PaymentRefund.Status.SUCCEEDED,
+            refunded_at=timezone.now(),
+        )
+
+        result = reconciled_terminal_noop(
+            agent=LocalAgent.objects.get(restaurant=self.restaurant),
+            method='POST',
+            path=f'/api/v1/pos/billing/{payment.id}/refund/',
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'detail': 'This payment has already been refunded.'},
+        )
+
+        self.assertEqual(result['reason'], 'payment_already_fully_refunded')
+        self.assertEqual(result['paymentId'], str(payment.id))
 
     def test_online_only_pos_commands_are_allowed_through_agent_replay(self):
         payment_id = uuid.uuid4()

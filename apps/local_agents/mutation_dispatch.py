@@ -17,6 +17,7 @@ from apps.local_agents.mutation_reconciliation import (
     decode_response,
     reconciled_fully_paid_order,
     reconciled_order_item_delete,
+    reconciled_terminal_noop,
 )
 from apps.local_agents.mutation_results import (
     CLASSIFICATION_QUARANTINED,
@@ -147,6 +148,16 @@ class LocalAgentMutationDispatchMixin:
         if reconciled_payment is not None:
             response_status = status.HTTP_200_OK
             response_body = reconciled_payment
+        reconciled_noop = reconciled_terminal_noop(
+            agent=agent,
+            method=method,
+            path=path,
+            response_status=response_status,
+            response_body=response_body,
+        )
+        if reconciled_noop is not None:
+            response_status = status.HTTP_200_OK
+            response_body = reconciled_noop
 
         if response_status < 500:
             LocalAgentMutationReceipt.objects.create(
@@ -166,7 +177,8 @@ class LocalAgentMutationDispatchMixin:
             "body": response_body,
             "replayed": False,
             "reconciled": reconciled_delete is not None
-            or reconciled_payment is not None,
+            or reconciled_payment is not None
+            or reconciled_noop is not None,
             "retryable": response_status >= 500,
         }
         result.update(

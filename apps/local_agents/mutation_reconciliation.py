@@ -5,7 +5,7 @@ import re
 from django.db.models import Sum
 from rest_framework import status
 
-from apps.billing.models import Payment
+from apps.billing.models import Payment, PaymentRefund
 from apps.sales.models import Order
 
 
@@ -40,6 +40,11 @@ ORDER_ITEM_DELETE_PATH = re.compile(r"^/api/v1/pos/sales/orders/items/[0-9a-f-]+
 ORDER_PAYMENT_PATH = re.compile(
     r"^/api/v1/pos/billing/orders/(?P<order_id>[0-9a-f-]+)/pay/$"
 )
+PAYMENT_REFUND_PATH = re.compile(
+    r"^/api/v1/pos/billing/(?P<payment_id>[0-9a-f-]+)/refund/$"
+)
+SHIFT_CLOSE_PATH = "/api/v1/pos/billing/shifts/current/close/"
+SHIFT_REPORT_PATH = "/api/v1/pos/billing/shifts/current/print-report/"
 
 
 def reconciled_order_item_delete(*, method, path, response_status, response_body):
@@ -90,6 +95,45 @@ def reconciled_fully_paid_order(*, agent, method, path, response_status, respons
         "reconciled": True,
         "reason": "order_already_fully_paid",
         "orderId": str(order.id),
+    }
+
+
+def reconciled_terminal_noop(*, agent, method, path, response_status, response_body):
+    if method != "POST" or response_status != status.HTTP_400_BAD_REQUEST:
+        return None
+    detail = json.dumps(response_body or {}, ensure_ascii=False).lower()
+    if path == SHIFT_REPORT_PATH and "faol smena topilmadi" in detail:
+        return {"reconciled": True, "reason": "report_shift_already_absent"}
+    if path == SHIFT_CLOSE_PATH and (
+        "there is no active cashier shift" in detail
+        or "faol smena topilmadi" in detail
+    ):
+        return {"reconciled": True, "reason": "shift_already_absent"}
+    refund_match = PAYMENT_REFUND_PATH.fullmatch(path)
+    if refund_match is None or "already been refunded" not in detail:
+        return None
+    payment = Payment.objects.filter(
+        id=refund_match.group("payment_id"),
+        order__restaurant=agent.restaurant,
+        status=Payment.Status.SUCCEEDED,
+    ).first()
+    if payment is None:
+        return None
+    refunded_total = (
+        PaymentRefund.objects.filter(
+            payment=payment,
+            status=PaymentRefund.Status.SUCCEEDED,
+        )
+        .aggregate(total=Sum("amount"))
+        .get("total")
+        or 0
+    )
+    if int(refunded_total) < int(payment.amount or 0):
+        return None
+    return {
+        "reconciled": True,
+        "reason": "payment_already_fully_refunded",
+        "paymentId": str(payment.id),
     }
 
 

@@ -5,6 +5,7 @@ from rest_framework import status
 from apps.local_agents.mutation_reconciliation import (
     reconciled_fully_paid_order,
     reconciled_order_item_delete,
+    reconciled_terminal_noop,
 )
 from apps.local_agents.mutation_results import (
     CLASSIFICATION_QUARANTINED,
@@ -84,6 +85,36 @@ class LocalAgentMutationReplayMixin:
                 mutation_result_metadata(
                     response_status=status.HTTP_200_OK,
                     response_body=reconciled_payment,
+                    reconciled=True,
+                )
+            )
+            return result
+        reconciled_noop = reconciled_terminal_noop(
+            agent=agent,
+            method=method,
+            path=path,
+            response_status=existing.response_status,
+            response_body=existing.response_body,
+        )
+        if reconciled_noop is not None:
+            existing.response_status = status.HTTP_200_OK
+            existing.response_body = reconciled_noop
+            existing.save(
+                update_fields=["response_status", "response_body", "updated_at"]
+            )
+            result = {
+                "operationId": operation_id,
+                "ok": True,
+                "status": status.HTTP_200_OK,
+                "body": reconciled_noop,
+                "replayed": True,
+                "reconciled": True,
+                "retryable": False,
+            }
+            result.update(
+                mutation_result_metadata(
+                    response_status=status.HTTP_200_OK,
+                    response_body=reconciled_noop,
                     reconciled=True,
                 )
             )
