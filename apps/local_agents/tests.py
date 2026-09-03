@@ -250,6 +250,86 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         command.refresh_from_db()
         self.assertEqual(command.status, LocalAgentCommand.Status.SUCCEEDED)
 
+    def test_reconnect_replays_latest_unfinished_update_before_hello(self):
+        from core.asgi import application
+
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        older = LocalAgentCommand.objects.create(
+            agent=agent,
+            command_type='agent.update_now',
+            status=LocalAgentCommand.Status.TIMED_OUT,
+        )
+        latest = LocalAgentCommand.objects.create(
+            agent=agent,
+            command_type='agent.update_now',
+            status=LocalAgentCommand.Status.SENT,
+        )
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            recovery = await communicator.receive_json_from()
+            self.assertEqual(recovery['type'], 'command')
+            self.assertEqual(recovery['commandId'], str(latest.id))
+            self.assertEqual(recovery['commandType'], 'agent.update_now')
+            hello = await communicator.receive_json_from()
+            self.assertEqual(hello['type'], 'hello')
+            await communicator.send_json_to(
+                {
+                    'type': 'command_result',
+                    'commandId': str(latest.id),
+                    'ok': True,
+                    'result': {'accepted': True},
+                }
+            )
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+        older.refresh_from_db()
+        latest.refresh_from_db()
+        self.assertEqual(older.status, LocalAgentCommand.Status.TIMED_OUT)
+        self.assertEqual(latest.status, LocalAgentCommand.Status.SUCCEEDED)
+
+    def test_reconnect_does_not_replay_finished_or_unsafe_command_before_hello(self):
+        from core.asgi import application
+
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        LocalAgentCommand.objects.create(
+            agent=agent,
+            command_type='agent.update_now',
+            status=LocalAgentCommand.Status.SUCCEEDED,
+        )
+        LocalAgentCommand.objects.create(
+            agent=agent,
+            command_type='agent.restart',
+            status=LocalAgentCommand.Status.TIMED_OUT,
+        )
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            hello = await communicator.receive_json_from()
+            self.assertEqual(hello['type'], 'hello')
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+
     def test_heartbeat_persists_private_lan_discovery_metadata(self):
         from core.asgi import application
 

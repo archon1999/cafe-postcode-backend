@@ -18,6 +18,12 @@ from apps.devices.models import Device
 
 
 SQLITE_LOCK_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
+PRE_HELLO_RECOVERY_COMMAND_TYPES = ('agent.update_now',)
+PRE_HELLO_RECOVERY_COMMAND_STATUSES = (
+    LocalAgentCommand.Status.PENDING,
+    LocalAgentCommand.Status.SENT,
+    LocalAgentCommand.Status.TIMED_OUT,
+)
 
 
 def _is_database_locked(error: OperationalError) -> bool:
@@ -54,6 +60,13 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
         await self._mark_online()
+        # A stale pre-1.1.11 process can authenticate and write its heartbeat,
+        # then fail while reconciling the hello payload because its Edge DB was
+        # already closed. Replay one safe updater command before hello so that
+        # such an Agent can recover itself instead of remaining remotely
+        # unreachable forever. Ordinary commands still wait for a healthy
+        # connection and the hello/device-authority handshake below.
+        await self._deliver_pre_hello_recovery_command()
         await self.send_json(
             {
                 'type': 'hello',
@@ -65,6 +78,30 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             }
         )
         await self._deliver_durable_terminal_revokes()
+
+    async def _deliver_pre_hello_recovery_command(self):
+        command = await self._pre_hello_recovery_command()
+        if command is not None:
+            await self.agent_command(command)
+
+    @database_sync_to_async
+    def _pre_hello_recovery_command(self):
+        command = (
+            LocalAgentCommand.objects.filter(
+                agent=self.agent,
+                command_type__in=PRE_HELLO_RECOVERY_COMMAND_TYPES,
+                status__in=PRE_HELLO_RECOVERY_COMMAND_STATUSES,
+            )
+            .order_by('-created_at')
+            .first()
+        )
+        if command is None:
+            return None
+        return {
+            'command_id': str(command.id),
+            'command_type': command.command_type,
+            'payload': command.payload or {},
+        }
 
     async def disconnect(self, close_code):
         if self.agent is not None:
