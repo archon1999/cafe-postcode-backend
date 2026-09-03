@@ -207,7 +207,6 @@ class FiscalShiftLifecycleMixin:
         if cash_desk is not None:
             cash_desk = (
                 cash_desk.__class__.objects.select_for_update()
-                .select_related('restaurant', 'fiscal_integration')
                 .get(pk=cash_desk.pk, restaurant=restaurant)
             )
             return cash_desk.restaurant, cash_desk
