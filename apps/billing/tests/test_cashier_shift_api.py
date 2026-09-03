@@ -47,6 +47,22 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertIsNone(response.data['current_shift'])
         self.assertFalse(response.data['fiscal_shift_open'])
 
+    def test_cashier_context_detects_cash_desk_bound_fiscal_shift(self):
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider='fiscal-drive-service',
+            terminal_id='TERM-1',
+            opened_at=timezone.now(),
+        )
+
+        response = self.client.get('/api/v1/pos/billing/context/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['fiscal_shift_open'])
+
     def test_open_and_close_shift_flow_returns_current_shift_summary(self):
         open_response = self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
 

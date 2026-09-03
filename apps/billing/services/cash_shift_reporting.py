@@ -251,7 +251,9 @@ class CashShiftReportingMixin:
         )
 
     def get_open_fiscal_report(self, *, shift):
-        if not self.has_open_fiscal_shift(restaurant=shift.cash_desk.restaurant):
+        if not self.has_open_fiscal_shift(
+            restaurant=shift.cash_desk.restaurant, cash_desk=shift.cash_desk
+        ):
             return None
 
         from . import cash_shift as cash_shift_module

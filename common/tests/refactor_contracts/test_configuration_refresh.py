@@ -9,6 +9,8 @@ from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class BackendConfigurationRefreshScenarioTests(PosTestCase):
+    maxDiff = None
+
     def setUp(self):
         super().setUp()
         _agent, self.agent_token = LocalAgent.issue_for_restaurant(
@@ -89,6 +91,8 @@ class BackendConfigurationRefreshScenarioTests(PosTestCase):
                 "pos_auth_background_image_url": None,
                 "service_fee_enabled": True,
                 "service_fee_percent": "15.00",
+                "service_fee_mode": "percentage",
+                "service_fee_hourly_rate": 0,
                 "vat_enabled": True,
                 "vat_percent": "12.00",
                 "marking_check_enabled": True,

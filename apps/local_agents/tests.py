@@ -157,6 +157,41 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         self.assertEqual(agent.status, LocalAgent.Status.ONLINE)
         self.assertTrue(agent.is_online())
 
+    def test_operational_invalidation_is_delivered_to_connected_agent(self):
+        from channels.layers import get_channel_layer
+
+        from apps.local_agents.services import local_agent_group_name
+        from core.asgi import application
+
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+
+        async def run_scenario():
+            communicator = WebsocketCommunicator(
+                application,
+                '/ws/local-agent/',
+                headers=[
+                    (b'origin', b'http://testserver'),
+                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
+                ],
+            )
+            connected, _subprotocol = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.receive_json_from()
+            await get_channel_layer().group_send(
+                local_agent_group_name(agent.id),
+                {
+                    'type': 'operational.invalidate',
+                    'server_time': '2026-09-03T12:00:00+05:00',
+                },
+            )
+            message = await communicator.receive_json_from()
+            self.assertEqual(message['type'], 'context_invalidated')
+            self.assertEqual(message['scopes'], ['operational'])
+            self.assertEqual(message['serverTime'], '2026-09-03T12:00:00+05:00')
+            await communicator.disconnect()
+
+        async_to_sync(run_scenario)()
+
     def test_reconnect_receives_device_authority_and_replays_durable_revoke(self):
         from core.asgi import application
 
@@ -737,6 +772,74 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['totalSaleAmount'], 40000)
         self.assertEqual(response.data['posDevices'], [])
 
+    def test_split_snapshots_partition_configuration_from_live_state_without_data_gaps(self):
+        shift = self.create_cash_shift()
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=78,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.OPEN,
+        )
+
+        configuration = self.client.get(
+            '/api/v1/local-agent/sync/configuration/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        operational = self.client.get(
+            '/api/v1/local-agent/sync/operational/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        legacy = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(configuration.status_code, status.HTTP_200_OK, configuration.data)
+        self.assertEqual(operational.status_code, status.HTTP_200_OK, operational.data)
+        self.assertEqual(legacy.status_code, status.HTTP_200_OK, legacy.data)
+        configuration_fields = {
+            'restaurant', 'posDevices', 'users', 'menu', 'expenseCategories',
+            'expenseRecipients', 'bindings', 'printTemplates',
+        }
+        operational_fields = {
+            'halls', 'tableSessions', 'orders', 'kitchenTickets', 'cashShifts', 'cashExpenses',
+        }
+        self.assertTrue(configuration_fields.issubset(configuration.data))
+        self.assertTrue(operational_fields.issubset(operational.data))
+        self.assertTrue(configuration_fields.isdisjoint(operational.data))
+        self.assertTrue(operational_fields.isdisjoint(configuration.data))
+        for field in configuration_fields:
+            if field == 'users':
+                configuration_users = {
+                    item['userId']: (item['pinHash'], item['session'])
+                    for item in configuration.data[field]
+                }
+                legacy_users = {
+                    item['userId']: (item['pinHash'], item['session'])
+                    for item in legacy.data[field]
+                }
+                self.assertEqual(configuration_users, legacy_users, field)
+            else:
+                self.assertEqual(configuration.data[field], legacy.data[field], field)
+        for field in operational_fields:
+            self.assertEqual(operational.data[field], legacy.data[field], field)
+        self.assertIn(str(order.id), [str(item['id']) for item in operational.data['orders']])
+        self.assertIn(str(shift.id), [str(item['id']) for item in operational.data['cashShifts']])
+
+    def test_split_snapshots_require_header_agent_authentication(self):
+        for path in (
+            '/api/v1/local-agent/sync/configuration/',
+            '/api/v1/local-agent/sync/operational/',
+        ):
+            with self.subTest(path=path):
+                missing = self.client.get(path)
+                query = self.client.get(f'{path}?token={self.token}')
+                self.assertEqual(missing.status_code, status.HTTP_401_UNAUTHORIZED)
+                self.assertEqual(query.status_code, status.HTTP_401_UNAUTHORIZED)
+
     def test_bootstrap_carries_printer_output_modes_for_offline_printing(self):
         printer = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
@@ -1008,6 +1111,77 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertIn(str(done_within_pos_history.id), ticket_ids)
         self.assertNotIn(str(done_outside_pos_history.id), ticket_ids)
         self.assertLess(ticket_ids.index(str(active_old.id)), ticket_ids.index(str(closed_fresh.id)))
+
+
+class LocalAgentOperationalInvalidationTests(PosAPITestCase):
+    def setUp(self):
+        super().setUp()
+        _agent, self.token = LocalAgent.issue_for_restaurant(
+            restaurant=self.restaurant,
+            name='Site coordinator',
+        )
+
+    @patch('core.middleware.local_agent_invalidation.broadcast_operational_invalidation')
+    def test_successful_direct_pos_mutation_wakes_restaurant_agent_after_commit(self, broadcast):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/pos/sales/orders/',
+                {'channel': 'takeaway', 'guestCount': 1},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        broadcast.assert_called_once_with(restaurant_id=self.restaurant.id)
+
+    @patch('core.middleware.local_agent_invalidation.broadcast_operational_invalidation')
+    def test_rejected_direct_pos_mutation_does_not_emit_false_invalidation(self, broadcast):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/pos/sales/orders/',
+                {'channel': 'not-a-channel', 'guestCount': 1},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        broadcast.assert_not_called()
+
+    @patch('core.middleware.local_agent_invalidation.broadcast_operational_invalidation')
+    def test_agent_outbox_replay_does_not_echo_an_invalidation_back_to_itself(self, broadcast):
+        operation = {
+            'operationId': 'edge-no-invalidation-echo',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/sales/orders/',
+            'body': {
+                'id': str(uuid.uuid4()),
+                'channel': 'takeaway',
+                'guestCount': 1,
+            },
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/local-agent/sync/mutations/',
+                {'operations': [operation]},
+                format='json',
+                HTTP_AUTHORIZATION=f'Bearer {self.token}',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(response.data['results'][0]['ok'], response.data)
+        broadcast.assert_not_called()
+
+    @patch('apps.local_agents.invalidation.get_channel_layer', return_value=None)
+    def test_invalidation_transport_failure_never_rolls_back_a_pos_mutation(self, _channel_layer):
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                '/api/v1/pos/sales/orders/',
+                {'channel': 'takeaway', 'guestCount': 1},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertTrue(Order.objects.filter(pk=response.data['id']).exists())
 
 
 class LocalAgentMutationPushTests(PosAPITestCase):
@@ -1987,14 +2161,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         open_fiscal_shift,
         close_fiscal_shift,
     ):
-        from apps.users.models import Permission
-
-        permission, _ = Permission.objects.get_or_create(
-            code='pos_fiscal_shift.manage',
-            defaults={'name': 'Manage fiscal shift', 'description': 'Manage fiscal shift'},
-        )
-        self.role.permissions.add(permission)
-        self.entitlement.permissions.add(permission)
+        self.assertNotIn('pos_fiscal_shift.manage', self.user.permission_codes)
         fiscal = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.FISCAL,
@@ -2056,6 +2223,52 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         close_fiscal_shift.assert_not_called()
         session.refresh_from_db()
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
+
+    @patch('apps.billing.services.cash_shift.open_fiscal_shift')
+    def test_trusted_edge_fiscal_shift_command_without_local_result_still_requires_manage_permission(
+        self,
+        open_fiscal_shift,
+    ):
+        self.assertNotIn('pos_fiscal_shift.manage', self.user.permission_codes)
+        operation = {
+            'operationId': 'edge-remote-fiscal-shift-open-forbidden',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': '/api/v1/pos/billing/fiscal-shifts/open/',
+            'body': {'cashDeskId': str(self.cash_desk.id)},
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(response.data['results'][0]['ok'], response.data)
+        self.assertEqual(response.data['results'][0]['status'], status.HTTP_403_FORBIDDEN, response.data)
+        open_fiscal_shift.assert_not_called()
+
+    @patch('apps.billing.services.cash_shift.open_fiscal_shift')
+    def test_direct_pos_cannot_forge_trusted_fiscal_shift_result(self, open_fiscal_shift):
+        self.assertNotIn('pos_fiscal_shift.manage', self.user.permission_codes)
+
+        response = self.client.post(
+            '/api/v1/pos/billing/fiscal-shifts/open/',
+            {
+                'cashDeskId': str(self.cash_desk.id),
+                'edgeFiscalResult': {
+                    'ok': True,
+                    'provider': 'fiscal-drive-service',
+                    'terminalId': 'FORGED',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, response.data)
+        open_fiscal_shift.assert_not_called()
 
 
 class LocalAgentCommandServiceTests(APITestCase):

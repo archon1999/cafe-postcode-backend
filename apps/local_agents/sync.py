@@ -150,15 +150,9 @@ def _cash_shift_snapshot(restaurant):
     ]
 
 
-def _expense_snapshot(restaurant):
+def _expense_reference_snapshot(restaurant):
     categories = ExpenseCategory.objects.filter(restaurant=restaurant).order_by('sort_order', 'name')
     recipients = CashExpenseService().get_available_recipients(restaurant=restaurant)
-    expenses = (
-        CashExpense.objects.filter(restaurant=restaurant, cash_shift__status=CashShift.Status.OPEN)
-        .select_related('cash_shift', 'cash_desk', 'category', 'recipient', 'created_by', 'voided_by')
-        .order_by('occurred_at')
-    )
-    rows = CashExpenseSerializer(expenses, many=True).data
     return {
         'categories': [
             {
@@ -179,32 +173,41 @@ def _expense_snapshot(restaurant):
             }
             for user in recipients
         ],
-        'expenses': [
-            {
-                'id': str(row['id']),
-                'cashShiftId': str(row['cash_shift_id']),
-                'cashDesk': str(row['cash_desk']),
-                'cashDeskName': row['cash_desk_name'],
-                'category': str(row['category']),
-                'categoryName': row['category_name'],
-                'amount': row['amount'],
-                'comment': row['comment'],
-                'recipient': str(row['recipient'] or ''),
-                'recipientName': row['recipient_name'],
-                'createdBy': str(row['created_by']),
-                'createdByName': row['created_by_name'],
-                'status': row['status'],
-                'occurredAt': row['occurred_at'],
-                'voidedAt': row['voided_at'],
-                'voidedBy': str(row['voided_by'] or ''),
-                'voidedByName': row['voided_by_name'] or '',
-                'voidReason': row['void_reason'],
-                'createdAt': row['created_at'],
-                'updatedAt': row['updated_at'],
-            }
-            for row in rows
-        ],
     }
+
+
+def _cash_expense_snapshot(restaurant):
+    expenses = (
+        CashExpense.objects.filter(restaurant=restaurant, cash_shift__status=CashShift.Status.OPEN)
+        .select_related('cash_shift', 'cash_desk', 'category', 'recipient', 'created_by', 'voided_by')
+        .order_by('occurred_at')
+    )
+    rows = CashExpenseSerializer(expenses, many=True).data
+    return [
+        {
+            'id': str(row['id']),
+            'cashShiftId': str(row['cash_shift_id']),
+            'cashDesk': str(row['cash_desk']),
+            'cashDeskName': row['cash_desk_name'],
+            'category': str(row['category']),
+            'categoryName': row['category_name'],
+            'amount': row['amount'],
+            'comment': row['comment'],
+            'recipient': str(row['recipient'] or ''),
+            'recipientName': row['recipient_name'],
+            'createdBy': str(row['created_by']),
+            'createdByName': row['created_by_name'],
+            'status': row['status'],
+            'occurredAt': row['occurred_at'],
+            'voidedAt': row['voided_at'],
+            'voidedBy': str(row['voided_by'] or ''),
+            'voidedByName': row['voided_by_name'] or '',
+            'voidReason': row['void_reason'],
+            'createdAt': row['created_at'],
+            'updatedAt': row['updated_at'],
+        }
+        for row in rows
+    ]
 
 
 def _user_snapshots(restaurant, now):
@@ -292,6 +295,74 @@ def _print_templates(restaurant):
     ]
 
 
+def _configuration_snapshot(*, agent, now, expense_references=None):
+    restaurant = agent.restaurant
+    expense_references = expense_references or _expense_reference_snapshot(restaurant)
+    return {
+        'schemaVersion': 1,
+        'serverCursor': now.isoformat(),
+        'generatedAt': now.isoformat(),
+        'restaurant': PosRestaurantContextSerializer(restaurant).data,
+        'posDevices': pos_device_state_snapshot(restaurant=restaurant),
+        'users': _user_snapshots(restaurant, now),
+        'menu': _menu_snapshot(restaurant),
+        'expenseCategories': expense_references['categories'],
+        'expenseRecipients': expense_references['recipients'],
+        'bindings': _device_bindings(restaurant),
+        'printTemplates': _print_templates(restaurant),
+    }
+
+
+def _operational_snapshot(*, agent, now, cash_expenses=None):
+    restaurant = agent.restaurant
+    cash_expenses = cash_expenses if cash_expenses is not None else _cash_expense_snapshot(restaurant)
+    return {
+        'schemaVersion': 1,
+        'serverCursor': now.isoformat(),
+        'generatedAt': now.isoformat(),
+        'halls': _hall_snapshot(restaurant),
+        'tableSessions': _table_session_snapshot(restaurant),
+        'orders': _order_snapshot(restaurant, now),
+        'kitchenTickets': _kitchen_snapshot(restaurant),
+        'cashShifts': _cash_shift_snapshot(restaurant),
+        'cashExpenses': cash_expenses,
+    }
+
+
+class LocalAgentSnapshotView(APIView):
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [LocalAgentRateThrottle]
+
+    def get_agent(self, request):
+        agent = authenticate_local_agent(request)
+        if agent is None:
+            return None, Response(
+                {'detail': 'Invalid local agent token.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        return agent, None
+
+
+class LocalAgentConfigurationView(LocalAgentSnapshotView):
+    """Slow-changing authority and configuration, safe during local work."""
+
+    def get(self, request):
+        agent, error = self.get_agent(request)
+        if error is not None:
+            return error
+        return Response(_configuration_snapshot(agent=agent, now=timezone.now()))
+
+
+class LocalAgentOperationalStateView(LocalAgentSnapshotView):
+    """Canonical live state, applied only behind the Agent's causal fence."""
+
+    def get(self, request):
+        agent, error = self.get_agent(request)
+        if error is not None:
+            return error
+        return Response(_operational_snapshot(agent=agent, now=timezone.now()))
+
+
 class LocalAgentBootstrapView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [LocalAgentRateThrottle]
@@ -302,27 +373,20 @@ class LocalAgentBootstrapView(APIView):
             return Response({'detail': 'Invalid local agent token.'}, status=status.HTTP_401_UNAUTHORIZED)
 
         now = timezone.now()
-        restaurant = agent.restaurant
-        expenses = _expense_snapshot(restaurant)
+        expense_references = _expense_reference_snapshot(agent.restaurant)
+        cash_expenses = _cash_expense_snapshot(agent.restaurant)
         return Response(
             {
-                'schemaVersion': 1,
-                'serverCursor': now.isoformat(),
-                'generatedAt': now.isoformat(),
-                'restaurant': PosRestaurantContextSerializer(restaurant).data,
-                'posDevices': pos_device_state_snapshot(restaurant=restaurant),
-                'users': _user_snapshots(restaurant, now),
-                'menu': _menu_snapshot(restaurant),
-                'halls': _hall_snapshot(restaurant),
-                'tableSessions': _table_session_snapshot(restaurant),
-                'orders': _order_snapshot(restaurant, now),
-                'kitchenTickets': _kitchen_snapshot(restaurant),
-                'cashShifts': _cash_shift_snapshot(restaurant),
-                'expenseCategories': expenses['categories'],
-                'expenseRecipients': expenses['recipients'],
-                'cashExpenses': expenses['expenses'],
-                'bindings': _device_bindings(restaurant),
-                'printTemplates': _print_templates(restaurant),
+                **_configuration_snapshot(
+                    agent=agent,
+                    now=now,
+                    expense_references=expense_references,
+                ),
+                **_operational_snapshot(
+                    agent=agent,
+                    now=now,
+                    cash_expenses=cash_expenses,
+                ),
             }
         )
 

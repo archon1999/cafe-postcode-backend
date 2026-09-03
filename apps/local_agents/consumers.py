@@ -114,6 +114,15 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             }
         )
 
+    async def operational_invalidate(self, event):
+        await self.send_json(
+            {
+                'type': 'context_invalidated',
+                'scopes': ['operational'],
+                'serverTime': event.get('server_time') or timezone.now().isoformat(),
+            }
+        )
+
     async def device_revoked(self, event):
         await self.close(code=4403)
 

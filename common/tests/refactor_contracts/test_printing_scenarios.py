@@ -20,6 +20,8 @@ from apps.sales.tests.support.pos_api import PosTestCase
 
 
 class BackendPrintingScenarioTests(PosTestCase):
+    maxDiff = None
+
     opened_at = datetime(2026, 7, 15, 9, 10, 11, tzinfo=ZoneInfo("Asia/Tashkent"))
     paid_at = datetime(2026, 7, 15, 10, 20, 30, tzinfo=ZoneInfo("Asia/Tashkent"))
 
@@ -141,11 +143,20 @@ class BackendPrintingScenarioTests(PosTestCase):
                     "serviceFeePercent": 0,
                     "serviceFeeComponents": [],
                     "restaurantServiceFee": 0,
+                    "restaurantServiceFeeRateLabel": "0%",
                     "restaurantServiceFeePercent": 0,
+                    "restaurantServiceFeeHourlyRate": 0,
+                    "restaurantServiceFeeDurationMinutes": 0,
                     "hallServiceFee": 0,
+                    "hallServiceFeeRateLabel": "0%",
                     "hallServiceFeePercent": 0,
+                    "hallServiceFeeHourlyRate": 0,
+                    "hallServiceFeeDurationMinutes": 0,
                     "tableServiceFee": 0,
+                    "tableServiceFeeRateLabel": "0%",
                     "tableServiceFeePercent": 0,
+                    "tableServiceFeeHourlyRate": 0,
+                    "tableServiceFeeDurationMinutes": 0,
                     "vat": 6429,
                     "vatPercent": 12,
                     "total": 60000,

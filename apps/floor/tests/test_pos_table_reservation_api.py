@@ -124,11 +124,9 @@ class PosTableReservationApiTests(PosAPITestCase):
         )
 
         self.client.force_authenticate(self.table_manager_user)
-        session_id = uuid4()
         create_response = self.client.post(
             '/api/v1/pos/floor/table-sessions/',
             {
-                'id': str(session_id),
                 'table': str(self.table.id),
                 'guest_count': 2,
             },
@@ -139,7 +137,7 @@ class PosTableReservationApiTests(PosAPITestCase):
             status.HTTP_201_CREATED,
             create_response.data,
         )
-        self.assertEqual(create_response.data['id'], str(session_id))
+        session_id = create_response.data['id']
         session = TableSession.objects.get(pk=session_id)
 
         patch_response = self.client.patch(

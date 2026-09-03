@@ -25,6 +25,31 @@ CashDesk = get_cash_desk_model()
 User = get_user_model()
 
 
+class FiscalShiftEndpointRBACPermission(EndpointRBACPermission):
+    """Allow an agent to report an already-completed local fiscal side effect.
+
+    Interactive fiscal-shift commands still require the registered
+    ``pos_fiscal_shift.manage`` permission.  A trusted Local Agent replay is a
+    lifecycle acknowledgement, however, and commonly belongs to the cashier
+    who was allowed to create the fiscal payment in the first place.
+    """
+
+    edge_result_fields = {
+        "edge_fiscal_result",
+        "edge_fiscal_result_json",
+        "edgeFiscalResult",
+        "edgeFiscalResultJson",
+    }
+
+    def has_permission(self, request, view):
+        raw_request = getattr(request, "_request", request)
+        if bool(getattr(raw_request, "trusted_edge_replay", False)) and any(
+            field in request.data for field in self.edge_result_fields
+        ):
+            return bool(request.user and request.user.is_authenticated)
+        return super().has_permission(request, view)
+
+
 class CashierContextView(APIView):
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     shift_service_class = CashShiftService
@@ -143,7 +168,9 @@ class CashShiftCloseView(APIView):
         shift_service.ensure_shift_can_close(shift=shift)
         fiscal_shift_payload = None
         print_report_error = ""
-        fiscal_shift_open = shift_service.has_open_fiscal_shift(restaurant=restaurant)
+        fiscal_shift_open = shift_service.has_open_fiscal_shift(
+            restaurant=restaurant, cash_desk=shift.cash_desk
+        )
         if serializer.validated_data.get("close_fiscal_shift") and fiscal_shift_open:
             active_manager_shifts = shift_service.get_active_shifts_for_manager(
                 restaurant=restaurant, user=request.user
@@ -159,7 +186,9 @@ class CashShiftCloseView(APIView):
                 )
             try:
                 fiscal_shift_payload = shift_service.close_fiscal_shift(
-                    restaurant=restaurant, closed_by=request.user
+                    restaurant=restaurant,
+                    cash_desk=shift.cash_desk,
+                    closed_by=request.user,
                 )
             except ValidationError:
                 raise
@@ -248,7 +277,7 @@ class CashShiftReportPrintView(APIView):
 
 
 class FiscalShiftOpenView(APIView):
-    permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
+    permission_classes = [permissions.IsAuthenticated, FiscalShiftEndpointRBACPermission]
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 

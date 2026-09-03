@@ -73,6 +73,130 @@ class FiscalBusinessFlowTests(PosTestCase):
         order.recalculate_totals()
         return order
 
+    def test_cash_desk_bound_fiscal_session_is_visible_at_restaurant_scope(self):
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider="fiscal-drive-service",
+            terminal_id="TERM-1",
+            opened_at=timezone.now(),
+        )
+
+        self.assertTrue(
+            self.shift_service.has_open_fiscal_shift(restaurant=self.restaurant)
+        )
+        self.assertTrue(
+            self.shift_service.has_open_fiscal_shift(
+                restaurant=self.restaurant, cash_desk=self.cash_desk
+            )
+        )
+
+    def test_fiscal_sessions_are_isolated_per_cash_desk(self):
+        second_cash_desk = self.restaurant.cash_desks.create(
+            name="Second fiscal cashier",
+            enabled_payment_methods=["cash", "card"],
+        )
+        first = FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider="fiscal-drive-service",
+            terminal_id="TERM-1",
+            opened_at=timezone.now(),
+        )
+
+        self.assertFalse(
+            self.shift_service.has_open_fiscal_shift(
+                restaurant=self.restaurant, cash_desk=second_cash_desk
+            )
+        )
+        self.shift_service.open_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=second_cash_desk,
+            opened_by=self.user,
+            provider_result={
+                "ok": True,
+                "provider": "fiscal-drive-service",
+                "terminal_id": "TERM-2",
+            },
+        )
+
+        second = FiscalShiftSession.objects.get(cash_desk=second_cash_desk)
+        self.shift_service.close_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=second_cash_desk,
+            closed_by=self.user,
+            provider_result={
+                "ok": True,
+                "provider": "fiscal-drive-service",
+                "terminal_id": "TERM-2",
+            },
+        )
+
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, FiscalShiftSession.Status.OPEN)
+        self.assertEqual(second.status, FiscalShiftSession.Status.CLOSED)
+
+    def test_trusted_duplicate_fiscal_open_is_idempotent_for_same_terminal(self):
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider="fiscal-drive-service",
+            terminal_id="TERM-1",
+            opened_at=timezone.now(),
+        )
+        provider_result = {
+            "ok": True,
+            "provider": "fiscal-drive-service",
+            "terminal_id": "TERM-1",
+        }
+
+        result = self.shift_service.open_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            provider_result=provider_result,
+        )
+
+        self.assertTrue(result["already_open"])
+        self.assertEqual(
+            FiscalShiftSession.objects.filter(
+                restaurant=self.restaurant,
+                status=FiscalShiftSession.Status.OPEN,
+            ).count(),
+            1,
+        )
+
+    def test_trusted_fiscal_close_recovers_missing_open_session_audit(self):
+        provider_result = {
+            "ok": True,
+            "provider": "fiscal-drive-service",
+            "terminal_id": "TERM-1",
+            "provider_report": {
+                "z_info": {"TerminalID": "TERM-1", "TotalSaleCount": 1}
+            },
+        }
+
+        result = self.shift_service.close_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            closed_by=self.user,
+            provider_result=provider_result,
+        )
+
+        self.assertEqual(result["result"], provider_result)
+        session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
+        self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
+        self.assertEqual(session.cash_desk, self.cash_desk)
+        self.assertEqual(session.terminal_id, "TERM-1")
+        self.assertTrue(session.open_payload["recovered_from_trusted_close"])
+
     def test_retry_partial_split_sends_only_failed_split_reason(self):
         order = self.create_closed_order()
         payment = self.create_success_payment(order=order)

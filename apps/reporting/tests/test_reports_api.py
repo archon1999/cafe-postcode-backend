@@ -69,35 +69,6 @@ class ReportsApiTests(PosAPITestCase):
             status=OrderItem.Status.DONE,
         )
         self.closed_order.recalculate_totals()
-        self.open_order = Order.objects.create(
-            restaurant=self.restaurant,
-            distribution_point=self.hall_distribution,
-            opened_by=self.user,
-            order_number=2,
-            channel=Order.Channel.HALL,
-            status=Order.Status.SUBMITTED,
-            guest_count=2,
-        )
-        OrderItem.objects.create(
-            order=self.open_order,
-            catalog_item=self.catalog_item,
-            prep_station=self.prep_station,
-            created_by=self.user,
-            quantity=1,
-            unit_price=30000,
-            status=OrderItem.Status.NEW,
-        )
-        self.open_order.recalculate_totals()
-        OrderItem.objects.create(
-            order=self.open_order,
-            catalog_item=self.catalog_item,
-            prep_station=self.prep_station,
-            created_by=self.user,
-            quantity=3,
-            unit_price=10000,
-            status=OrderItem.Status.CANCELLED,
-        )
-
         second_restaurant = self.restaurant.__class__.objects.create(
             name='Other restaurant',
             service_fee_percent=10,
@@ -169,6 +140,38 @@ class ReportsApiTests(PosAPITestCase):
             actual_closing_cash_amount=130000,
             closed_by=self.user,
             notes_close='End of day',
+        )
+
+        # Reports still need an open order in the restaurant, but it must be
+        # created after the historical shift is closed. Production shift close
+        # now correctly rejects restaurants with unresolved open orders.
+        self.open_order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.hall_distribution,
+            opened_by=self.user,
+            order_number=2,
+            channel=Order.Channel.HALL,
+            status=Order.Status.SUBMITTED,
+            guest_count=2,
+        )
+        OrderItem.objects.create(
+            order=self.open_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=1,
+            unit_price=30000,
+            status=OrderItem.Status.NEW,
+        )
+        self.open_order.recalculate_totals()
+        OrderItem.objects.create(
+            order=self.open_order,
+            catalog_item=self.catalog_item,
+            prep_station=self.prep_station,
+            created_by=self.user,
+            quantity=3,
+            unit_price=10000,
+            status=OrderItem.Status.CANCELLED,
         )
 
     def current_range_params(self):

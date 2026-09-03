@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -7,15 +8,36 @@ FiscalShiftSession = get_fiscal_shift_session_model()
 
 
 class FiscalShiftLifecycleMixin:
+    @transaction.atomic
     def open_fiscal_shift(
         self, *, restaurant, cash_desk=None, opened_by=None, provider_result=None
     ):
-        existing = FiscalShiftSession.objects.filter(
-            restaurant=restaurant,
-            cash_desk=cash_desk,
-            status=FiscalShiftSession.Status.OPEN,
-        ).first()
+        restaurant, cash_desk = self._lock_fiscal_scope(
+            restaurant=restaurant, cash_desk=cash_desk
+        )
+        existing = self._get_active_fiscal_session(
+            restaurant=restaurant, cash_desk=cash_desk
+        )
         if existing is not None:
+            # A trusted Local Agent may replay the same already-performed
+            # provider open after losing the HTTP acknowledgement. Treat that
+            # signed provider result as idempotent; interactive duplicate opens
+            # still return the existing validation error.
+            if provider_result is not None:
+                provider = str(provider_result.get("provider") or "").strip()
+                terminal_id = self._terminal_id_from_fiscal_result(provider_result)
+                if (
+                    (existing.provider and provider and existing.provider != provider)
+                    or (
+                        existing.terminal_id
+                        and terminal_id
+                        and existing.terminal_id != terminal_id
+                    )
+                ):
+                    raise ValidationError(
+                        {"detail": "Fiscal smena boshqa fiscal terminalda ochiq."}
+                    )
+                return {**provider_result, "already_open": True}
             raise ValidationError({"detail": "Fiscal smena allaqachon ochiq."})
 
         result = (
@@ -59,13 +81,17 @@ class FiscalShiftLifecycleMixin:
             is not None
         )
 
+    @transaction.atomic
     def close_fiscal_shift(
         self, *, restaurant, cash_desk=None, closed_by=None, provider_result=None
     ):
+        restaurant, cash_desk = self._lock_fiscal_scope(
+            restaurant=restaurant, cash_desk=cash_desk
+        )
         session = self._get_active_fiscal_session(
             restaurant=restaurant, cash_desk=cash_desk
         )
-        if session is None:
+        if session is None and provider_result is None:
             return {
                 "skipped": True,
                 "reason": "fiscal_shift_not_open",
@@ -92,12 +118,12 @@ class FiscalShiftLifecycleMixin:
                 restaurant=restaurant, cash_desk=cash_desk
             )
         )
+        close_payload = {
+            "provider_result": result,
+            "reports": report,
+            "closed_at": timezone.now().isoformat(),
+        }
         if session is not None:
-            close_payload = {
-                "provider_result": result,
-                "reports": report,
-                "closed_at": timezone.now().isoformat(),
-            }
             session.status = FiscalShiftSession.Status.CLOSED
             session.closed_by = closed_by
             session.closed_at = timezone.now()
@@ -116,6 +142,24 @@ class FiscalShiftLifecycleMixin:
                     "terminal_id",
                     "updated_at",
                 ]
+            )
+        else:
+            # The provider may have opened its Z-report implicitly on the first
+            # offline receipt before older Agents started announcing fiscal
+            # sessions. Preserve the trusted close result as a recovered closed
+            # session instead of silently losing the fiscal lifecycle audit.
+            FiscalShiftSession.objects.create(
+                restaurant=restaurant,
+                cash_desk=cash_desk,
+                opened_by=None,
+                closed_by=closed_by,
+                status=FiscalShiftSession.Status.CLOSED,
+                provider=str(result.get("provider") or ""),
+                terminal_id=self._terminal_id_from_fiscal_result(result),
+                opened_at=paid_at_from or paid_at_to,
+                closed_at=timezone.now(),
+                open_payload={"recovered_from_trusted_close": True},
+                close_payload=close_payload,
             )
         return {
             "result": result,
@@ -143,15 +187,34 @@ class FiscalShiftLifecycleMixin:
         )
 
     def _get_active_fiscal_session(self, *, restaurant, cash_desk=None):
-        return (
-            FiscalShiftSession.objects.filter(
-                restaurant=restaurant,
-                cash_desk=cash_desk,
-                status=FiscalShiftSession.Status.OPEN,
+        queryset = FiscalShiftSession.objects.filter(
+            restaurant=restaurant,
+            status=FiscalShiftSession.Status.OPEN,
+        ).order_by("-opened_at")
+        if cash_desk is None:
+            return queryset.first()
+        exact = queryset.filter(cash_desk=cash_desk).first()
+        if exact is not None:
+            return exact
+        # Sessions created by older versions were restaurant-scoped and have
+        # no cash desk. They remain the global fiscal session for any desk.
+        return queryset.filter(cash_desk__isnull=True).first()
+
+    @staticmethod
+    def _lock_fiscal_scope(*, restaurant, cash_desk):
+        """Serialize provider lifecycle changes for one physical cash desk."""
+
+        if cash_desk is not None:
+            cash_desk = (
+                cash_desk.__class__.objects.select_for_update()
+                .select_related('restaurant', 'fiscal_integration')
+                .get(pk=cash_desk.pk, restaurant=restaurant)
             )
-            .order_by("-opened_at")
-            .first()
+            return cash_desk.restaurant, cash_desk
+        restaurant = restaurant.__class__.objects.select_for_update().get(
+            pk=restaurant.pk
         )
+        return restaurant, None
 
     @staticmethod
     def _terminal_id_from_fiscal_result(result):

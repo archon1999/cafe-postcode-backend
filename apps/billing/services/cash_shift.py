@@ -178,7 +178,9 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             "active_shifts": self.get_active_shifts_for_manager(
                 restaurant=restaurant, user=user
             ),
-            "fiscal_shift_open": self.has_open_fiscal_shift(restaurant=restaurant),
+            "fiscal_shift_open": self.has_open_fiscal_shift(
+                restaurant=restaurant, cash_desk=status_cash_desk
+            ),
             "fiscal_device_status": get_fiscal_device_status(
                 restaurant=restaurant, cash_desk=status_cash_desk
             ),

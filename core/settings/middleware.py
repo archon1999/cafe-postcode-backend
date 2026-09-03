@@ -33,6 +33,7 @@ MIDDLEWARE = [
 
     # Custom middleware
     'core.middleware.ParamsSnakeCaseMiddleware',
+    'core.middleware.LocalAgentOperationalInvalidationMiddleware',
     'core.middleware.DisableCSRFMiddleware',
     'core.middleware.SystemTimeAdderMiddleware',
     'django_prometheus.middleware.PrometheusAfterMiddleware',
