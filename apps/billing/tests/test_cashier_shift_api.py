@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import status
 
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, PaymentRefund, Receipt
+from apps.printing.models import PrintDocument
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
@@ -162,7 +163,7 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(context_response.data['current_shift']['card_total'], 13000)
         self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 170000)
 
-    def test_close_last_cash_shift_can_close_fiscal_shift(self):
+    def test_close_last_cash_shift_always_closes_open_fiscal_shift(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
         FiscalShiftSession.objects.create(
             restaurant=self.restaurant,
@@ -180,20 +181,22 @@ class CashierShiftApiTests(PosAPITestCase):
                 {
                     'actual_closing_cash_amount': 150000,
                     'notes_close': '',
-                    'close_fiscal_shift': True,
+                    'close_fiscal_shift': False,
                 },
                 format='json',
             )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertIn('fiscal_shift', response.data)
-        self.assertEqual(len(response.data['printDocuments']), 2)
+        self.assertEqual(len(response.data['printDocuments']), 1)
+        document = PrintDocument.objects.get(pk=response.data['printDocuments'][0])
+        self.assertEqual(document.metadata['reportType'], 'general')
         shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
         session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
         self.assertEqual(session.status, FiscalShiftSession.Status.CLOSED)
 
-    def test_print_shift_report_returns_general_and_open_fiscal_documents(self):
+    def test_print_shift_report_returns_one_general_document_when_fiscal_shift_is_open(self):
         open_response = self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         shift_id = open_response['current_shift']['id']
         FiscalShiftSession.objects.create(
@@ -217,7 +220,10 @@ class CashierShiftApiTests(PosAPITestCase):
             'LastReceiptSeq': 1,
         }
 
-        with patch('apps.billing.services.cash_shift.get_fiscal_shift_report', return_value=fiscal_report):
+        with patch(
+            'apps.billing.services.cash_shift.get_fiscal_shift_report',
+            return_value=fiscal_report,
+        ) as get_fiscal_report:
             response = self.client.post(
                 '/api/v1/pos/billing/shifts/current/print-report/',
                 {'cash_shift_id': shift_id},
@@ -225,7 +231,10 @@ class CashierShiftApiTests(PosAPITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(len(response.data['printDocuments']), 2)
+        self.assertEqual(len(response.data['printDocuments']), 1)
+        document = PrintDocument.objects.get(pk=response.data['printDocuments'][0])
+        self.assertEqual(document.metadata['reportType'], 'general')
+        get_fiscal_report.assert_not_called()
 
     def test_close_cash_shift_skips_fiscal_close_when_fiscal_shift_was_not_opened(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
@@ -285,7 +294,7 @@ class CashierShiftApiTests(PosAPITestCase):
 
         response = self.client.post(
             '/api/v1/pos/billing/shifts/current/close/',
-            {'close_fiscal_shift': True},
+            {'close_fiscal_shift': False},
             format='json',
         )
 
@@ -293,6 +302,41 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertIn('Fiscalga yuborilmagan', response.data['detail'])
         self.assertIn('Yopilmagan hisoblar', response.data['detail'])
         self.assertEqual(int(response.data['unresolved_fiscal_count']), 1)
+
+    def test_fiscal_close_failure_keeps_pos_shift_open(self):
+        self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
+        FiscalShiftSession.objects.create(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN,
+            provider='fiscal-drive-service',
+            terminal_id='TERM-1',
+            opened_at=timezone.now(),
+        )
+
+        with patch(
+            'apps.billing.services.cash_shift.close_fiscal_shift',
+            side_effect=RuntimeError('terminal offline'),
+        ):
+            response = self.client.post(
+                '/api/v1/pos/billing/shifts/current/close/',
+                {'close_fiscal_shift': False},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn('terminal offline', response.data['detail'])
+        self.assertTrue(
+            CashShift.objects.filter(
+                cash_desk=self.cash_desk, status=CashShift.Status.OPEN
+            ).exists()
+        )
+        self.assertTrue(
+            FiscalShiftSession.objects.filter(
+                restaurant=self.restaurant, status=FiscalShiftSession.Status.OPEN
+            ).exists()
+        )
 
     def test_retry_fiscal_failure_returns_bad_request(self):
         order = Order.objects.create(

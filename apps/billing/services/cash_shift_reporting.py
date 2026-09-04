@@ -215,12 +215,10 @@ class CashShiftReportingMixin:
             "fiscal_sent_report": fiscal_sent_report,
         }
 
-    def create_shift_report_documents(
-        self, *, shift, created_by=None, closed=False, fiscal_report=None
-    ):
+    def create_shift_report_documents(self, *, shift, created_by=None, closed=False):
         own_report = self.build_fiscal_shift_report(shift=shift)["pos_report"]
         own_report["TotalExpenseAmount"] = self.build_shift_snapshot(shift=shift)["expense_total"]
-        documents = [
+        return [
             create_shift_report_print_document(
                 shift=shift,
                 report=own_report,
@@ -229,25 +227,12 @@ class CashShiftReportingMixin:
                 created_by=created_by,
             )
         ]
-        if fiscal_report is not None:
-            documents.append(
-                create_shift_report_print_document(
-                    shift=shift,
-                    report=fiscal_report,
-                    fiscal=True,
-                    closed=closed,
-                    created_by=created_by,
-                )
-            )
-        return documents
 
     def print_shift_reports(self, *, shift, created_by=None):
-        fiscal_report = self.get_open_fiscal_report(shift=shift)
         return self.create_shift_report_documents(
             shift=shift,
             created_by=created_by,
             closed=False,
-            fiscal_report=fiscal_report,
         )
 
     def get_open_fiscal_report(self, *, shift):

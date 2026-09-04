@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -8,7 +9,13 @@ from django.utils import timezone
 
 from apps.local_agents.lan import private_lan_endpoints
 from apps.local_agents.device_state import pos_device_state_snapshot
-from apps.local_agents.models import LocalAgent, LocalAgentCommand
+from apps.local_agents.connection_authority import (
+    claim_connection_authority,
+    connection_identity_from_scope,
+    is_connection_authority,
+    release_connection_authority,
+)
+from apps.local_agents.models import LocalAgent, LocalAgentCommand, LocalAgentConnection
 from apps.local_agents.rollout import rollout_state_from_heartbeat
 from apps.local_agents.sanitization import sanitize_remote_logs_result
 from apps.local_agents.services import local_agent_group_name
@@ -56,10 +63,41 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         if self.agent is None:
             await self.close(code=4401)
             return
+        self.connection_id = uuid.uuid4()
+        self.connection_identity = connection_identity_from_scope(
+            self.scope,
+            device_authenticated=self.device is not None,
+        )
+        if self.connection_identity is None:
+            await self.close(code=4401)
+            return
         self.group_name = local_agent_group_name(self.agent.id)
+        claim = await self._claim_connection_authority()
+        if not claim.accepted:
+            # Complete the WebSocket handshake before closing with an explicit
+            # duplicate-runtime code. Older Agents then treat this as a
+            # reconnectable transport conflict instead of a revoked credential.
+            await self.accept()
+            await self.close(code=4410)
+            return
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
-        await self._mark_online()
+        online = await self._mark_online(
+            version=self.connection_identity.version,
+            protocol_version=(
+                self.connection_identity.protocol_version
+                if self.connection_identity.attested
+                else None
+            ),
+        )
+        if not online:
+            await self.close(code=4410)
+            return
+        if claim.displaced_channel_name:
+            await self.channel_layer.send(
+                claim.displaced_channel_name,
+                {'type': 'authority.revoked'},
+            )
         # A stale pre-1.1.11 process can authenticate and write its heartbeat,
         # then fail while reconciling the hello payload because its Edge DB was
         # already closed. Replay one safe updater command before hello so that
@@ -105,12 +143,10 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
 
     async def disconnect(self, close_code):
         if self.agent is not None:
-            await self.channel_layer.group_discard(self.group_name, self.channel_name)
-            # More than one valid socket can briefly exist during reconnects
-            # and deployments.  Marking the shared agent row offline when any
-            # one socket closes hides the still-connected socket and makes
-            # commands fail spuriously.  Online state already expires through
-            # LocalAgent.is_online() when heartbeats stop.
+            if hasattr(self, 'group_name'):
+                await self.channel_layer.group_discard(self.group_name, self.channel_name)
+            if hasattr(self, 'connection_id'):
+                await self._release_connection_authority()
 
     async def receive_json(self, content, **kwargs):
         if len(json.dumps(content, separators=(',', ':')).encode('utf-8')) > 256 * 1024:
@@ -121,13 +157,16 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             if self.device is not None and not await self._device_still_active():
                 await self.close(code=4403)
                 return
-            await self._mark_online(
+            online = await self._mark_online(
                 version=str(content.get('version') or ''),
                 capabilities=content.get('capabilities') if isinstance(content.get('capabilities'), list) else None,
                 lan_endpoints=content.get('lanEndpoints') if isinstance(content.get('lanEndpoints'), list) else None,
                 protocol_version=content.get('protocolVersion'),
                 rollout_state=rollout_state_from_heartbeat(content.get('legacyPosBridge')),
             )
+            if not online:
+                await self.close(code=4410)
+                return
             await self.send_json(
                 {
                     'type': 'heartbeat_ack',
@@ -138,9 +177,14 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             await self._deliver_durable_terminal_revokes()
             return
         if message_type == 'command_result':
+            if not await self._is_connection_authority():
+                await self.close(code=4410)
+                return
             await self._store_command_result(content)
 
     async def agent_command(self, event):
+        if not await self._is_connection_authority():
+            return
         await self._mark_command_sent(event['command_id'])
         await self.send_json(
             {
@@ -152,6 +196,8 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def operational_invalidate(self, event):
+        if not await self._is_connection_authority():
+            return
         await self.send_json(
             {
                 'type': 'context_invalidated',
@@ -162,6 +208,10 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
 
     async def device_revoked(self, event):
         await self.close(code=4403)
+
+    async def authority_revoked(self, event):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.close(code=4410)
 
     async def _deliver_durable_terminal_revokes(self):
         for command in await self._durable_terminal_revokes():
@@ -210,6 +260,29 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         return agent, None
 
     @database_sync_to_async
+    def _claim_connection_authority(self):
+        return claim_connection_authority(
+            agent_id=self.agent.pk,
+            connection_id=self.connection_id,
+            channel_name=self.channel_name,
+            identity=self.connection_identity,
+        )
+
+    @database_sync_to_async
+    def _is_connection_authority(self):
+        return is_connection_authority(
+            agent_id=self.agent.pk,
+            connection_id=self.connection_id,
+        )
+
+    @database_sync_to_async
+    def _release_connection_authority(self):
+        return release_connection_authority(
+            agent_id=self.agent.pk,
+            connection_id=self.connection_id,
+        )
+
+    @database_sync_to_async
     def _device_still_active(self):
         return Device.objects.filter(
             pk=self.device.pk,
@@ -247,6 +320,32 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
 
         def persist_heartbeat():
             with transaction.atomic():
+                agent = LocalAgent.objects.select_for_update().get(pk=self.agent.pk)
+                authority = LocalAgentConnection.objects.select_for_update().filter(
+                    agent=agent,
+                    connection_id=self.connection_id,
+                    connected=True,
+                ).first()
+                if authority is None:
+                    return False
+                if authority.identity_attested:
+                    if version and version != authority.version:
+                        return False
+                    if protocol_version is not None and protocol_version != authority.protocol_version:
+                        return False
+                elif version:
+                    authority.version = version
+                    if isinstance(protocol_version, int) and 1 <= protocol_version <= 255:
+                        authority.protocol_version = protocol_version
+                authority.last_seen_at = now
+                authority.save(
+                    update_fields=[
+                        'version',
+                        'protocol_version',
+                        'last_seen_at',
+                        'updated_at',
+                    ]
+                )
                 LocalAgent.objects.filter(pk=self.agent.pk).update(**values)
                 if self.device is not None:
                     device_values = {
@@ -256,8 +355,9 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
                     if version:
                         device_values['app_version'] = version
                     Device.objects.filter(pk=self.device.pk).update(**device_values)
+                return True
 
-        _with_database_lock_retry(persist_heartbeat)
+        return bool(_with_database_lock_retry(persist_heartbeat))
 
     @database_sync_to_async
     def _mark_command_sent(self, command_id):

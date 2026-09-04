@@ -109,6 +109,34 @@ class LocalAgentCommand(BaseModel):
         return f'{self.command_type}:{self.status}:{self.id}'
 
 
+class LocalAgentConnection(BaseModel):
+    """The single WebSocket allowed to act for one Local Agent record.
+
+    A workstation can temporarily retain an older Agent executable or config
+    after an update.  Persisting the authority lease in PostgreSQL keeps all
+    Daphne workers consistent and prevents those duplicate sockets from both
+    receiving commands or overwriting the observed runtime version.
+    """
+
+    agent = models.OneToOneField(
+        LocalAgent,
+        on_delete=models.CASCADE,
+        related_name='connection_authority',
+    )
+    connection_id = models.UUIDField(null=True, blank=True)
+    runtime_instance_id = models.CharField(max_length=128, blank=True)
+    version = models.CharField(max_length=50, blank=True)
+    protocol_version = models.PositiveSmallIntegerField(default=1)
+    identity_attested = models.BooleanField(default=False)
+    channel_name = models.CharField(max_length=255, blank=True)
+    connected = models.BooleanField(default=False)
+    connected_at = models.DateTimeField(null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    def __str__(self):
+        return f'{self.agent_id}:{self.version or "legacy"}:{"online" if self.connected else "offline"}'
+
+
 class LocalAgentMutationReceipt(BaseModel):
     restaurant = models.ForeignKey(
         'restaurants.Restaurant',

@@ -78,7 +78,7 @@ class BackendShiftScenarioTests(PosAPITestCase):
         )
         self.assertEqual(shift.close_report_payload["report"]["all"]["count"], 1)
 
-    def test_open_fiscal_session_adds_second_report_without_closing_either_shift(self):
+    def test_open_fiscal_session_still_prints_one_general_report_without_closing_shifts(self):
         opened = self.open_shift_via_api(
             cash_desk_id=self.cash_desk.id, opening_cash_amount=0
         )
@@ -105,7 +105,7 @@ class BackendShiftScenarioTests(PosAPITestCase):
         with patch(
             "apps.billing.services.cash_shift.get_fiscal_shift_report",
             return_value=fiscal_report,
-        ):
+        ) as get_fiscal_report:
             response = self.client.post(
                 "/api/v1/pos/billing/shifts/current/print-report/",
                 {"cash_shift_id": str(shift.id)},
@@ -113,7 +113,8 @@ class BackendShiftScenarioTests(PosAPITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(len(response.data["printDocuments"]), 2)
+        self.assertEqual(len(response.data["printDocuments"]), 1)
+        get_fiscal_report.assert_not_called()
         shift.refresh_from_db()
         fiscal_session.refresh_from_db()
         self.assertEqual(

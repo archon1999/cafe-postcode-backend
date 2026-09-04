@@ -1,6 +1,7 @@
 import json
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -143,6 +144,7 @@ class CashShiftCloseView(APIView):
     shift_service_class = CashShiftService
     feature_gate_service_class = FeatureGateService
 
+    @transaction.atomic
     def post(self, request):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
@@ -162,6 +164,15 @@ class CashShiftCloseView(APIView):
         if shift is None:
             return Response({"detail": "There is no active cashier shift."}, status=400)
 
+        # Keep the selected shift locked across the physical fiscal close and
+        # the POS close. Payment flows take the same row lock, so a concurrent
+        # payment cannot slip into the gap after the Z-report was closed.
+        shift = (
+            type(shift).objects.select_for_update(of=("self",))
+            .select_related("cash_desk", "cashier", "opened_by")
+            .get(pk=shift.pk)
+        )
+
         shift_service = self.shift_service_class()
         # Validate before a fiscal Z-report is closed. The same invariant is
         # checked again under the cash-shift row lock by close_shift().
@@ -171,7 +182,7 @@ class CashShiftCloseView(APIView):
         fiscal_shift_open = shift_service.has_open_fiscal_shift(
             restaurant=restaurant, cash_desk=shift.cash_desk
         )
-        if serializer.validated_data.get("close_fiscal_shift") and fiscal_shift_open:
+        if fiscal_shift_open:
             active_manager_shifts = shift_service.get_active_shifts_for_manager(
                 restaurant=restaurant, user=request.user
             )
@@ -198,24 +209,6 @@ class CashShiftCloseView(APIView):
                     detail = "Fiscal smenani yopib bo'lmaydi: fiscal smenada savdo yoki qaytim operatsiyasi yo'q."
                 raise ValidationError({"detail": detail}) from error
 
-        fiscal_report = None
-        if fiscal_shift_payload is not None:
-            provider_report = fiscal_shift_payload.get("provider_report") or {}
-            fiscal_report = dict(provider_report.get("z_info") or {})
-            result = fiscal_shift_payload.get("result") or {}
-            fiscal_report.setdefault(
-                "FactoryID", result.get("factory_id") or result.get("factoryId") or ""
-            )
-            fiscal_report.setdefault(
-                "TerminalID",
-                result.get("terminal_id") or result.get("terminalId") or "",
-            )
-        elif fiscal_shift_open:
-            try:
-                fiscal_report = shift_service.get_open_fiscal_report(shift=shift)
-            except Exception as error:
-                print_report_error = str(error)
-
         shift_service.close_shift(
             shift=shift,
             actual_closing_cash_amount=serializer.validated_data.get(
@@ -231,7 +224,6 @@ class CashShiftCloseView(APIView):
                 shift=shift,
                 created_by=request.user,
                 closed=True,
-                fiscal_report=fiscal_report,
             )
         except Exception as error:
             print_documents = []

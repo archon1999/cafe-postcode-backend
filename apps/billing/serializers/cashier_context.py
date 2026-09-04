@@ -146,7 +146,9 @@ class CashShiftCloseSerializer(serializers.Serializer):
     cash_shift_id = serializers.UUIDField(required=False, allow_null=True)
     actual_closing_cash_amount = serializers.IntegerField(min_value=0, required=False, allow_null=True)
     notes_close = serializers.CharField(required=False, allow_blank=True)
-    close_fiscal_shift = serializers.BooleanField(required=False, default=False)
+    # Kept for backward-compatible clients. Closing an open fiscal shift is a
+    # server-enforced part of closing the final POS shift, not an opt-out.
+    close_fiscal_shift = serializers.BooleanField(required=False, default=True)
 
 
 class CashShiftReportSerializer(serializers.Serializer):

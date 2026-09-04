@@ -15,6 +15,7 @@ from apps.local_agents.models import (
     LocalAgentCommand,
     LocalAgentMutationReceipt,
 )
+from apps.local_agents.connection_authority import ConnectionIdentity, claim_connection_authority
 from apps.local_agents.mutations import _allowed_mutation, _request_hash
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, PaymentRefund, Receipt
 from apps.local_agents.mutation_reconciliation import reconciled_terminal_noop
@@ -135,7 +136,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
 
         async_to_sync(run_scenario)()
 
-    def test_disconnect_preserves_online_state_until_heartbeat_ttl(self):
+    def test_authoritative_disconnect_marks_agent_offline(self):
         from core.asgi import application
 
         async def run_scenario():
@@ -154,8 +155,8 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
 
         async_to_sync(run_scenario)()
         agent = LocalAgent.objects.get(restaurant=self.restaurant)
-        self.assertEqual(agent.status, LocalAgent.Status.ONLINE)
-        self.assertTrue(agent.is_online())
+        self.assertEqual(agent.status, LocalAgent.Status.OFFLINE)
+        self.assertFalse(agent.is_online())
 
     def test_operational_invalidation_is_delivered_to_connected_agent(self):
         from channels.layers import get_channel_layer
@@ -388,6 +389,20 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         consumer = LocalAgentConsumer()
         consumer.agent = agent
         consumer.device = device
+        consumer.connection_id = uuid.uuid4()
+        consumer.connection_identity = ConnectionIdentity(
+            version='1.1.1',
+            runtime_instance_id='abcdefghijklmnopqrstuv',
+            protocol_version=3,
+            attested=True,
+        )
+        consumer.channel_name = 'specific.test!connection'
+        claim_connection_authority(
+            agent_id=agent.pk,
+            connection_id=consumer.connection_id,
+            channel_name=consumer.channel_name,
+            identity=consumer.connection_identity,
+        )
 
         before = timezone.now()
         async_to_sync(consumer._mark_online)(version='1.1.1')
