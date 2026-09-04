@@ -187,7 +187,11 @@ class FiscalDriveTransportMixin:
         count = int((memory_info or {}).get('ZReportsCount') or 0)
         if count <= 0:
             return None
-        payload = self._post_form(client, f'/FiscalDrive/ZReport/Info/{factory_id}', {'Index': count - 1})
+        # FiscalDriveService orders Z-reports newest-first: index 0 is the
+        # current/latest report and larger indices walk backwards in time.
+        # Using ``count - 1`` therefore returned the oldest report and could
+        # make an open fiscal shift look closed.
+        payload = self._post_form(client, f'/FiscalDrive/ZReport/Info/{factory_id}', {'Index': 0})
         return payload if isinstance(payload, dict) else None
 
     def _ensure_ready(self, *, target: FiscalDriveTarget):

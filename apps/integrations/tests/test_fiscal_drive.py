@@ -241,7 +241,9 @@ class FiscalDriveIntegrationTests(PosTestCase):
             if request.url.path == '/FiscalDrive/Info/FACTORY-1':
                 return httpx.Response(200, json={'TerminalID': 'TERM-1', 'SN': 'SN-1'})
             if request.url.path == '/FiscalDrive/FiscalMemory/Info/FACTORY-1':
-                return httpx.Response(200, json={'ZReportsCount': 1})
+                # More than one report is required to guard against treating
+                # ZReportsCount as an oldest-first array offset.
+                return httpx.Response(200, json={'ZReportsCount': 15})
             if request.url.path == '/FiscalDrive/ZReport/Info/FACTORY-1':
                 self.assertEqual(dict(httpx.QueryParams(request.content.decode())).get('Index'), '0')
                 return httpx.Response(200, json=report)
