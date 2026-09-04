@@ -110,6 +110,7 @@ class LocalAgentMutationProcessor(
                 path=path,
                 body=body,
                 digest=digest,
+                occurred_at=occurred_at,
             )
             if replay is not None:
                 return replay

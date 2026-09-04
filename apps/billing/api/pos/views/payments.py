@@ -16,6 +16,7 @@ from apps.billing.serializers import (
     ReceiptSerializer,
 )
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService, PaymentRefundService
+from apps.billing.services.edge_shift_recovery import resolve_trusted_edge_payment_shift
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
 from apps.sales.serializers import OrderSerializer
@@ -86,10 +87,13 @@ class PaymentCreateView(APIView):
         )
         existing_kitchen_documents = _kitchen_print_document_ids(order)
         if edge_cash_shift_id:
-            cash_shift = CashShift.objects.filter(
-                pk=edge_cash_shift_id,
-                cash_desk__restaurant=restaurant,
-            ).first()
+            cash_shift = resolve_trusted_edge_payment_shift(
+                restaurant=restaurant,
+                edge_cash_shift_id=edge_cash_shift_id,
+                occurred_at=getattr(
+                    request._request, 'trusted_edge_occurred_at', None
+                ),
+            )
             if cash_shift is None:
                 raise ValidationError(
                     {

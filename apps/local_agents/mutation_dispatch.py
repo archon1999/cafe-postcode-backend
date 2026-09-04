@@ -44,15 +44,14 @@ class LocalAgentMutationDispatchMixin:
                 shift = CashShift.objects.filter(
                     pk=edge_cash_shift_id,
                     cash_desk__restaurant=agent.restaurant,
-                    status=CashShift.Status.OPEN,
                 ).first()
                 if shift is None:
                     return dispatch_path, mutation_error_result(
                         operation_id=operation_id,
                         response_status=409,
-                        error="Originating cashier shift is not synchronized or is no longer open.",
+                        error="Originating cashier shift is not synchronized.",
                         retryable=False,
-                        code="EDGE_CASH_SHIFT_NOT_OPEN",
+                        code="EDGE_CASH_SHIFT_NOT_FOUND",
                     )
                 body["cashShiftId"] = str(shift.id)
             elif edge_cashier_id and edge_cash_desk_id:

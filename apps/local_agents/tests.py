@@ -1938,6 +1938,144 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
         self.assertFalse(Payment.objects.filter(cash_shift=new_shift).exists())
 
+    def test_post_close_edge_payment_moves_to_single_successor_shift(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'Skip fiscal receipts', 'description': ''},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        old_shift = self.create_cash_shift()
+        old_shift.status = CashShift.Status.CLOSED
+        old_shift.closed_at = timezone.now() - timedelta(minutes=2)
+        old_shift.save(update_fields=['status', 'closed_at', 'updated_at'])
+        new_shift = self.create_cash_shift()
+        order = Order.objects.get(pk=order_data['id'])
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [{
+                    'operationId': 'edge-payment-post-close-1',
+                    'userId': str(self.user.id),
+                    'method': 'POST',
+                    'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+                    'occurredAt': (timezone.now() - timedelta(minutes=1)).isoformat(),
+                    'body': {
+                        'edgeCashShiftId': str(old_shift.id),
+                        'method': 'cash',
+                        'amount': order.total,
+                        'registerFiscal': False,
+                    },
+                }],
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertEqual(result['status'], status.HTTP_201_CREATED)
+        payment = Payment.objects.get(order=order, status=Payment.Status.SUCCEEDED)
+        self.assertEqual(payment.cash_shift_id, new_shift.id)
+
+    def test_failed_post_close_payment_can_replay_after_successor_opens(self):
+        skip_permission = Permission.objects.get_or_create(
+            code='pos_fiscal_receipts.skip',
+            defaults={'name': 'Skip fiscal receipts', 'description': ''},
+        )[0]
+        self.role.permissions.add(skip_permission)
+        self.entitlement.permissions.add(skip_permission)
+        order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order_data['id'])
+        old_shift = self.create_cash_shift()
+        old_shift.status = CashShift.Status.CLOSED
+        old_shift.closed_at = timezone.now() - timedelta(minutes=2)
+        old_shift.save(update_fields=['status', 'closed_at', 'updated_at'])
+        order = Order.objects.get(pk=order_data['id'])
+        operation = {
+            'operationId': 'edge-payment-post-close-retry-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
+            'occurredAt': (timezone.now() - timedelta(minutes=1)).isoformat(),
+            'body': {
+                'edgeCashShiftId': str(old_shift.id),
+                'method': 'cash',
+                'amount': order.total,
+                'registerFiscal': False,
+            },
+        }
+
+        first = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(first.data['results'][0]['status'], status.HTTP_400_BAD_REQUEST)
+
+        new_shift = self.create_cash_shift()
+        second = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = second.data['results'][0]
+        self.assertTrue(result['ok'], second.data)
+        self.assertEqual(result['status'], status.HTTP_201_CREATED)
+        payment = Payment.objects.get(order=order, status=Payment.Status.SUCCEEDED)
+        self.assertEqual(payment.cash_shift_id, new_shift.id)
+
+    def test_duplicate_close_validation_is_a_reconciled_noop(self):
+        result = reconciled_terminal_noop(
+            agent=LocalAgent.objects.get(restaurant=self.restaurant),
+            method='POST',
+            path='/api/v1/pos/billing/shifts/current/close/',
+            response_status=status.HTTP_400_BAD_REQUEST,
+            response_body={'detail': 'Only open shifts can be closed.'},
+        )
+
+        self.assertEqual(result['reason'], 'shift_already_absent')
+
+    def test_duplicate_edge_close_does_not_close_successor_shift(self):
+        old_shift = self.create_cash_shift()
+        old_shift.status = CashShift.Status.CLOSED
+        old_shift.closed_at = timezone.now() - timedelta(minutes=1)
+        old_shift.save(update_fields=['status', 'closed_at', 'updated_at'])
+        successor_shift = self.create_cash_shift()
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {
+                'operations': [{
+                    'operationId': 'edge-duplicate-shift-close-1',
+                    'userId': str(self.user.id),
+                    'method': 'POST',
+                    'path': '/api/v1/pos/billing/shifts/current/close/',
+                    'occurredAt': timezone.now().isoformat(),
+                    'body': {
+                        'edgeCashShiftId': str(old_shift.id),
+                        'actualClosingCashAmount': 0,
+                        'closeFiscalShift': False,
+                    },
+                }],
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertTrue(result['reconciled'])
+        self.assertEqual(result['body']['reason'], 'shift_already_absent')
+        successor_shift.refresh_from_db()
+        self.assertEqual(successor_shift.status, CashShift.Status.OPEN)
+
     def test_offline_shift_open_reconciles_same_existing_canonical_shift(self):
         existing_shift = self.create_cash_shift(cash_desk=self.cash_desk, opened_by=self.user)
         operation = {

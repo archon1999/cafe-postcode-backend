@@ -1,6 +1,11 @@
 import json
+import re
 
 from rest_framework import status
+
+from apps.billing.services.edge_shift_recovery import (
+    can_recover_trusted_edge_payment,
+)
 
 from apps.local_agents.mutation_reconciliation import (
     reconciled_fully_paid_order,
@@ -17,7 +22,8 @@ from apps.local_agents.mutation_results import (
 class LocalAgentMutationReplayMixin:
     @staticmethod
     def _replay_existing(
-        *, agent, existing, operation_id, user_id, method, path, body, digest
+        *, agent, existing, operation_id, user_id, method, path, body, digest,
+        occurred_at=None,
     ):
         if (
             existing.restaurant_id != agent.restaurant_id
@@ -136,6 +142,27 @@ class LocalAgentMutationReplayMixin:
             in json.dumps(existing.response_body).lower()
         )
         if recoverable_shift_conflict or recoverable_implicit_cashier:
+            existing.delete()
+            return None
+        edge_cash_shift_id = body.get("edgeCashShiftId") or body.get(
+            "edge_cash_shift_id"
+        )
+        recoverable_stale_shift_payment = (
+            method == "POST"
+            and re.fullmatch(
+                r"/api/v1/pos/billing/orders/[0-9a-f-]+/pay/", path
+            )
+            and existing.response_status == status.HTTP_400_BAD_REQUEST
+            and "only an open cashier shift can be used for payment"
+            in json.dumps(existing.response_body).lower()
+            and edge_cash_shift_id
+            and can_recover_trusted_edge_payment(
+                restaurant=agent.restaurant,
+                edge_cash_shift_id=edge_cash_shift_id,
+                occurred_at=occurred_at,
+            )
+        )
+        if recoverable_stale_shift_payment:
             existing.delete()
             return None
         result = {

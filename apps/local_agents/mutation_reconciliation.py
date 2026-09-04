@@ -107,6 +107,7 @@ def reconciled_terminal_noop(*, agent, method, path, response_status, response_b
     if path == SHIFT_CLOSE_PATH and (
         "there is no active cashier shift" in detail
         or "faol smena topilmadi" in detail
+        or "only open shifts can be closed" in detail
     ):
         return {"reconciled": True, "reason": "shift_already_absent"}
     refund_match = PAYMENT_REFUND_PATH.fullmatch(path)
