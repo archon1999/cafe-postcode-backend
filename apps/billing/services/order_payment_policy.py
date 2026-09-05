@@ -67,12 +67,12 @@ class OrderPaymentPolicyMixin:
     def _save_total_override(self, *, order):
         order.save(update_fields=self._TOTAL_OVERRIDE_UPDATE_FIELDS)
 
-    def _validate_shift(self, *, order, cash_shift):
+    def _validate_shift(self, *, order, cash_shift, trusted_edge_replay=False):
         if cash_shift is None:
             raise ValidationError(
                 {"detail": _("Open a cashier shift before accepting payments.")}
             )
-        if cash_shift.status != cash_shift.Status.OPEN:
+        if cash_shift.status != cash_shift.Status.OPEN and not trusted_edge_replay:
             raise ValidationError(
                 {"detail": _("Only an open cashier shift can be used for payment.")}
             )

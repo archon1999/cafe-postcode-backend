@@ -24,6 +24,8 @@ class PaymentRefund(BaseModel):
     external_ref = models.CharField(max_length=120, blank=True)
     provider_payload = models.JSONField(default=dict, blank=True)
     refunded_at = models.DateTimeField(null=True, blank=True)
+    cash_shift = models.ForeignKey('billing.CashShift', on_delete=models.PROTECT, null=True, blank=True, related_name='executed_refunds')
+    edge_operation_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
 
     class Meta:
         ordering = ('-created_at',)

@@ -99,6 +99,9 @@ class PaymentSerializer(serializers.ModelSerializer):
             'external_ref',
             'provider_payload',
             'paid_at',
+            'occurred_at',
+            'origin_cash_shift_id',
+            'financial_snapshot',
             'edge_operation_id',
             'edge_provider_result',
             'edge_fiscal_results',
@@ -113,6 +116,9 @@ class PaymentSerializer(serializers.ModelSerializer):
             'created_at',
         )
         read_only_fields = (
+            'occurred_at',
+            'origin_cash_shift_id',
+            'financial_snapshot',
             'order',
             'cash_desk',
             'cash_shift',

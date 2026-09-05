@@ -30,15 +30,27 @@ class LocalAgentMutationDispatchMixin:
     @staticmethod
     def _prepare_dispatch(*, agent, operation_id, path, body):
         dispatch_path = path
+        payment_operation = body.get('edgePaymentOperationId') or body.get('edge_payment_operation_id')
+        if payment_operation:
+            from apps.billing.models import Payment
+            payment = Payment.objects.filter(edge_operation_id=payment_operation, order__restaurant=agent.restaurant).first()
+            if payment is None:
+                return dispatch_path, mutation_error_result(operation_id=operation_id, response_status=409,
+                    error='Original payment event has not been applied.', code='PAYMENT_DEPENDENCY_PENDING', retryable=True)
+            match = re.fullmatch(r'/api/v1/pos/billing/(?:payments/)?[0-9a-f-]+/(retry-fiscal|refund|print-document)/', path)
+            if match:
+                action = match.group(1)
+                prefix = '' if action == 'refund' else 'payments/'
+                dispatch_path = f'/api/v1/pos/billing/{prefix}{payment.pk}/{action}/'
         if path == "/api/v1/pos/billing/shifts/current/close/":
-            edge_cash_shift_id = body.pop(
-                "edgeCashShiftId", body.pop("edge_cash_shift_id", None)
+            edge_cash_shift_id = body.get(
+                "edgeCashShiftId", body.get("edge_cash_shift_id")
             )
-            edge_cashier_id = body.pop(
-                "edgeCashierId", body.pop("edge_cashier_id", None)
+            edge_cashier_id = body.get(
+                "edgeCashierId", body.get("edge_cashier_id")
             )
-            edge_cash_desk_id = body.pop(
-                "edgeCashDeskId", body.pop("edge_cash_desk_id", None)
+            edge_cash_desk_id = body.get(
+                "edgeCashDeskId", body.get("edge_cash_desk_id")
             )
             if edge_cash_shift_id:
                 shift = CashShift.objects.filter(
@@ -46,14 +58,9 @@ class LocalAgentMutationDispatchMixin:
                     cash_desk__restaurant=agent.restaurant,
                 ).first()
                 if shift is None:
-                    return dispatch_path, mutation_error_result(
-                        operation_id=operation_id,
-                        response_status=409,
-                        error="Originating cashier shift is not synchronized.",
-                        retryable=False,
-                        code="EDGE_CASH_SHIFT_NOT_FOUND",
-                    )
-                body["cashShiftId"] = str(shift.id)
+                    body["cashShiftId"] = str(edge_cash_shift_id)
+                else:
+                    body["cashShiftId"] = str(shift.id)
             elif edge_cashier_id and edge_cash_desk_id:
                 shift = (
                     CashShift.objects.filter(
@@ -99,7 +106,7 @@ class LocalAgentMutationDispatchMixin:
         return dispatch_path, None
 
     def _dispatch(
-        self, *, agent, user, operation_id, method, path, dispatch_path, body, digest, occurred_at
+        self, *, agent, user, operation_id, method, path, dispatch_path, body, digest, occurred_at, envelope=None
     ):
         try:
             match = resolve(dispatch_path)
@@ -123,6 +130,7 @@ class LocalAgentMutationDispatchMixin:
         )
         internal_request.trusted_edge_replay = True
         internal_request.trusted_edge_occurred_at = occurred_at
+        internal_request.trusted_edge_envelope = envelope or {}
         internal_request.resolver_match = match
         force_authenticate(internal_request, user=user)
         response = match.func(internal_request, *match.args, **match.kwargs)
@@ -159,16 +167,16 @@ class LocalAgentMutationDispatchMixin:
             response_body = reconciled_noop
 
         if response_status < 500:
-            LocalAgentMutationReceipt.objects.create(
+            LocalAgentMutationReceipt.objects.update_or_create(
+                operation_id=operation_id, defaults=dict(
                 restaurant=agent.restaurant,
-                operation_id=operation_id,
                 user_id=user.id,
                 method=method,
                 path=path,
                 request_hash=digest,
                 response_status=response_status,
                 response_body=response_body if response_body is not None else {},
-            )
+            ))
         result = {
             "operationId": operation_id,
             "ok": 200 <= response_status < 300,
@@ -229,16 +237,16 @@ class LocalAgentMutationDispatchMixin:
             )
         )
         response_status = status.HTTP_200_OK
-        LocalAgentMutationReceipt.objects.create(
+        LocalAgentMutationReceipt.objects.update_or_create(
+            operation_id=operation_id, defaults=dict(
             restaurant=agent.restaurant,
-            operation_id=operation_id,
             user_id=user.id,
             method=method,
             path=path,
             request_hash=digest,
             response_status=response_status,
             response_body=response_body,
-        )
+        ))
         result = {
             "operationId": operation_id,
             "ok": True,

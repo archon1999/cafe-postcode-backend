@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.urls import include, path
+from apps.billing.api.pos.views.financial_commands import FinancialCommandStatusView
 
 from apps.local_agents.pos_views import LocalAgentPOSSystemStatusView
 from common.constants import API_PREFIX, API_V1_PREFIX
@@ -46,6 +47,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}pos/floor/', include('apps.floor.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/sales/', include('apps.sales.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/billing/', include('apps.billing.api.pos.urls')),
+    path(f'{API_V1_PREFIX}pos/financial-commands/<path:operation_id>/', FinancialCommandStatusView.as_view()),
     path(f'{API_V1_PREFIX}pos/kitchen/', include('apps.kitchen.api.pos.urls')),
     path(f'{API_V1_PREFIX}pos/monitor/', include('apps.kitchen.api.pos.monitor_urls')),
     path(f'{API_V1_PREFIX}pos/printing/', include('apps.printing.api.pos.urls')),

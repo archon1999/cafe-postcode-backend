@@ -99,6 +99,8 @@ class KitchenStatusService:
         ):
             raise ValidationError({'status': _('Only head chef can cancel kitchen order items.')})
 
+        if status == OrderItem.Status.CANCELLED and item.order.payments.filter(status='succeeded').exists():
+            raise ValidationError({'code': 'PAID_ORDER_REQUIRES_REFUND', 'detail': 'Use a refund to cancel a paid item.'})
         item.status = status
         item.save(update_fields=['status', 'updated_at'])
         item.order.recalculate_totals()

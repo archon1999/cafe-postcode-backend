@@ -10,6 +10,7 @@ from apps.billing.helpers import (
     get_receipt_model,
 )
 from apps.billing.services.cash_shift_report import estimate_vat, refund_tender_amounts
+from apps.billing.services.fiscal_coverage import fully_fiscalized_order_ids
 
 CashShift = get_cash_shift_model()
 CashExpense = get_cash_expense_model()
@@ -43,6 +44,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
     first_receipt = serializers.SerializerMethodField()
     last_receipt = serializers.SerializerMethodField()
     receipt_count = serializers.SerializerMethodField()
+    fiscal_receipt_count = serializers.SerializerMethodField()
     reprint_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -83,10 +85,14 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'first_receipt',
             'last_receipt',
             'receipt_count',
+            'fiscal_receipt_count',
             'reprint_count',
             'next_order_number',
             'notes_open',
             'notes_close',
+            'edge_close_sequence',
+            'reconciliation_payload',
+            'close_report_payload',
             'created_at',
             'updated_at',
         )
@@ -155,6 +161,9 @@ class CashShiftSerializer(serializers.ModelSerializer):
     def get_receipt_count(self, obj):
         return self._snapshot(obj)['receipt_count']
 
+    def get_fiscal_receipt_count(self, obj):
+        return Receipt.objects.filter(payment__cash_shift=obj, kind=Receipt.Kind.FISCAL, status=Receipt.Status.SENT).count()
+
     def get_reprint_count(self, obj):
         return self._snapshot(obj)['reprint_count']
 
@@ -168,7 +177,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             .prefetch_related('receipts')
         )
         refunds = list(
-            PaymentRefund.objects.filter(payment__cash_shift=obj, status=PaymentRefund.Status.SUCCEEDED).select_related(
+            PaymentRefund.objects.filter(Q(cash_shift=obj) | Q(cash_shift__isnull=True, payment__cash_shift=obj), status=PaymentRefund.Status.SUCCEEDED).select_related(
                 'payment'
             )
         )
@@ -192,8 +201,9 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'card_precheck_total': 0,
             'card_receipt_total': 0,
         }
+        covered_orders = fully_fiscalized_order_ids(payment.order_id for payment in payments)
         for payment in payments:
-            has_fiscal_receipt = any(
+            has_fiscal_receipt = payment.order_id in covered_orders or any(
                 receipt.kind == Receipt.Kind.FISCAL and receipt.status == Receipt.Status.SENT
                 for receipt in payment.receipts.all()
             )

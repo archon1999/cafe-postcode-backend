@@ -10,14 +10,20 @@ FiscalShiftSession = get_fiscal_shift_session_model()
 class FiscalShiftLifecycleMixin:
     @transaction.atomic
     def open_fiscal_shift(
-        self, *, restaurant, cash_desk=None, opened_by=None, provider_result=None
+        self, *, restaurant, cash_desk=None, opened_by=None, provider_result=None, occurred_at=None, session_key=''
     ):
+        if provider_result is None:
+            from .financial_authority import FinancialAgentRequired
+            raise FinancialAgentRequired()
         restaurant, cash_desk = self._lock_fiscal_scope(
             restaurant=restaurant, cash_desk=cash_desk
         )
-        existing = self._get_active_fiscal_session(
+        active = self._get_active_fiscal_session(
             restaurant=restaurant, cash_desk=cash_desk
         )
+        existing = active
+        if session_key:
+            existing = FiscalShiftSession.objects.filter(restaurant=restaurant, edge_session_id=session_key).first()
         if existing is not None:
             # A trusted Local Agent may replay the same already-performed
             # provider open after losing the HTTP acknowledgement. Treat that
@@ -40,21 +46,20 @@ class FiscalShiftLifecycleMixin:
                 return {**provider_result, "already_open": True}
             raise ValidationError({"detail": "Fiscal smena allaqachon ochiq."})
 
-        result = (
-            provider_result
-            if provider_result is not None
-            else self._open_fiscal_shift_with_gateway(
-                restaurant=restaurant, cash_desk=cash_desk
-            )
-        )
+        result = provider_result
+        historical = active is not None and occurred_at is not None and active.opened_at > occurred_at
+        if active is not None and not historical:
+            active.status = FiscalShiftSession.Status.RECONCILING
+            active.save(update_fields=['status', 'updated_at'])
         FiscalShiftSession.objects.create(
             restaurant=restaurant,
             cash_desk=cash_desk,
             opened_by=opened_by,
-            status=FiscalShiftSession.Status.OPEN,
+            status=FiscalShiftSession.Status.RECONCILING if historical else FiscalShiftSession.Status.OPEN,
             provider=str(result.get("provider") or ""),
             terminal_id=self._terminal_id_from_fiscal_result(result),
-            opened_at=timezone.now(),
+            opened_at=occurred_at or timezone.now(),
+            edge_session_id=session_key or None,
             open_payload=result,
         )
         return result
@@ -83,14 +88,24 @@ class FiscalShiftLifecycleMixin:
 
     @transaction.atomic
     def close_fiscal_shift(
-        self, *, restaurant, cash_desk=None, closed_by=None, provider_result=None
+        self, *, restaurant, cash_desk=None, closed_by=None, provider_result=None, occurred_at=None, session_key=''
     ):
+        if provider_result is None:
+            from .financial_authority import FinancialAgentRequired
+            raise FinancialAgentRequired()
         restaurant, cash_desk = self._lock_fiscal_scope(
             restaurant=restaurant, cash_desk=cash_desk
         )
         session = self._get_active_fiscal_session(
             restaurant=restaurant, cash_desk=cash_desk
         )
+        if session_key:
+            session = FiscalShiftSession.objects.filter(restaurant=restaurant, edge_session_id=session_key).first()
+        elif session is not None and occurred_at is not None and session.opened_at > occurred_at:
+            # Delayed physical close cannot close a newer current fiscal session.
+            session = None
+        if session is not None and session.status == FiscalShiftSession.Status.CLOSED:
+            return session.close_payload
         if session is None and provider_result is None:
             return {
                 "skipped": True,
@@ -98,7 +113,7 @@ class FiscalShiftLifecycleMixin:
                 "detail": "Fiscal smena ochilmagan.",
             }
         paid_at_from = session.opened_at if session is not None else None
-        paid_at_to = timezone.now()
+        paid_at_to = occurred_at or timezone.now()
         self.ensure_no_unresolved_fiscal_payments(
             restaurant=restaurant,
             cash_desk=cash_desk,
@@ -111,22 +126,16 @@ class FiscalShiftLifecycleMixin:
             paid_at_from=paid_at_from,
             paid_at_to=paid_at_to,
         )
-        result = (
-            provider_result
-            if provider_result is not None
-            else self._close_fiscal_shift_with_gateway(
-                restaurant=restaurant, cash_desk=cash_desk
-            )
-        )
+        result = provider_result
         close_payload = {
             "provider_result": result,
             "reports": report,
-            "closed_at": timezone.now().isoformat(),
+            "closed_at": paid_at_to.isoformat(),
         }
         if session is not None:
             session.status = FiscalShiftSession.Status.CLOSED
             session.closed_by = closed_by
-            session.closed_at = timezone.now()
+            session.closed_at = occurred_at or timezone.now()
             session.close_payload = close_payload
             if not session.provider:
                 session.provider = str(result.get("provider") or "")
@@ -157,7 +166,8 @@ class FiscalShiftLifecycleMixin:
                 provider=str(result.get("provider") or ""),
                 terminal_id=self._terminal_id_from_fiscal_result(result),
                 opened_at=paid_at_from or paid_at_to,
-                closed_at=timezone.now(),
+                closed_at=occurred_at or timezone.now(),
+                edge_session_id=session_key or None,
                 open_payload={"recovered_from_trusted_close": True},
                 close_payload=close_payload,
             )

@@ -16,7 +16,8 @@ from apps.billing.serializers import (
     ReceiptSerializer,
 )
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService, PaymentRefundService
-from apps.billing.services.edge_shift_recovery import resolve_trusted_edge_payment_shift
+from apps.billing.services.financial_authority import dispatch_to_financial_owner
+from apps.billing.services.edge_shift_recovery import resolve_trusted_edge_payment_shift, materialize_edge_shift
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
 from apps.sales.serializers import OrderSerializer
@@ -69,6 +70,8 @@ class PaymentCreateView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        if not bool(getattr(request._request, 'trusted_edge_replay', False)):
+            return dispatch_to_financial_owner(request=request, restaurant=restaurant)
         payment_payload = _payment_request_payload(request)
         trusted_edge_replay = bool(
             getattr(request._request, 'trusted_edge_replay', False)
@@ -95,12 +98,9 @@ class PaymentCreateView(APIView):
                 ),
             )
             if cash_shift is None:
-                raise ValidationError(
-                    {
-                        'code': 'EDGE_CASH_SHIFT_NOT_FOUND',
-                        'edgeCashShiftId': _('The originating cashier shift was not found.'),
-                    }
-                )
+                cash_shift = materialize_edge_shift(restaurant=restaurant, shift_id=edge_cash_shift_id,
+                    body=payment_payload, user=request.user,
+                    occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None))
         else:
             cash_shift = self.shift_service_class().get_active_shift(
                 restaurant=restaurant, user=request.user
@@ -111,6 +111,7 @@ class PaymentCreateView(APIView):
             received_by=request.user,
             cash_shift=cash_shift,
             trusted_edge_replay=trusted_edge_replay,
+            occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None),
         )
         payment = result['payment']
         if payment.status == Payment.Status.FAILED:
@@ -146,31 +147,8 @@ class MartaCardPaymentInitiateView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
-        order = generics.get_object_or_404(
-            Order.objects.select_related('restaurant', 'table_session__table'),
-            pk=pk,
-            restaurant=restaurant,
-        )
-        cash_shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
-        result = self.order_payment_service_class().initiate_marta_card_payment(
-            order=order,
-            amount=request.data.get('amount'),
-            final_total=request.data.get('final_total', request.data.get('finalTotal')),
-            total_override_reason=request.data.get(
-                'total_override_reason', request.data.get('totalOverrideReason', '')
-            ),
-            service_fee_quote=request.data.get('service_fee_quote', request.data.get('serviceFeeQuote')),
-            register_fiscal=bool(request.data.get('register_fiscal', True)),
-            received_by=request.user,
-            cash_shift=cash_shift,
-        )
-        return Response(
-            {
-                'payment': PaymentSerializer(result['payment']).data,
-                'marta': result['marta'],
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response({'code': 'FINANCIAL_AGENT_REQUIRED',
+                         'detail': 'Start card payments using the assigned Local Agent payment flow.'}, status=409)
 
 
 class MartaTerminalResultView(APIView):
@@ -181,42 +159,8 @@ class MartaTerminalResultView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
-        serializer = MartaTerminalResultSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        terminal_result = dict(request.data)
-        payment = generics.get_object_or_404(
-            Payment.objects.select_related('order', 'order__restaurant', 'cash_desk', 'cash_shift'),
-            pk=pk,
-            order__restaurant=restaurant,
-        )
-        existing_kitchen_documents = _kitchen_print_document_ids(payment.order)
-        result = self.service_class().complete_marta_terminal_payment(
-            payment=payment,
-            terminal_result=terminal_result,
-            received_by=request.user,
-        )
-        if result['payment'].status == Payment.Status.FAILED:
-            return Response(
-                {
-                    'detail': result.get('detail') or 'Payment charge failed.',
-                    'payment': PaymentSerializer(result['payment']).data,
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        return Response(
-            {
-                'order': OrderSerializer(result['order']).data,
-                'payment': PaymentSerializer(result['payment']).data,
-                'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
-                'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,
-                'kitchenPrintDocuments': _kitchen_print_document_ids(
-                    result['order'],
-                    exclude=existing_kitchen_documents,
-                ),
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response({'code': 'LEGACY_TERMINAL_EVIDENCE_REQUIRES_RECONCILIATION',
+                         'detail': 'Preserve the original terminal result and reconcile it through the assigned Local Agent.'}, status=409)
 
 
 class PaymentRefundView(APIView):
@@ -228,15 +172,33 @@ class PaymentRefundView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        if not bool(getattr(request._request, 'trusted_edge_replay', False)):
+            return dispatch_to_financial_owner(request=request, restaurant=restaurant)
         serializer = PaymentRefundCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payment = generics.get_object_or_404(Payment.objects.select_related('order'), pk=pk, order__restaurant=restaurant)
-        shift = self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
+        shift_id = request.data.get('edge_cash_shift_id') or request.data.get('edgeCashShiftId')
+        shift = materialize_edge_shift(restaurant=restaurant, shift_id=shift_id, body=request.data,
+            user=request.user, occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None)) if shift_id else self.shift_service_class().get_active_shift(restaurant=restaurant, user=request.user)
+        fiscal_results = request.data.get('edge_fiscal_results')
+        if request.data.get('edge_fiscal_results_json') is not None:
+            fiscal_results = OrderPaymentService._parse_edge_fiscal_results_json(request.data['edge_fiscal_results_json'])
+        if fiscal_results:
+            fiscal_results = OrderPaymentService._validated_edge_fiscal_results(
+                results=fiscal_results, cash_desk=payment.cash_desk, register_fiscal=True,
+                expected_amount=payment.order.total if request.data.get('refund_whole_order') is True else payment.amount, allow_partial=True)
         result = self.refund_service_class().refund(
             payment=payment,
             refunded_by=request.user,
             cash_shift=shift,
             reason=serializer.validated_data.get('reason', ''),
+            edge_operation_id=str(request.headers.get('X-Edge-Operation-ID') or ''),
+            refund_id=request.data.get('edge_refund_id'),
+            refund_result=request.data.get('edge_refund_result'), fiscal_results=fiscal_results,
+            occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None), trusted_edge_replay=True,
+            manual_settlement_confirmed=request.data.get('manual_settlement_confirmed') is True,
+            refund_whole_order=request.data.get('refund_whole_order') is True,
+            refund_payments=OrderPaymentService._parse_edge_fiscal_results_json(request.data['edge_refund_payments_json']) if request.data.get('edge_refund_payments_json') else None,
         )
         return Response(
             {
@@ -255,6 +217,8 @@ class PaymentFiscalRetryView(APIView):
     def post(self, request, pk):
         restaurant = get_request_restaurant(request)
         self.feature_gate_service_class().ensure_cashier_access(restaurant=restaurant)
+        if not bool(getattr(request._request, 'trusted_edge_replay', False)):
+            return dispatch_to_financial_owner(request=request, restaurant=restaurant)
         payment = generics.get_object_or_404(
             Payment.objects.select_related('order', 'cash_desk'),
             pk=pk,
@@ -278,17 +242,19 @@ class PaymentFiscalRetryView(APIView):
                 results=edge_fiscal_results,
                 cash_desk=payment.cash_desk,
                 register_fiscal=True,
-                expected_amount=int(payment.order.total or 0),
+                expected_amount=int((payment.financial_snapshot or {}).get('orderTotal') or payment.order.total or 0),
+                allow_partial=True,
             )
         result = self.service_class().retry(payment=payment, fiscal_results=validated_edge_fiscal_results)
         retry_results = result.get('results') or []
         result_items = [item for item in retry_results if isinstance(item, dict)]
-        successful = bool(result_items) and all(item.get('ok') for item in result_items)
-        response_status = status.HTTP_200_OK if successful else status.HTTP_400_BAD_REQUEST
+        successful = bool(result_items) and not payment.receipts.filter(kind='fiscal').exclude(status='sent').exists()
+        response_status = status.HTTP_200_OK
         failed_result = next((item for item in retry_results if isinstance(item, dict) and not item.get('ok')), {})
         return Response(
             {
                 'detail': '' if successful else (failed_result.get('detail') or failed_result.get('message') or 'Fiscal retry failed.'),
+                'fiscalComplete': successful,
                 'payment': PaymentSerializer(result['payment']).data,
                 'receipt': ReceiptSerializer(result['receipt']).data if result['receipt'] else None,
                 'receipts': ReceiptSerializer(result.get('receipts') or [], many=True).data,

@@ -162,6 +162,12 @@ class PosOrderDetailView(generics.RetrieveUpdateAPIView):
     def update(self, request, *args, **kwargs):
         order = self.get_object()
         require_any_permission_code(request.user, self.get_required_permission(order))
+        if (bool(getattr(request._request, 'trusted_edge_replay', False))
+                and set(request.data) == {'display_name'}
+                and str(request.data['display_name']) == str(order.display_name)):
+            # The owner may replay its allocated label after payment. An exact
+            # no-op is safe; changing a closed order remains prohibited.
+            return Response(self.get_serializer(order).data)
         self.ensure_order_can_update_display_name(request, order)
         self.ensure_order_can_update_channel(request, order)
         self.state_service_class().ensure_order_mutable(order=order)

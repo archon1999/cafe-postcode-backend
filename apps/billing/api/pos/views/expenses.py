@@ -10,6 +10,7 @@ from apps.billing.serializers import (
     ExpenseCategorySerializer,
 )
 from apps.billing.services import CashExpenseService
+from apps.billing.services.edge_shift_recovery import materialize_edge_shift
 from common.api.permissions import EndpointRBACPermission
 from common.api.scopes import get_request_restaurant
 
@@ -62,9 +63,15 @@ class PosCashExpenseListCreateView(APIView):
             payload['edge_operation_id'] = header_operation_id
         serializer = CashExpenseCreateSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
+        trusted = bool(getattr(request._request, 'trusted_edge_replay', False))
+        occurred_at = getattr(request._request, 'trusted_edge_occurred_at', None)
+        shift_id = payload.get('edge_cash_shift_id') or serializer.validated_data.get('cash_shift_id')
+        shift = materialize_edge_shift(restaurant=restaurant, shift_id=shift_id, body=payload, user=request.user,
+                                       occurred_at=occurred_at) if trusted and shift_id else None
         expense = self.service_class().create_expense(
             restaurant=restaurant,
             user=request.user,
+            trusted_edge_replay=trusted, cash_shift=shift, occurred_at=occurred_at,
             **serializer.validated_data,
         )
         return Response(CashExpenseSerializer(expense).data, status=status.HTTP_201_CREATED)
@@ -85,6 +92,9 @@ class PosCashExpenseVoidView(APIView):
             expense=expense,
             user=request.user,
             reason=serializer.validated_data['reason'],
+            trusted_edge_replay=bool(getattr(request._request, 'trusted_edge_replay', False)),
+            occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None),
+            edge_operation_id=str(request.headers.get('X-Edge-Operation-ID') or ''),
         )
         return Response(CashExpenseSerializer(expense).data)
 

@@ -362,7 +362,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _mark_command_sent(self, command_id):
         _with_database_lock_retry(
-            lambda: LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).update(
+            lambda: LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).exclude(status=LocalAgentCommand.Status.SUCCEEDED).update(
                 status=LocalAgentCommand.Status.SENT,
                 sent_at=timezone.now(),
                 updated_at=timezone.now(),

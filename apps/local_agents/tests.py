@@ -10,6 +10,8 @@ from channels.testing import WebsocketCommunicator
 from rest_framework import status
 from rest_framework.test import APIRequestFactory, APITestCase
 
+from apps.local_agents.tests_support import AgentTestIdentity, bind_agent_client
+
 from apps.local_agents.models import (
     LocalAgent,
     LocalAgentCommand,
@@ -38,8 +40,9 @@ class LocalAgentAuthTests(APITestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
 
-    def test_token_auth_returns_agent_metadata(self):
+    def test_signed_device_auth_returns_agent_metadata(self):
         _agent, token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
+        bind_agent_client(self.client, _agent, token)
 
         response = self.client.get('/api/v1/local-agent/auth/token/', HTTP_AUTHORIZATION=f'Bearer {token}')
 
@@ -107,18 +110,16 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='WebSocket Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant)
+        self.identity = AgentTestIdentity(_agent)
 
-    def test_websocket_requires_bearer_header_and_allowed_origin(self):
+    def test_websocket_accepts_signed_device_and_rejects_query_token(self):
         from core.asgi import application
 
         async def run_scenario():
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -143,10 +144,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -170,10 +168,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -219,10 +214,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -270,10 +262,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -318,10 +307,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -338,10 +324,7 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             communicator = WebsocketCommunicator(
                 application,
                 '/ws/local-agent/',
-                headers=[
-                    (b'origin', b'http://testserver'),
-                    (b'authorization', f'Bearer {self.token}'.encode('utf-8')),
-                ],
+                headers=self.identity.websocket_headers(),
             )
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
@@ -370,19 +353,10 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         from apps.local_agents.consumers import LocalAgentConsumer
 
         now = timezone.now()
-        device = Device.objects.create(
-            restaurant=self.restaurant,
-            type=Device.Type.LOCAL_AGENT,
-            name='Paired Local Agent',
-            platform='windows-amd64',
-            app_version='1.0.5',
-            public_key_algorithm=Device.PublicKeyAlgorithm.ED25519,
-            public_key='test-public-key',
-            public_key_fingerprint='b' * 64,
-            paired_at=now - timedelta(days=1),
-            lease_expires_at=now + timedelta(days=1),
-            last_seen_at=now - timedelta(hours=1),
-        )
+        device = LocalAgent.objects.get(restaurant=self.restaurant).device
+        device.app_version = '1.0.5'
+        device.last_seen_at = now - timedelta(hours=1)
+        device.save(update_fields=['app_version', 'last_seen_at', 'updated_at'])
         agent = LocalAgent.objects.get(restaurant=self.restaurant)
         agent.device = device
         agent.save(update_fields=['device', 'updated_at'])
@@ -458,6 +432,7 @@ class LocalAgentPrintDocumentTests(APITestCase):
         self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
         self.foreign_restaurant = Restaurant.objects.create(name='Foreign Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')
+        self.identity = bind_agent_client(self.client, _agent, self.token)
         ensure_restaurant_templates(restaurant=self.restaurant)
         template = PrintTemplate.objects.select_related('published_version').get(
             restaurant=self.restaurant,
@@ -806,6 +781,7 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.user.set_pin('1234')
         self.user.save(update_fields=['pin_code'])
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Site coordinator')
+        self.identity = bind_agent_client(self.client, _agent, self.token)
 
     def test_bootstrap_returns_offline_context_scoped_to_agent_restaurant(self):
         self.restaurant.payment_total_mode = Restaurant.PaymentTotalMode.CASHIER_EDITABLE
@@ -1215,6 +1191,7 @@ class LocalAgentOperationalInvalidationTests(PosAPITestCase):
             restaurant=self.restaurant,
             name='Site coordinator',
         )
+        self.identity = bind_agent_client(self.client, _agent, self.token)
 
     @patch('core.middleware.local_agent_invalidation.broadcast_operational_invalidation')
     def test_successful_direct_pos_mutation_wakes_restaurant_agent_after_commit(self, broadcast):
@@ -1283,6 +1260,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
     def setUp(self):
         super().setUp()
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Site coordinator')
+        self.identity = bind_agent_client(self.client, _agent, self.token)
 
     def test_order_create_mutation_is_replayed_once(self):
         order_id = uuid.uuid4()
@@ -1673,9 +1651,9 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(result['status'], status.HTTP_204_NO_CONTENT)
         receipt.refresh_from_db()
         self.assertEqual(receipt.response_status, status.HTTP_204_NO_CONTENT)
-        self.assertEqual(receipt.response_body['reason'], 'order_already_finalized')
+        self.assertEqual(receipt.response_body['reason'], 'already_absent')
 
-    def test_legacy_payment_conflict_is_reconciled_when_order_is_fully_paid(self):
+    def test_cached_payment_conflict_remains_reviewable_when_order_is_paid(self):
         order = Order.objects.create(
             restaurant=self.restaurant,
             distribution_point=self.takeaway_distribution,
@@ -1728,14 +1706,17 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         )
 
         result = response.data['results'][0]
-        self.assertTrue(result['ok'], response.data)
-        self.assertTrue(result['reconciled'])
-        self.assertEqual(result['status'], status.HTTP_200_OK)
-        self.assertEqual(result['body']['reason'], 'order_already_fully_paid')
-        receipt.refresh_from_db()
-        self.assertEqual(receipt.response_status, status.HTTP_200_OK)
+        self.assertFalse(result['ok'], response.data)
+        self.assertFalse(result['applied'])
+        self.assertFalse(result['reconciled'])
+        self.assertTrue(result['durablyReceived'])
+        self.assertEqual(result['inboxState'], 'needs_review')
+        self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        receipt = LocalAgentMutationReceipt.objects.get(operation_id=operation['operationId'])
+        self.assertEqual(receipt.response_status, status.HTTP_400_BAD_REQUEST)
 
-    def test_duplicate_payment_on_closed_fully_paid_order_is_reconciled_immediately(self):
+    def test_different_payment_on_closed_order_is_preserved_for_review(self):
         order = Order.objects.create(
             restaurant=self.restaurant,
             distribution_point=self.takeaway_distribution,
@@ -1773,15 +1754,17 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         )
 
         result = response.data['results'][0]
-        self.assertTrue(result['ok'], response.data)
-        self.assertTrue(result['reconciled'])
-        self.assertFalse(result['replayed'])
-        self.assertEqual(result['status'], status.HTTP_200_OK)
-        self.assertEqual(result['body']['reason'], 'order_already_fully_paid')
+        self.assertFalse(result['ok'], response.data)
+        self.assertFalse(result['applied'])
+        self.assertFalse(result['reconciled'])
+        self.assertTrue(result['durablyReceived'])
+        self.assertEqual(result['inboxState'], 'needs_review')
+        self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
         self.assertEqual(Payment.objects.filter(order=order).count(), 1)
-        receipt = LocalAgentMutationReceipt.objects.get(operation_id=operation['operationId'])
-        self.assertEqual(receipt.response_status, status.HTTP_200_OK)
-        self.assertEqual(receipt.response_body['reason'], 'order_already_fully_paid')
+        from apps.local_agents.models import LocalAgentMutationInbox
+        inbox = LocalAgentMutationInbox.objects.get(operation_id=operation['operationId'])
+        self.assertEqual(inbox.state, 'needs_review')
+        self.assertEqual(inbox.operation['body']['amount'], 40000)
 
     def test_report_without_active_shift_is_reconciled_immediately(self):
         operation = {
@@ -1805,7 +1788,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(result['status'], status.HTTP_200_OK)
         self.assertEqual(result['body']['reason'], 'report_shift_already_absent')
 
-    def test_already_refunded_payment_is_a_reconciled_noop(self):
+    def test_refunded_state_does_not_prove_another_operation(self):
         order = Order.objects.create(
             restaurant=self.restaurant,
             distribution_point=self.takeaway_distribution,
@@ -1843,8 +1826,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
             response_body={'detail': 'This payment has already been refunded.'},
         )
 
-        self.assertEqual(result['reason'], 'payment_already_fully_refunded')
-        self.assertEqual(result['paymentId'], str(payment.id))
+        self.assertIsNone(result)
 
     def test_online_only_pos_commands_are_allowed_through_agent_replay(self):
         payment_id = uuid.uuid4()
@@ -1938,7 +1920,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
         self.assertFalse(Payment.objects.filter(cash_shift=new_shift).exists())
 
-    def test_post_close_edge_payment_moves_to_single_successor_shift(self):
+    def test_post_close_edge_payment_preserves_original_shift(self):
         skip_permission = Permission.objects.get_or_create(
             code='pos_fiscal_receipts.skip',
             defaults={'name': 'Skip fiscal receipts', 'description': ''},
@@ -1979,9 +1961,9 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(result['ok'], response.data)
         self.assertEqual(result['status'], status.HTTP_201_CREATED)
         payment = Payment.objects.get(order=order, status=Payment.Status.SUCCEEDED)
-        self.assertEqual(payment.cash_shift_id, new_shift.id)
+        self.assertEqual(payment.cash_shift_id, old_shift.id)
 
-    def test_failed_post_close_payment_can_replay_after_successor_opens(self):
+    def test_historical_payment_applies_and_replays_once_after_successor_opens(self):
         skip_permission = Permission.objects.get_or_create(
             code='pos_fiscal_receipts.skip',
             defaults={'name': 'Skip fiscal receipts', 'description': ''},
@@ -2015,7 +1997,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
             format='json',
             HTTP_AUTHORIZATION=f'Bearer {self.token}',
         )
-        self.assertEqual(first.data['results'][0]['status'], status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(first.data['results'][0]['status'], status.HTTP_201_CREATED)
 
         new_shift = self.create_cash_shift()
         second = self.client.post(
@@ -2029,9 +2011,13 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(result['ok'], second.data)
         self.assertEqual(result['status'], status.HTTP_201_CREATED)
         payment = Payment.objects.get(order=order, status=Payment.Status.SUCCEEDED)
-        self.assertEqual(payment.cash_shift_id, new_shift.id)
+        self.assertEqual(payment.cash_shift_id, old_shift.id)
+        self.assertTrue(result['replayed'])
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        new_shift.refresh_from_db()
+        self.assertEqual(new_shift.status, CashShift.Status.OPEN)
 
-    def test_duplicate_close_validation_is_a_reconciled_noop(self):
+    def test_closed_state_does_not_prove_another_close_operation(self):
         result = reconciled_terminal_noop(
             agent=LocalAgent.objects.get(restaurant=self.restaurant),
             method='POST',
@@ -2040,7 +2026,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
             response_body={'detail': 'Only open shifts can be closed.'},
         )
 
-        self.assertEqual(result['reason'], 'shift_already_absent')
+        self.assertIsNone(result)
 
     def test_duplicate_edge_close_does_not_close_successor_shift(self):
         old_shift = self.create_cash_shift()
@@ -2071,8 +2057,9 @@ class LocalAgentMutationPushTests(PosAPITestCase):
 
         result = response.data['results'][0]
         self.assertTrue(result['ok'], response.data)
-        self.assertTrue(result['reconciled'])
-        self.assertEqual(result['body']['reason'], 'shift_already_absent')
+        self.assertTrue(result['applied'])
+        old_shift.refresh_from_db()
+        self.assertEqual(old_shift.status, CashShift.Status.CLOSED)
         successor_shift.refresh_from_db()
         self.assertEqual(successor_shift.status, CashShift.Status.OPEN)
 
@@ -2130,7 +2117,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(CashShift.objects.filter(cash_desk=self.cash_desk, status=CashShift.Status.OPEN).count(), 1)
 
-    def test_offline_shift_open_recovers_legacy_manager_as_cashier_payload(self):
+    def test_offline_shift_open_preserves_invalid_cashier_for_review(self):
         operation = {
             'operationId': 'edge-shift-open-implicit-manager-1',
             'userId': str(self.user.id),
@@ -2176,15 +2163,17 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         )
 
         first_result = first.data['results'][0]
-        self.assertEqual(first_result['status'], status.HTTP_201_CREATED, first.data)
-        self.assertTrue(first_result['ok'])
-        shift = CashShift.objects.get(cash_desk=self.cash_desk, status=CashShift.Status.OPEN)
-        self.assertEqual(shift.opened_by_id, self.user.id)
-        self.assertIsNone(shift.cashier_id)
-        self.assertTrue(second.data['results'][0]['replayed'])
+        for result in [first_result, second.data['results'][0]]:
+            self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
+            self.assertFalse(result['applied'])
+            self.assertEqual(result['inboxState'], 'needs_review')
+        self.assertFalse(CashShift.objects.filter(cash_desk=self.cash_desk).exists())
 
     @patch('apps.billing.services.order_payment.charge_payment')
     def test_trusted_edge_card_result_is_replayed_without_second_terminal_charge(self, charge_payment):
+        permission = Permission.objects.get_or_create(code='pos_fiscal_receipts.skip', defaults={'name': 'Skip fiscal receipts'})[0]
+        self.role.permissions.add(permission)
+        self.entitlement.permissions.add(permission)
         order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
         self.add_item_via_api(order_data['id'])
         self.create_cash_shift()
@@ -2197,6 +2186,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
             'path': f'/api/v1/pos/billing/orders/{order.id}/pay/',
             'body': {
                 'method': 'card',
+                'registerFiscal': False,
                 'amount': order.total,
                 'edgeOperationId': operation_id,
                 'edgeProviderResult': {
@@ -2302,7 +2292,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT, response.data)
         self.assertFalse(Payment.objects.filter(order=order).exists())
 
     @patch('apps.billing.services.order_payment.issue_fiscal_receipts')
@@ -2332,6 +2322,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                     'ok': False,
                     'provider': 'fiscal-drive-service',
                     'code': 'LOCAL_FISCAL_FAILED',
+                    'definitive': True,
                     'detail': 'Device unavailable',
                 }]),
             },
@@ -2345,17 +2336,9 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(paid.data['results'][0]['ok'], paid.data)
         payment = Payment.objects.get(order=order)
         payment.refresh_from_db()
-        self.assertFalse(payment.register_fiscal)
-        self.assertTrue(
-            Receipt.objects.filter(
-                payment=payment,
-                kind=Receipt.Kind.PLAIN,
-                status=Receipt.Status.CREATED,
-            ).exists()
-        )
-        self.assertFalse(
-            Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists()
-        )
+        self.assertTrue(payment.register_fiscal)
+        self.assertTrue(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL, status=Receipt.Status.FAILED).exists())
+        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.PLAIN).exists())
 
         retry_operation = {
             'operationId': 'edge-local-fiscal-retry-1',
@@ -2504,7 +2487,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         open_fiscal_shift.assert_not_called()
 
 
-class LocalAgentCommandServiceTests(APITestCase):
+class LocalAgentCommandServiceTests(TransactionTestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='Agent Restaurant')
         self.agent, _token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Cashier PC')

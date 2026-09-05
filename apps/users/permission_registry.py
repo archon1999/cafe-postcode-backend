@@ -1297,6 +1297,7 @@ PERMISSION_DEFINITIONS.extend(
         view_endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/billing/payments/'),
             ('GET', 'api/v1/admin/billing/payments/<uuid:pk>/'),
+            ('GET', 'api/v1/admin/billing/financial-commands/<str:operation_id>/'),
             ('POST', 'api/v1/admin/billing/payments/<uuid:pk>/retry-fiscal/'),
         ),
         include_create=False,

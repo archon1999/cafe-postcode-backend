@@ -21,10 +21,10 @@ def build_unikassa_like_report(
     sale_totals = _totals_by_method(rows)
     sale_tender_totals = _tender_totals(rows)
     precheck_tender_totals = _tender_totals(
-        [row for row in rows if not int(row.get("fiscal_receipt_count") or 0)]
+        [row for row in rows if not row.get('fiscal_covered', bool(row.get('fiscal_receipt_count')))]
     )
     receipt_tender_totals = _tender_totals(
-        [row for row in rows if int(row.get("fiscal_receipt_count") or 0)]
+        [row for row in rows if row.get('fiscal_covered', bool(row.get('fiscal_receipt_count')))]
     )
     refund_totals = _refund_tender_totals(refunds)
     sale_total = sum(sale_totals.values())

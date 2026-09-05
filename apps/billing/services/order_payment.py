@@ -102,6 +102,7 @@ class OrderPaymentService(
         received_by,
         cash_shift=None,
         trusted_edge_replay=False,
+        occurred_at=None,
     ):
         from apps.billing.serializers import PaymentSerializer
 
@@ -149,13 +150,17 @@ class OrderPaymentService(
                     "detail": (existing.provider_payload or {}).get("detail", ""),
                 }
 
+        edge_payment_id = payload.pop('edge_payment_id', payload.pop('edgePaymentId', None))
+        if edge_payment_id is not None and not trusted_edge_replay:
+            raise ValidationError({'edgePaymentId': 'Only a trusted Local Agent may set payment identity.'})
+
         state_service = self.state_service_class()
         state_service.ensure_order_can_be_paid(order=order)
         state_service.ensure_delivery_details(order=order)
         if self._should_submit_before_payment(order=order):
             self.order_submission_service_class().submit(order)
 
-        self._validate_shift(order=order, cash_shift=cash_shift)
+        self._validate_shift(order=order, cash_shift=cash_shift, trusted_edge_replay=trusted_edge_replay)
         serializer = PaymentSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         service_fee_quote = serializer.validated_data.pop("service_fee_quote", None)
@@ -225,6 +230,12 @@ class OrderPaymentService(
                 edge_fiscal_results_json
             )
         register_fiscal = bool(serializer.validated_data.get("register_fiscal", True))
+        partial_payment = int(serializer.validated_data['amount']) < self._remaining_amount(order=order)
+        if register_fiscal and not edge_fiscal_results and not partial_payment:
+            from .financial_authority import FinancialAgentRequired
+            raise FinancialAgentRequired()
+        if partial_payment and edge_fiscal_results:
+            raise ValidationError({'code': 'PARTIAL_PAYMENT_FISCAL_EVIDENCE', 'detail': 'Partial payments require explicit receipt allocation before projection.'})
         if not register_fiscal and not has_permission_code(
             received_by, POS_FISCAL_RECEIPTS_SKIP_PERMISSION
         ):
@@ -250,7 +261,7 @@ class OrderPaymentService(
                 register_fiscal=register_fiscal,
                 expected_amount=int(order.total or 0),
             )
-            if edge_fiscal_results is not None
+            if edge_fiscal_results
             else None
         )
         if cash_desk and serializer.validated_data["method"] not in set(
@@ -277,6 +288,9 @@ class OrderPaymentService(
         payment_amount = serializer.validated_data["amount"]
         self._validate_payment_amount(order=order, amount=payment_amount)
         validated_edge_result = None
+        if (serializer.validated_data['method'] in {Payment.Method.CARD, Payment.Method.MIXED}
+                and edge_provider_result is None and not (manual_card_override and serializer.validated_data['method'] == Payment.Method.CARD)):
+            raise ValidationError({'code': 'EDGE_PROVIDER_RESULT_REQUIRED', 'detail': 'A confirmed owner terminal outcome is required before projecting a card payment.'})
         if edge_provider_result is not None:
             validated_edge_result = self._validated_edge_provider_result(
                 result=edge_provider_result,
@@ -287,10 +301,23 @@ class OrderPaymentService(
         if total_override_prepared:
             self._save_total_override(order=order)
         payment = serializer.save(
+            **({'id': edge_payment_id} if edge_payment_id else {}),
             order=order,
             received_by=received_by,
             cash_shift=cash_shift,
             cash_desk=cash_desk,
+            origin_cash_shift_id=cash_shift.pk,
+            occurred_at=occurred_at if trusted_edge_replay else None,
+            financial_snapshot={
+                'orderTotal': int(order.total), 'subtotal': int(order.subtotal),
+                'fiscalRequested': register_fiscal, 'partialPayment': partial_payment,
+                'cashShiftId': str(cash_shift.pk), 'cashierId': str(received_by.pk),
+                'occurredAt': occurred_at.isoformat() if occurred_at else None,
+                'items': [{'id': str(item.pk), 'catalogItemId': str(item.catalog_item_id),
+                           'quantity': str(item.quantity), 'unitPrice': int(item.unit_price),
+                           'lineTotal': int(item.line_total), 'status': item.status}
+                          for item in order.items.all()],
+            },
         )
 
         payment_result = (
@@ -311,7 +338,7 @@ class OrderPaymentService(
         payment.external_ref = payment_result.get("reference", "")
         payment.provider_payload = payment_result
         payment.paid_at = (
-            timezone.now() if payment.status == Payment.Status.SUCCEEDED else None
+            (occurred_at or timezone.now()) if payment.status == Payment.Status.SUCCEEDED else None
         )
         payment.save(
             update_fields=[

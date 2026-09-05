@@ -14,6 +14,7 @@ from apps.billing.services.cash_shift_report import (
     report_terminal_id,
 )
 from apps.printing.services import create_shift_report_print_document
+from .fiscal_coverage import fully_fiscalized_order_ids
 
 Payment = get_payment_model()
 CashExpense = get_cash_expense_model()
@@ -60,7 +61,7 @@ class CashShiftReportingMixin:
         receipt_queryset = Receipt.objects.filter(
             payment_id=OuterRef("pk"), kind=Receipt.Kind.FISCAL
         )
-        return (
+        sales = (
             self._payment_scope_queryset(
                 shift=shift,
                 shifts=shifts,
@@ -76,7 +77,7 @@ class CashShiftReportingMixin:
                     receipt_queryset.filter(status=Receipt.Status.SENT)
                 ),
                 has_failed_fiscal_receipt=Exists(
-                    receipt_queryset.filter(status=Receipt.Status.FAILED)
+                    receipt_queryset.exclude(status=Receipt.Status.SENT)
                 ),
             )
             .filter(
@@ -85,6 +86,29 @@ class CashShiftReportingMixin:
                 | Q(has_failed_fiscal_receipt=True)
             )
         )
+        refunds = self._refund_scope_queryset(shift=shift, shifts=shifts, restaurant=restaurant,
+            cash_desk=cash_desk, paid_at_from=paid_at_from, paid_at_to=paid_at_to).filter(payment__register_fiscal=True)
+        refund_receipts = Receipt.objects.filter(payment_id=OuterRef('payment_id'), kind=Receipt.Kind.REFUND)
+        refunds = refunds.annotate(has_receipt=Exists(refund_receipts),
+            unresolved=Exists(refund_receipts.exclude(status=Receipt.Status.SENT))).filter(Q(has_receipt=False) | Q(unresolved=True))
+        return Payment.objects.filter(Q(pk__in=sales.values('pk')) | Q(pk__in=refunds.values('payment_id')))
+
+    @staticmethod
+    def _refund_scope_queryset(*, shift=None, shifts=None, restaurant=None, cash_desk=None, paid_at_from=None, paid_at_to=None):
+        query = PaymentRefund.objects.filter(status=PaymentRefund.Status.SUCCEEDED)
+        if shift is not None:
+            query = query.filter(Q(cash_shift=shift) | Q(cash_shift__isnull=True, payment__cash_shift=shift))
+        if shifts is not None:
+            query = query.filter(Q(cash_shift__in=shifts) | Q(cash_shift__isnull=True, payment__cash_shift__in=shifts))
+        if restaurant is not None:
+            query = query.filter(payment__order__restaurant=restaurant)
+        if cash_desk is not None:
+            query = query.filter(Q(cash_shift__cash_desk=cash_desk) | Q(cash_shift__isnull=True, payment__cash_desk=cash_desk))
+        if paid_at_from is not None:
+            query = query.filter(refunded_at__gte=paid_at_from)
+        if paid_at_to is not None:
+            query = query.filter(refunded_at__lte=paid_at_to)
+        return query
 
     def ensure_no_unresolved_fiscal_payments(self, **filters):
         unresolved = self.get_unresolved_fiscal_payments_queryset(**filters)
@@ -94,7 +118,7 @@ class CashShiftReportingMixin:
                 {
                     "detail": (
                         "Fiscalga yuborilmagan yoki xato bo‘lgan cheklar bor. "
-                        'Smenani yopishdan oldin ularni "Yopilmagan hisoblar" bo‘limidan qayta yuboring.'
+                        'Smenani yopishdan oldin Local Agentdagi natijani tekshirib, noaniq operatsiyalarni solishtiring.'
                     ),
                     "unresolved_fiscal_count": count,
                 }
@@ -125,6 +149,7 @@ class CashShiftReportingMixin:
         )
         all_rows = []
         fiscal_rows = []
+        covered_orders = fully_fiscalized_order_ids(payment.order_id for payment in payments)
         for payment in payments:
             sent_receipts = [
                 receipt
@@ -150,9 +175,10 @@ class CashShiftReportingMixin:
                 if payment.received_by_id
                 else "",
                 "fiscal_receipt_count": len(sent_receipts),
+                "fiscal_covered": bool(sent_receipts) or payment.order_id in covered_orders,
             }
             all_rows.append(row)
-            if sent_receipts:
+            if row['fiscal_covered']:
                 fiscal_rows.append(row)
 
         def summary(rows):
@@ -170,18 +196,22 @@ class CashShiftReportingMixin:
 
         payment_ids = [payment.id for payment in payments]
         fiscal_payment_ids = [row["payment_id"] for row in fiscal_rows]
-        refunds = list(
-            PaymentRefund.objects.filter(
-                payment_id__in=payment_ids, status=PaymentRefund.Status.SUCCEEDED
-            )
-            .select_related("payment")
-            .order_by("refunded_at", "created_at")
-        )
-        fiscal_refunds = [
-            refund
-            for refund in refunds
-            if str(refund.payment_id) in set(fiscal_payment_ids)
-        ]
+        refund_query = PaymentRefund.objects.filter(status=PaymentRefund.Status.SUCCEEDED)
+        if shift is not None:
+            refund_query = refund_query.filter(Q(cash_shift=shift) | Q(cash_shift__isnull=True, payment__cash_shift=shift))
+        elif shifts is not None:
+            refund_query = refund_query.filter(Q(cash_shift__in=shifts) | Q(cash_shift__isnull=True, payment__cash_shift__in=shifts))
+        else:
+            if restaurant is not None:
+                refund_query = refund_query.filter(payment__order__restaurant=restaurant)
+            if cash_desk is not None:
+                refund_query = refund_query.filter(Q(cash_shift__cash_desk=cash_desk) | Q(cash_shift__isnull=True, payment__cash_desk=cash_desk))
+            if paid_at_from is not None:
+                refund_query = refund_query.filter(refunded_at__gte=paid_at_from)
+            if paid_at_to is not None:
+                refund_query = refund_query.filter(refunded_at__lte=paid_at_to)
+        refunds = list(refund_query.select_related('payment').order_by('refunded_at', 'created_at'))
+        fiscal_refunds = [refund for refund in refunds if refund.payment.receipts.filter(kind=Receipt.Kind.REFUND, status=Receipt.Status.SENT).exists()]
         terminal_id = report_terminal_id(cash_desk=cash_desk, payments=payments)
         opened_at = paid_at_from or (shift.opened_at if shift is not None else None)
         closed_at = paid_at_to or timezone.now()
@@ -251,7 +281,7 @@ class CashShiftReportingMixin:
     def build_shift_snapshot(self, *, shift):
         payments = shift.payments.filter(status=Payment.Status.SUCCEEDED)
         refunds = PaymentRefund.objects.filter(
-            payment__cash_shift=shift, status=PaymentRefund.Status.SUCCEEDED
+            Q(cash_shift=shift) | Q(cash_shift__isnull=True, payment__cash_shift=shift), status=PaymentRefund.Status.SUCCEEDED
         )
         receipts = Receipt.objects.filter(payment__cash_shift=shift)
 
@@ -280,6 +310,7 @@ class CashShiftReportingMixin:
             "qr_total": totals.get("qr_total") or 0,
             "refund_total": refund_total,
             "expense_total": expense_total,
+            "fiscal_receipt_count": receipts.filter(kind=Receipt.Kind.FISCAL, status=Receipt.Status.SENT).count(),
             "receipt_count": receipts.filter(kind=Receipt.Kind.FISCAL)
             .aggregate(total=Count("id"))
             .get("total")

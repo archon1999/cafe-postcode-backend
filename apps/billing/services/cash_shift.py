@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
@@ -181,7 +181,9 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             "fiscal_shift_open": self.has_open_fiscal_shift(
                 restaurant=restaurant, cash_desk=status_cash_desk
             ),
-            "fiscal_device_status": get_fiscal_device_status(
+            "fiscal_device_status": {'online': False, 'provider': '', 'terminal_id': '',
+                                     'detail': 'Device status is owned by the Local Agent.', 'checked_at': timezone.now()}
+            if connection.in_atomic_block else get_fiscal_device_status(
                 restaurant=restaurant, cash_desk=status_cash_desk
             ),
         }
@@ -197,10 +199,44 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         opening_cash_amount=0,
         notes_open="",
         shift_id=None,
+        opened_at=None,
+        closed_at=None,
+        trusted_edge_replay=False,
     ):
         restaurant = restaurant or branch
         if restaurant is None:
             raise ValueError("restaurant is required")
+        if trusted_edge_replay and shift_id:
+            with transaction.atomic():
+                CashDesk.objects.select_for_update().get(pk=cash_desk.pk, restaurant=restaurant)
+                existing = CashShift.objects.filter(pk=shift_id, cash_desk__restaurant=restaurant).first()
+                current = CashShift.objects.filter(cash_desk=cash_desk, status=CashShift.Status.OPEN).exclude(pk=shift_id).first()
+                opening_time = opened_at or (existing.opened_at if existing else timezone.now())
+                if current and current.opened_at < opening_time and (existing is None or existing.status != CashShift.Status.CLOSED):
+                    raise ValidationError({'code': 'SHIFT_PREDECESSOR_PENDING', 'detail': 'The previous shift closing event must be applied before its successor opens.'})
+                if existing is not None:
+                    if existing.cash_desk_id != cash_desk.pk:
+                        raise ValidationError({'code': 'SHIFT_ID_CONFLICT', 'detail': 'Shift belongs to another cash desk.'})
+                    if (existing.reconciliation_payload or {}).get('materializedFromEvidence'):
+                        if opened_at is not None and existing.opened_at != opened_at:
+                            raise ValidationError({'code': 'SHIFT_ID_CONFLICT', 'detail': 'Shift opening time differs from the retained evidence.'})
+                        existing.cashier = cashier
+                        existing.opened_by = opened_by
+                        existing.opening_cash_amount = max(0, opening_cash_amount or 0)
+                        existing.notes_open = notes_open
+                        existing.reconciliation_payload = {**existing.reconciliation_payload, 'openingEvidenceApplied': True}
+                        existing.save(update_fields=['cashier', 'opened_by', 'opening_cash_amount', 'notes_open', 'reconciliation_payload', 'updated_at'])
+                    if existing.status == CashShift.Status.RECONCILING and existing.closed_at is None and current is None:
+                        existing.status = CashShift.Status.OPEN
+                        existing.save(update_fields=['status', 'updated_at'])
+                    return existing
+                has_current = CashShift.objects.filter(cash_desk=cash_desk, status=CashShift.Status.OPEN).exists()
+                return CashShift.objects.create(
+                    id=shift_id, cash_desk=cash_desk, cashier=cashier, opened_by=opened_by,
+                    opened_at=opened_at or timezone.now(), closed_at=closed_at,
+                    opening_cash_amount=max(0, opening_cash_amount or 0), notes_open=notes_open,
+                    status=CashShift.Status.RECONCILING if has_current or closed_at else CashShift.Status.OPEN,
+                )
         if cash_desk.restaurant_id != restaurant.id:
             raise ValidationError(
                 {
@@ -286,6 +322,21 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
             shift = CashShift.objects.create(**shift_values)
         return shift
 
+    def record_late_financial_projection(self, *, shift, operation_id, occurred_at=None):
+        if shift is None or shift.status != CashShift.Status.CLOSED:
+            return
+        shift = CashShift.objects.select_for_update().get(pk=shift.pk)
+        payload = dict(shift.reconciliation_payload or {})
+        operations = list(payload.get('lateOperationIds') or [])
+        if operation_id and operation_id not in operations:
+            operations.append(operation_id)
+        payload.update(state='needs_review', lateOperationIds=operations,
+                       currentSnapshot=self.build_shift_snapshot(shift=shift),
+                       lastOccurredAt=occurred_at.isoformat() if occurred_at else None)
+        # close_report_payload remains the immutable originally accepted close.
+        shift.reconciliation_payload = payload
+        shift.save(update_fields=['reconciliation_payload', 'updated_at'])
+
     def ensure_shift_can_close(self, *, shift):
         """Protect the last register from closing while checks are still active."""
         has_other_open_shift = CashShift.objects.filter(
@@ -334,17 +385,23 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
 
     @transaction.atomic
     def close_shift(
-        self, *, shift, actual_closing_cash_amount, closed_by, notes_close=""
+        self, *, shift, actual_closing_cash_amount, closed_by, notes_close="",
+        trusted_edge_replay=False, closed_at=None, close_sequence=None
     ):
         shift = (
             CashShift.objects.select_for_update(of=("self",))
             .select_related("cash_desk", "cashier", "opened_by")
             .get(pk=shift.pk)
         )
-        if shift.status != CashShift.Status.OPEN:
+        if shift.status == CashShift.Status.CLOSED and trusted_edge_replay:
+            return shift
+        if shift.status != CashShift.Status.OPEN and not trusted_edge_replay:
             raise ValidationError({"detail": "Only open shifts can be closed."})
+        if closed_at is not None and closed_at < shift.opened_at:
+            raise ValidationError({'code': 'INVALID_SHIFT_TIMELINE', 'detail': 'Shift close precedes its opening.'})
 
-        self.ensure_shift_can_close(shift=shift)
+        if not trusted_edge_replay:
+            self.ensure_shift_can_close(shift=shift)
         self.ensure_no_unresolved_fiscal_payments(shift=shift)
         snapshot = self.build_shift_snapshot(shift=shift)
         expected = snapshot["expected_closing_cash_amount"]
@@ -355,7 +412,8 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         )
         shift.status = CashShift.Status.CLOSED
         shift.closed_by = closed_by
-        shift.closed_at = timezone.now()
+        shift.closed_at = closed_at or timezone.now()
+        shift.edge_close_sequence = close_sequence
         shift.actual_closing_cash_amount = actual
         shift.expected_closing_cash_amount = expected
         shift.cash_difference_amount = actual - expected
@@ -377,6 +435,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                 "status",
                 "closed_by",
                 "closed_at",
+                "edge_close_sequence",
                 "actual_closing_cash_amount",
                 "expected_closing_cash_amount",
                 "cash_difference_amount",

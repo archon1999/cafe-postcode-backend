@@ -9,6 +9,7 @@ class FiscalShiftSession(BaseModel):
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
         CLOSED = 'closed', 'Closed'
+        RECONCILING = 'reconciling', 'Reconciling historical evidence'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.CASCADE, related_name='fiscal_shift_sessions')
     cash_desk = models.ForeignKey(
@@ -39,6 +40,7 @@ class FiscalShiftSession(BaseModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     open_payload = models.JSONField(default=dict, blank=True)
     close_payload = models.JSONField(default=dict, blank=True)
+    edge_session_id = models.CharField(max_length=128, null=True, blank=True, unique=True)
 
     class Meta:
         ordering = ('-opened_at',)

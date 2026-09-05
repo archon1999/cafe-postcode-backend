@@ -62,40 +62,9 @@ def reconciled_order_item_delete(*, method, path, response_status, response_body
 
 
 def reconciled_fully_paid_order(*, agent, method, path, response_status, response_body):
-    match = ORDER_PAYMENT_PATH.fullmatch(path)
-    if (
-        method != "POST"
-        or match is None
-        or response_status != status.HTTP_400_BAD_REQUEST
-    ):
-        return None
-    detail = json.dumps(response_body or {}, ensure_ascii=False).lower()
-    if (
-        "payment amount cannot exceed the remaining total" not in detail
-        and "order is already fully paid" not in detail
-        and "closed orders cannot be paid again" not in detail
-    ):
-        return None
-    order = Order.objects.filter(
-        id=match.group("order_id"),
-        restaurant=agent.restaurant,
-        status=Order.Status.CLOSED,
-    ).first()
-    if order is None:
-        return None
-    paid_total = (
-        Payment.objects.filter(order=order, status=Payment.Status.SUCCEEDED)
-        .aggregate(total=Sum("amount"))
-        .get("total")
-        or 0
-    )
-    if int(paid_total) < int(order.total or 0):
-        return None
-    return {
-        "reconciled": True,
-        "reason": "order_already_fully_paid",
-        "orderId": str(order.id),
-    }
+    # Final order state does not prove identity of a second charge/fiscal receipt.
+    # Exact operation replay is handled by the durable inbox/payment key.
+    return None
 
 
 def reconciled_terminal_noop(*, agent, method, path, response_status, response_body):
@@ -104,38 +73,7 @@ def reconciled_terminal_noop(*, agent, method, path, response_status, response_b
     detail = json.dumps(response_body or {}, ensure_ascii=False).lower()
     if path == SHIFT_REPORT_PATH and "faol smena topilmadi" in detail:
         return {"reconciled": True, "reason": "report_shift_already_absent"}
-    if path == SHIFT_CLOSE_PATH and (
-        "there is no active cashier shift" in detail
-        or "faol smena topilmadi" in detail
-        or "only open shifts can be closed" in detail
-    ):
-        return {"reconciled": True, "reason": "shift_already_absent"}
-    refund_match = PAYMENT_REFUND_PATH.fullmatch(path)
-    if refund_match is None or "already been refunded" not in detail:
-        return None
-    payment = Payment.objects.filter(
-        id=refund_match.group("payment_id"),
-        order__restaurant=agent.restaurant,
-        status=Payment.Status.SUCCEEDED,
-    ).first()
-    if payment is None:
-        return None
-    refunded_total = (
-        PaymentRefund.objects.filter(
-            payment=payment,
-            status=PaymentRefund.Status.SUCCEEDED,
-        )
-        .aggregate(total=Sum("amount"))
-        .get("total")
-        or 0
-    )
-    if int(refunded_total) < int(payment.amount or 0):
-        return None
-    return {
-        "reconciled": True,
-        "reason": "payment_already_fully_refunded",
-        "paymentId": str(payment.id),
-    }
+    return None
 
 
 def request_hash(*, user_id, method, path, body):

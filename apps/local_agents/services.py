@@ -141,15 +141,34 @@ class LocalAgentCommandService:
                 code='PRINTER_POLICY_DENIED' if printer_denial else 'LOCAL_HTTP_POLICY_DENIED',
             ) from error
         agent = LocalAgent.objects.filter(restaurant=restaurant, is_active=True).first()
-        if agent is None or not agent.is_online():
+        if agent is None or (command_type != 'financial.execute' and not agent.is_online()):
             raise LocalAgentUnavailableError('Local agent is offline.')
 
-        command = LocalAgentCommand.objects.create(
-            agent=agent,
-            command_type=command_type,
-            payload=payload,
-            timeout_seconds=max(int(timeout_seconds or 30), 1),
-        )
+        values = dict(agent=agent, command_type=command_type, payload=payload,
+                      timeout_seconds=max(int(timeout_seconds or 30), 1))
+        if command_type == 'financial.execute':
+            import hashlib
+            import json
+            digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            operation_id = str(payload.get('operationId') or '')
+            if not operation_id or len(operation_id) > 128:
+                raise LocalAgentCommandError('A stable financial operation ID is required.', code='FINANCIAL_COMMAND_ID_REQUIRED')
+            command, _ = LocalAgentCommand.objects.get_or_create(
+                financial_operation_id=operation_id, defaults={**values, 'payload_hash': digest})
+            if command.agent_id != agent.pk or command.payload_hash != digest:
+                raise LocalAgentCommandError('Operation ID belongs to different financial evidence.', code='OPERATION_ID_CONFLICT')
+            if command.status == LocalAgentCommand.Status.SUCCEEDED:
+                return agent, command
+            if not agent.is_online():
+                raise LocalAgentUnavailableError('Financial command is retained; the assigned Local Agent is offline.')
+            LocalAgentCommand.objects.filter(pk=command.pk, status__in=[
+                LocalAgentCommand.Status.FAILED, LocalAgentCommand.Status.TIMED_OUT,
+            ]).update(status=LocalAgentCommand.Status.PENDING, updated_at=timezone.now())
+            command.refresh_from_db()
+            if command.status == LocalAgentCommand.Status.SUCCEEDED:
+                return agent, command
+        else:
+            command = LocalAgentCommand.objects.create(**values)
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             local_agent_group_name(agent.id),
@@ -176,6 +195,12 @@ class LocalAgentCommandService:
         }
 
     def execute(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int = 30) -> dict:
+        from django.db import connection
+        if connection.in_atomic_block:
+            raise LocalAgentCommandError(
+                'Synchronous Local Agent commands require a committed intent outside any database transaction.',
+                code='AGENT_RPC_IN_TRANSACTION',
+            )
         agent, command = self._enqueue_command(
             restaurant=restaurant,
             command_type=command_type,
@@ -199,14 +224,19 @@ class LocalAgentCommandService:
 
         command.refresh_from_db(fields=['status', 'sent_at', 'result', 'error'])
         timeout_detail = self._timeout_detail(command=command, agent=agent)
-        command.status = LocalAgentCommand.Status.TIMED_OUT
-        command.completed_at = timezone.now()
-        command.error = {
+        timeout_error = {
             'code': 'LOCAL_AGENT_TIMEOUT',
             'message': timeout_detail['message'],
             **timeout_detail,
         }
-        command.save(update_fields=['status', 'completed_at', 'error', 'updated_at'])
+        updated = LocalAgentCommand.objects.filter(pk=command.pk, status__in=[
+            LocalAgentCommand.Status.PENDING, LocalAgentCommand.Status.SENT,
+        ]).update(status=LocalAgentCommand.Status.TIMED_OUT, completed_at=timezone.now(),
+                  error=timeout_error, updated_at=timezone.now())
+        if not updated:
+            command.refresh_from_db(fields=['status', 'result', 'error'])
+            if command.status == LocalAgentCommand.Status.SUCCEEDED:
+                return command.result or {}
         raise LocalAgentCommandError(
             timeout_detail['message'],
             code='LOCAL_AGENT_TIMEOUT',

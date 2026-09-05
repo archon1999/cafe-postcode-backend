@@ -77,7 +77,7 @@ class EdgePaymentResultsMixin:
 
     @staticmethod
     def _validated_edge_fiscal_results(
-        *, results, cash_desk, register_fiscal, expected_amount
+        *, results, cash_desk, register_fiscal, expected_amount, allow_partial=False
     ):
         if not register_fiscal:
             raise ValidationError(
@@ -183,7 +183,9 @@ class EdgePaymentResultsMixin:
             normalized.append(dict(result))
         if (
             successful_count
-            and successful_fiscal_total != int(expected_amount or 0) * 100
+            and (successful_fiscal_total > int(expected_amount or 0) * 100
+                 or (successful_fiscal_total != int(expected_amount or 0) * 100
+                     and not allow_partial and all(result.get('ok') for result in normalized)))
         ):
             raise ValidationError(
                 {

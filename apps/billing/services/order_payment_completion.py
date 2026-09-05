@@ -49,39 +49,19 @@ class OrderPaymentCompletionMixin:
                 receipt_results = self._issue_fiscal_receipts(
                     order=order, payment=payment, opened_by=received_by
                 )
-            # A failed fiscal request must not leave an otherwise successful payment
-            # blocking the cash shift.  When nothing was registered fiscally, retain
-            # the payment as a plain precheck instead.  Partial fiscal registration is
-            # deliberately kept retryable: turning it into a precheck could duplicate
-            # the portion that has already been registered.
-            has_registered_fiscal_receipt = any(
-                result.get("ok") for result in (receipt_results or [])
-            )
-            if has_registered_fiscal_receipt:
-                for receipt_result in receipt_results or []:
-                    receipts.append(
-                        self._create_fiscal_receipt(
-                            order=order, payment=payment, receipt_result=receipt_result
-                        )
-                    )
-            else:
-                payment.register_fiscal = False
-                payment.fiscal_adjustment_reason = (
-                    "Fiscal registration failed; stored as precheck."
-                )
-                payment.save(
-                    update_fields=[
-                        "register_fiscal",
-                        "fiscal_adjustment_reason",
-                        "updated_at",
-                    ]
-                )
+            # Fiscal rejection/uncertainty is a durable outcome, never implicit
+            # permission to convert a requested fiscal sale into a plain receipt.
+            for receipt_result in receipt_results or []:
+                receipts.append(self._create_fiscal_receipt(
+                    order=order, payment=payment, receipt_result=receipt_result))
         if is_fully_paid and not payment.register_fiscal:
             receipts.append(
                 self._create_plain_receipt(
                     order=order, payment=payment, created_by=received_by
                 )
             )
+        self.shift_service_class().record_late_financial_projection(
+            shift=payment.cash_shift, operation_id=payment.edge_operation_id, occurred_at=payment.occurred_at)
         logger.info(
             "Payment processed",
             extra={
@@ -99,20 +79,8 @@ class OrderPaymentCompletionMixin:
         }
 
     def _issue_fiscal_receipts(self, *, order, payment, opened_by, split_reasons=None):
-        from .order_payment import issue_fiscal_receipts
-
-        try:
-            self.shift_service_class().ensure_fiscal_shift_open(
-                restaurant=order.restaurant,
-                opened_by=opened_by,
-            )
-        except Exception as error:
-            return self._fiscal_shift_open_error_results(
-                error=error, split_reasons=split_reasons
-            )
-        return issue_fiscal_receipts(
-            order=order, payment=payment, split_reasons=split_reasons
-        )
+        from .financial_authority import FinancialAgentRequired
+        raise FinancialAgentRequired()
 
     @staticmethod
     def _fiscal_shift_open_error_results(*, error, split_reasons=None):
@@ -140,43 +108,8 @@ class OrderPaymentCompletionMixin:
         )
 
     def _create_fiscal_receipt(self, *, order, payment, receipt_result: dict):
-        status = (
-            Receipt.Status.SENT if receipt_result.get("ok") else Receipt.Status.FAILED
-        )
-        payload = build_receipt_payload(order=order, receipt_result=receipt_result)
-        receipt = Receipt.objects.create(
-            order=order,
-            payment=payment,
-            kind=Receipt.Kind.FISCAL,
-            status=status,
-            provider=receipt_result.get("provider", ""),
-            payload=payload,
-            fiscal_requested_at=parse_payload_datetime(
-                receipt_result.get("fiscal_requested_at")
-            )
-            or timezone.now(),
-            fiscal_registered_at=parse_payload_datetime(
-                receipt_result.get("fiscal_registered_at")
-            )
-            if status == Receipt.Status.SENT
-            else None,
-            original_paid_at=payment.paid_at,
-            fiscal_error_code=str(
-                receipt_result.get("code") or receipt_result.get("error_code") or ""
-            ),
-            fiscal_error_message=""
-            if status == Receipt.Status.SENT
-            else str(
-                receipt_result.get("detail") or receipt_result.get("message") or ""
-            ),
-        )
-        if status == Receipt.Status.SENT:
-            attach_receipt_print_document(
-                receipt=receipt,
-                fiscal_result=receipt_result,
-                created_by=payment.received_by,
-            )
-        return receipt
+        from .fiscal_evidence import persist_fiscal_evidence
+        return persist_fiscal_evidence(payment=payment, result=receipt_result)
 
     @staticmethod
     def _create_plain_receipt(*, order, payment, created_by):

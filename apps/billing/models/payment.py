@@ -52,6 +52,9 @@ class Payment(BaseModel):
     provider_payload = models.JSONField(default=dict, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     edge_operation_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
+    origin_cash_shift_id = models.UUIDField(null=True, blank=True)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    financial_snapshot = models.JSONField(default=dict, blank=True)
 
     def save(self, *args, **kwargs):
         amount = int(self.amount or 0)

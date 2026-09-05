@@ -139,6 +139,7 @@ def _cash_shift_snapshot(restaurant):
             'firstReceipt': row['first_receipt'],
             'lastReceipt': row['last_receipt'],
             'receiptCount': row['receipt_count'],
+            'fiscalReceiptCount': row['fiscal_receipt_count'],
             'reprintCount': row['reprint_count'],
             'nextOrderNumber': row['next_order_number'],
             'notesOpen': row['notes_open'],

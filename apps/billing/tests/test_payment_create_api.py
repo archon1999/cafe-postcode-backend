@@ -1,10 +1,14 @@
+import json
 from datetime import timedelta
 from uuid import uuid4
 from unittest.mock import patch
 
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APIClient
+from rest_framework.response import Response
+from apps.local_agents.models import LocalAgent
+from apps.local_agents.tests_support import bind_agent_client
 
 from apps.users.models import Permission, Role, User
 from apps.catalog.models import CatalogCategory, CatalogItem
@@ -88,6 +92,15 @@ class PaymentCreateApiTests(APITestCase):
 
     def setUp(self):
         self.client.force_authenticate(self.user)
+        self.agent, self.agent_token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant)
+        self.agent_client = APIClient()
+        self.agent_identity = bind_agent_client(self.agent_client, self.agent, self.agent_token)
+        fiscal = IntegrationConfig.objects.create(restaurant=self.restaurant, kind=IntegrationConfig.Kind.FISCAL, provider='fiscal-drive-service', settings={'endpoint_url': 'http://127.0.0.1:3449'})
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration'])
+        self.project_provider_ok = True
+        self.project_operations = {}
+
         self.cash_shift = CashShift.objects.create(
             cash_desk=self.cash_desk,
             opened_by=self.user,
@@ -112,6 +125,40 @@ class PaymentCreateApiTests(APITestCase):
             unit_price=30000,
         )
         self.order.recalculate_totals()
+
+    def project_payment(self, path, data, **kwargs):
+        """Exercise signed Agent HTTP ingestion of immutable payment evidence."""
+        from djangorestframework_camel_case.util import underscoreize
+        body = underscoreize(dict(data))
+        op_id = body.get('edge_operation_id') or 'test-payment:' + str(uuid4())
+        if op_id not in self.project_operations:
+            body['edge_operation_id'] = op_id
+            body['edge_cash_shift_id'] = str(self.cash_shift.pk)
+            order = Order.objects.get(pk=path.split('/orders/')[1].split('/')[0])
+            amount = int(body.get('amount') or 0)
+            method = body.get('method')
+            cash = amount if method == 'cash' else int(body.get('cash_amount') or 0)
+            card = amount if method == 'card' else int(body.get('card_amount') or 0)
+            body['edge_provider_result'] = {'ok': self.project_provider_ok, 'provider': 'cash' if method == 'cash' else 'marta-softpos',
+                'reference': 'trx-1', 'status': 'SUCCESS' if self.project_provider_ok else 'FAILED',
+                'detail': '' if self.project_provider_ok else 'failed', 'cardAmount': card, 'edgeOperationId': op_id}
+            if method == 'cash':
+                body.pop('edge_provider_result')
+            payments = list(order.payments.filter(status='succeeded'))
+            if body.get('register_fiscal', True) and sum(p.amount for p in payments) + amount == int(body.get('final_total') or order.total):
+                body['edge_fiscal_results_json'] = json.dumps([{'ok': True, 'provider': 'fiscal-drive-service',
+                    'receipt_number': op_id, 'terminal_id': 'FIXTURE-TERMINAL',
+                    'response': {'TerminalID': 'FIXTURE-TERMINAL', 'ReceiptSeq': op_id},
+                    'request': {'receipt': {'ReceivedCash': (cash + sum(p.cash_amount for p in payments)) * 100,
+                        'ReceivedCard': (card + sum(p.card_amount for p in payments)) * 100}}}])
+            self.project_operations[op_id] = {'operationId': op_id, 'userId': str(self.user.pk), 'method': 'POST',
+                'path': path, 'occurredAt': timezone.now().isoformat(), 'body': body}
+        response = self.agent_client.post('/api/v1/local-agent/sync/mutations/',
+            {'operations': [self.project_operations[op_id]]}, format='json', HTTP_AUTHORIZATION=f'Bearer {self.agent_token}')
+        self.assertEqual(response.status_code, 200, response.data)
+        result = response.data['results'][0]
+        # Keep the existing service/serializer response assertions in these projection tests.
+        return Response(result['body'], status=result['status'])
 
     def create_delivery_order(self, *, delivery_details=True):
         order = Order.objects.create(
@@ -196,24 +243,13 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.calculated_total, 30000)
 
     @patch('apps.billing.services.order_payment.charge_payment')
-    def test_hourly_payment_rejects_stale_quote_before_charge(self, charge_payment):
+    def test_hourly_quote_validator_rejects_stale_quote_before_charge(self, charge_payment):
+        from apps.billing.services.order_payment import OrderPaymentService, ServiceFeeQuoteStale
         order = self.create_hourly_hall_order()
         quote = dict(OrderSerializer(order).data['service_fee_quote'])
         quote['billable_minutes'] -= 1
-
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{order.id}/pay/',
-            {
-                'method': Payment.Method.CASH,
-                'amount': 1_000,
-                'serviceFeeQuote': quote,
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT, response.data)
-        self.assertEqual(response.data['code'], 'SERVICE_FEE_QUOTE_STALE')
-        self.assertIn('currentQuote', response.data)
+        with self.assertRaises(ServiceFeeQuoteStale):
+            OrderPaymentService._prepare_service_fee_quote(order=order, quote=quote, trusted_edge_replay=False)
         charge_payment.assert_not_called()
         order.refresh_from_db()
         self.assertIsNone(order.service_fee_frozen_at)
@@ -223,10 +259,11 @@ class PaymentCreateApiTests(APITestCase):
         return_value={'ok': False, 'provider': 'cash', 'detail': 'failed'},
     )
     def test_failed_hourly_payment_does_not_freeze_timer(self, _charge_payment):
+        self.project_provider_ok = False
         order = self.create_hourly_hall_order()
         quote = OrderSerializer(order).data['service_fee_quote']
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{order.id}/pay/',
             {
                 'method': Payment.Method.CASH,
@@ -249,7 +286,7 @@ class PaymentCreateApiTests(APITestCase):
         order = self.create_hourly_hall_order()
         quote = OrderSerializer(order).data['service_fee_quote']
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{order.id}/pay/',
             {
                 'method': Payment.Method.CASH,
@@ -280,7 +317,7 @@ class PaymentCreateApiTests(APITestCase):
         self.restaurant.payment_total_mode = Restaurant.PaymentTotalMode.CASHIER_EDITABLE
         self.restaurant.save(update_fields=['payment_total_mode', 'updated_at'])
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {
                 'method': Payment.Method.CASH,
@@ -305,7 +342,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(response.data['payment']['amount'], 15000)
 
     def test_fixed_total_mode_rejects_cashier_override(self):
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {
                 'method': Payment.Method.CASH,
@@ -328,7 +365,7 @@ class PaymentCreateApiTests(APITestCase):
         self.cash_desk.enabled_payment_methods = [Payment.Method.CASH]
         self.cash_desk.save(update_fields=["enabled_payment_methods", "updated_at"])
 
-        response = self.client.post(
+        response = self.project_payment(
             f"/api/v1/pos/billing/orders/{self.order.id}/pay/",
             {
                 "method": Payment.Method.CARD,
@@ -346,7 +383,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertIsNone(self.order.total_override)
 
     def test_rejects_qr_payment_method_for_new_pos_flow(self):
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.QR, 'amount': self.order.total},
             format='json',
@@ -356,7 +393,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertIn('method', response.data)
 
     @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
-    def test_mixed_payment_uses_card_amount_for_marta_and_closes_order(self, local_http_request):
+    def test_mixed_payment_projects_original_tenders_without_second_terminal_charge(self, local_http_request):
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -384,7 +421,7 @@ class PaymentCreateApiTests(APITestCase):
             },
         ]
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {
                 'method': Payment.Method.MIXED,
@@ -395,18 +432,17 @@ class PaymentCreateApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         payment = Payment.objects.get(order=self.order)
         self.assertEqual(payment.method, Payment.Method.MIXED)
         self.assertEqual(payment.cash_amount, 20000)
         self.assertEqual(payment.card_amount, 10000)
         self.assertEqual(payment.fiscal_cash_amount, 20000)
         self.assertEqual(payment.fiscal_card_amount, 10000)
-        transaction_call = local_http_request.call_args_list[1]
-        self.assertEqual(transaction_call.kwargs['query']['amount'], 1000000)
+        local_http_request.assert_not_called()
 
     def test_mixed_payment_rejects_invalid_breakdown_sum(self):
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {
                 'method': Payment.Method.MIXED,
@@ -424,7 +460,7 @@ class PaymentCreateApiTests(APITestCase):
         self.cash_desk.enabled_payment_methods = ['cash', 'mixed']
         self.cash_desk.save(update_fields=['enabled_payment_methods', 'updated_at'])
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {
                 'method': Payment.Method.MIXED,
@@ -451,20 +487,20 @@ class PaymentCreateApiTests(APITestCase):
         self.role.permissions.add(skip_permission)
         self.entitlement.permissions.add(skip_permission)
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(self.order.cashier_id, self.user.id)
         self.assertEqual(response.data['payment']['method'], Payment.Method.CASH)
         self.assertEqual(response.data['receipt']['kind'], Receipt.Kind.PLAIN)
         self.assertEqual(response.data['receipt']['status'], Receipt.Status.CREATED)
-        self.assertIsNotNone(response.data['receipt']['print_document'])
+        self.assertIsNotNone(response.data['receipt']['printDocument'])
         payment = Payment.objects.get(order=self.order)
         self.assertFalse(payment.register_fiscal)
         receipt = payment.receipts.get()
@@ -511,7 +547,7 @@ class PaymentCreateApiTests(APITestCase):
         self.order.channel = Order.Channel.HALL
         self.order.save(update_fields=('table_session', 'channel', 'updated_at'))
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
@@ -539,7 +575,7 @@ class PaymentCreateApiTests(APITestCase):
         self.prep_station.printer_integration = printer
         self.prep_station.save(update_fields=['printer_integration', 'updated_at'])
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
@@ -566,7 +602,7 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.order.recalculate_totals()
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
@@ -609,7 +645,7 @@ class PaymentCreateApiTests(APITestCase):
         OrderSubmissionService().submit(self.order)
         existing_document_id = KitchenTicket.objects.get(order=self.order).print_document_id
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total, 'register_fiscal': False},
             format='json',
@@ -626,12 +662,12 @@ class PaymentCreateApiTests(APITestCase):
             'edgeOperationId': 'edge-payment-order-1001',
         }
 
-        first = self.client.post(
+        first = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             payload,
             format='json',
         )
-        second = self.client.post(
+        second = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             payload,
             format='json',
@@ -662,14 +698,14 @@ class PaymentCreateApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('edgeProviderResult', response.data)
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.data['code'], 'FINANCIAL_OWNER_UPGRADE_REQUIRED')
         charge_payment.assert_not_called()
         self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
     @patch('apps.billing.services.order_payment.charge_payment', return_value={'ok': True, 'reference': 'split-ref'})
     def test_split_payments_can_close_order_across_multiple_methods(self, _charge_payment):
-        first_response = self.client.post(
+        first_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': 20000, 'register_fiscal': True},
             format='json',
@@ -685,7 +721,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertNotEqual(self.order.status, Order.Status.CLOSED)
         self.assertIsNone(first_response.data['receipt'])
 
-        second_response = self.client.post(
+        second_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CARD, 'amount': self.order.total - 20000, 'register_fiscal': True},
             format='json',
@@ -710,7 +746,7 @@ class PaymentCreateApiTests(APITestCase):
         self.role.permissions.add(skip_permission)
         self.entitlement.permissions.add(skip_permission)
 
-        first_response = self.client.post(
+        first_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': 20000, 'register_fiscal': False},
             format='json',
@@ -721,7 +757,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertNotEqual(self.order.status, Order.Status.CLOSED)
         self.assertIsNone(first_response.data['receipt'])
 
-        second_response = self.client.post(
+        second_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CARD, 'amount': self.order.total - 20000, 'register_fiscal': False},
             format='json',
@@ -740,18 +776,18 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(receipt.payload['card_amount'], self.order.total - 20000)
         self.assertEqual(receipt.print_document.kind, PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN)
         self.assertEqual(receipt.print_document.data_snapshot['payment']['method'], 'Aralash')
-        self.assertEqual(charge_payment.call_count, 2)
+        self.assertEqual(charge_payment.call_count, 1)
         issue_fiscal_receipts.assert_not_called()
 
     def test_closed_order_cannot_be_paid_twice(self):
-        first_response = self.client.post(
+        first_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total},
             format='json',
         )
         self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
 
-        second_response = self.client.post(
+        second_response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': self.order.total},
             format='json',
@@ -760,30 +796,15 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('detail', second_response.data)
 
-    def test_card_pay_endpoint_requires_online_local_agent(self):
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
-            {'method': Payment.Method.CARD, 'amount': self.order.total},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Local agent is offline', response.data['detail'])
-        payment = Payment.objects.get(order=self.order)
-        self.assertEqual(payment.status, Payment.Status.FAILED)
+    def test_browser_payment_requires_financial_owner_before_creating_payment(self):
+        response = self.client.post(f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
+            {'method': 'card', 'amount': self.order.total}, format='json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'FINANCIAL_OWNER_UPGRADE_REQUIRED')
+        self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
     @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
-    def test_card_payment_uses_local_agent_and_closes_order_on_success(self, local_http_request):
+    def test_card_evidence_projects_original_reference_without_terminal_rpc(self, local_http_request):
         marta_config = IntegrationConfig.objects.create(
             restaurant=self.restaurant,
             kind=IntegrationConfig.Kind.PAYMENT,
@@ -811,202 +832,113 @@ class PaymentCreateApiTests(APITestCase):
             },
         ]
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{self.order.id}/pay/',
             {'method': Payment.Method.CARD, 'amount': self.order.total},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.order.refresh_from_db()
         payment = Payment.objects.get(order=self.order)
         self.assertEqual(self.order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
         self.assertEqual(payment.external_ref, 'trx-1')
-        self.assertEqual(payment.provider_payload['transport'], 'local-agent')
-        self.assertEqual(local_http_request.call_count, 2)
+        self.assertTrue(payment.provider_payload['trustedEdgeReplay'])
+        local_http_request.assert_not_called()
 
-    def test_initiate_card_payment_requires_marta_config_on_active_cash_desk(self):
-        IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': self.order.total, 'register_fiscal': True},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('active cash desk', response.data['detail'])
+    def test_browser_initiate_without_configuration_requires_owner(self):
+        path = f'/api/v1/pos/billing/orders/{self.order.pk}/card-payments/initiate/'
+        body = {'amount': self.order.total}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'FINANCIAL_AGENT_REQUIRED')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
         self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
-    def test_initiate_card_payment_creates_pending_payment_and_returns_marta_config(self):
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={
-                'endpoint_url': 'http://192.168.88.125:8090',
-                'amount_multiplier': 100,
-                'tax_number': '307678400',
-                'timeout_seconds': 180,
-                'hmac_secret': 'secret',
-            },
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': self.order.total, 'register_fiscal': True},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        payment = Payment.objects.get(order=self.order)
-        self.assertEqual(payment.status, Payment.Status.PENDING)
-        self.assertEqual(payment.method, Payment.Method.CARD)
-        self.assertEqual(response.data['marta']['endpointUrl'], 'http://192.168.88.125:8090')
-        self.assertEqual(response.data['marta']['amount'], 3000000)
-        self.assertEqual(response.data['marta']['taxNumber'], '307678400')
-        self.assertNotIn('hmac_secret', response.data['marta'])
-
-    def test_terminal_success_completes_payment_and_closes_order(self):
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-        initiate_response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': self.order.total, 'register_fiscal': True},
-            format='json',
-        )
-
-        response = self.client.post(
-            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
-            {
-                'ok': True,
-                'status': 'SUCCESS',
-                'requestId': 'request-1',
-                'params': {'trxId': 'trx-1', 'rrn': 'rrn-1'},
-                'debug': {'transaction': {'response': {'httpStatus': 200}}},
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+    def test_browser_initiate_with_configuration_cannot_create_payment(self):
+        config = IntegrationConfig.objects.create(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos', settings={'endpoint_url': 'http://127.0.0.1:8090', 'hmac_secret': 'fixture-secret'})
+        self.cash_desk.payment_integration = config
+        self.cash_desk.save(update_fields=['payment_integration'])
+        path = f'/api/v1/pos/billing/orders/{self.order.pk}/card-payments/initiate/'
+        body = {'amount': self.order.total}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'FINANCIAL_AGENT_REQUIRED')
         self.order.refresh_from_db()
-        payment = Payment.objects.get(order=self.order)
-        self.assertEqual(self.order.status, Order.Status.CLOSED)
-        self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
-        self.assertEqual(payment.external_ref, 'trx-1')
-        self.assertEqual(payment.provider_payload['params']['trxId'], 'trx-1')
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
+        self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
-    def test_terminal_failure_marks_payment_failed_and_keeps_order_open(self):
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-        initiate_response = self.client.post(
-            f'/api/v1/pos/billing/orders/{self.order.id}/card-payments/initiate/',
-            {'amount': self.order.total, 'register_fiscal': True},
-            format='json',
-        )
-
-        response = self.client.post(
-            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
-            {
-                'ok': False,
-                'status': 'CANCELED',
-                'requestId': 'request-2',
-                'message': 'Прекращено',
-                'debug': {'transaction': {'response': {'httpStatus': 200}}},
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], 'Прекращено')
+    def test_browser_terminal_success_cannot_complete_payment(self):
+        config = IntegrationConfig.objects.create(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos', settings={'endpoint_url': 'http://127.0.0.1:8090', 'hmac_secret': 'fixture-secret'})
+        self.cash_desk.payment_integration = config
+        self.cash_desk.save(update_fields=['payment_integration'])
+        payment = Payment.objects.create(order=self.order, amount=self.order.total, method='card', status='pending')
+        path = f'/api/v1/pos/billing/payments/{payment.pk}/terminal-result/'
+        body = {'ok': True, 'status': 'SUCCESS', 'params': {'trxId': 'untrusted'}}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'LEGACY_TERMINAL_EVIDENCE_REQUIRES_RECONCILIATION')
         self.order.refresh_from_db()
-        payment = Payment.objects.get(order=self.order)
-        self.assertNotEqual(self.order.status, Order.Status.CLOSED)
-        self.assertEqual(payment.status, Payment.Status.FAILED)
-        self.assertEqual(payment.provider_payload['debug']['transaction']['response']['httpStatus'], 200)
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.external_ref, '')
 
-    def test_takeaway_card_payment_initiate_does_not_route_to_kitchen(self):
-        order = self.order
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
+    def test_browser_terminal_failure_cannot_mutate_payment(self):
+        config = IntegrationConfig.objects.create(restaurant=self.restaurant, kind=IntegrationConfig.Kind.PAYMENT,
+            provider='marta-softpos', settings={'endpoint_url': 'http://127.0.0.1:8090', 'hmac_secret': 'fixture-secret'})
+        self.cash_desk.payment_integration = config
+        self.cash_desk.save(update_fields=['payment_integration'])
+        payment = Payment.objects.create(order=self.order, amount=self.order.total, method='card', status='pending')
+        path = f'/api/v1/pos/billing/payments/{payment.pk}/terminal-result/'
+        body = {'ok': False, 'status': 'CANCELED', 'params': {'trxId': 'untrusted'}}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'LEGACY_TERMINAL_EVIDENCE_REQUIRES_RECONCILIATION')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.external_ref, '')
 
-        response = self.client.post(
-            f'/api/v1/pos/billing/orders/{order.id}/card-payments/initiate/',
-            {'amount': order.total, 'register_fiscal': True},
-            format='json',
-        )
+    def test_retired_initiate_does_not_route_to_kitchen(self):
+        path = f'/api/v1/pos/billing/orders/{self.order.pk}/card-payments/initiate/'
+        body = {'amount': self.order.total}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'FINANCIAL_AGENT_REQUIRED')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
+        self.assertFalse(Payment.objects.filter(order=self.order).exists())
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.OPEN)
-        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
-
-    def test_takeaway_terminal_failure_keeps_order_open_without_kitchen_ticket(self):
-        order = self.order
-        marta_config = IntegrationConfig.objects.create(
-            restaurant=self.restaurant,
-            kind=IntegrationConfig.Kind.PAYMENT,
-            provider='marta-softpos',
-            is_enabled=True,
-            settings={'endpoint_url': 'http://192.168.88.125:8090', 'amount_multiplier': 100},
-        )
-        self.cash_desk.payment_integration = marta_config
-        self.cash_desk.save(update_fields=['payment_integration', 'updated_at'])
-        initiate_response = self.client.post(
-            f'/api/v1/pos/billing/orders/{order.id}/card-payments/initiate/',
-            {'amount': order.total, 'register_fiscal': True},
-            format='json',
-        )
-
-        response = self.client.post(
-            f"/api/v1/pos/billing/payments/{initiate_response.data['payment']['id']}/terminal-result/",
-            {
-                'ok': False,
-                'status': 'CANCELED',
-                'requestId': 'request-takeaway',
-                'message': 'Canceled',
-                'debug': {'transaction': {'response': {'httpStatus': 200}}},
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        order.refresh_from_db()
-        payment = Payment.objects.get(order=order)
-        self.assertEqual(order.status, Order.Status.OPEN)
-        self.assertEqual(payment.status, Payment.Status.FAILED)
-        self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
+    def test_retired_terminal_result_does_not_route_to_kitchen(self):
+        payment = Payment.objects.create(order=self.order, amount=self.order.total, method='card', status='pending')
+        path = f'/api/v1/pos/billing/payments/{payment.pk}/terminal-result/'
+        body = {'ok': False, 'status': 'CANCELED', 'params': {'trxId': 'untrusted'}}
+        response = self.client.post(path, body, format='json')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(response.data['code'], 'LEGACY_TERMINAL_EVIDENCE_REQUIRES_RECONCILIATION')
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.Status.OPEN)
+        self.assertFalse(KitchenTicket.objects.filter(order=self.order).exists())
+        self.assertNotIn('marta', response.data)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, 'pending')
+        self.assertEqual(payment.external_ref, '')
 
     @patch('apps.integrations.services.agent_marta.LocalAgentCommandService.local_http_request')
     def test_takeaway_card_payment_success_routes_to_kitchen_after_payment(self, local_http_request):
@@ -1038,13 +970,13 @@ class PaymentCreateApiTests(APITestCase):
             },
         ]
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{order.id}/pay/',
             {'method': Payment.Method.CARD, 'amount': order.total},
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         order.refresh_from_db()
         payment = Payment.objects.get(order=order)
         self.assertEqual(order.status, Order.Status.CLOSED)
@@ -1054,7 +986,7 @@ class PaymentCreateApiTests(APITestCase):
     def test_delivery_payment_rejects_missing_delivery_details(self):
         order = self.create_delivery_order(delivery_details=False)
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': order.total},
             format='json',
@@ -1070,7 +1002,7 @@ class PaymentCreateApiTests(APITestCase):
         order.delivery_phone = '901234567'
         order.save(update_fields=['delivery_phone', 'updated_at'])
 
-        response = self.client.post(
+        response = self.project_payment(
             f'/api/v1/pos/billing/orders/{order.id}/pay/',
             {'method': Payment.Method.CASH, 'amount': order.total},
             format='json',
@@ -1081,7 +1013,7 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.status, Order.Status.OPEN)
         self.assertFalse(KitchenTicket.objects.filter(order=order).exists())
 
-    def test_payment_and_refund_reject_foreign_resources_without_an_oracle(self):
+    def test_browser_owner_gate_does_not_expose_foreign_resources(self):
         other_restaurant = Restaurant.objects.create(name='Foreign billing tenant')
         foreign_user = User.objects.create_user(
             username='foreign-billing-user',
@@ -1141,11 +1073,11 @@ class PaymentCreateApiTests(APITestCase):
 
         self.assertEqual(
             foreign_payment_create_response.status_code,
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_409_CONFLICT,
         )
         self.assertEqual(
             unknown_payment_create_response.status_code,
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_409_CONFLICT,
         )
         self.assertEqual(
             foreign_payment_create_response.data,
@@ -1153,11 +1085,11 @@ class PaymentCreateApiTests(APITestCase):
         )
         self.assertEqual(
             foreign_refund_response.status_code,
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_409_CONFLICT,
         )
         self.assertEqual(
             unknown_refund_response.status_code,
-            status.HTTP_404_NOT_FOUND,
+            status.HTTP_409_CONFLICT,
         )
         self.assertEqual(foreign_refund_response.data, unknown_refund_response.data)
 

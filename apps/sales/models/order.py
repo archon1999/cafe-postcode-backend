@@ -243,6 +243,9 @@ class Order(BaseModel):
         if not self.has_hourly_service_fee or self.service_fee_frozen_at is not None:
             return
         self.service_fee_frozen_at = at or timezone.now()
+        # The first successful payment already makes totals immutable. Persist
+        # its freeze time even when recalculation correctly refuses to rewrite them.
+        self.save(update_fields=['service_fee_frozen_at', 'updated_at'])
         self.recalculate_totals(preserve_override=True, as_of=self.service_fee_frozen_at)
 
     @property
@@ -255,6 +258,10 @@ class Order(BaseModel):
 
     def recalculate_totals(self, *, preserve_override=False, as_of=None):
         from .order_item import OrderItem
+
+        if self.payments.filter(status='succeeded').exists():
+            # Fulfillment updates must never rewrite the settled financial facts.
+            return
 
         active_items = self.items.exclude(status=OrderItem.Status.CANCELLED)
         subtotal = active_items.aggregate(total=models.Sum('line_total')).get('total') or 0

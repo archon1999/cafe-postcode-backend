@@ -9,6 +9,7 @@ from apps.billing.services import CashShiftService
 from apps.local_agents.models import LocalAgentMutationReceipt
 from apps.local_agents.mutation_dispatch import LocalAgentMutationDispatchMixin
 from apps.local_agents.mutation_reconciliation import allowed_mutation, request_hash
+from apps.local_agents.mutation_inbox import receive_and_apply, financial_event_metadata
 from apps.local_agents.mutation_replay import LocalAgentMutationReplayMixin
 from apps.local_agents.mutation_results import (
     CLASSIFICATION_ACTION_REQUIRED,
@@ -27,6 +28,14 @@ class LocalAgentMutationProcessor(
         self.request_factory_class = request_factory_class
 
     def process(self, *, agent, operation):
+        if (agent is not None and isinstance(operation, dict)
+                and 0 < len(str(operation.get('operationId') or operation.get('operation_id') or '').strip()) <= 128
+                and allowed_mutation(str(operation.get('method') or '').upper(), str(operation.get('path') or ''))):
+            return receive_and_apply(agent=agent, operation=operation,
+                                     apply=lambda original: self._apply_operation(agent=agent, operation=original))
+        return self._apply_operation(agent=agent, operation=operation)
+
+    def _apply_operation(self, *, agent, operation):
         if not isinstance(operation, dict):
             return mutation_error_result(
                 response_status=400,
@@ -115,6 +124,13 @@ class LocalAgentMutationProcessor(
             if replay is not None:
                 return replay
 
+        version = financial_event_metadata(operation)['eventVersion']
+        if version == 2 and '/billing/' in path:
+            original_shift_required = path.endswith(('/pay/', '/refund/', '/shifts/open/', '/shifts/current/close/'))
+            if occurred_at is None or (original_shift_required and not (body.get('edgeCashShiftId') or body.get('edge_cash_shift_id'))):
+                return mutation_error_result(operation_id=operation_id, response_status=409,
+                    error='Financial event requires its original occurrence time and cash shift identity.',
+                    code='FINANCIAL_EVENT_ORIGIN_REQUIRED', classification=CLASSIFICATION_QUARANTINED)
         user = (
             User.objects.filter(
                 id=user_id,
@@ -168,6 +184,7 @@ class LocalAgentMutationProcessor(
             body=body,
             digest=digest,
             occurred_at=occurred_at,
+            envelope={**operation, **financial_event_metadata(operation)},
         )
 
     @staticmethod

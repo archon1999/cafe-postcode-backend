@@ -77,6 +77,9 @@ class CashExpenseService:
         recipient_id=None,
         cash_shift_id=None,
         edge_operation_id='',
+        trusted_edge_replay=False,
+        cash_shift=None,
+        occurred_at=None,
     ):
         amount = int(amount or 0)
         if amount <= 0:
@@ -96,7 +99,7 @@ class CashExpenseService:
                     raise ValidationError({'edgeOperationId': 'Operation ID boshqa xarajatga tegishli.'})
                 return existing
 
-        resolved_shift = self.resolve_active_shift(
+        resolved_shift = cash_shift if trusted_edge_replay and cash_shift is not None else self.resolve_active_shift(
             restaurant=restaurant,
             user=user,
             cash_shift_id=cash_shift_id,
@@ -106,7 +109,7 @@ class CashExpenseService:
             .select_related('cash_desk')
             .get(pk=resolved_shift.pk)
         )
-        if shift.status != CashShift.Status.OPEN:
+        if shift.status != CashShift.Status.OPEN and not trusted_edge_replay:
             raise ValidationError({'detail': 'Faqat aktiv smenadan xarajat qilish mumkin.'})
 
         category = ExpenseCategory.objects.filter(
@@ -124,7 +127,7 @@ class CashExpenseService:
                 raise ValidationError({'recipientId': 'Tanlangan oluvchi shu restoranga tegishli emas.'})
 
         available_cash = int(CashShiftService().build_shift_snapshot(shift=shift)['expected_closing_cash_amount'])
-        if amount > available_cash:
+        if amount > available_cash and not trusted_edge_replay:
             raise ValidationError(
                 {
                     'amount': 'Xarajat summasi kassadagi mavjud naqd puldan katta.',
@@ -144,16 +147,18 @@ class CashExpenseService:
             'category_name_snapshot': category.name,
             'recipient_name_snapshot': (recipient.full_name or recipient.username) if recipient else '',
             'edge_operation_id': edge_operation_id,
+            'occurred_at': occurred_at or timezone.now(),
         }
         if id is not None:
             create_values['id'] = id
         expense = CashExpense.objects.create(**create_values)
         shift.expense_total = int(shift.expense_total or 0) + amount
         shift.save(update_fields=('expense_total', 'updated_at'))
+        CashShiftService().record_late_financial_projection(shift=shift, operation_id=edge_operation_id, occurred_at=expense.occurred_at)
         return expense
 
     @transaction.atomic
-    def void_expense(self, *, expense, user, reason=''):
+    def void_expense(self, *, expense, user, reason='', trusted_edge_replay=False, occurred_at=None, edge_operation_id=None):
         locked = (
             CashExpense.objects.select_for_update()
             .select_related('cash_shift')
@@ -162,16 +167,17 @@ class CashExpenseService:
         shift = CashShift.objects.select_for_update().get(pk=locked.cash_shift_id)
         if locked.status == CashExpense.Status.VOIDED:
             return locked
-        if shift.status != CashShift.Status.OPEN:
+        if shift.status != CashShift.Status.OPEN and not trusted_edge_replay:
             raise ValidationError({'detail': 'Yopilgan smenadagi xarajatni bekor qilib bo‘lmaydi.'})
         reason = str(reason or '').strip()
         if not reason:
             raise ValidationError({'reason': 'Bekor qilish sababi majburiy.'})
         locked.status = CashExpense.Status.VOIDED
-        locked.voided_at = timezone.now()
+        locked.voided_at = occurred_at or timezone.now()
         locked.voided_by = user
         locked.void_reason = reason
         locked.save(update_fields=('status', 'voided_at', 'voided_by', 'void_reason', 'updated_at'))
         shift.expense_total = max(0, int(shift.expense_total or 0) - int(locked.amount or 0))
         shift.save(update_fields=('expense_total', 'updated_at'))
+        CashShiftService().record_late_financial_projection(shift=shift, operation_id=edge_operation_id, occurred_at=locked.voided_at)
         return locked

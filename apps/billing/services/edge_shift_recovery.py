@@ -1,19 +1,12 @@
 from apps.billing.models import CashShift
+from apps.restaurants.models import CashDesk
+from rest_framework.exceptions import ValidationError
+from .receipt_context import parse_payload_datetime
 
 
-def resolve_trusted_edge_payment_shift(
-    *, restaurant, edge_cash_shift_id, occurred_at
-):
-    """Resolve a stale edge shift only for payments made after it was closed.
-
-    A Local Agent can briefly keep accepting payments against its cached shift
-    after another terminal closes that shift on the backend.  In that narrow
-    case, bind the payment to the single successor shift on the same cash desk.
-    Operations without a trustworthy timestamp, or operations that happened
-    before the close, deliberately remain attached to the original shift and
-    fail normal validation instead of being moved across reports.
-    """
-    origin_shift = (
+def resolve_trusted_edge_payment_shift(*, restaurant, edge_cash_shift_id, occurred_at):
+    """Historical facts belong to their original shift, regardless of arrival time."""
+    return (
         CashShift.objects.select_related("cash_desk")
         .filter(
             pk=edge_cash_shift_id,
@@ -21,34 +14,66 @@ def resolve_trusted_edge_payment_shift(
         )
         .first()
     )
-    if origin_shift is None or origin_shift.status == CashShift.Status.OPEN:
-        return origin_shift
-    if (
-        occurred_at is None
-        or origin_shift.closed_at is None
-        or occurred_at < origin_shift.closed_at
-    ):
-        return origin_shift
 
-    successor_shifts = list(
-        CashShift.objects.select_related("cash_desk")
-        .filter(
-            cash_desk_id=origin_shift.cash_desk_id,
-            status=CashShift.Status.OPEN,
+
+def can_recover_trusted_edge_payment(*, restaurant, edge_cash_shift_id, occurred_at):
+    return (
+        resolve_trusted_edge_payment_shift(
+            restaurant=restaurant,
+            edge_cash_shift_id=edge_cash_shift_id,
+            occurred_at=occurred_at,
         )
-        .order_by("opened_at")[:2]
+        is not None
     )
-    if len(successor_shifts) != 1:
-        return origin_shift
-    return successor_shifts[0]
 
 
-def can_recover_trusted_edge_payment(
-    *, restaurant, edge_cash_shift_id, occurred_at
+def materialize_edge_shift(
+    *, restaurant, shift_id, body, user, occurred_at=None, closing=False
 ):
-    shift = resolve_trusted_edge_payment_shift(
-        restaurant=restaurant,
-        edge_cash_shift_id=edge_cash_shift_id,
-        occurred_at=occurred_at,
+    existing = resolve_trusted_edge_payment_shift(
+        restaurant=restaurant, edge_cash_shift_id=shift_id, occurred_at=occurred_at
     )
-    return bool(shift and str(shift.id) != str(edge_cash_shift_id))
+    if existing is not None:
+        return existing
+
+    def value(camel, snake):
+        return body.get(camel, body.get(snake))
+
+    opened_at = parse_payload_datetime(
+        value("edgeCashShiftOpenedAt", "edge_cash_shift_opened_at")
+    )
+    closed_at = parse_payload_datetime(
+        value("edgeCashShiftClosedAt", "edge_cash_shift_closed_at")
+    )
+    desk_id = value("edgeCashDeskId", "edge_cash_desk_id") or value(
+        "cashDeskId", "cash_desk_id"
+    )
+    desk = (
+        CashDesk.objects.filter(pk=desk_id, restaurant=restaurant).first()
+        if desk_id
+        else None
+    )
+    if not opened_at or desk is None:
+        raise ValidationError(
+            {
+                "code": "EDGE_CASH_SHIFT_NOT_FOUND",
+                "detail": "Original shift snapshot or shift-open dependency is required.",
+            }
+        )
+    if closed_at and closed_at < opened_at:
+        raise ValidationError(
+            {
+                "code": "INVALID_SHIFT_TIMELINE",
+                "detail": "Shift close precedes its opening.",
+            }
+        )
+    # Historical materialization must not replace or become the current live shift.
+    return CashShift.objects.create(
+        id=shift_id,
+        cash_desk=desk,
+        opened_by=user,
+        opened_at=opened_at,
+        status=CashShift.Status.RECONCILING,
+        closed_at=closed_at if closing else None,
+        reconciliation_payload={"materializedFromEvidence": True},
+    )

@@ -1,4 +1,6 @@
 import json
+from django.db import transaction
+from django.utils.decorators import method_decorator
 
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -14,6 +16,7 @@ from apps.local_agents.mutation_reconciliation import (
 from common.api.throttling import LocalAgentRateThrottle
 
 
+@method_decorator(transaction.non_atomic_requests, name='dispatch')
 class LocalAgentMutationPushView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [LocalAgentRateThrottle]

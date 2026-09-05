@@ -207,7 +207,7 @@ class OpenCheckListView(generics.ListAPIView):
             return self._closed_queryset(queryset, status_filter)
         return self.apply_limit(
             queryset.filter(
-                status__in=[Order.Status.SUBMITTED, Order.Status.READY]
+                status__in=[Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
             ).order_by("-created_at")
         )
 
@@ -297,7 +297,7 @@ class OpenCheckListView(generics.ListAPIView):
             return self._apply_search(result).order_by("-closed_at", "-created_at")
 
         payment_receipts = Receipt.objects.filter(
-            payment_id=OuterRef("pk"), kind=Receipt.Kind.FISCAL
+            payment_id=OuterRef("pk"), kind__in=[Receipt.Kind.FISCAL, Receipt.Kind.REFUND]
         )
         unresolved_payment = (
             Payment.objects.filter(
@@ -311,7 +311,7 @@ class OpenCheckListView(generics.ListAPIView):
                     payment_receipts.filter(status=Receipt.Status.SENT)
                 ),
                 has_failed_fiscal_receipt=Exists(
-                    payment_receipts.filter(status=Receipt.Status.FAILED)
+                    payment_receipts.exclude(status=Receipt.Status.SENT)
                 ),
             )
             .filter(

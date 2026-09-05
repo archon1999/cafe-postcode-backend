@@ -27,11 +27,9 @@ class CashExpenseApiTests(PosAPITestCase):
         )
 
     def open_expense_shift(self, opening_cash_amount=1000):
-        response = self.open_shift_via_api(
-            cash_desk_id=self.cash_desk.id,
-            opening_cash_amount=opening_cash_amount,
-        )
-        return CashShift.objects.get(pk=response['current_shift']['id'])
+        # Financial owner opening is covered by the v2 contract tests. These
+        # expense API tests start from its already-applied shift projection.
+        return self.create_cash_shift(opening_cash_amount=opening_cash_amount)
 
     def create_expense(self, **overrides):
         payload = {

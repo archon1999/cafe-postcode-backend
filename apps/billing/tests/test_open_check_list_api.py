@@ -142,7 +142,8 @@ class OpenCheckListApiTests(APITestCase):
             paid_at=timezone.now(),
         )
 
-    def test_open_status_returns_submitted_and_ready_orders(self):
+    def test_open_status_includes_unsubmitted_orders_that_block_shift_close(self):
+        open_order = self.create_order(status=Order.Status.OPEN)
         submitted_order = self.create_order(status=Order.Status.SUBMITTED)
         ready_order = self.create_order(status=Order.Status.READY)
         self.create_order(status=Order.Status.CLOSED, closed_at=timezone.now())
@@ -151,7 +152,7 @@ class OpenCheckListApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         returned_ids = {item['id'] for item in self.unwrap_response_items(response)}
-        self.assertEqual(returned_ids, {str(submitted_order.id), str(ready_order.id)})
+        self.assertEqual(returned_ids, {str(open_order.id), str(submitted_order.id), str(ready_order.id)})
 
     def test_table_location_exposes_zone_only_when_restaurant_has_multiple_active_zones(self):
         first_session = self.create_table_session(zone_name='Asosiy zona', table_number=23)

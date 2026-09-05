@@ -9,6 +9,7 @@ class CashShift(BaseModel):
     class Status(models.TextChoices):
         OPEN = 'open', 'Open'
         CLOSED = 'closed', 'Closed'
+        RECONCILING = 'reconciling', 'Historical shift awaiting close evidence'
 
     cash_desk = models.ForeignKey('restaurants.CashDesk', on_delete=models.CASCADE, related_name='cash_shifts')
     cashier = models.ForeignKey(
@@ -48,6 +49,8 @@ class CashShift(BaseModel):
     close_report_payload = models.JSONField(default=dict, blank=True)
     notes_open = models.TextField(blank=True)
     notes_close = models.TextField(blank=True)
+    edge_close_sequence = models.PositiveBigIntegerField(null=True, blank=True)
+    reconciliation_payload = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ('-opened_at',)

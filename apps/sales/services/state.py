@@ -223,13 +223,15 @@ class OrderStateService:
         order_item.save(update_fields=['status', 'updated_at'])
         return replacement
 
-    def ensure_order_mutable(self, *, order: Order):
+    def ensure_order_mutable(self, *, order: Order, allow_paid_fulfillment=False):
         if order.status in {Order.Status.CLOSED, Order.Status.CANCELLED}:
             logger.warning(
                 'Rejected mutation for immutable order',
                 extra={'order_id': str(order.pk), 'order_status': order.status},
             )
             raise ValidationError({'detail': _('Closed or cancelled orders cannot be modified.')})
+        if not allow_paid_fulfillment and order.payments.filter(status='succeeded').exists():
+            raise ValidationError({'code': 'PAID_ORDER_REQUIRES_REFUND', 'detail': _('Paid order financial facts cannot be modified.')})
 
     def ensure_order_can_be_paid(self, *, order: Order):
         if order.status == Order.Status.CANCELLED:
@@ -258,7 +260,7 @@ class OrderStateService:
     def submit_order(self, *, order: Order):
         from apps.kitchen.services import dispatch_order_tickets, sync_order_tickets
 
-        self.ensure_order_mutable(order=order)
+        self.ensure_order_mutable(order=order, allow_paid_fulfillment=True)
         self.ensure_delivery_details(order=order)
         if order.status == Order.Status.OPEN:
             order.status = Order.Status.SUBMITTED
@@ -295,6 +297,8 @@ class OrderStateService:
         )
         if order.items.exclude(status=OrderItem.Status.CANCELLED).exists():
             return False
+        if order.payments.filter(status='succeeded').exists():
+            raise ValidationError({'code': 'PAID_ORDER_REQUIRES_REFUND', 'detail': _('A paid order cannot be discarded.')})
 
         if order.status == Order.Status.OPEN and not order.payments.exists():
             locked_restaurant = Restaurant.objects.select_for_update().get(pk=order.restaurant_id)
@@ -343,7 +347,7 @@ class OrderStateService:
         from apps.kitchen.models import KitchenTicket
         from apps.kitchen.services import sync_order_tickets
 
-        self.ensure_order_mutable(order=order)
+        self.ensure_order_mutable(order=order, allow_paid_fulfillment=True)
         now = timezone.now()
         served_count = order.items.filter(status='done').update(status='served', updated_at=now)
         if not served_count:

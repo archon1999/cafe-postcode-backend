@@ -1,7 +1,17 @@
 from unittest.mock import patch
+import json
+import uuid
 
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.test import APIClient
+from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
+from djangorestframework_camel_case.util import underscoreize
+from apps.local_agents.models import LocalAgent
+from apps.local_agents.tests_support import bind_agent_client
+from apps.integrations.models import IntegrationConfig
+from apps.billing.services import CashShiftService
 
 from apps.billing.models import CashShift, FiscalShiftSession, Payment, PaymentRefund, Receipt
 from apps.printing.models import PrintDocument
@@ -10,6 +20,44 @@ from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
 class CashierShiftApiTests(PosAPITestCase):
+    def setUp(self):
+        super().setUp()
+        agent, self.agent_token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant)
+        self.agent_client = APIClient()
+        self.agent_identity = bind_agent_client(self.agent_client, agent, self.agent_token)
+        fiscal = IntegrationConfig.objects.create(restaurant=self.restaurant, kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service', settings={'endpoint_url': 'http://127.0.0.1:3449'})
+        self.cash_desk.fiscal_integration = fiscal
+        self.cash_desk.save(update_fields=['fiscal_integration'])
+        self.close_evidence = None
+        self.browser_post = self.client.post
+        self.client.post = self.post_with_shift_projection
+
+    def post_with_shift_projection(self, path, data=None, **kwargs):
+        if path not in ['/api/v1/pos/billing/shifts/open/', '/api/v1/pos/billing/shifts/current/close/']:
+            return self.browser_post(path, data, **kwargs)
+        body = dict(data or {})
+        if path.endswith('/open/'):
+            body['edge_cash_shift_id'] = str(uuid.uuid4())
+        else:
+            shift = CashShift.objects.get(cash_desk=self.cash_desk, status=CashShift.Status.OPEN)
+            body['edge_cash_shift_id'] = str(shift.pk)
+            if self.close_evidence is not None:
+                body['edge_fiscal_result_json'] = json.dumps(self.close_evidence)
+        return self.project_operation(path, body)
+
+    def project_operation(self, path, body):
+        operation = {'operationId': 'shift-test:' + str(uuid.uuid4()), 'userId': str(self.user.pk),
+            'method': 'POST', 'path': path, 'body': body, 'occurredAt': timezone.now().isoformat()}
+        response = self.agent_client.post('/api/v1/local-agent/sync/mutations/', {'operations':[operation]},
+            format='json', HTTP_AUTHORIZATION=f'Bearer {self.agent_token}')
+        self.assertEqual(response.status_code, 200, response.data)
+        result = response.data['results'][0]
+        payload = underscoreize(result['body'])
+        if 'print_documents' in payload:
+            payload['printDocuments'] = payload.pop('print_documents')
+        return Response(payload, status=result['status'])
+
     def test_last_shift_cannot_close_while_orders_are_open(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id)
         Order.objects.create(
@@ -22,13 +70,10 @@ class CashierShiftApiTests(PosAPITestCase):
             status=Order.Status.SUBMITTED,
         )
 
-        response = self.client.post(
-            '/api/v1/pos/billing/shifts/current/close/', {}, format='json'
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
-        self.assertEqual(response.data['code'], 'CASH_SHIFT_HAS_OPEN_ORDERS')
-        self.assertEqual(int(response.data['openOrderCount']), 1)
+        with self.assertRaises(ValidationError) as error:
+            CashShiftService().ensure_shift_can_close(shift=CashShift.objects.get(cash_desk=self.cash_desk))
+        self.assertEqual(error.exception.detail['code'], 'CASH_SHIFT_HAS_OPEN_ORDERS')
+        self.assertEqual(int(error.exception.detail['openOrderCount']), 1)
         self.assertTrue(
             CashShift.objects.filter(cash_desk=self.cash_desk, status=CashShift.Status.OPEN).exists()
         )
@@ -163,7 +208,8 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(context_response.data['current_shift']['card_total'], 13000)
         self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 170000)
 
-    def test_close_last_cash_shift_always_closes_open_fiscal_shift(self):
+    def test_original_close_evidence_projects_both_shifts_without_device_rpc(self):
+        self.close_evidence = {'ok': True, 'provider': 'fiscal-drive-service', 'response': {'TerminalID': 'LG420'}}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
         FiscalShiftSession.objects.create(
             restaurant=self.restaurant,
@@ -186,6 +232,7 @@ class CashierShiftApiTests(PosAPITestCase):
                 format='json',
             )
 
+        close_fiscal.assert_not_called()
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertIn('fiscal_shift', response.data)
         self.assertEqual(len(response.data['printDocuments']), 1)
@@ -257,6 +304,7 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
 
     def test_close_fiscal_shift_with_unresolved_receipt_returns_clean_error(self):
+        self.close_evidence = {'ok': True, 'provider': 'fiscal-drive-service', 'response': {'TerminalID': 'LG420'}}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         FiscalShiftSession.objects.create(
             restaurant=self.restaurant,
@@ -300,10 +348,11 @@ class CashierShiftApiTests(PosAPITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('Fiscalga yuborilmagan', response.data['detail'])
-        self.assertIn('Yopilmagan hisoblar', response.data['detail'])
+        self.assertIn('Local Agent', response.data['detail'])
         self.assertEqual(int(response.data['unresolved_fiscal_count']), 1)
 
     def test_fiscal_close_failure_keeps_pos_shift_open(self):
+        self.close_evidence = {'ok': False, 'provider': 'fiscal-drive-service', 'detail': 'terminal offline'}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         FiscalShiftSession.objects.create(
             restaurant=self.restaurant,
@@ -326,7 +375,7 @@ class CashierShiftApiTests(PosAPITestCase):
             )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
-        self.assertIn('terminal offline', response.data['detail'])
+        self.assertIn('edge_fiscal_result', response.data)
         self.assertTrue(
             CashShift.objects.filter(
                 cash_desk=self.cash_desk, status=CashShift.Status.OPEN
@@ -338,7 +387,7 @@ class CashierShiftApiTests(PosAPITestCase):
             ).exists()
         )
 
-    def test_retry_fiscal_failure_returns_bad_request(self):
+    def test_browser_retry_requires_owner_and_never_calls_fiscal_device(self):
         order = Order.objects.create(
             restaurant=self.restaurant,
             branch=self.branch,
@@ -374,50 +423,28 @@ class CashierShiftApiTests(PosAPITestCase):
             ]
             response = self.client.post(f'/api/v1/pos/billing/payments/{payment.id}/retry-fiscal/')
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertEqual(response.data['detail'], 'Unikassa request failed: illegal request line')
-        self.assertFalse(response.data['results'][0]['ok'])
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'FINANCIAL_OWNER_UPGRADE_REQUIRED')
+        issue_fiscal.assert_not_called()
 
     def test_refund_and_print_document_endpoints_work_for_closed_paid_order(self):
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
-        order_payload = self.create_order_via_api({'channel': 'takeaway'})
-        self.add_item_via_api(order_payload['id'], quantity=1)
-
-        with (
-            patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue_fiscal,
-            patch('apps.billing.services.payment_refund.issue_refund_receipt') as refund_fiscal,
-        ):
-            issue_fiscal.return_value = [
-                {
-                    'ok': True,
-                    'provider': 'unikassa',
-                    'receipt_number': '1001',
-                    'response': {'ReceiptSeq': 1001},
-                    'split_reason': 'none',
-                }
-            ]
-            refund_fiscal.return_value = {
-                'ok': True,
-                'provider': 'unikassa',
-                'receipt_number': '1002',
-            }
-            order = Order.objects.get(pk=order_payload['id'])
-            payment_response = self.pay_order_via_api(order_payload['id'], method='cash', amount=order.total)
-            Receipt.objects.filter(pk=payment_response['receipt']['id']).delete()
-            print_document_response = self.client.post(
-                f"/api/v1/pos/billing/payments/{payment_response['payment']['id']}/print-document/"
-            )
-            self.assertEqual(print_document_response.status_code, status.HTTP_200_OK)
-            self.assertIsNotNone(print_document_response.data['receipt']['print_document'])
-            self.assertEqual(print_document_response.data['receipt']['kind'], Receipt.Kind.PLAIN)
-
-            refund_response = self.refund_payment_via_api(payment_response['payment']['id'], reason='Customer returned order')
-
-        order = Order.objects.get(pk=order_payload['id'])
+        shift = CashShift.objects.get(cash_desk=self.cash_desk)
+        order = Order.objects.create(restaurant=self.restaurant, distribution_point=self.takeaway_distribution,
+            opened_by=self.user, cashier=self.user, order_number=79, channel='takeaway', status='closed', total=40000)
+        payment = Payment.objects.create(order=order, cash_desk=self.cash_desk, cash_shift=shift,
+            received_by=self.user, method='cash', amount=40000, status='succeeded', register_fiscal=False, paid_at=timezone.now())
+        printed = self.client.post(f'/api/v1/pos/billing/payments/{payment.pk}/print-document/')
+        self.assertEqual(printed.status_code, 200, printed.data)
+        self.assertIsNotNone(printed.data['receipt']['print_document'])
+        with patch('apps.billing.services.payment_refund.issue_refund_receipt') as device_refund:
+            refunded = self.project_operation(f'/api/v1/pos/billing/{payment.pk}/refund/',
+                {'reason':'Customer returned order', 'edge_cash_shift_id':str(shift.pk), 'edge_refund_result':{'ok':True}})
+        self.assertEqual(refunded.status_code, 201, refunded.data)
+        device_refund.assert_not_called()
+        self.assertEqual(refunded.data['receipt']['kind'], Receipt.Kind.REFUND)
+        self.assertIsNotNone(refunded.data['receipt']['print_document'])
+        self.assertEqual(PaymentRefund.objects.filter(payment=payment, status='succeeded').count(), 1)
+        order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CLOSED)
-        self.assertEqual(refund_response['receipt']['kind'], Receipt.Kind.REFUND)
-        self.assertIsNotNone(refund_response['receipt']['print_document'])
-        self.assertTrue(
-            PaymentRefund.objects.filter(payment_id=payment_response['payment']['id'], status=PaymentRefund.Status.SUCCEEDED).exists()
-        )
 

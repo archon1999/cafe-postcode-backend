@@ -97,6 +97,8 @@ class LocalAgentCommand(BaseModel):
     timeout_seconds = models.PositiveIntegerField(default=30)
     sent_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
+    financial_operation_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
+    payload_hash = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ('-created_at',)
@@ -154,3 +156,40 @@ class LocalAgentMutationReceipt(BaseModel):
     class Meta:
         ordering = ('created_at',)
         indexes = [models.Index(fields=['restaurant', 'created_at'], name='agent_mut_rest_created_idx')]
+
+
+class LocalAgentMutationInbox(BaseModel):
+    """Durable received evidence; APPLIED is committed with the DB projection."""
+    class State(models.TextChoices):
+        RECEIVED = 'received', 'Received'
+        APPLIED = 'applied', 'Applied'
+        NEEDS_REVIEW = 'needs_review', 'Needs review'
+        CONFLICT = 'conflict', 'Conflict'
+
+    restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
+    operation_id = models.CharField(max_length=128, unique=True)
+    payload_hash = models.CharField(max_length=64)
+    operation = models.JSONField()
+    event_version = models.PositiveSmallIntegerField(default=1)
+    owner_epoch = models.CharField(max_length=128, blank=True)
+    sequence = models.PositiveBigIntegerField(null=True, blank=True)
+    depends_on = models.JSONField(default=list)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    state = models.CharField(max_length=20, choices=State.choices, default=State.RECEIVED)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    last_result = models.JSONField(default=dict)
+
+    class Meta:
+        indexes = [models.Index(fields=['restaurant', 'state'], name='agent_inbox_rest_state_idx')]
+        constraints = [models.UniqueConstraint(
+            fields=['restaurant', 'owner_epoch', 'sequence'],
+            condition=models.Q(sequence__isnull=False) & ~models.Q(owner_epoch=''),
+            name='agent_inbox_owner_sequence_uniq',
+        )]
+
+
+class LocalAgentMutationAttempt(BaseModel):
+    inbox = models.ForeignKey(LocalAgentMutationInbox, on_delete=models.PROTECT, related_name='attempts')
+    payload_hash = models.CharField(max_length=64)
+    operation = models.JSONField(default=dict)
+    result = models.JSONField(default=dict)

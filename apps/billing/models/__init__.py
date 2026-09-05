@@ -3,7 +3,7 @@ from .expense import CashExpense, ExpenseCategory
 from .fiscal_shift import FiscalShiftSession
 from .payment import Payment
 from .payment_refund import PaymentRefund
-from .receipt import Receipt
+from .receipt import Receipt, FiscalReceiptAttempt
 
 __all__ = [
     'CashExpense',
