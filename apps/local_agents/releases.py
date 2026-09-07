@@ -3,6 +3,7 @@ import json
 import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from rest_framework import status
@@ -42,11 +43,40 @@ def _validated_release_manifest(payload):
     size = payload.get('size')
     if not isinstance(size, int) or size <= 0 or size > 100 * 1024 * 1024:
         raise ValueError('Release manifest size is invalid.')
+    transport = payload.get('transport')
+    if transport is not None:
+        if not isinstance(transport, dict) or transport.get('encoding') != 'gzip':
+            raise ValueError('Unsupported release transport.')
+        compressed_size = transport.get('size')
+        if isinstance(compressed_size, bool) or not isinstance(compressed_size, int) or not 0 < compressed_size <= 100 * 1024 * 1024:
+            raise ValueError('Compressed release size is invalid.')
+        if not isinstance(transport.get('downloadUrl'), str) or not transport['downloadUrl'].startswith('https://'):
+            raise ValueError('Compressed release requires HTTPS.')
+        if not SHA256_PATTERN.fullmatch(str(transport.get('sha256') or '')):
+            raise ValueError('Compressed release digest is invalid.')
+        try:
+            compressed_signature = base64.b64decode(transport.get('signature', ''), validate=True)
+        except (ValueError, TypeError) as error:
+            raise ValueError('Compressed release signature is invalid.') from error
+        if len(compressed_signature) != 64:
+            raise ValueError('Compressed release signature is invalid.')
     return payload
 
 
-def fetch_release_manifest():
+def release_manifest_url(agent=None):
     manifest_url = str(getattr(settings, 'LOCAL_AGENT_RELEASE_MANIFEST_URL', '') or '').strip()
+    restaurant_id = str(getattr(agent, 'restaurant_id', '') or '')
+    canary_ids = getattr(settings, 'LOCAL_AGENT_CANARY_RESTAURANT_IDS', []) or []
+    if restaurant_id and restaurant_id in canary_ids:
+        manifest_url = str(getattr(settings, 'LOCAL_AGENT_CANARY_RELEASE_MANIFEST_URL', '') or '').strip()
+        parsed = urlsplit(manifest_url)
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ValueError('The selected canary channel requires its configured HTTPS manifest URL.')
+    return manifest_url
+
+
+def fetch_release_manifest(agent=None):
+    manifest_url = release_manifest_url(agent)
     if not manifest_url:
         return None
     request = Request(manifest_url, headers={'Accept': 'application/json', 'User-Agent': 'CafePostcodeBackend/1'})
@@ -82,7 +112,7 @@ def compare_release_versions(left, right):
 def agent_update_status(agent):
     current_version = str(getattr(agent, 'version', '') or '').strip()
     try:
-        manifest = fetch_release_manifest()
+        manifest = fetch_release_manifest(agent)
     except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError) as error:
         return {
             'status': 'unavailable',
@@ -118,10 +148,11 @@ class LocalAgentLatestReleaseView(APIView):
     throttle_classes = [LocalAgentRateThrottle]
 
     def get(self, request):
-        if authenticate_local_agent(request) is None:
+        agent = authenticate_local_agent(request)
+        if agent is None:
             return Response({'detail': 'Invalid local agent token.'}, status=status.HTTP_401_UNAUTHORIZED)
         try:
-            manifest = fetch_release_manifest()
+            manifest = fetch_release_manifest(agent)
         except (HTTPError, URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError) as error:
             return Response(
                 {'detail': 'Local Agent release manifest is temporarily unavailable.', 'error': str(error)},

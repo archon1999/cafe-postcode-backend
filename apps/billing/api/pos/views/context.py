@@ -188,21 +188,27 @@ class CashShiftCloseView(APIView):
 
         shift_service = self.shift_service_class()
         fiscal_shift_payload = None
+        fiscal_reconciliation = None
         print_report_error = ""
-        # Fiscal close is its own already-performed evidence event, enqueued
-        # before this close by the owner. Never perform a second physical close.
-        fiscal_result = FiscalShiftOpenView()._edge_provider_result(request=request, cash_desk=shift.cash_desk)
-        if fiscal_result is not None:
-            fiscal_shift_payload = shift_service.close_fiscal_shift(
-                restaurant=restaurant, cash_desk=shift.cash_desk, closed_by=request.user,
-                provider_result=fiscal_result,
-                occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None),
-                session_key=str((getattr(request._request, 'trusted_edge_envelope', {}) or {}).get('fiscalSessionId') or ''))
-        else:
-            fiscal_session = shift_service._get_active_fiscal_session(restaurant=restaurant, cash_desk=shift.cash_desk)
-            event_time = parse_payload_datetime(request.data.get('edge_cash_shift_closed_at')) or getattr(request._request, 'trusted_edge_occurred_at', None)
-            if fiscal_session is not None and (event_time is None or fiscal_session.opened_at <= event_time):
-                raise ValidationError({'code': 'FISCAL_CLOSE_DEPENDENCY_PENDING', 'detail': 'Apply the original fiscal-close evidence before finalizing this cash shift.'})
+        # Old owners embedded fiscal outcomes in cash-close envelopes. A failed
+        # fiscal projection stays in the immutable inbox and response audit; it
+        # does not invalidate the owner's completed business close.
+        try:
+            with transaction.atomic():
+                fiscal_result = FiscalShiftOpenView()._edge_provider_result(request=request, cash_desk=shift.cash_desk)
+                if fiscal_result is not None:
+                    fiscal_shift_payload = shift_service.close_fiscal_shift(
+                        restaurant=restaurant, cash_desk=shift.cash_desk, closed_by=request.user,
+                        provider_result=fiscal_result,
+                        occurred_at=getattr(request._request, 'trusted_edge_occurred_at', None),
+                        session_key=str((getattr(request._request, 'trusted_edge_envelope', {}) or {}).get('fiscalSessionId') or ''))
+        except (ValidationError, ValueError) as error:
+            fiscal_reconciliation = {
+                "state": "needs_review", "detail": str(error),
+                "source": "original_cash_close_envelope",
+            }
+        # An open, failed or delayed fiscal session does not control cash shifts.
+        # Legacy embedded success evidence above is still recorded independently.
         expected_snapshot = request.data.get('edge_close_snapshot')
         envelope = getattr(request._request, 'trusted_edge_envelope', {}) or {}
         if envelope.get('eventVersion') == 2 and not isinstance(expected_snapshot, dict):
@@ -247,6 +253,8 @@ class CashShiftCloseView(APIView):
             response_payload["printReportError"] = print_report_error
         if fiscal_shift_payload is not None:
             response_payload["fiscal_shift"] = fiscal_shift_payload
+        if fiscal_reconciliation is not None:
+            response_payload["fiscal_reconciliation"] = fiscal_reconciliation
         return Response(response_payload)
 
 

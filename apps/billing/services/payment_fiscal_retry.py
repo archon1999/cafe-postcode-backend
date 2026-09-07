@@ -74,6 +74,17 @@ class PaymentFiscalRetryService:
 
     @staticmethod
     def _response(payment, receipts, results):
+        from apps.printing.services import attach_receipt_print_document
+
+        for receipt in receipts:
+            if receipt.status == Receipt.Status.SENT and receipt.print_document_id is None:
+                # Recover only the printable copy from immutable stored evidence.
+                # An already registered receipt never triggers a device request.
+                attach_receipt_print_document(
+                    receipt=receipt,
+                    fiscal_result=receipt.payload or {},
+                    created_by=payment.received_by,
+                )
         return {
             "payment": payment,
             "receipt": receipts[0] if receipts else None,

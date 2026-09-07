@@ -27,3 +27,29 @@ def allocate_fiscal_totals(values, *, target_total: int) -> list[int]:
     for index in ranked[:remainder]:
         result[index] += 1
     return result
+
+
+def settled_order_lines(order):
+    """Canonical line ordering/allocation shared by fiscal and printed receipts."""
+    order_items = (
+        order.items.exclude(status=order.items.model.Status.CANCELLED)
+        .select_related('catalog_item', 'catalog_item__category').prefetch_related('modifiers')
+        .order_by('created_at', 'id')
+    )
+    order_items = list(order_items)
+    service_fee = max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
+    service_fee_components = [
+        component
+        for component in order.get_service_fee_components()
+        if int(component.get('amount') or 0) > 0
+    ]
+    if service_fee and not service_fee_components:
+        service_fee_components = [{'scope': 'service', 'amount': service_fee}]
+    adjusted_totals = allocate_fiscal_totals(
+        [
+            *(int(item.line_total or 0) for item in order_items),
+            *(int(component['amount']) for component in service_fee_components),
+        ],
+        target_total=int(order.total or 0),
+    )
+    return order_items, service_fee_components, adjusted_totals

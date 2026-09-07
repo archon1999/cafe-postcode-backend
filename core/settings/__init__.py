@@ -388,6 +388,8 @@ class CoreSettings(Settings):
         'LOCAL_AGENT_RELEASE_MANIFEST_URL',
         'https://admin.cafe-postcode.uz/downloads/local-agent-release.json',
     ).strip()
+    LOCAL_AGENT_CANARY_RELEASE_MANIFEST_URL = os.getenv('LOCAL_AGENT_CANARY_RELEASE_MANIFEST_URL', '').strip()
+    LOCAL_AGENT_CANARY_RESTAURANT_IDS = env_list('LOCAL_AGENT_CANARY_RESTAURANT_IDS', [])
 
     QZ_TRAY_CERTIFICATE_PEM = os.getenv('QZ_TRAY_CERTIFICATE_PEM', '').replace('\\n', '\n').strip()
     QZ_TRAY_PRIVATE_KEY_PEM = os.getenv('QZ_TRAY_PRIVATE_KEY_PEM', '').replace('\\n', '\n').strip()

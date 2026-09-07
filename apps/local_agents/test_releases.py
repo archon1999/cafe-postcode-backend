@@ -17,6 +17,7 @@ from apps.local_agents.admin_views import (
     LocalAgentFleetUpdateView,
 )
 from apps.local_agents.models import LocalAgent, LocalAgentMutationReceipt
+from apps.local_agents.tests_support import bind_agent_client
 from apps.local_agents.releases import compare_release_versions
 from apps.local_agents.views import LocalAgentDiagnosticsView, LocalAgentLogsView, LocalAgentUpdateNowView
 from apps.platform.models import RestaurantEntitlement
@@ -38,6 +39,7 @@ class LocalAgentReleaseTests(APITestCase):
     def setUp(self):
         restaurant = Restaurant.objects.create(name='Release Restaurant')
         _agent, self.token = LocalAgent.issue_for_restaurant(restaurant=restaurant)
+        bind_agent_client(self.client, _agent, self.token)
         self.manifest = {
             'schemaVersion': 1,
             'version': '0.6.0',

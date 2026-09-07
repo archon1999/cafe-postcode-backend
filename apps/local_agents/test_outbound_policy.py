@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TransactionTestCase
 
 from apps.devices.models import SecurityEvent
 from apps.integrations.models import IntegrationConfig
@@ -11,7 +11,7 @@ from apps.local_agents.services import LocalAgentCommandError, LocalAgentCommand
 from apps.restaurants.models import Restaurant
 
 
-class LocalAgentOutboundPolicyTests(TestCase):
+class LocalAgentOutboundPolicyTests(TransactionTestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='Policy Restaurant')
         self.other_restaurant = Restaurant.objects.create(name='Other Restaurant')

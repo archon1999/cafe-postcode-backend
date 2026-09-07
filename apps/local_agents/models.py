@@ -100,6 +100,8 @@ class LocalAgentCommand(BaseModel):
     financial_operation_id = models.CharField(max_length=128, unique=True, null=True, blank=True)
     payload_hash = models.CharField(max_length=64, blank=True)
 
+    requested_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='requested_agent_commands')
+
     class Meta:
         ordering = ('-created_at',)
         indexes = [
@@ -164,6 +166,7 @@ class LocalAgentMutationInbox(BaseModel):
         RECEIVED = 'received', 'Received'
         APPLIED = 'applied', 'Applied'
         NEEDS_REVIEW = 'needs_review', 'Needs review'
+        RESOLVED = 'resolved', 'Resolved without application'
         CONFLICT = 'conflict', 'Conflict'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)

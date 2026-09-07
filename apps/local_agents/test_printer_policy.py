@@ -3,7 +3,7 @@ import base64
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIRequestFactory, APITestCase
+from rest_framework.test import APITransactionTestCase, APIRequestFactory, APITestCase
 
 from apps.devices.models import SecurityEvent
 from apps.integrations.api.admin.serializers import IntegrationConfigSerializer
@@ -208,7 +208,7 @@ class PrinterCommandServicePolicyTests(TestCase):
         self.assertNotIn('169.254.169.254', str(event.metadata))
 
 
-class PrinterCheckViewPolicyTests(APITestCase):
+class PrinterCheckViewPolicyTests(APITransactionTestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='Printer View Restaurant')
         self.printer = IntegrationConfig.objects.create(

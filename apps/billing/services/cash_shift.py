@@ -402,7 +402,6 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
 
         if not trusted_edge_replay:
             self.ensure_shift_can_close(shift=shift)
-        self.ensure_no_unresolved_fiscal_payments(shift=shift)
         snapshot = self.build_shift_snapshot(shift=shift)
         expected = snapshot["expected_closing_cash_amount"]
         actual = (

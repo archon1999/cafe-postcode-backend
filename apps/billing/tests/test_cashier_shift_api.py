@@ -303,7 +303,7 @@ class CashierShiftApiTests(PosAPITestCase):
         shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
 
-    def test_close_fiscal_shift_with_unresolved_receipt_returns_clean_error(self):
+    def test_close_stores_confirmed_z_despite_unresolved_receipt(self):
         self.close_evidence = {'ok': True, 'provider': 'fiscal-drive-service', 'response': {'TerminalID': 'LG420'}}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         FiscalShiftSession.objects.create(
@@ -346,12 +346,14 @@ class CashierShiftApiTests(PosAPITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('Fiscalga yuborilmagan', response.data['detail'])
-        self.assertIn('Local Agent', response.data['detail'])
-        self.assertEqual(int(response.data['unresolved_fiscal_count']), 1)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        shift.refresh_from_db()
+        self.assertEqual(shift.status, CashShift.Status.CLOSED)
+        self.assertEqual(FiscalShiftSession.objects.get().status, FiscalShiftSession.Status.CLOSED)
+        self.assertFalse(Receipt.objects.exists())
+        self.assertTrue(Payment.objects.get().register_fiscal)
 
-    def test_fiscal_close_failure_keeps_pos_shift_open(self):
+    def test_legacy_fiscal_close_failure_is_retained_without_blocking_pos_shift(self):
         self.close_evidence = {'ok': False, 'provider': 'fiscal-drive-service', 'detail': 'terminal offline'}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=0)
         FiscalShiftSession.objects.create(
@@ -374,11 +376,12 @@ class CashierShiftApiTests(PosAPITestCase):
                 format='json',
             )
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
-        self.assertIn('edge_fiscal_result', response.data)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['fiscal_reconciliation']['state'], 'needs_review')
+        self.assertIn('edgeFiscalResult', response.data['fiscal_reconciliation']['detail'])
         self.assertTrue(
             CashShift.objects.filter(
-                cash_desk=self.cash_desk, status=CashShift.Status.OPEN
+                cash_desk=self.cash_desk, status=CashShift.Status.CLOSED
             ).exists()
         )
         self.assertTrue(

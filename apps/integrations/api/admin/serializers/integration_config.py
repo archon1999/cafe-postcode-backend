@@ -196,13 +196,14 @@ def _normalize_printer_output_modes(settings):
         raise serializers.ValidationError(
             {
                 "raster_font": (
-                    "Raster font must be go_mono, inter, noto_sans, or roboto_mono."
+                    "Raster font must be go_mono."
                 )
             }
         )
     normalized["print_mode"] = print_mode
     normalized["qr_mode"] = qr_mode
-    normalized["raster_font"] = raster_font
+    # Accept legacy names on old clients; all new jobs use the bundled family.
+    normalized["raster_font"] = "go_mono"
     return normalized
 
 

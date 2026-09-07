@@ -94,7 +94,7 @@ def receive_and_apply(*, agent, operation, apply):
             code="INVALID_SEQUENCE",
         )
     dependencies = metadata['dependsOn']
-    if not isinstance(dependencies, list) or any(
+    if not isinstance(dependencies, list) or len(dependencies) > 128 or any(
         not isinstance(item, str) or len(item) > 128 or item == operation_id
         for item in dependencies
     ):
@@ -183,27 +183,11 @@ def receive_and_apply(*, agent, operation, apply):
                 "inboxState": "conflict",
                 "payloadHash": digest,
             }
-        if inbox.state == LocalAgentMutationInbox.State.APPLIED:
+        if inbox.state in {LocalAgentMutationInbox.State.APPLIED, LocalAgentMutationInbox.State.RESOLVED}:
             return _metadata(inbox, {**inbox.last_result, "replayed": True})
-        present = set(
-            LocalAgentMutationInbox.objects.filter(
-                restaurant=agent.restaurant,
-                operation_id__in=dependencies,
-                state="applied",
-            ).values_list("operation_id", flat=True)
-        )
-        # Legacy successful mutation receipts remain valid causal dependencies.
-        from apps.local_agents.models import LocalAgentMutationReceipt
+        from apps.local_agents.mutation_dependencies import unresolved_dependencies
 
-        present.update(
-            LocalAgentMutationReceipt.objects.filter(
-                restaurant=agent.restaurant,
-                operation_id__in=dependencies,
-                response_status__gte=200,
-                response_status__lt=300,
-            ).values_list("operation_id", flat=True)
-        )
-        missing = [item for item in dependencies if item not in present]
+        missing, dependency_decisions = unresolved_dependencies(inbox, dependencies)
         if missing:
             result = mutation_error_result(
                 operation_id=operation_id,
@@ -240,6 +224,10 @@ def receive_and_apply(*, agent, operation, apply):
                     code="PROJECTION_RETRY",
                     retryable=True,
                 )
+        if dependency_decisions:
+            # The original depends_on, envelope and hash stay immutable. Each
+            # attempt records the evidence used for this projection decision.
+            result["dependencyReconciliation"] = dependency_decisions
         inbox.state = (
             "applied"
             if result.get("ok")

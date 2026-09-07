@@ -114,12 +114,8 @@ class FiscalShiftLifecycleMixin:
             }
         paid_at_from = session.opened_at if session is not None else None
         paid_at_to = occurred_at or timezone.now()
-        self.ensure_no_unresolved_fiscal_payments(
-            restaurant=restaurant,
-            cash_desk=cash_desk,
-            paid_at_from=paid_at_from,
-            paid_at_to=paid_at_to,
-        )
+        # This is a trusted fact from the physical owner, not a request to
+        # perform a close. Store it even while receipt accounting needs repair.
         report = self.build_fiscal_shift_report(
             restaurant=restaurant,
             cash_desk=cash_desk,

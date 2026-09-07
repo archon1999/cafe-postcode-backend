@@ -60,7 +60,7 @@ class IntegrationConfigSerializerTests(TestCase):
         settings = serializer.validated_data['settings']
         self.assertEqual(settings['print_mode'], 'raster')
         self.assertEqual(settings['qr_mode'], 'raster')
-        self.assertEqual(settings['raster_font'], 'noto_sans')
+        self.assertEqual(settings['raster_font'], 'go_mono')
         self.assertNotIn('printMode', settings)
         self.assertNotIn('qrMode', settings)
         self.assertNotIn('rasterFont', settings)

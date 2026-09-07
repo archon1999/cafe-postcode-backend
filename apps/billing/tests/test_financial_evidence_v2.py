@@ -118,7 +118,7 @@ class FinancialEvidenceTests(PosTestCase):
             self.shift.reconciliation_payload["lateOperationIds"],
         )
 
-    def test_unknown_fiscal_payment_stays_fiscal_and_blocks_close(self):
+    def test_unknown_fiscal_payment_stays_fiscal_after_pos_close(self):
         result = self.pay(
             [
                 {
@@ -132,10 +132,15 @@ class FinancialEvidenceTests(PosTestCase):
         self.assertTrue(result["payment"].register_fiscal)
         self.assertEqual(result["receipt"].status, Receipt.Status.UNKNOWN)
         self.assertFalse(Receipt.objects.filter(kind="plain").exists())
-        with self.assertRaises(ValidationError):
-            CashShiftService().close_shift(
-                shift=self.shift, actual_closing_cash_amount=None, closed_by=self.user
-            )
+        CashShiftService().close_shift(
+            shift=self.shift, actual_closing_cash_amount=None, closed_by=self.user
+        )
+        self.shift.refresh_from_db()
+        result["receipt"].refresh_from_db()
+        self.assertEqual(self.shift.status, CashShift.Status.CLOSED)
+        self.assertEqual(result["receipt"].status, Receipt.Status.UNKNOWN)
+        self.assertEqual(result["receipt"].payload["code"], "TIMEOUT")
+        self.assertEqual(Receipt.objects.count(), 1)
 
     def test_partial_initial_and_retry_success_are_always_preserved(self):
         failed = {

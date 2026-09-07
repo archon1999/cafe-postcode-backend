@@ -4,6 +4,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.floor.services import restaurant_has_multiple_active_zones, table_session_zone_name
+from apps.integrations.services.fiscal_total_allocation import settled_order_lines
 
 
 def _money(value) -> int:
@@ -23,8 +24,9 @@ def _included_vat(*, amount: int, percent) -> int:
     return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _service_fee_totals(order, *, as_of=None) -> dict:
-    components = order.get_service_fee_components(as_of=as_of)
+def _service_fee_totals(order, *, as_of=None, components=None) -> dict:
+    if components is None:
+        components = order.get_service_fee_components(as_of=as_of)
     by_scope = {component["scope"]: component for component in components}
 
     def value(scope: str, field: str, default=0):
@@ -153,11 +155,15 @@ def _print_item_values(item) -> tuple[dict, tuple, str]:
 
 
 def _aggregate_print_items(
-    queryset, *, vat_enabled=False, vat_percent=0, include_vat=False
+    queryset, *, vat_enabled=False, vat_percent=0, include_vat=False, settled_amounts=None
 ) -> list[dict]:
     aggregated = {}
-    for item in queryset.order_by("created_at"):
+    rows = queryset.order_by("created_at") if settled_amounts is None else queryset
+    for item in rows:
         values, modifier_signature, item_note = _print_item_values(item)
+        line_total = _money(item.line_total) if settled_amounts is None else settled_amounts[item.pk]
+        if line_total != _money(item.line_total) and item.quantity:
+            values["unitPrice"] = _json_number(Decimal(line_total) / Decimal(item.quantity))
         key = (
             str(item.catalog_item_id or values["name"]),
             modifier_signature,
@@ -171,13 +177,11 @@ def _aggregate_print_items(
         current["quantity"] = _json_number(
             Decimal(str(current["quantity"])) + Decimal(item.quantity or 0)
         )
-        current["lineTotal"] += _money(item.line_total)
+        current["lineTotal"] += line_total
         if include_vat:
-            current["vat"] = current.get("vat", 0) + (
-                _included_vat(amount=_money(item.line_total), percent=vat_percent)
-                if vat_enabled
-                else 0
-            )
+            scale = 100 if settled_amounts is not None else 1
+            line_vat = Decimal(_included_vat(amount=line_total * scale, percent=vat_percent)) / scale if vat_enabled else Decimal(0)
+            current["vat"] = _json_number(Decimal(str(current.get("vat", 0))) + line_vat)
             current["vatPercent"] = _json_number(vat_percent)
     return list(aggregated.values())
 
@@ -187,9 +191,9 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     payment = receipt.payment
     restaurant = order.restaurant
     table_name, table_number, hall_name, zone_name, zone_display = _table_parts(order)
-    active_items = order.items.exclude(
-        status=order.items.model.Status.CANCELLED
-    ).select_related("catalog_item").prefetch_related("modifiers")
+    active_items, components, allocated = settled_order_lines(order)
+    item_amounts = {item.pk: value for item, value in zip(active_items, allocated)}
+    components = [{**c, "amount": value} for c, value in zip(components, allocated[len(active_items):])]
     paid = order.payments.filter(status=payment.Status.SUCCEEDED).aggregate(
         amount=Sum("amount"),
         cash=Sum("cash_amount"),
@@ -199,8 +203,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
     cash_amount = _money(paid.get("cash"))
     card_amount = _money(paid.get("card"))
     total = _money(order.total)
-    subtotal = _money(order.subtotal)
-    calculated_total = _money(order.calculated_total)
+    subtotal = sum(allocated[:len(active_items)])
     vat_enabled = bool(getattr(restaurant, "vat_enabled", False))
     vat_percent = getattr(restaurant, "vat_percent", 0) or 0
     result = dict(fiscal_result or receipt.payload or {})
@@ -212,6 +215,7 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
         vat_enabled=vat_enabled,
         vat_percent=vat_percent,
         include_vat=True,
+        settled_amounts=item_amounts,
     )
 
     return {
@@ -264,17 +268,9 @@ def build_payment_print_snapshot(*, receipt, fiscal_result: dict | None = None) 
         },
         "totals": {
             "subtotal": subtotal,
-            "serviceFee": max(calculated_total - subtotal, 0),
-            **_service_fee_totals(order),
-            **(
-                {
-                    "calculatedTotal": calculated_total,
-                    "totalAdjustment": total - calculated_total,
-                }
-                if total != calculated_total
-                else {}
-            ),
-            "vat": _included_vat(amount=total, percent=vat_percent)
+            "serviceFee": sum(c["amount"] for c in components),
+            **_service_fee_totals(order, components=components),
+            "vat": _json_number(Decimal(sum(_included_vat(amount=value * 100, percent=vat_percent) for value in allocated)) / 100)
             if vat_enabled
             else 0,
             "vatPercent": _json_number(vat_percent),

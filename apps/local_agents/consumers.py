@@ -1,10 +1,12 @@
 import json
 import time
 import uuid
+from datetime import timedelta
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import OperationalError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.local_agents.lan import private_lan_endpoints
@@ -116,6 +118,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             }
         )
         await self._deliver_durable_terminal_revokes()
+        await self._deliver_support_commands()
 
     async def _deliver_pre_hello_recovery_command(self):
         command = await self._pre_hello_recovery_command()
@@ -175,6 +178,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
                 }
             )
             await self._deliver_durable_terminal_revokes()
+            await self._deliver_support_commands(force=False)
             return
         if message_type == 'command_result':
             if not await self._is_connection_authority():
@@ -235,6 +239,27 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             }
             for command in commands
         ]
+
+    async def _deliver_support_commands(self, *, force=True):
+        for command in await self._pending_support_commands(force=force):
+            await self.agent_command(command)
+
+    @database_sync_to_async
+    def _pending_support_commands(self, *, force=True):
+        agent = LocalAgent.objects.get(pk=self.agent.pk)
+        if 'support_commands_v1' not in (agent.capabilities or []):
+            return []
+        commands = LocalAgentCommand.objects.filter(
+            agent=agent, command_type='support.execute',
+        ).filter(
+            Q(status__in=['pending', 'sent', 'timed_out']) |
+            Q(status='succeeded', result__status='running')
+        )
+        if not force:
+            commands = commands.filter(Q(sent_at__isnull=True) | Q(sent_at__lt=timezone.now() - timedelta(seconds=30)))
+        commands = commands.order_by('created_at')[:20]
+        return [{'command_id': str(command.pk), 'command_type': command.command_type,
+                 'payload': command.payload} for command in commands]
 
     @database_sync_to_async
     def _pos_device_state(self):
@@ -362,7 +387,11 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _mark_command_sent(self, command_id):
         _with_database_lock_retry(
-            lambda: LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).exclude(status=LocalAgentCommand.Status.SUCCEEDED).update(
+            lambda: LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).filter(
+                Q(status__in=['pending', 'sent', 'timed_out']) |
+                Q(command_type='support.execute', status='succeeded', result__status='running') |
+                (~Q(command_type='support.execute') & ~Q(status='succeeded'))
+            ).update(
                 status=LocalAgentCommand.Status.SENT,
                 sent_at=timezone.now(),
                 updated_at=timezone.now(),
@@ -376,6 +405,32 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         result = content.get('result') if isinstance(content.get('result'), dict) else {}
         error = content.get('error') if isinstance(content.get('error'), dict) else {}
         command = LocalAgentCommand.objects.filter(pk=command_id, agent=self.agent).only('command_type').first()
+        if command is not None and command.command_type == 'support.execute':
+            from apps.local_agents.sanitization import sanitize_support_result
+            result = sanitize_support_result(result)
+            error = sanitize_support_result(error)
+            def persist_support_result():
+                with transaction.atomic():
+                    current = LocalAgentCommand.objects.select_for_update().get(pk=command.pk)
+                    stored_status = (current.result or {}).get('status')
+                    # A late in-flight response cannot replace the durable outcome.
+                    if stored_status in {'succeeded', 'failed', 'unknown'}:
+                        return
+                    status = result.get('status')
+                    if ok and (
+                        result.get('requestId') != str(current.pk) or
+                        result.get('name') != (current.payload or {}).get('name') or
+                        status not in {'running', 'succeeded', 'failed', 'unknown'}
+                    ):
+                        return
+                    running = ok and status == 'running'
+                    current.status = (LocalAgentCommand.Status.SENT if running else
+                                      LocalAgentCommand.Status.SUCCEEDED if ok else LocalAgentCommand.Status.FAILED)
+                    current.result, current.error = result, error
+                    current.completed_at = None if running else timezone.now()
+                    current.save(update_fields=['status', 'result', 'error', 'completed_at', 'updated_at'])
+            _with_database_lock_retry(persist_support_result)
+            return
         if command is not None and command.command_type == 'agent.logs':
             result = sanitize_remote_logs_result(result)
         _with_database_lock_retry(

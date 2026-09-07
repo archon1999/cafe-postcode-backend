@@ -1,6 +1,7 @@
 from rest_framework import status
 
 from apps.local_agents.models import LocalAgent
+from apps.local_agents.tests_support import bind_agent_client
 from apps.sales.models import Order
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
@@ -12,6 +13,7 @@ class LocalAgentBulkMutationTests(PosAPITestCase):
             restaurant=self.restaurant,
             name='Site coordinator',
         )
+        bind_agent_client(self.client, _agent, self.token)
 
     def test_weighted_order_items_are_allowed_through_agent_replay(self):
         self.catalog_item.sale_unit = 'kg'

@@ -26,3 +26,15 @@ def sanitize_remote_logs_result(result):
         'lines': [sanitize_remote_text(line) for line in lines[-100:]],
         'detail': sanitize_remote_text(result.get('detail')),
     }
+
+
+def sanitize_support_result(value):
+    if isinstance(value, dict):
+        return {key: '[REDACTED]' if any(word in key.lower() for word in (
+            'password', 'token', 'secret', 'authorization', 'privatekey', 'pinhash',
+        )) else sanitize_support_result(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [sanitize_support_result(item) for item in value[:500]]
+    if isinstance(value, str):
+        return sanitize_remote_text(value)
+    return value

@@ -502,7 +502,7 @@ class LocalAgentPrintDocumentTests(APITestCase):
         self.assertEqual(printer['paperWidthMm'], 80)
         self.assertEqual(printer['printMode'], 'raster')
         self.assertEqual(printer['qrMode'], 'raster')
-        self.assertEqual(printer['rasterFont'], 'inter')
+        self.assertEqual(printer['rasterFont'], 'go_mono')
 
     def test_agent_cannot_fetch_another_restaurants_document(self):
         ensure_restaurant_templates(restaurant=self.foreign_restaurant)

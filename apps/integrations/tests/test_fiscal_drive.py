@@ -152,6 +152,9 @@ class FiscalDriveIntegrationTests(PosTestCase):
         )
 
     def test_issue_receipt_sends_each_service_fee_component_as_separate_mxik_item(self):
+        # Configure fees before settlement; paid orders intentionally freeze totals.
+        self.payment.status = Payment.Status.PENDING
+        self.payment.save(update_fields=['status'])
         self.order.hall_service_fee_percent = 3
         self.order.table_service_fee_percent = 2
         self.order.save(update_fields=['hall_service_fee_percent', 'table_service_fee_percent', 'updated_at'])
@@ -160,7 +163,8 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.payment.amount = self.order.total
         self.payment.cash_amount = self.order.total
         self.payment.fiscal_cash_amount = self.order.total
-        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'updated_at'])
+        self.payment.status = Payment.Status.SUCCEEDED
+        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'status', 'updated_at'])
         assertions = {}
 
         def client_factory(*args, **kwargs):
@@ -186,6 +190,8 @@ class FiscalDriveIntegrationTests(PosTestCase):
             self.assertEqual(item['Units'], 796)
 
     def test_issue_receipt_sends_hall_and_table_fees_without_restaurant_fee(self):
+        self.payment.status = Payment.Status.PENDING
+        self.payment.save(update_fields=['status'])
         self.order.restaurant_service_fee_percent = 0
         self.order.hall_service_fee_percent = 3
         self.order.table_service_fee_percent = 2
@@ -202,7 +208,8 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.payment.amount = self.order.total
         self.payment.cash_amount = self.order.total
         self.payment.fiscal_cash_amount = self.order.total
-        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'updated_at'])
+        self.payment.status = Payment.Status.SUCCEEDED
+        self.payment.save(update_fields=['amount', 'cash_amount', 'fiscal_cash_amount', 'status', 'updated_at'])
         assertions = {}
 
         def client_factory(*args, **kwargs):

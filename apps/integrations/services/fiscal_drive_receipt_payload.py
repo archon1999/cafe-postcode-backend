@@ -1,9 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from apps.sales.models import OrderItem
-
 from .fiscal_drive_types import FiscalDriveError
-from .fiscal_total_allocation import allocate_fiscal_totals
+from .fiscal_total_allocation import settled_order_lines
 
 
 SERVICE_FEE_SPIC = '10202002003000001'
@@ -51,27 +49,7 @@ class FiscalDriveReceiptPayloadMixin:
     def _build_sale_items(self, *, order) -> list[dict]:
         items = []
         vat_percent = self._vat_percent(order=order)
-        order_items = (
-            order.items.exclude(status=OrderItem.Status.CANCELLED)
-            .select_related('catalog_item', 'catalog_item__category')
-            .order_by('created_at', 'id')
-        )
-        order_items = list(order_items)
-        service_fee = max(int(order.calculated_total or 0) - int(order.subtotal or 0), 0)
-        service_fee_components = [
-            component
-            for component in order.get_service_fee_components()
-            if int(component.get('amount') or 0) > 0
-        ]
-        if service_fee and not service_fee_components:
-            service_fee_components = [{'scope': 'service', 'amount': service_fee}]
-        adjusted_totals = allocate_fiscal_totals(
-            [
-                *(int(item.line_total or 0) for item in order_items),
-                *(int(component['amount']) for component in service_fee_components),
-            ],
-            target_total=int(order.total or 0),
-        )
+        order_items, service_fee_components, adjusted_totals = settled_order_lines(order)
         for item, fiscal_line_total in zip(order_items, adjusted_totals):
             item_payload = {
                 'Name': str(getattr(item.catalog_item, 'name', '') or item.catalog_item.mxik_name or 'Item')[:128],

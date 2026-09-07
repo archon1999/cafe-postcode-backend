@@ -105,7 +105,7 @@ def _printer_route(document: PrintDocument) -> dict:
                 'raster_font',
                 'rasterFont',
                 default='go_mono',
-                allowed={'go_mono', 'inter', 'noto_sans', 'roboto_mono'},
+                allowed={'go_mono'},
             ),
             'codePage': coerce_int(code_page, default=46, minimum=0, maximum=255) if code_page is not None else None,
             'escposEnabled': coerce_bool(

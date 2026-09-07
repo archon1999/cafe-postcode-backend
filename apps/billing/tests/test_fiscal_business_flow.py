@@ -5,7 +5,8 @@ import httpx
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.billing.models import FiscalShiftSession, Payment, Receipt
+from apps.billing.models import FiscalShiftSession, Payment, Receipt, FiscalReceiptAttempt
+from apps.billing.services.financial_authority import FinancialAgentRequired
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.integrations.models import IntegrationConfig
@@ -197,79 +198,54 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(session.terminal_id, "TERM-1")
         self.assertTrue(session.open_payload["recovered_from_trusted_close"])
 
-    def test_retry_partial_split_sends_only_failed_split_reason(self):
+    def test_retry_records_only_original_failed_split_without_device_rpc(self):
         order = self.create_closed_order()
         payment = self.create_success_payment(order=order)
-        Receipt.objects.create(
-            order=order,
-            payment=payment,
-            kind=Receipt.Kind.FISCAL,
+        sent = Receipt.objects.create(
+            order=order, payment=payment, kind=Receipt.Kind.FISCAL,
             status=Receipt.Status.SENT,
             payload={'split_reason': 'mixed_cash_allowed_items', 'ok': True},
         )
         failed_receipt = Receipt.objects.create(
-            order=order,
-            payment=payment,
-            kind=Receipt.Kind.FISCAL,
+            order=order, payment=payment, kind=Receipt.Kind.FISCAL,
             status=Receipt.Status.FAILED,
             payload={'split_reason': 'cash_forbidden_category', 'ok': False},
         )
-
+        evidence = {
+            'ok': True, 'provider': 'fiscal-drive-service',
+            'terminal_id': 'LG420', 'receipt_number': '1002',
+            'split_reason': 'cash_forbidden_category',
+            'fiscal_registered_at': timezone.now().isoformat(),
+        }
         with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue:
-            issue.return_value = [
-                {
-                    'ok': True,
-                    'provider': 'unikassa',
-                    'split_reason': 'cash_forbidden_category',
-                    'fiscal_requested_at': timezone.now().isoformat(),
-                    'fiscal_registered_at': timezone.now().isoformat(),
-                }
-            ]
-            result = PaymentFiscalRetryService().retry(payment=payment)
-
-        issue.assert_called_once_with(
-            order=order,
-            payment=payment,
-            split_reasons=['cash_forbidden_category'],
-        )
+            result = PaymentFiscalRetryService().retry(payment=payment, fiscal_results=[evidence])
+        issue.assert_not_called()
         failed_receipt.refresh_from_db()
+        sent.refresh_from_db()
         self.assertEqual(failed_receipt.status, Receipt.Status.SENT)
-        self.assertEqual(len(result['receipts']), 1)
+        self.assertEqual(sent.payload, {'split_reason': 'mixed_cash_allowed_items', 'ok': True})
+        self.assertEqual([r.pk for r in result['receipts']], [failed_receipt.pk])
+        self.assertEqual(Receipt.objects.filter(payment=payment).count(), 2)
 
-    def test_retry_failed_result_keeps_existing_receipt_unchanged(self):
+    def test_retry_without_owner_evidence_keeps_existing_receipt_unchanged(self):
         order = self.create_closed_order()
         payment = self.create_success_payment(order=order)
         failed_receipt = Receipt.objects.create(
-            order=order,
-            payment=payment,
-            kind=Receipt.Kind.FISCAL,
-            status=Receipt.Status.FAILED,
-            payload={'ok': False, 'detail': 'old error'},
-            fiscal_error_code='OLD',
-            fiscal_error_message='old error',
+            order=order, payment=payment, kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.FAILED, payload={'ok': False, 'detail': 'old error'},
+            fiscal_error_code='OLD', fiscal_error_message='old error',
         )
         original_updated_at = failed_receipt.updated_at
-
         with patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue:
-            issue.return_value = [
-                {
-                    'ok': False,
-                    'provider': 'fiscal-drive-service',
-                    'code': 'NEW',
-                    'detail': 'new error',
-                    'fiscal_requested_at': timezone.now().isoformat(),
-                }
-            ]
-            result = PaymentFiscalRetryService().retry(payment=payment)
-
+            with self.assertRaises(FinancialAgentRequired):
+                PaymentFiscalRetryService().retry(payment=payment)
+        issue.assert_not_called()
         failed_receipt.refresh_from_db()
         self.assertEqual(failed_receipt.status, Receipt.Status.FAILED)
         self.assertEqual(failed_receipt.payload, {'ok': False, 'detail': 'old error'})
         self.assertEqual(failed_receipt.fiscal_error_code, 'OLD')
-        self.assertEqual(failed_receipt.fiscal_error_message, 'old error')
         self.assertEqual(failed_receipt.updated_at, original_updated_at)
-        self.assertEqual(result['receipts'], [])
-        self.assertEqual(result['result']['code'], 'NEW')
+        self.assertFalse(FiscalReceiptAttempt.objects.exists())
 
     def test_unikassa_split_issue_preserves_partial_success_result(self):
         order = self.create_closed_order()
@@ -653,33 +629,20 @@ class FiscalBusinessFlowTests(PosTestCase):
         self.assertEqual(result['provider_report']['z_info']['TotalSaleCount'], 2)
         self.assertEqual(result['provider_report']['fiscal_memory']['ZReportsCount'], 4)
 
-    def test_cash_shift_close_blocks_unresolved_fiscal_payment(self):
+    def test_cash_shift_close_keeps_unresolved_fiscal_payment_for_reconciliation(self):
         shift = self.create_cash_shift()
         order = self.create_closed_order()
         payment = self.create_success_payment(order=order, shift=shift)
-
-        with self.assertRaises(ValidationError):
-            self.shift_service.close_shift(
-                shift=shift,
-                actual_closing_cash_amount=30000,
-                closed_by=self.user,
-            )
-
-        Receipt.objects.create(
-            order=order,
-            payment=payment,
-            kind=Receipt.Kind.FISCAL,
-            status=Receipt.Status.SENT,
-            payload={'ok': True},
-        )
         self.shift_service.close_shift(
-            shift=shift,
-            actual_closing_cash_amount=30000,
-            closed_by=self.user,
+            shift=shift, actual_closing_cash_amount=30000, closed_by=self.user,
         )
         shift.refresh_from_db()
+        payment.refresh_from_db()
         self.assertEqual(shift.status, shift.Status.CLOSED)
         self.assertEqual(shift.close_report_payload['report']['pos_report']['TotalSaleCount'], 1)
+        self.assertTrue(payment.register_fiscal)
+        self.assertFalse(Receipt.objects.filter(payment=payment).exists())
+        self.assertTrue(self.shift_service.get_unresolved_fiscal_payments_queryset(shift=shift).filter(pk=payment.pk).exists())
 
     def test_fiscal_shift_close_report_uses_session_period_across_shifts(self):
         first_shift = self.create_cash_shift()
@@ -711,8 +674,9 @@ class FiscalBusinessFlowTests(PosTestCase):
         )
 
         with patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift:
-            open_shift.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
-            self.shift_service.open_fiscal_shift(restaurant=self.restaurant, opened_by=self.user)
+            self.shift_service.open_fiscal_shift(restaurant=self.restaurant, opened_by=self.user,
+                provider_result={'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}})
+        open_shift.assert_not_called()
 
         session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
         first_payment.paid_at = session.opened_at
@@ -721,8 +685,9 @@ class FiscalBusinessFlowTests(PosTestCase):
         second_payment.save(update_fields=['paid_at', 'updated_at'])
 
         with patch('apps.billing.services.cash_shift.close_fiscal_shift') as close_shift:
-            close_shift.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
-            payload = self.shift_service.close_fiscal_shift(restaurant=self.restaurant, closed_by=self.user)
+            payload = self.shift_service.close_fiscal_shift(restaurant=self.restaurant, closed_by=self.user,
+                provider_result={'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}})
+        close_shift.assert_not_called()
 
         self.assertEqual(payload['report']['all']['count'], 2)
         self.assertEqual(payload['report']['all']['total'], 30000)
@@ -753,106 +718,79 @@ class FiscalBusinessFlowTests(PosTestCase):
         open_shift.assert_not_called()
         self.assertFalse(FiscalShiftSession.objects.filter(restaurant=self.restaurant).exists())
 
-    def test_first_fiscal_payment_auto_opens_fiscal_shift(self):
+    def test_fiscal_payment_requires_owner_and_does_not_open_device_from_backend(self):
         shift = self.create_cash_shift()
         order = self.create_open_order_with_item(order_number=501)
-
         with (
             patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
             patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
         ):
-            open_shift.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
-            issue.return_value = [
-                {
-                    'ok': True,
-                    'provider': 'unikassa',
-                    'receipt_number': '1001',
-                    'fiscal_requested_at': timezone.now().isoformat(),
-                    'fiscal_registered_at': timezone.now().isoformat(),
-                }
-            ]
-            result = OrderPaymentService().process(
-                order=order,
-                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
-                received_by=self.user,
-                cash_shift=shift,
-            )
+            with self.assertRaises(FinancialAgentRequired):
+                OrderPaymentService().process(
+                    order=order,
+                    payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
+                    received_by=self.user, cash_shift=shift,
+                )
+        open_shift.assert_not_called()
+        issue.assert_not_called()
+        self.assertFalse(Payment.objects.filter(order=order).exists())
+        self.assertFalse(FiscalShiftSession.objects.filter(restaurant=self.restaurant).exists())
 
-        open_shift.assert_called_once_with(restaurant=self.restaurant, cash_desk=None)
-        self.assertEqual(result['receipt'].status, Receipt.Status.SENT)
-        session = FiscalShiftSession.objects.get(restaurant=self.restaurant)
-        self.assertIsNone(session.cash_desk_id)
-        self.assertEqual(session.status, FiscalShiftSession.Status.OPEN)
-
-    def test_failed_fiscal_payment_becomes_precheck_and_does_not_block_shift_close(self):
+    def test_failed_fiscal_payment_remains_fiscal_and_does_not_block_shift_close(self):
         shift = self.create_cash_shift()
         order = self.create_open_order_with_item(order_number=511)
-        self.restaurant.name = 'NYU YORK'
-        self.restaurant.address = 'Beruniy'
-        self.restaurant.phone = '+998901234567'
-        self.restaurant.save(update_fields=['name', 'address', 'phone', 'updated_at'])
-
+        integration = IntegrationConfig.objects.create(
+            restaurant=self.restaurant, kind='fiscal', provider='fiscal-drive-service',
+        )
+        self.cash_desk.fiscal_integration = integration
+        self.cash_desk.save(update_fields=['fiscal_integration'])
         with (
             patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
             patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
         ):
-            open_shift.return_value = {'ok': True, 'provider': 'unikassa'}
-            issue.return_value = [
-                {
-                    'ok': False,
-                    'provider': 'fiscal-drive-service',
-                    'detail': 'Fiscal drive is locked.',
-                }
-            ]
             result = OrderPaymentService().process(
-                order=order,
-                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
-                received_by=self.user,
-                cash_shift=shift,
+                order=order, received_by=self.user, cash_shift=shift, trusted_edge_replay=True,
+                payload={'method': 'cash', 'amount': order.total, 'register_fiscal': True,
+                    'edge_operation_id': 'original-failed-fiscal-sale',
+                    'edge_fiscal_results': [{'ok': False, 'provider': 'fiscal-drive-service',
+                        'definitive': True, 'detail': 'Fiscal drive is locked.'}]},
             )
-
+        open_shift.assert_not_called()
+        issue.assert_not_called()
         payment = result['payment']
-        payment.refresh_from_db()
         order.refresh_from_db()
         self.assertEqual(order.status, Order.Status.CLOSED)
         self.assertEqual(payment.status, Payment.Status.SUCCEEDED)
-        self.assertFalse(payment.register_fiscal)
-        self.assertEqual(
-            payment.fiscal_adjustment_reason,
-            'Fiscal registration failed; stored as precheck.',
-        )
-        self.assertEqual(result['receipt'].kind, Receipt.Kind.PLAIN)
-        self.assertEqual(result['receipt'].status, Receipt.Status.CREATED)
-        self.assertEqual(result['receipts'], [result['receipt']])
-        self.assertIsNotNone(result['receipt'].print_document_id)
-        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.FISCAL).exists())
-        self.shift_service.ensure_no_unresolved_fiscal_payments(shift=shift)
+        self.assertTrue(payment.register_fiscal)
+        self.assertEqual(result['receipt'].kind, Receipt.Kind.FISCAL)
+        self.assertEqual(result['receipt'].status, Receipt.Status.FAILED)
+        self.assertFalse(Receipt.objects.filter(payment=payment, kind=Receipt.Kind.PLAIN).exists())
+        self.shift_service.close_shift(shift=shift, actual_closing_cash_amount=30000, closed_by=self.user)
+        shift.refresh_from_db()
+        self.assertEqual(shift.status, shift.Status.CLOSED)
+        self.assertEqual(result['receipt'].payload['detail'], 'Fiscal drive is locked.')
 
-    def test_second_fiscal_payment_reuses_open_fiscal_shift(self):
-        FiscalShiftSession.objects.create(
-            restaurant=self.restaurant,
-            opened_by=self.user,
-            status=FiscalShiftSession.Status.OPEN,
-            provider='unikassa',
-            terminal_id='LG420',
-            opened_at=timezone.now(),
+    def test_fiscal_payment_without_owner_does_not_change_existing_session(self):
+        session = FiscalShiftSession.objects.create(
+            restaurant=self.restaurant, opened_by=self.user,
+            status=FiscalShiftSession.Status.OPEN, provider='unikassa',
+            terminal_id='LG420', opened_at=timezone.now(),
         )
         shift = self.create_cash_shift()
         order = self.create_open_order_with_item(order_number=502)
-
         with (
             patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
             patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
         ):
-            issue.return_value = [{'ok': True, 'provider': 'unikassa'}]
-            OrderPaymentService().process(
-                order=order,
-                payload={'method': Payment.Method.CASH, 'amount': order.total, 'register_fiscal': True},
-                received_by=self.user,
-                cash_shift=shift,
-            )
-
+            with self.assertRaises(FinancialAgentRequired):
+                OrderPaymentService().process(order=order,
+                    payload={'method': 'cash', 'amount': order.total, 'register_fiscal': True},
+                    received_by=self.user, cash_shift=shift)
         open_shift.assert_not_called()
+        issue.assert_not_called()
+        session.refresh_from_db()
+        self.assertEqual(session.status, FiscalShiftSession.Status.OPEN)
+        self.assertEqual(FiscalShiftSession.objects.count(), 1)
 
     def test_fiscal_skipped_payment_does_not_open_fiscal_shift(self):
         permission, _ = Permission.objects.get_or_create(
@@ -879,20 +817,18 @@ class FiscalBusinessFlowTests(PosTestCase):
         issue.assert_not_called()
         self.assertFalse(FiscalShiftSession.objects.filter(restaurant=self.restaurant).exists())
 
-    def test_fiscal_retry_auto_opens_fiscal_shift(self):
+    def test_fiscal_retry_requires_owner_evidence_without_opening_session(self):
         order = self.create_closed_order(order_number=504)
         payment = self.create_success_payment(order=order)
-
         with (
             patch('apps.billing.services.cash_shift.open_fiscal_shift') as open_shift,
             patch('apps.billing.services.order_payment.issue_fiscal_receipts') as issue,
         ):
-            open_shift.return_value = {'ok': True, 'provider': 'unikassa', 'response': {'TerminalID': 'LG420'}}
-            issue.return_value = [{'ok': True, 'provider': 'unikassa'}]
-            PaymentFiscalRetryService().retry(payment=payment)
-
-        open_shift.assert_called_once_with(restaurant=self.restaurant, cash_desk=None)
-        self.assertTrue(FiscalShiftSession.objects.filter(restaurant=self.restaurant, status=FiscalShiftSession.Status.OPEN).exists())
+            with self.assertRaises(FinancialAgentRequired):
+                PaymentFiscalRetryService().retry(payment=payment)
+        open_shift.assert_not_called()
+        issue.assert_not_called()
+        self.assertFalse(FiscalShiftSession.objects.filter(restaurant=self.restaurant).exists())
 
     def test_fiscal_retry_converts_plain_payment_to_fiscal_payment(self):
         order = self.create_closed_order(order_number=505)
@@ -912,8 +848,11 @@ class FiscalBusinessFlowTests(PosTestCase):
                     'fiscal_registered_at': timezone.now().isoformat(),
                 }
             ]
-            result = PaymentFiscalRetryService().retry(payment=payment)
+            issue.return_value[0]['terminal_id'] = 'LG420'
+            result = PaymentFiscalRetryService().retry(payment=payment, fiscal_results=issue.return_value)
 
+        open_shift.assert_not_called()
+        issue.assert_not_called()
         payment.refresh_from_db()
         self.assertTrue(payment.register_fiscal)
         self.assertEqual(result['receipt'].status, Receipt.Status.SENT)

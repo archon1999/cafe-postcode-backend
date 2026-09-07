@@ -8,7 +8,7 @@ from datetime import timedelta
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from channels.testing import WebsocketCommunicator
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -160,6 +160,8 @@ class LocalAgentConnectionLeaseTests(TransactionTestCase):
         self.assertEqual(second.displaced_channel_name, 'socket-1')
 
 
+@override_settings(DJANGO_PRODUCTION=False, DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED=True,
+                   DEVICE_LEGACY_MIGRATION_STARTED_AT='', DEVICE_LEGACY_MIGRATION_DEADLINE='')
 class LocalAgentAuthoritativeWebSocketTests(TransactionTestCase):
     reset_sequences = True
 
