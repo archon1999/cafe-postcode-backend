@@ -28,6 +28,8 @@ ORDERING_FIELDS = {
     'lastSeenAt': 'last_seen_at',
 }
 REMOTE_ACTIONS = {
+    'diagnostics': ('agent.diagnostics', 'runtime_diagnostics', 25),
+    'repair_storage': ('agent.repair_storage', 'storage_repair', 25),
     'update': ('agent.update_now', 'auto_update', 8),
     'refresh_context': ('agent.refresh_context', 'context_refresh', 30),
     'restart': ('agent.restart', 'remote_restart', 8),

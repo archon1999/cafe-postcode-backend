@@ -440,3 +440,27 @@ class LocalAgentAdminMonitoringTests(APITestCase):
         self.assertEqual(response.data['succeeded'], 1)
         self.assertEqual(service.calls[0]['command_type'], 'agent.repair_autostart')
         self.assertEqual(service.calls[0]['payload'], {})
+
+    def test_runtime_maintenance_requires_capability_and_never_forwards_shell(self):
+        for action, command, capability in [
+            ('diagnostics', 'agent.diagnostics', 'runtime_diagnostics'),
+            ('repair_storage', 'agent.repair_storage', 'storage_repair'),
+        ]:
+            with self.subTest(action=action):
+                service = _SuccessfulAgentCommandService()
+                self.agent.capabilities = []
+                self.agent.save(update_fields=['capabilities'])
+                with patch.object(LocalAgentFleetBulkActionView, 'command_service_class', return_value=service):
+                    denied = self.client.post('/api/v1/admin/local-agents/bulk-action/',
+                        {'action': action, 'agentIds': [str(self.agent.id)]}, format='json')
+                    self.assertEqual(denied.data['succeeded'], 0)
+                    self.assertEqual(service.calls, [])
+                    self.agent.capabilities = [capability]
+                    self.agent.save(update_fields=['capabilities'])
+                    response = self.client.post('/api/v1/admin/local-agents/bulk-action/',
+                        {'action': action, 'agentIds': [str(self.agent.id)], 'command': 'whoami',
+                         'path': 'C:/Windows'}, format='json')
+                self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+                self.assertEqual(response.data['succeeded'], 1, response.data)
+                self.assertEqual(service.calls[0]['command_type'], command)
+                self.assertEqual(service.calls[0]['payload'], {})
