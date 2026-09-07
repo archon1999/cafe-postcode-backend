@@ -145,7 +145,11 @@ class OrderItemDetailView(generics.RetrieveUpdateDestroyAPIView):
             and original_ticket.routed_via
             in (KitchenTicket.RouteMode.PRINTER, KitchenTicket.RouteMode.BOTH)
         )
-        state_service.remove_order_item(order_item=instance)
+        state_service.remove_order_item(
+            order_item=instance,
+            inventory_disposition=self.request.data.get('inventory_disposition', 'waste'),
+            actor=self.request.user,
+        )
         state_service.sync_after_items_changed(order=order)
         self.kitchen_print_documents = []
         if requires_cancellation_print:

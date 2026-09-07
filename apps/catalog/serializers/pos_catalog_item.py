@@ -20,6 +20,16 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
     mxik_payload = serializers.SerializerMethodField()
     cash_payment_forbidden = serializers.SerializerMethodField()
     modifier_groups = serializers.SerializerMethodField()
+    inventory = serializers.SerializerMethodField()
+
+    def get_inventory(self, obj):
+        from apps.inventory.services import empty_menu_inventory, menu_inventory_map
+
+        cache = self.context.setdefault('inventory_menu_cache', {})
+        restaurant_id = str(obj.restaurant_id)
+        if restaurant_id not in cache:
+            cache[restaurant_id] = menu_inventory_map(restaurant_id)
+        return cache[restaurant_id].get(str(obj.pk), empty_menu_inventory())
 
     @staticmethod
     def get_image_url(obj):
@@ -103,4 +113,5 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
             'price',
             'sale_unit',
             'modifier_groups',
+            'inventory',
         )

@@ -133,7 +133,14 @@ class LocalAgentMutationDispatchMixin:
         internal_request.trusted_edge_envelope = envelope or {}
         internal_request.resolver_match = match
         force_authenticate(internal_request, user=user)
-        response = match.func(internal_request, *match.args, **match.kwargs)
+        from apps.inventory.services import inventory_replay_context
+
+        with inventory_replay_context(
+            agent.restaurant,
+            body.get('edgeInventorySnapshots', body.get('edge_inventory_snapshots', {})),
+            occurred_at,
+        ):
+            response = match.func(internal_request, *match.args, **match.kwargs)
         response_body = decode_response(response)
         response_status = int(response.status_code)
         reconciled_delete = reconciled_order_item_delete(

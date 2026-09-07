@@ -26,6 +26,7 @@ LOCAL_APPS = [
     'apps.devices',
     'apps.local_agents',
     'apps.printing',
+    'apps.inventory',
 ]
 
 THIRD_PARTY_APPS = [

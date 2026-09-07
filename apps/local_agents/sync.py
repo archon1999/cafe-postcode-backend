@@ -27,6 +27,7 @@ from apps.printing.services import ensure_restaurant_templates
 from apps.restaurants.models import CashDesk, PrepStation
 from apps.sales.models import Order
 from apps.sales.serializers import OrderSerializer
+from apps.sales.selectors.orders import pos_order_queryset
 from apps.users.api.pos.serializers import PosRestaurantContextSerializer, PosSessionSerializer
 from apps.users.models import User
 
@@ -75,7 +76,7 @@ def _order_snapshot(restaurant, now):
         )
         .order_by('created_at')
     )
-    return OrderSerializer(orders, many=True).data
+    return OrderSerializer(pos_order_queryset(orders.prefetch_related(None)), many=True).data
 
 
 def _table_session_snapshot(restaurant):
@@ -315,6 +316,8 @@ def _configuration_snapshot(*, agent, now, expense_references=None):
 
 
 def _operational_snapshot(*, agent, now, cash_expenses=None):
+    from apps.inventory.services import inventory_snapshot
+
     restaurant = agent.restaurant
     cash_expenses = cash_expenses if cash_expenses is not None else _cash_expense_snapshot(restaurant)
     return {
@@ -327,6 +330,7 @@ def _operational_snapshot(*, agent, now, cash_expenses=None):
         'kitchenTickets': _kitchen_snapshot(restaurant),
         'cashShifts': _cash_shift_snapshot(restaurant),
         'cashExpenses': cash_expenses,
+        'inventory': inventory_snapshot(restaurant),
     }
 
 

@@ -27,5 +27,6 @@ class KitchenItemStatusUpdateView(APIView):
             item=item,
             status=request.data.get('status'),
             user=request.user,
+            inventory_disposition=request.data.get('inventory_disposition', 'waste'),
         )
         return Response(serializer_data)

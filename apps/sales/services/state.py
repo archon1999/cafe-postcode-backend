@@ -161,8 +161,12 @@ class OrderStateService:
 
     @staticmethod
     @transaction.atomic
-    def remove_order_item(*, order_item, one_unit: bool = False):
+    def remove_order_item(*, order_item, one_unit: bool = False, inventory_disposition='waste', actor=None, replacement_id=None):
         from apps.kitchen.models import KitchenTicketLine
+        from apps.inventory.services import cancel_order_item, has_consumption
+
+        if inventory_disposition not in {'not_prepared', 'waste', 'returned'}:
+            raise ValidationError({'inventory_disposition': _('Invalid inventory disposition.')})
 
         order_item = (
             type(order_item).objects.select_for_update()
@@ -171,11 +175,15 @@ class OrderStateService:
         )
         if one_unit and order_item.status == order_item.Status.CANCELLED:
             raise ValidationError({'detail': _('Cancelled order items cannot be modified.')})
-        if KitchenTicketLine.objects.filter(order_item=order_item).exists():
+        if (KitchenTicketLine.objects.filter(order_item=order_item).exists()
+                or has_consumption(order_item)):
             if one_unit and order_item.quantity > 1:
                 return OrderStateService._replace_dispatched_item_remainder(
                     order_item=order_item,
+                    inventory_disposition=inventory_disposition, actor=actor,
+                    replacement_id=replacement_id,
                 )
+            cancel_order_item(order_item, disposition=inventory_disposition, actor=actor)
             order_item.status = order_item.Status.CANCELLED
             order_item.save(update_fields=['status', 'updated_at'])
             return order_item
@@ -189,11 +197,13 @@ class OrderStateService:
         return order_item
 
     @staticmethod
-    def _replace_dispatched_item_remainder(*, order_item):
+    def _replace_dispatched_item_remainder(*, order_item, inventory_disposition='waste', actor=None, replacement_id=None):
         from apps.sales.models import OrderItemModifier
+        from apps.inventory.services import split_consumption
 
         modifier_snapshots = list(order_item.modifiers.all())
         replacement = type(order_item).objects.create(
+            **({'id': replacement_id} if replacement_id else {}),
             order_id=order_item.order_id,
             catalog_item_id=order_item.catalog_item_id,
             prep_station_id=order_item.prep_station_id,
@@ -217,6 +227,10 @@ class OrderStateService:
                 )
                 for modifier in modifier_snapshots
             ]
+        )
+        split_consumption(
+            order_item, replacement, removed_quantity=1,
+            disposition=inventory_disposition, actor=actor,
         )
         order_item.markings.update(order_item=replacement)
         order_item.status = order_item.Status.CANCELLED
@@ -363,7 +377,14 @@ class OrderStateService:
         sync_order_tickets(order)
         return order
 
+    @transaction.atomic
     def close_order_after_payment(self, *, order: Order, received_by):
+        from apps.inventory.services import consume_order_items
+
+        consume_order_items(
+            order, list(order.items.exclude(status='cancelled').prefetch_related('modifiers')),
+            actor=received_by, trigger='sale',
+        )
         now = timezone.now()
         order.status = Order.Status.CLOSED
         order.cashier = received_by

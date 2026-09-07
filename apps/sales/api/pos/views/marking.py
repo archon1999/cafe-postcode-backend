@@ -1,4 +1,9 @@
+from uuid import UUID
+
+from django.utils.translation import gettext as _
+
 from rest_framework import generics, permissions
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -62,11 +67,24 @@ class OrderScanMarkingView(APIView):
         )
         mode = str(request.data.get('mode') or 'add').strip().lower()
         self._require_mode_permission(request=request, order=order, mode=mode)
+        edge_ids = {}
+        if getattr(request._request, 'trusted_edge_replay', False):
+            for field, argument in (
+                ('edge_created_order_item_id', 'created_order_item_id'),
+                ('edge_replacement_order_item_id', 'replacement_order_item_id'),
+            ):
+                if request.data.get(field):
+                    try:
+                        edge_ids[argument] = UUID(str(request.data[field]))
+                    except (TypeError, ValueError):
+                        raise ValidationError({field: _('Invalid order item UUID.')})
         scan_result = self.scan_service_class().scan(
             order=order,
             raw_code=request.data.get('raw_code') or request.data.get('rawCode') or '',
             scanned_by=request.user,
             mode=mode,
+            inventory_disposition=request.data.get('inventory_disposition', 'waste'),
+            **edge_ids,
         )
         order = generics.get_object_or_404(
             pos_order_queryset(Order.objects.filter(restaurant=restaurant)),

@@ -68,4 +68,7 @@ def seed_default_roles_signal(sender, **kwargs):
     from apps.platform.services.modifier_access import grant_default_modifier_access
 
     grant_default_expense_access()
+    from apps.platform.services.inventory_access import grant_default_inventory_access
+
+    grant_default_inventory_access()
     grant_default_modifier_access()

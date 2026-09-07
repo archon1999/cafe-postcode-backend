@@ -37,6 +37,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
     modifiers = OrderItemModifierSerializer(many=True, read_only=True)
     selected_modifiers = SelectedModifierGroupSerializer(many=True, write_only=True, required=False, default=list)
     kitchen_dispatched = serializers.SerializerMethodField()
+    inventory_consumed = serializers.SerializerMethodField()
     kitchen_dispatch_number = serializers.SerializerMethodField()
     quantity = QuantityDecimalField(max_digits=12, decimal_places=3)
     note = serializers.CharField(
@@ -77,6 +78,14 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     def get_kitchen_dispatched(self, obj):
         return self._ticket_line(obj) is not None
+
+    @staticmethod
+    def get_inventory_consumed(obj):
+        from apps.inventory.services import has_consumption
+
+        if hasattr(obj, 'inventory_consumed_snapshot'):
+            return bool(obj.inventory_consumed_snapshot)
+        return has_consumption(obj)
 
     def get_kitchen_dispatch_number(self, obj):
         line = self._ticket_line(obj)
@@ -134,6 +143,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'modifiers',
             'selected_modifiers',
             'kitchen_dispatched',
+            'inventory_consumed',
             'kitchen_dispatch_number',
             'created_at',
         )
@@ -237,7 +247,9 @@ class OrderItemSerializer(serializers.ModelSerializer):
             for field_name in self.COMMAND_ONLY_UPDATE_FIELDS
             if field_name in attrs
         }
-        if self._ticket_line(instance) is not None:
+        from apps.inventory.services import has_consumption
+
+        if self._ticket_line(instance) is not None or has_consumption(instance):
             errors.update(
                 {
                     field_name: _('Dispatched item snapshots cannot be changed.')
@@ -262,6 +274,10 @@ class OrderItemSerializer(serializers.ModelSerializer):
         catalog_item = type(catalog_item).objects.select_related('category__prep_station', 'prep_station').get(
             pk=catalog_item.pk
         )
+        from apps.inventory.services import validate_catalog_stock
+
+        validate_catalog_stock(catalog_item, validated_data.get('quantity', Decimal('1')),
+                               [option for _, option in resolved_modifiers])
         base_unit_price = (
             int(manual_price)
             if catalog_item.item_type == CatalogItem.ItemType.SERVICE
@@ -292,6 +308,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
         return order_item
 
     def update(self, instance, validated_data):
+        if 'quantity' in validated_data:
+            from apps.inventory.services import validate_catalog_stock
+
+            validate_catalog_stock(instance.catalog_item, validated_data['quantity'],
+                                   list(instance.modifiers.values_list('modifier_option_id', flat=True)))
         update_fields = set(validated_data)
         for field_name, value in validated_data.items():
             setattr(instance, field_name, value)

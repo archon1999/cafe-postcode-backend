@@ -383,3 +383,420 @@ msgstr "otchet-po-smenam"
 
 msgid "range"
 msgstr "period"
+
+
+#: apps/inventory/models.py:194
+msgid "Ombor harakati o‘chirilmaydi; teskari harakat yarating."
+msgstr "Движение по складу нельзя удалить; создайте обратное движение."
+
+#: apps/inventory/models.py:129
+msgid "Tasdiqlangan hujjat o‘chirilmaydi."
+msgstr "Подтверждённый документ нельзя удалить."
+
+#: apps/inventory/models.py:160
+msgid "Tasdiqlangan hujjat qatori o‘zgarmaydi."
+msgstr "Строку подтверждённого документа нельзя изменить."
+
+#: apps/inventory/models.py:165
+msgid "Tasdiqlangan hujjat qatori o‘chirilmaydi."
+msgstr "Строку подтверждённого документа нельзя удалить."
+
+#: apps/inventory/models.py:190
+msgid "Ombor harakati o‘zgarmaydi; teskari harakat yarating."
+msgstr "Движение по складу нельзя изменить; создайте обратное движение."
+
+#: apps/inventory/models.py:124
+msgid "Tasdiqlangan hujjat o‘zgarmaydi."
+msgstr "Подтверждённый документ нельзя изменить."
+
+#: apps/inventory/services.py:57 apps/inventory/services.py:55
+msgid "Hisob natijasi ruxsat etilgan son chegarasidan tashqarida."
+msgstr "Результат расчёта выходит за допустимый числовой диапазон."
+
+#: apps/inventory/services.py:178
+msgid "Tasdiqlangan hujjatni tahrirlash mumkin emas. Teskari hujjat yarating."
+msgstr ""
+"Подтверждённый документ нельзя редактировать. Создайте обратный документ."
+
+#: apps/inventory/services.py:181
+msgid "Ombor yoki hujjat turini almashtirish uchun yangi hujjat yarating."
+msgstr "Чтобы изменить склад или тип документа, создайте новый документ."
+
+#: apps/inventory/services.py:210
+msgid "Ombor miqdori ruxsat etilgan chegaradan oshadi."
+msgstr "Количество на складе превышает допустимый предел."
+
+#: apps/inventory/services.py:260
+msgid "Bu hujjat faqat tizim orqali yaratiladi."
+msgstr "Этот документ создаётся только системой."
+
+#: apps/inventory/services.py:262
+msgid "Asl hujjat raqami va mas’ul shaxs majburiy."
+msgstr "Укажите номер исходного документа и ответственное лицо."
+
+#: apps/inventory/services.py:314
+msgid "Faqat tasdiqlangan qo‘lda kiritilgan hujjatni teskari yozish mumkin."
+msgstr ""
+"Обратную запись можно создать только для подтверждённого документа, "
+"введённого вручную."
+
+#: apps/inventory/services.py:400
+msgid "Offline ombor nusxasi noto‘g‘ri."
+msgstr "Некорректный снимок данных склада для автономного режима."
+
+#: apps/inventory/services.py:402
+msgid "Offline ombor qatori noto‘g‘ri."
+msgstr "Некорректная строка складских данных автономного режима."
+
+#: apps/inventory/services.py:434
+msgid "Offline hodisa sanasi kelajakda."
+msgstr "Дата события автономного режима находится в будущем."
+
+#: apps/inventory/services.py:497
+msgid "Sarf boshqa restoranga tegishli."
+msgstr "Расход относится к другому ресторану."
+
+#: apps/inventory/services.py:510
+msgid "Qaytarilayotgan miqdor sarfdan ortiq."
+msgstr "Возвращаемое количество превышает расход."
+
+#: apps/inventory/services.py:512
+msgid "Qisman qaytarishda takrorlanmaydigan hodisa kaliti majburiy."
+msgstr "Для частичного возврата обязателен уникальный ключ события."
+
+#: apps/inventory/services.py:547
+msgid "Qoldiq qatori asl taomga tegishli bo‘lishi kerak."
+msgstr "Строка оставшейся части должна относиться к исходному блюду."
+
+#: apps/inventory/services.py:551
+msgid "Qisman bekor qilish miqdorlari mos emas."
+msgstr "Количества для частичной отмены не совпадают."
+
+#: apps/inventory/services.py:43
+msgid "Son ruxsat etilgan chegaradan tashqarida."
+msgstr "Число выходит за допустимый диапазон."
+
+#: apps/inventory/services.py:47
+msgid "Ko‘pi bilan 6 ta kasr xonasi mumkin."
+msgstr "Допускается не более 6 знаков после запятой."
+
+#: apps/inventory/services.py:71
+msgid "Yozuv shu restoranda topilmadi."
+msgstr "Запись в этом ресторане не найдена."
+
+#: apps/inventory/services.py:107
+msgid "1 dan 500 tagacha mahsulot qatori kiriting."
+msgstr "Добавьте от 1 до 500 строк продуктов."
+
+#: apps/inventory/services.py:153
+msgid "Hujjat turi noto‘g‘ri."
+msgstr "Некорректный тип документа."
+
+#: apps/inventory/services.py:156
+msgid "Kalit juda uzun."
+msgstr "Ключ слишком длинный."
+
+#: apps/inventory/services.py:186
+msgid "Sanash mahsulotlari o‘zgarsa yangi inventarizatsiya yarating."
+msgstr ""
+"Если состав продуктов для пересчёта изменился, создайте новую "
+"инвентаризацию."
+
+#: apps/inventory/services.py:223
+msgid "Tannarx ruxsat etilgan chegaradan oshadi."
+msgstr "Себестоимость превышает допустимый предел."
+
+#: apps/inventory/services.py:227
+msgid ""
+"Teskari yozuv manfiy tannarx hosil qiladi. Tuzatish inventarizatsiyasini "
+"kiriting."
+msgstr ""
+"Обратная запись приведёт к отрицательной себестоимости. Внесите "
+"корректировку через инвентаризацию."
+
+#: apps/inventory/services.py:258
+msgid "Faol bo‘lmagan ombor uchun yangi hujjat tasdiqlanmaydi."
+msgstr "Нельзя подтвердить новый документ для неактивного склада."
+
+#: apps/inventory/services.py:264
+msgid "Sabab majburiy."
+msgstr "Укажите причину."
+
+#: apps/inventory/services.py:266
+msgid "Yetkazib beruvchi majburiy."
+msgstr "Укажите поставщика."
+
+#: apps/inventory/services.py:268
+msgid "Kelajakdagi hujjatni tasdiqlab bo‘lmaydi."
+msgstr "Нельзя подтвердить документ с будущей датой."
+
+#: apps/inventory/services.py:271
+msgid "Mahsulot qatorlari kerak."
+msgstr "Добавьте строки продуктов."
+
+#: apps/inventory/services.py:316
+msgid "Teskari yozuv sababi majburiy."
+msgstr "Укажите причину обратной записи."
+
+#: apps/inventory/services.py:324
+msgid "Sanashdan keyin harakatlar bor. Yangi inventarizatsiya bilan tuzating."
+msgstr ""
+"После пересчёта были движения по складу. Внесите корректировку с помощью "
+"новой инвентаризации."
+
+#: apps/inventory/services.py:347
+msgid "Xizmat uchun ombor retsepti yaratilmaydi."
+msgstr "Для услуги нельзя создать складской рецепт."
+
+#: apps/inventory/services.py:351
+msgid "1 dan 200 tagacha ingredient kiriting."
+msgstr "Добавьте от 1 до 200 ингредиентов."
+
+#: apps/inventory/services.py:413
+msgid "Offline retsept versiyasi topilmadi."
+msgstr "Версия рецепта для автономного режима не найдена."
+
+#: apps/inventory/services.py:415
+msgid "Offline sarf miqdori buyurtmaga mos emas."
+msgstr "Количество расхода в автономном режиме не соответствует заказу."
+
+#: apps/inventory/services.py:419
+msgid "Offline ingredient sarfi noto‘g‘ri."
+msgstr "Некорректный расход ингредиента в автономном режиме."
+
+#: apps/inventory/services.py:422
+msgid "Offline ingredient takrorlangan."
+msgstr "Ингредиент повторяется в данных автономного режима."
+
+#: apps/inventory/services.py:424
+msgid "Offline ingredient sarfi retseptga mos emas."
+msgstr "Расход ингредиента в автономном режиме не соответствует рецепту."
+
+#: apps/inventory/services.py:446
+msgid "Buyurtma qatori boshqa buyurtmaga tegishli."
+msgstr "Строка заказа относится к другому заказу."
+
+#: apps/inventory/services.py:492
+msgid "not_prepared, returned yoki waste tanlang."
+msgstr "Выберите not_prepared, returned или waste."
+
+#: apps/inventory/services.py:503
+msgid "Qayta so‘rov oldingi bekor qilishga mos emas."
+msgstr "Повторный запрос не соответствует предыдущей отмене."
+
+#: apps/inventory/services.py:544
+msgid "Yangi qator boshqa sarf bilan bog‘langan."
+msgstr "Новая строка связана с другим расходом."
+
+#: apps/inventory/services.py:41
+msgid "Yaroqli son kiriting."
+msgstr "Введите корректное число."
+
+#: apps/inventory/services.py:45
+#, python-format
+msgid "Qiymat kamida %(minimum)s bo‘lishi kerak."
+msgstr "Значение должно быть не меньше %(minimum)s."
+
+#: apps/inventory/services.py:114
+msgid "Bir hujjatda mahsulot takrorlanmasin."
+msgstr "Продукт не должен повторяться в одном документе."
+
+#: apps/inventory/services.py:118
+msgid "Miqdor majburiy."
+msgstr "Укажите количество."
+
+#: apps/inventory/services.py:121
+msgid "Miqdor noldan katta bo‘lishi kerak."
+msgstr "Количество должно быть больше нуля."
+
+#: apps/inventory/services.py:125
+msgid "base yoki purchase tanlang."
+msgstr "Выберите base или purchase."
+
+#: apps/inventory/services.py:127
+msgid "Sanash asosiy birlikda kiritiladi."
+msgstr "Результат пересчёта вводится в базовой единице измерения."
+
+#: apps/inventory/services.py:131
+msgid "Asosiy birlikka o‘girilgan miqdor juda katta."
+msgstr "Количество после пересчёта в базовую единицу слишком велико."
+
+#: apps/inventory/services.py:133
+msgid "Dona bilan hisoblanadigan mahsulot butun bo‘lishi kerak."
+msgstr "Количество штучного продукта должно быть целым числом."
+
+#: apps/inventory/services.py:363
+msgid "Ingredient va modifikator juftligi takrorlanmasin."
+msgstr "Пара ингредиента и модификатора не должна повторяться."
+
+#: apps/inventory/services.py:411
+msgid "Offline retsept versiyasi noto‘g‘ri."
+msgstr "Некорректная версия рецепта для автономного режима."
+
+#: apps/inventory/services.py:162
+msgid "Kalit boshqa hujjat uchun ishlatilgan."
+msgstr "Ключ уже использован для другого документа."
+
+#: apps/inventory/services.py:360
+msgid "Modifikator taomga tegishli emas."
+msgstr "Модификатор не относится к этому блюду."
+
+#: apps/inventory/services.py:643
+#, python-format
+msgid "%(item)s: tanlangan miqdor uchun qoldiq yetarli emas."
+msgstr "%(item)s: остатка недостаточно для выбранного количества."
+
+#: apps/inventory/services.py:276
+#, python-format
+msgid "%(item)s: haqiqiy miqdor hali kiritilmagan."
+msgstr "%(item)s: фактическое количество ещё не введено."
+
+#: apps/inventory/services.py:278
+#, python-format
+msgid ""
+"%(item)s: sanash davomida harakat bo‘lgan. Yangi inventarizatsiya yarating."
+msgstr ""
+"%(item)s: во время пересчёта были движения по складу. Создайте новую "
+"инвентаризацию."
+
+#: apps/inventory/services.py:469 apps/inventory/services.py:295
+#, python-format
+msgid "%(item)s: omborda yetarli qoldiq yo‘q."
+msgstr "%(item)s: недостаточный остаток на складе."
+
+#: apps/inventory/services.py:290
+#, python-format
+msgid "%(item)s: boshlang‘ich qoldiq faqat birinchi harakat bo‘lishi mumkin."
+msgstr ""
+"%(item)s: начальный остаток можно внести только первым движением по складу."
+
+#: apps/inventory/serializers.py:62
+msgid "Boshqa omborni asosiy qilib tanlang."
+msgstr "Выберите другой склад в качестве основного."
+
+#: apps/inventory/serializers.py:36
+msgid "Bu nomdagi yozuv mavjud."
+msgstr "Запись с таким названием уже существует."
+
+#: apps/inventory/serializers.py:58
+msgid "Asosiy omborni faolsizlantirishdan oldin boshqa asosiy ombor tanlang."
+msgstr ""
+"Прежде чем деактивировать основной склад, назначьте другой склад основным."
+
+#: apps/inventory/serializers.py:60
+msgid "Qoldig‘i bor omborni faolsizlantirib bo‘lmaydi."
+msgstr "Нельзя деактивировать склад с остатками."
+
+#: apps/inventory/serializers.py:81
+msgid "Ko‘paytiruvchi noldan katta bo‘lishi kerak."
+msgstr "Коэффициент должен быть больше нуля."
+
+#: apps/inventory/serializers.py:83
+msgid "Foiz 100 dan oshmasin."
+msgstr "Процент не должен превышать 100."
+
+#: apps/inventory/serializers.py:89
+msgid "Ingredient faol retseptda ishlatilgan. Avval retseptni o‘zgartiring."
+msgstr "Ингредиент используется в активном рецепте. Сначала измените рецепт."
+
+#: apps/inventory/serializers.py:135
+msgid "Ilova shu restoranga tegishli emas."
+msgstr "Вложение не относится к этому ресторану."
+
+#: apps/inventory/serializers.py:40
+msgid "Nom majburiy."
+msgstr "Укажите название."
+
+#: apps/inventory/serializers.py:79
+msgid "Manfiy qiymat mumkin emas."
+msgstr "Значение не может быть отрицательным."
+
+#: apps/inventory/serializers.py:86
+msgid "Tarixda ishlatilgan o‘lchov birligi o‘zgarmaydi."
+msgstr ""
+"Нельзя изменить единицу измерения, уже использованную в истории операций."
+
+#: apps/inventory/serializers.py:95
+msgid "SKU shu restoranda mavjud."
+msgstr "Такой SKU уже существует в этом ресторане."
+
+#: apps/inventory/views.py:81
+msgid "Davr boshlanishi tugashidan keyin bo‘lmasin."
+msgstr "Начало периода не может быть позже его окончания."
+
+#: apps/inventory/views.py:195
+msgid ""
+"Retsept o‘zgarishi uchun yangi versiya yarating. Faqat isActive:false "
+"mumkin."
+msgstr ""
+"Для изменения рецепта создайте новую версию. Допускается только "
+"isActive:false."
+
+#: apps/inventory/views.py:89
+msgid "limit va offset butun son bo‘lishi kerak."
+msgstr "Значения limit и offset должны быть целыми числами."
+
+#: apps/inventory/views.py:271
+msgid "Mantiqiy qiymat kerak."
+msgstr "Требуется логическое значение."
+
+#: apps/inventory/views.py:284
+msgid "Sabab 500 belgidan oshmasin."
+msgstr "Причина не должна превышать 500 символов."
+
+#: apps/inventory/views.py:351
+msgid "balances, movements yoki variance tanlang."
+msgstr "Выберите balances, movements или variance."
+
+#: apps/inventory/views.py:381
+msgid "10 MB gacha PDF, JPG yoki PNG yuklang."
+msgstr "Загрузите файл PDF, JPG или PNG размером до 10 МБ."
+
+#: apps/inventory/views.py:393
+msgid "Fayl kengaytmasi tarkibiga mos emas."
+msgstr "Расширение файла не соответствует его содержимому."
+
+#: apps/inventory/views.py:54
+msgid "Tannarx kiritish uchun tannarxni ko‘rish ruxsati kerak."
+msgstr "Для ввода себестоимости необходимо разрешение на её просмотр."
+
+#: apps/inventory/views.py:122
+msgid "Bu nom yoki kod allaqachon mavjud."
+msgstr "Такое название или код уже существует."
+
+#: apps/inventory/views.py:75
+msgid "YYYY-MM-DD formatida sana kiriting."
+msgstr "Введите дату в формате YYYY-MM-DD."
+
+#: apps/inventory/views.py:391
+msgid "Fayl turi PDF, JPG yoki PNG bo‘lishi kerak."
+msgstr "Файл должен быть в формате PDF, JPG или PNG."
+
+#: apps/inventory/ai.py:23
+msgid ""
+"AI tahlili hozir mavjud emas. Qoidaviy tavsiyalardan foydalanishingiz "
+"mumkin."
+msgstr ""
+"Анализ с AI сейчас недоступен. Вы можете воспользоваться рекомендациями на "
+"основе правил."
+
+#: apps/inventory/ai.py:83
+msgid "AI uchun serverda API kaliti va model sozlanishi kerak."
+msgstr "Для AI необходимо настроить API-ключ и модель на сервере."
+
+#: apps/inventory/ai.py:87
+msgid "AI tahlili uchun hali yetarli ombor dalillari yo‘q."
+msgstr "Для анализа с AI пока недостаточно складских данных."
+
+#: apps/sales/api/pos/views/marking.py:80
+msgid "Invalid order item UUID."
+msgstr "Некорректный UUID строки заказа."
+
+#: apps/kitchen/services/kitchen_status.py:109
+msgid "Cancelled items must be added as a new order item."
+msgstr "Отменённые позиции нужно добавлять новой строкой заказа."
+
+#: apps/kitchen/services/kitchen_status.py:114
+#: apps/sales/services/state.py:169
+msgid "Invalid inventory disposition."
+msgstr "Некорректный способ учёта продуктов при отмене."

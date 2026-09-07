@@ -1507,6 +1507,59 @@ PERMISSION_DEFINITIONS = [
     }
 ]
 
+PERMISSION_DEFINITIONS.extend([
+    permission_definition(
+        'admin.inventory.view', surface='admin', resource='inventory', action='view',
+        ui_visible=True, group_key='inventory', name='Ombor va harakatlarni ko‘rish',
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        endpoints=endpoint_specs(*[
+            ('GET', f'api/v1/admin/inventory/{route}') for route in (
+                'warehouses/', 'warehouses/<uuid:pk>/', 'items/', 'items/<uuid:pk>/',
+                'suppliers/', 'suppliers/<uuid:pk>/', 'recipes/', 'recipes/<uuid:pk>/',
+                'documents/', 'documents/<uuid:pk>/', 'documents/<uuid:pk>/export/',
+                'balances/', 'movements/', 'overview/', 'variance/', 'insights/',
+                'export/', 'catalog-options/', 'attachments/<uuid:pk>/download/',
+            )
+        ]),
+    ),
+    permission_definition(
+        'admin.inventory.manage', surface='admin', resource='inventory', action='manage',
+        ui_visible=True, group_key='inventory', name='Ombor ma’lumotlari va hujjatlarini tayyorlash',
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        endpoints=endpoint_specs(*[
+            (method, f'api/v1/admin/inventory/{route}')
+            for method, route in (
+                ('POST', 'warehouses/'), ('PATCH', 'warehouses/<uuid:pk>/'),
+                ('POST', 'items/'), ('PATCH', 'items/<uuid:pk>/'),
+                ('POST', 'suppliers/'), ('PATCH', 'suppliers/<uuid:pk>/'),
+                ('POST', 'recipes/'), ('PATCH', 'recipes/<uuid:pk>/'),
+                ('POST', 'documents/'), ('PATCH', 'documents/<uuid:pk>/'),
+                ('POST', 'attachments/'),
+            )
+        ]),
+    ),
+    permission_definition(
+        'admin.inventory.post', surface='admin', resource='inventory', action='post',
+        ui_visible=True, group_key='inventory', name='Ombor hujjatlarini tasdiqlash va bekor qilish',
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/inventory/documents/<uuid:pk>/post/'),
+            ('POST', 'api/v1/admin/inventory/documents/<uuid:pk>/reverse/'),
+        ),
+    ),
+    permission_definition(
+        'admin.inventory.view_cost', surface='admin', resource='inventory', action='view_cost',
+        ui_visible=True, group_key='inventory', name='Ombor tannarxi va summalarini ko‘rish',
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+    ),
+    permission_definition(
+        'admin.inventory.analyze', surface='admin', resource='inventory', action='analyze',
+        ui_visible=True, group_key='inventory', name='Ombor AI tahlilidan foydalanish',
+        default_roles=RESTAURANT_ADMIN_UI_ROLES,
+        endpoints=endpoint_specs(('POST', 'api/v1/admin/inventory/insights/analyze/')),
+    ),
+])
+
 PERMISSIONS_BY_CODE = {item['code']: item for item in PERMISSION_DEFINITIONS}
 CANONICAL_PERMISSION_CODES = frozenset(PERMISSIONS_BY_CODE)
 ADMIN_UI_PERMISSION_CODES = frozenset(code for code, item in PERMISSIONS_BY_CODE.items() if item['surface'] == 'admin')

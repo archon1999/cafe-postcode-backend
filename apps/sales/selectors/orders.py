@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from django.db.models import Prefetch, Q, QuerySet
+from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 
 from apps.billing.helpers import get_payment_model, get_payment_refund_model
 from apps.floor.services import annotate_zone_name_visibility
@@ -10,6 +10,7 @@ from apps.sales.helpers import (
     get_order_model,
 )
 from apps.sales.models import OrderItemModifier
+from apps.inventory.models import OrderConsumption
 from common.api.query_params import (
     apply_ordering,
     get_ordering_query_param,
@@ -76,7 +77,9 @@ def pos_order_queryset(queryset: QuerySet | None = None) -> QuerySet:
         queryset = Order.objects.all()
 
     item_queryset = (
-        OrderItem.objects.select_related(
+        OrderItem.objects.annotate(
+            inventory_consumed_snapshot=Exists(OrderConsumption.objects.filter(order_item_id=OuterRef('pk'))),
+        ).select_related(
             "catalog_item",
             "prep_station",
             "kitchen_ticket_line__ticket",

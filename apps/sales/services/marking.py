@@ -124,7 +124,8 @@ class OrderMarkingScanService:
     state_service_class = OrderStateService
 
     @transaction.atomic
-    def scan(self, *, order, raw_code: str, scanned_by, mode: str = 'add'):
+    def scan(self, *, order, raw_code: str, scanned_by, mode: str = 'add', inventory_disposition='waste',
+             created_order_item_id=None, replacement_order_item_id=None):
         order = type(order).objects.select_for_update().select_related('restaurant').get(pk=order.pk)
         if order.status not in {order.Status.OPEN, order.Status.SUBMITTED, order.Status.READY}:
             raise ValidationError({'detail': _('This order cannot be changed.')})
@@ -143,6 +144,8 @@ class OrderMarkingScanService:
                 catalog_item=catalog_item,
                 raw_code=parsed.raw_code,
                 scanned_by=scanned_by,
+                inventory_disposition=inventory_disposition,
+                replacement_order_item_id=replacement_order_item_id,
             )
             order.recalculate_totals()
 
@@ -169,8 +172,12 @@ class OrderMarkingScanService:
                 raise ValidationError({'rawCode': _('This marked product is not present in the order or is already fully scanned.')})
 
         if order_item is None:
+            from apps.inventory.services import validate_catalog_stock
+
+            validate_catalog_stock(catalog_item, 1)
             base_unit_price = int(catalog_item.price or 0)
             order_item = OrderItem.objects.create(
+                **({'id': created_order_item_id} if created_order_item_id else {}),
                 order=order,
                 catalog_item=catalog_item,
                 created_by=scanned_by,
@@ -218,7 +225,8 @@ class OrderMarkingScanService:
                 return item
         return None
 
-    def _remove_matching_order_item(self, *, order, catalog_item, raw_code: str, scanned_by):
+    def _remove_matching_order_item(self, *, order, catalog_item, raw_code: str, scanned_by, inventory_disposition='waste',
+                                    replacement_order_item_id=None):
         from apps.kitchen.models import KitchenTicket, KitchenTicketLine
 
         matching_marking = (
@@ -261,6 +269,9 @@ class OrderMarkingScanService:
         active_order_item = self.state_service_class().remove_order_item(
             order_item=order_item,
             one_unit=True,
+            inventory_disposition=inventory_disposition,
+            actor=scanned_by,
+            replacement_id=replacement_order_item_id,
         )
         kitchen_tickets = []
         if active_order_item.pk != original_order_item_id:

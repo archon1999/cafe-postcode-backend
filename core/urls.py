@@ -24,6 +24,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/platform/', include('apps.platform.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/restaurants/', include('apps.restaurants.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/catalog/', include('apps.catalog.api.admin.urls')),
+    path(f'{API_V1_PREFIX}admin/inventory/', include('apps.inventory.urls')),
     path(f'{API_V1_PREFIX}admin/floor/', include('apps.floor.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/sales/', include('apps.sales.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/billing/', include('apps.billing.api.admin.urls')),

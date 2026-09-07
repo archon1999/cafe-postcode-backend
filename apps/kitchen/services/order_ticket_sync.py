@@ -70,6 +70,13 @@ class OrderTicketSyncService:
             .order_by('created_at')
         )
 
+        from apps.inventory.services import consume_order_items
+
+        consume_order_items(
+            locked_order, pending_items, actor=created_by or locked_order.opened_by,
+            trigger='dispatch',
+        )
+
         items_by_station = defaultdict(list)
         for item in pending_items:
             station = self._resolve_item_station(item, locked_order)

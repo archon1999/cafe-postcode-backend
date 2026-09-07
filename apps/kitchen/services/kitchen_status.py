@@ -1,5 +1,6 @@
 import logging
 
+from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
@@ -76,8 +77,11 @@ class KitchenStatusService:
         )
         return KitchenTicketSerializer(ticket).data
 
-    def update_item_status(self, *, item: OrderItem, status: str, user=None):
+    @transaction.atomic
+    def update_item_status(self, *, item: OrderItem, status: str, user=None, inventory_disposition='waste'):
         from apps.kitchen.services import sync_order_tickets
+
+        item = OrderItem.objects.select_for_update().select_related('order', 'prep_station').get(pk=item.pk)
 
         self.feature_gate_service_class().ensure_kitchen_access(
             restaurant=item.order.restaurant,
@@ -101,6 +105,14 @@ class KitchenStatusService:
 
         if status == OrderItem.Status.CANCELLED and item.order.payments.filter(status='succeeded').exists():
             raise ValidationError({'code': 'PAID_ORDER_REQUIRES_REFUND', 'detail': 'Use a refund to cancel a paid item.'})
+        if item.status == OrderItem.Status.CANCELLED and status != OrderItem.Status.CANCELLED:
+            raise ValidationError({'detail': _('Cancelled items must be added as a new order item.')})
+        if status == OrderItem.Status.CANCELLED:
+            from apps.inventory.services import cancel_order_item
+
+            if inventory_disposition not in {'not_prepared', 'waste', 'returned'}:
+                raise ValidationError({'inventory_disposition': _('Invalid inventory disposition.')})
+            cancel_order_item(item, disposition=inventory_disposition, actor=user)
         item.status = status
         item.save(update_fields=['status', 'updated_at'])
         item.order.recalculate_totals()

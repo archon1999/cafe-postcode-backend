@@ -31,6 +31,8 @@ COPY --from=builder /usr/local /usr/local
 
 COPY . .
 
+RUN python ops/compile_translations.py
+
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
     && mkdir -p /app/staticfiles /app/media \
