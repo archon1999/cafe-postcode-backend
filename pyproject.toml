@@ -44,6 +44,7 @@ python-levenshtein = "^0.24.0"
 numpy = "^1.26.4"
 httpx = "^0.28.1"
 cryptography = "50.0.0"
+polib = "1.2.0"
 django-prometheus = "^2.4.1"
 python-json-logger = "^4.1.0"
 channels-redis = "^4.3.0"
@@ -61,7 +62,6 @@ dev = [
     "django-extensions (>=4.1,<5.0)",
     "django-hint (>=0.3.2,<0.4.0)",
     "djangorestframework-stubs (>=3.16.8,<4.0.0)",
-    "polib (==1.2.0)",
     "ruff (==0.15.21)"
 ]
 
