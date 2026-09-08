@@ -3,6 +3,7 @@ from django.utils import timezone
 
 
 REPORT_SCHEDULES = (
+    ("telegram_reports.shifts", "apps.telegram_reports.tasks.dispatch_pending_shift_reports", "*/5 * * * *"),
     ("telegram_reports.daily", "apps.telegram_reports.tasks.dispatch_daily_reports", "5 0 * * *"),
     ("telegram_reports.weekly", "apps.telegram_reports.tasks.dispatch_weekly_reports", "10 0 * * 1"),
     ("telegram_reports.monthly", "apps.telegram_reports.tasks.dispatch_monthly_reports", "15 0 1 * *"),

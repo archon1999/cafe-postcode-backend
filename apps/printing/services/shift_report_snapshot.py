@@ -1,3 +1,5 @@
+from common.sale_units import sale_unit_label
+
 from decimal import Decimal
 
 from django.utils import timezone
@@ -90,6 +92,7 @@ def build_shift_report_print_snapshot(
         report.get("TerminalID") or shift.cash_desk.terminal_id or ""
     ).strip()
     return {
+        "items": [{"name": row["name"], "quantity": row["quantity"], "saleUnit": sale_unit_label(row["sale_unit"], piece_label="ta"), "lineTotal": row["revenue"]} for row in report.get("SoldItems", [])],
         "restaurant": {
             "name": restaurant.name,
             "legalName": restaurant.legal_name or restaurant.name,

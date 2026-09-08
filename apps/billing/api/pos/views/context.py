@@ -12,6 +12,7 @@ from apps.billing.serializers import (
     CashShiftCloseSerializer,
     CashShiftOpenSerializer,
     CashShiftReportSerializer,
+    CashShiftSerializer,
     FiscalShiftSerializer,
 )
 from apps.billing.services import CashShiftService
@@ -229,6 +230,7 @@ class CashShiftCloseView(APIView):
             ),
             closed_by=request.user,
             notes_close=serializer.validated_data.get("notes_close", ""),
+            include_sold_items=serializer.validated_data.get("include_sold_items", False),
             trusted_edge_replay=True,
             closed_at=parse_payload_datetime(request.data.get('edge_cash_shift_closed_at')) or getattr(request._request, 'trusted_edge_occurred_at', None),
             close_sequence=(getattr(request._request, 'trusted_edge_envelope', {}) or {}).get('sequence'),
@@ -246,6 +248,7 @@ class CashShiftCloseView(APIView):
             print_report_error = str(error)
         response_payload = {
             **CashierContextSerializer(payload).data,
+            "closed_shift": CashShiftSerializer(shift).data,
             "report": shift_service.build_fiscal_shift_report(shift=shift),
             "printDocuments": [str(document.id) for document in print_documents],
         }

@@ -22,8 +22,9 @@ from apps.local_agents.device_state import pos_device_state_snapshot
 from apps.local_agents.selectors import bootstrap_kitchen_tickets
 from apps.integrations.models import IntegrationConfig
 from apps.kitchen.api.pos.serializers import KitchenTicketSerializer
+from apps.billing.services.shift_items import shift_sold_orders
 from apps.printing.models import PrintTemplate
-from apps.printing.services import ensure_restaurant_templates
+from apps.printing.services import ensure_restaurant_templates, ensure_shift_report_template
 from apps.restaurants.models import CashDesk, PrepStation
 from apps.sales.models import Order
 from apps.sales.serializers import OrderSerializer
@@ -103,6 +104,7 @@ def _cash_shift_snapshot(restaurant):
         .order_by('opened_at')
     )
     rows = CashShiftSerializer(shifts, many=True).data
+    shifts_by_id = {str(shift.pk): shift for shift in shifts}
     return [
         {
             'id': str(row['id']),
@@ -143,6 +145,8 @@ def _cash_shift_snapshot(restaurant):
             'fiscalReceiptCount': row['fiscal_receipt_count'],
             'reprintCount': row['reprint_count'],
             'nextOrderNumber': row['next_order_number'],
+            'soldItems': [dict(catalogItemId=item['catalog_item_id'], name=item['name'], saleUnit=item['sale_unit'], quantity=item['quantity'], revenue=item['revenue']) for item in row['sold_items']],
+            'soldOrderIds': [str(pk) for pk in shift_sold_orders(shifts_by_id[str(row['id'])]).values_list('pk', flat=True)],
             'notesOpen': row['notes_open'],
             'notesClose': row['notes_close'],
             'createdAt': row['created_at'],
@@ -279,6 +283,7 @@ def _device_bindings(restaurant):
 
 def _print_templates(restaurant):
     ensure_restaurant_templates(restaurant=restaurant)
+    ensure_shift_report_template(restaurant=restaurant)
     templates = PrintTemplate.objects.filter(restaurant=restaurant).select_related('published_version')
     return [
         {

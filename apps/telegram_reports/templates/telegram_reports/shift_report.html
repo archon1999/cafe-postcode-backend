@@ -1,0 +1,13 @@
+<b>{{ branch_name }}</b>
+<b>Smena hisoboti</b> • {{ opened_at }} – {{ closed_at }}
+{{ cash_desk }} • {{ cashier }}
+
+<b>Tushum</b>: {{ sales }}
+<b>Buyurtmalar</b>: {{ orders }} ta
+<b>O‘rtacha chek</b>: {{ average }}
+
+<b>Naqd</b>: {{ cash }} • <b>Karta</b>: {{ card }} • <b>QR</b>: {{ qr }}
+<b>Qaytarishlar</b>: {{ refunds }}
+<b>Xarajatlar</b>: {{ expenses }}
+
+{% include "telegram_reports/blocks/top_items.html" %}

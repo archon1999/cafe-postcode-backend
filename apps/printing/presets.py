@@ -76,6 +76,11 @@ def get_shift_report_layout() -> dict:
                     {'label': 'Kassada qolgan', 'value': '{{report.netCashAfterExpenses}}', 'format': 'money', 'bold': True},
                 ],
             },
+            {'id': 'sold-items', 'type': 'items_table', 'hideEmpty': True, 'showHeaders': True, 'columns': [
+                {'label': 'Mahsulot', 'value': '{{item.name}}', 'grow': 1},
+                {'label': 'Miqdor', 'value': '{{item.quantity}} {{item.saleUnit}}', 'align': 'right'},
+                {'label': 'Summa', 'value': '{{item.lineTotal}}', 'format': 'money', 'align': 'right'},
+            ]},
             {'id': 'footer-divider', 'type': 'divider'},
             {
                 'id': 'device',

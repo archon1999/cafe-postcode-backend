@@ -214,7 +214,7 @@ class CashShiftReportingMixin:
         fiscal_refunds = [refund for refund in refunds if refund.payment.receipts.filter(kind=Receipt.Kind.REFUND, status=Receipt.Status.SENT).exists()]
         terminal_id = report_terminal_id(cash_desk=cash_desk, payments=payments)
         opened_at = paid_at_from or (shift.opened_at if shift is not None else None)
-        closed_at = paid_at_to or timezone.now()
+        closed_at = paid_at_to or (shift.closed_at if shift is not None else None) or timezone.now()
         all_report = build_unikassa_like_report(
             source="pos",
             title="POS smena hisoboti",
@@ -247,6 +247,8 @@ class CashShiftReportingMixin:
 
     def create_shift_report_documents(self, *, shift, created_by=None, closed=False):
         own_report = self.build_fiscal_shift_report(shift=shift)["pos_report"]
+        if closed and (shift.close_report_payload or {}).get("include_sold_items", False):
+            own_report["SoldItems"] = shift.close_report_payload.get("sold_items", [])
         own_report["TotalExpenseAmount"] = self.build_shift_snapshot(shift=shift)["expense_total"]
         return [
             create_shift_report_print_document(

@@ -1867,6 +1867,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                     'edgeCashierId': str(self.user.id),
                     'actualClosingCashAmount': 10000,
                     'closeFiscalShift': False,
+                    'includeSoldItems': True,
                 },
             },
         ]
@@ -1883,6 +1884,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         shift = CashShift.objects.get(cash_desk__restaurant=self.restaurant, opened_by=self.user)
         self.assertEqual(shift.id, edge_shift_id)
         self.assertEqual(shift.status, CashShift.Status.CLOSED)
+        self.assertTrue(shift.close_report_payload['include_sold_items'])
 
     def test_delayed_edge_payment_never_moves_to_new_shift(self):
         order_data = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})

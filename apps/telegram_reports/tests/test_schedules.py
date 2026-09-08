@@ -18,11 +18,11 @@ class FakeDeliveryClient:
 
 
 class TelegramReportScheduleTests(TestCase):
-    def test_exact_three_cron_schedules_are_created(self):
+    def test_report_and_shift_retry_cron_schedules_are_created(self):
         ensure_report_schedules()
 
         schedules = Schedule.objects.filter(name__startswith="telegram_reports.").order_by("name")
-        self.assertEqual(schedules.count(), 3)
+        self.assertEqual(schedules.count(), 4)
         self.assertEqual(
             {(item.name, item.cron) for item in schedules},
             {(name, cron) for name, _func, cron in REPORT_SCHEDULES},

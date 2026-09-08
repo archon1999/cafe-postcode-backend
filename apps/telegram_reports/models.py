@@ -196,3 +196,14 @@ class TelegramReportDelivery(BaseModel):
         indexes = [
             models.Index(fields=("status", "created_at"), name="telegram_delivery_status_idx"),
         ]
+
+
+class TelegramShiftDelivery(BaseModel):
+    account = models.ForeignKey(TelegramAccount, on_delete=models.CASCADE)
+    shift = models.ForeignKey('billing.CashShift', on_delete=models.CASCADE)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    next_chunk = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=('account', 'shift'), name='telegram_unique_shift_delivery')]

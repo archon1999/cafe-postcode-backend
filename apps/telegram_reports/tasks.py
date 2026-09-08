@@ -126,3 +126,58 @@ def send_scheduled_report(
         update_fields=("status", "telegram_message_id", "sent_at", "updated_at")
     )
     return True
+
+
+def prepare_shift_deliveries(shift):
+    from apps.telegram_reports.models import TelegramShiftDelivery
+    subscriptions = TelegramBranchSubscription.objects.filter(
+        restaurant=shift.cash_desk.restaurant, account__notifications_enabled=True,
+    )
+    for subscription in subscriptions:
+        TelegramShiftDelivery.objects.get_or_create(account=subscription.account, shift=shift)
+    return bool(subscriptions)
+
+
+def enqueue_shift_report(shift_id):
+    async_task('apps.telegram_reports.tasks.send_shift_reports', shift_id)
+
+
+def dispatch_pending_shift_reports():
+    from apps.telegram_reports.models import TelegramShiftDelivery
+    shift_ids = TelegramShiftDelivery.objects.filter(
+        sent_at__isnull=True, account__notifications_enabled=True,
+    ).values_list('shift_id', flat=True).distinct()
+    for shift_id in shift_ids:
+        enqueue_shift_report(str(shift_id))
+
+
+def send_shift_reports(shift_id):
+    from django.db import transaction
+    from apps.telegram_reports.models import TelegramShiftDelivery
+    from apps.telegram_reports.services.shift_report import render_shift_report
+    delivery_ids = TelegramShiftDelivery.objects.filter(shift_id=shift_id, sent_at__isnull=True).values_list('pk', flat=True)
+    for delivery_id in delivery_ids:
+        # Serialize duplicate queue jobs; persist successful chunks before retrying.
+        with transaction.atomic():
+            delivery = TelegramShiftDelivery.objects.select_for_update(of=("self",)).select_related(
+                'account', 'shift__cash_desk__restaurant', 'shift__cashier', 'shift__opened_by',
+            ).get(pk=delivery_id)
+            if delivery.sent_at or not delivery.account.notifications_enabled:
+                continue
+            if not TelegramBranchSubscription.objects.filter(account=delivery.account, restaurant=delivery.shift.cash_desk.restaurant).exists():
+                delivery.delete()
+                continue
+            try:
+                chunks = split_telegram_message(render_shift_report(delivery.shift))
+                client = TelegramBotClient()
+                for chunk in chunks[delivery.next_chunk:]:
+                    client.send_message(chat_id=delivery.account.chat_id, text=chunk)
+                    delivery.next_chunk += 1
+                delivery.sent_at = timezone.now()
+                delivery.error = ''
+            except TelegramAPIError as error:
+                delivery.error = str(error)[:2000]
+                if error.error_code == 403:
+                    delivery.account.notifications_enabled = False
+                    delivery.account.save(update_fields=('notifications_enabled', 'updated_at'))
+            delivery.save(update_fields=('next_chunk', 'sent_at', 'error', 'updated_at'))

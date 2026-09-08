@@ -24,7 +24,7 @@ def _shift_report_layout_is_current(layout: dict) -> bool:
         '{{report.cashReceiptSale}}',
         '{{report.cardPrecheckSale}}',
         '{{report.cardReceiptSale}}',
-    }.issubset(values)
+    }.issubset(values) and any(block.get('id') == 'sold-items' for block in layout.get('blocks', []))
 
 
 @transaction.atomic

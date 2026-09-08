@@ -386,7 +386,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
     @transaction.atomic
     def close_shift(
         self, *, shift, actual_closing_cash_amount, closed_by, notes_close="",
-        trusted_edge_replay=False, closed_at=None, close_sequence=None
+        trusted_edge_replay=False, closed_at=None, close_sequence=None, include_sold_items=False
     ):
         shift = (
             CashShift.objects.select_for_update(of=("self",))
@@ -424,7 +424,10 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
         shift.receipt_count = snapshot["receipt_count"]
         shift.reprint_count = snapshot["reprint_count"]
         shift.notes_close = notes_close or ""
+        from .shift_items import build_shift_sold_items
         shift.close_report_payload = {
+            "sold_items": build_shift_sold_items(shift),
+            "include_sold_items": include_sold_items,
             "snapshot": snapshot,
             "report": self.build_fiscal_shift_report(shift=shift),
             "closed_at": shift.closed_at.isoformat() if shift.closed_at else None,
@@ -450,4 +453,7 @@ class CashShiftService(CashShiftReportingMixin, FiscalShiftLifecycleMixin):
                 "updated_at",
             ]
         )
+        from apps.telegram_reports.tasks import enqueue_shift_report, prepare_shift_deliveries
+        if prepare_shift_deliveries(shift):
+            transaction.on_commit(lambda: enqueue_shift_report(str(shift.pk)), robust=True)
         return shift

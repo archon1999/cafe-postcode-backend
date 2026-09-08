@@ -23,6 +23,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
     cash_desk_name = serializers.CharField(source='cash_desk.name', read_only=True)
     cashier_name = serializers.CharField(source='cashier.full_name', read_only=True, allow_null=True)
     opened_by_name = serializers.CharField(source='opened_by.full_name', read_only=True)
+    sold_items = serializers.SerializerMethodField()
     expected_closing_cash_amount = serializers.SerializerMethodField()
     cash_total = serializers.SerializerMethodField()
     card_total = serializers.SerializerMethodField()
@@ -88,6 +89,7 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'fiscal_receipt_count',
             'reprint_count',
             'next_order_number',
+            'sold_items',
             'notes_open',
             'notes_close',
             'edge_close_sequence',
@@ -97,6 +99,11 @@ class CashShiftSerializer(serializers.ModelSerializer):
             'updated_at',
         )
         read_only_fields = fields
+
+    def get_sold_items(self, obj):
+        from apps.billing.services.shift_items import build_shift_sold_items
+        saved = (obj.close_report_payload or {}).get('sold_items')
+        return saved if saved is not None else build_shift_sold_items(obj)
 
     def get_expected_closing_cash_amount(self, obj):
         return self._snapshot(obj)['expected_closing_cash_amount']
