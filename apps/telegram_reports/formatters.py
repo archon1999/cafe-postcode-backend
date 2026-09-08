@@ -76,6 +76,11 @@ def format_compact_money(value: int, *, include_currency: bool = True) -> str:
     return f"{text} so‘m" if include_currency else text
 
 
+def format_pos_money(value: int) -> str:
+    """Format money exactly like the Uzbek POS shift summary."""
+    return f"{int(value or 0):,} so'm"
+
+
 def format_quantity(value: int | float) -> str:
     quantity = Decimal(str(value or 0))
     text = format(quantity.normalize(), "f")

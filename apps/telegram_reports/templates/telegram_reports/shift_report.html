@@ -1,13 +1,32 @@
 <b>{{ branch_name }}</b>
-<b>Smena hisoboti</b> • {{ opened_at }} – {{ closed_at }}
+<b>Smena hisoboti</b>
 {{ cash_desk }} • {{ cashier }}
 
-<b>Tushum</b>: {{ sales }}
-<b>Buyurtmalar</b>: {{ orders }} ta
-<b>O‘rtacha chek</b>: {{ average }}
+Smena ochilgan: {{ opened_at }}
+{% if first_receipt %}Birinchi chek: {{ first_receipt }}
+{% endif %}{% if last_receipt %}Oxirgi chek: {{ last_receipt }}
+{% endif %}
+<b>Sotuv</b>
+Sotuvlar: {{ sale_count }}
+Naqd — prechek: {{ cash_precheck }}
+Naqd — chek: {{ cash_receipt }}
+Karta — prechek: {{ card_precheck }}
+Karta — chek: {{ card_receipt }}
+{% if show_qr_sale %}QR: {{ qr_sale }}
+{% endif %}{% if show_vat_sale %}QQS: {{ vat_sale }}
+{% endif %}<b>Jami: {{ total_sale }}</b>
 
-<b>Naqd</b>: {{ cash }} • <b>Karta</b>: {{ card }} • <b>QR</b>: {{ qr }}
-<b>Qaytarishlar</b>: {{ refunds }}
-<b>Xarajatlar</b>: {{ expenses }}
+<b>Sotilgan mahsulotlar</b>
+{% for item in sold_items %}{{ item.item_name }} — {{ item.formatted_quantity }} {{ item.quantity_unit }} · {{ item.formatted_revenue }}{% if not forloop.last %}
+{% endif %}{% empty %}Sotilgan mahsulotlar yo‘q{% endfor %}
 
-{% include "telegram_reports/blocks/top_items.html" %}
+<b>Qaytarish</b>
+Qaytarishlar: {{ refund_count }}
+Naqd: {{ cash_refund }}
+Karta: {{ card_refund }}
+{% if show_qr_refund %}QR: {{ qr_refund }}
+{% endif %}{% if show_vat_refund %}QQS: {{ vat_refund }}
+{% endif %}<b>Jami: {{ total_refund }}</b>
+
+<b>Xarajatlar: {{ expenses }}</b>
+<b>Kutilgan naqd: {{ expected_cash }}</b>

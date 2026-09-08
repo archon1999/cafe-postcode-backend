@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
@@ -70,7 +71,7 @@ class ShiftReportsTests(PosTestCase):
         closed = self.close(True)
         document = CashShiftService().create_shift_report_documents(shift=closed, closed=True)[0]
         self.assertEqual([row['lineTotal'] for row in document.data_snapshot['items']], [54000, 36000])
-        self.assertIn('54 ming', render_shift_report(closed))
+        self.assertIn("54,000 so&#x27;m", render_shift_report(closed))
 
     def test_close_print_defaults_off_and_opt_in_contains_items(self):
         shift = self.close()
@@ -89,7 +90,17 @@ class ShiftReportsTests(PosTestCase):
         shift = self.close(True)
         text = render_shift_report(shift)
         self.assertIn('&lt;Branch &amp; Cafe&gt;', text)
-        self.assertIn(timezone.localtime(shift.opened_at).strftime('%d.%m.%Y %H:%M:%S'), text)
+        self.assertIn(timezone.localtime(shift.opened_at).strftime('%Y-%m-%d %H:%M'), text)
+        self.assertIn('<b>Sotuv</b>', text)
+        self.assertIn('Sotuvlar: 2', text)
+        self.assertIn("Naqd — prechek: 37,500 so&#x27;m", text)
+        self.assertIn("<b>Jami: 37,500 so&#x27;m</b>", text)
+        self.assertIn('<b>Sotilgan mahsulotlar</b>', text)
+        self.assertIn('<b>Qaytarish</b>', text)
+        self.assertIn("<b>Xarajatlar: 0 so&#x27;m</b>", text)
+        self.assertIn("<b>Kutilgan naqd: 37,500 so&#x27;m</b>", text)
+        self.assertNotIn('Buyurtmalar', text)
+        self.assertNotIn('O‘rtacha chek', text)
         self.assertIn('Osh', text)
         self.assertNotIn('💰', text)
         OrderItem.objects.filter(order=self.order).update(quantity=10)
@@ -99,6 +110,61 @@ class ShiftReportsTests(PosTestCase):
             send_shift_reports(str(shift.pk))
             self.assertEqual(client.return_value.send_message.call_count, 1)
         self.assertIsNotNone(TelegramShiftDelivery.objects.get(shift=shift).sent_at)
+
+    def test_telegram_uses_the_pos_shift_summary_rows_and_order(self):
+        shift = self.close(True)
+        payload = deepcopy(shift.close_report_payload)
+        payload['report']['pos_report'].update({
+            'TotalSaleCount': 3,
+            'TotalRefundCount': 1,
+            'TotalCash': {'Sale': 134200, 'Refund': 1200, 'Precheck': 134200, 'Receipt': 0},
+            'TotalCard': {'Sale': 20000, 'Refund': 800, 'Precheck': 5000, 'Receipt': 15000},
+            'TotalQR': {'Sale': 10000, 'Refund': 500},
+            'TotalVAT': {'Sale': 14379, 'Refund': 214},
+            'TotalSaleAmount': 164200,
+            'TotalRefundAmount': 2500,
+            'Payments': [{'order_number': 68}, {'order_number': 70}],
+        })
+        payload['snapshot'].update({
+            'expense_total': 3000,
+            'expected_closing_cash_amount': 130000,
+        })
+        payload['sold_items'] = [{
+            'name': 'CHICKEN BURGER',
+            'quantity': 2,
+            'sale_unit': 'piece',
+            'revenue': 106000,
+        }]
+        shift.close_report_payload = payload
+
+        text = render_shift_report(shift)
+
+        expected_rows = [
+            'Birinchi chek: 68',
+            'Oxirgi chek: 70',
+            '<b>Sotuv</b>',
+            'Sotuvlar: 3',
+            "Naqd — prechek: 134,200 so&#x27;m",
+            "Naqd — chek: 0 so&#x27;m",
+            "Karta — prechek: 5,000 so&#x27;m",
+            "Karta — chek: 15,000 so&#x27;m",
+            "QR: 10,000 so&#x27;m",
+            "QQS: 14,379 so&#x27;m",
+            "<b>Jami: 164,200 so&#x27;m</b>",
+            '<b>Sotilgan mahsulotlar</b>',
+            "CHICKEN BURGER — 2 ta · 106,000 so&#x27;m",
+            '<b>Qaytarish</b>',
+            'Qaytarishlar: 1',
+            "Naqd: 1,200 so&#x27;m",
+            "Karta: 800 so&#x27;m",
+            "QR: 500 so&#x27;m",
+            "QQS: 214 so&#x27;m",
+            "<b>Jami: 2,500 so&#x27;m</b>",
+            "<b>Xarajatlar: 3,000 so&#x27;m</b>",
+            "<b>Kutilgan naqd: 130,000 so&#x27;m</b>",
+        ]
+        positions = [text.index(row) for row in expected_rows]
+        self.assertEqual(positions, sorted(positions))
 
     def test_opted_in_close_creates_product_print_document(self):
         shift = self.close(True)
