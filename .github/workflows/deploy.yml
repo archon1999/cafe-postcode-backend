@@ -131,7 +131,7 @@ jobs:
                         json={'model': model, 'store': False, 'input': 'Reply with exactly OK.',
                               'reasoning': {'effort': 'low'}, 'max_output_tokens': 128})
                     payload = response.json()
-                code = str(payload.get('error', {}).get('code') or '')
+                code = str((payload.get('error') or {}).get('code') or '')
                 print(json.dumps({'httpStatus': response.status_code, 'status': payload.get('status'),
                     'errorCode': code if re.fullmatch(r'[a-z_]{0,80}', code) else 'redacted',
                     'elapsedSeconds': round(time.monotonic() - started, 2)}))
