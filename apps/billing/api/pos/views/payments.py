@@ -17,6 +17,7 @@ from apps.billing.serializers import (
 )
 from apps.billing.services import CashShiftService, OrderPaymentService, PaymentFiscalRetryService, PaymentRefundService
 from apps.billing.services.financial_authority import dispatch_to_financial_owner
+from apps.billing.services.fiscal_retry_validation_desk import fiscal_retry_validation_desk
 from apps.billing.services.edge_shift_recovery import resolve_trusted_edge_payment_shift, materialize_edge_shift
 from apps.platform.services import FeatureGateService
 from apps.sales.helpers import get_order_model
@@ -238,9 +239,12 @@ class PaymentFiscalRetryView(APIView):
                 raise ValidationError({'edgeFiscalResults': 'Fiscal results JSON is invalid.'}) from error
         validated_edge_fiscal_results = None
         if edge_fiscal_results is not None:
+            validation_desk = fiscal_retry_validation_desk(
+                payment=payment, payload=request.data, trusted_edge_replay=trusted_edge_replay,
+            )
             validated_edge_fiscal_results = OrderPaymentService._validated_edge_fiscal_results(
                 results=edge_fiscal_results,
-                cash_desk=payment.cash_desk,
+                cash_desk=validation_desk,
                 register_fiscal=True,
                 expected_amount=int((payment.financial_snapshot or {}).get('orderTotal') or payment.order.total or 0),
                 allow_partial=True,
