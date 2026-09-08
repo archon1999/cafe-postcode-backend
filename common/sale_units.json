@@ -1,0 +1,65 @@
+{
+  "piece": {
+    "enum": "PIECE",
+    "name": "Piece",
+    "step": 1,
+    "precision": 0,
+    "quantityInput": false,
+    "allowZero": false,
+    "markingAllowed": true,
+    "labels": {
+      "uz": "dona",
+      "uz-crl": "дона",
+      "uz-Cyrl": "дона",
+      "ru": "шт"
+    },
+    "adminLabelKey": "fields.saleUnitPiece",
+    "adminPriceKey": "fields.pricePerPiece",
+    "quantityKey": "common:quantityUnits.piece",
+    "posPriceKey": "pricePerPiece",
+    "posTitleKey": "pieceQuantityTitle",
+    "posInvalidKey": "pieceQuantityInvalid"
+  },
+  "kg": {
+    "enum": "KILOGRAM",
+    "name": "Kilogram",
+    "step": 0.001,
+    "precision": 3,
+    "quantityInput": true,
+    "allowZero": false,
+    "markingAllowed": false,
+    "labels": {
+      "uz": "kg",
+      "uz-crl": "кг",
+      "uz-Cyrl": "кг",
+      "ru": "кг"
+    },
+    "adminLabelKey": "fields.saleUnitKilogram",
+    "adminPriceKey": "fields.pricePerKilogram",
+    "quantityKey": "common:quantityUnits.kilogram",
+    "posPriceKey": "pricePerKilogram",
+    "posTitleKey": "weightTitle",
+    "posInvalidKey": "weightInvalid"
+  },
+  "pors": {
+    "enum": "PORTION",
+    "name": "Portion",
+    "step": 0.5,
+    "precision": 1,
+    "quantityInput": true,
+    "allowZero": true,
+    "markingAllowed": false,
+    "labels": {
+      "uz": "pors",
+      "uz-crl": "pors",
+      "uz-Cyrl": "pors",
+      "ru": "pors"
+    },
+    "adminLabelKey": "fields.saleUnitPortion",
+    "adminPriceKey": "fields.pricePerPortion",
+    "quantityKey": "common:quantityUnits.portion",
+    "posPriceKey": "pricePerPortion",
+    "posTitleKey": "portionTitle",
+    "posInvalidKey": "portionInvalid"
+  }
+}

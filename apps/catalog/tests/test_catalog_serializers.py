@@ -141,6 +141,11 @@ class CatalogCategorySerializerTests(SimpleTestCase):
 
 
 class CatalogItemSerializerTests(SimpleTestCase):
+    def test_portion_unit_is_accepted(self):
+        serializer = CatalogItemSerializer(data={'name': 'Soup', 'price': 10000, 'sale_unit': 'pors'})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data['sale_unit'], 'pors')
+
     def test_service_forces_zero_catalog_price_and_piece_unit(self):
         serializer = CatalogItemSerializer(
             data={

@@ -1,3 +1,5 @@
+from common.sale_units import sale_unit_rule
+
 from django.db.models import Max
 from rest_framework import serializers
 from django.utils.translation import gettext_lazy as _
@@ -155,9 +157,9 @@ class CatalogItemSerializer(
             attrs["price"] = 0
             attrs["sale_unit"] = CatalogItem.SaleUnit.PIECE
             sale_unit = CatalogItem.SaleUnit.PIECE
-        if sale_unit == CatalogItem.SaleUnit.KILOGRAM and attrs["requires_marking"]:
+        if not sale_unit_rule(sale_unit)["markingAllowed"] and attrs["requires_marking"]:
             raise serializers.ValidationError(
-                {"sale_unit": _("Marked products cannot be sold by kilogram.")}
+                {"sale_unit": _("Marked products require whole-piece sale units.")}
             )
         if not attrs.get("marking_gtin"):
             payload_item = type(

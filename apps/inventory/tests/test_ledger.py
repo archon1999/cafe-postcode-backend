@@ -238,6 +238,17 @@ class InventoryLedgerTests(TestCase):
         with self.assertRaises(ValidationError):
             services.reverse_document(count, 'Xato')
 
+    def test_portion_availability_uses_half_portion_minimum(self):
+        self.recipe('100')
+        self.item.availability_mode = 'block'
+        self.item.save()
+        self.catalog.sale_unit = 'pors'
+        self.catalog.save()
+        self.document(quantity='50')
+        self.assertFalse(services.get_menu_inventory(self.catalog)['blocked'])
+        self.document(kind='issue', quantity='1')
+        self.assertTrue(services.get_menu_inventory(self.catalog)['blocked'])
+
     def test_menu_availability_block_warn_and_manual_flag_preserved(self):
         self.recipe('100')
         self.item.availability_mode = 'block'

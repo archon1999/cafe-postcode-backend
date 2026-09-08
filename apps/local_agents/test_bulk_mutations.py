@@ -55,3 +55,55 @@ class LocalAgentBulkMutationTests(PosAPITestCase):
         item = order.items.get()
         self.assertEqual(item.sale_unit, 'kg')
         self.assertEqual(float(item.quantity), 1.4)
+
+    def test_portions_replay_once_and_reject_invalid_steps(self):
+        self.catalog_item.sale_unit = 'pors'
+        self.catalog_item.save(update_fields=['sale_unit', 'updated_at'])
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            order_number=9091,
+            channel=Order.Channel.TAKEAWAY,
+        )
+        operation = {
+            'operationId': 'edge-portion-bulk-item-1',
+            'userId': str(self.user.id),
+            'method': 'POST',
+            'path': f'/api/v1/pos/sales/orders/{order.id}/items/bulk/',
+            'body': {
+                'items': [
+                    {
+                        'catalogItem': str(self.catalog_item.id),
+                        'quantity': 0.5,
+                        'note': '',
+                    }
+                ]
+            },
+        }
+
+        response = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        result = response.data['results'][0]
+        self.assertTrue(result['ok'], response.data)
+        self.assertEqual(result['status'], status.HTTP_201_CREATED)
+        item = order.items.get()
+        self.assertEqual(item.sale_unit, 'pors')
+        self.assertEqual(float(item.quantity), 0.5)
+
+        repeated = self.client.post('/api/v1/local-agent/sync/mutations/', {'operations': [operation]},
+                                    format='json', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertTrue(repeated.data['results'][0]['ok'], repeated.data)
+        self.assertEqual(order.items.count(), 1)
+        operation['operationId'] = 'edge-portion-invalid'
+        operation['body']['items'][0]['quantity'] = 0.25
+        rejected = self.client.post('/api/v1/local-agent/sync/mutations/', {'operations': [operation]},
+                                   format='json', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertFalse(rejected.data['results'][0]['ok'], rejected.data)
+        self.assertEqual(order.items.count(), 1)

@@ -10,6 +10,7 @@ from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 from apps.catalog.models import CatalogItem, CatalogItemModifierGroup
 from apps.sales.models import OrderItemModifier
 from common.api.scopes import get_optional_request_restaurant
+from common.sale_units import sale_quantity_step, sale_unit_rule, valid_sale_quantity
 
 from .order_item_modifier import OrderItemModifierSerializer, SelectedModifierGroupSerializer
 
@@ -157,7 +158,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             if catalog_item and catalog_item.is_stoplisted:
                 raise serializers.ValidationError({'catalog_item': _('This menu item is in stoplist.')})
         quantity = attrs.get('quantity', getattr(self.instance, 'quantity', Decimal('1')))
-        sale_unit = getattr(catalog_item, 'sale_unit', CatalogItem.SaleUnit.PIECE)
+        sale_unit = getattr(self.instance, 'sale_unit', getattr(catalog_item, 'sale_unit', CatalogItem.SaleUnit.PIECE))
         item_type = getattr(catalog_item, 'item_type', CatalogItem.ItemType.PRODUCT)
         manual_price = attrs.get('manual_price')
         if self.instance is None:
@@ -167,12 +168,10 @@ class OrderItemSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'manual_price': _('Manual price is allowed only for services.')}
                 )
-        if quantity is None or quantity <= 0:
-            raise serializers.ValidationError({'quantity': _('Quantity must be greater than zero.')})
-        if sale_unit == CatalogItem.SaleUnit.PIECE and quantity != quantity.to_integral_value():
-            raise serializers.ValidationError({'quantity': _('Piece products require a whole-number quantity.')})
-        if sale_unit == CatalogItem.SaleUnit.KILOGRAM and item_requires_marking(catalog_item):
-            raise serializers.ValidationError({'catalog_item': _('Marked products cannot be sold by kilogram.')})
+        if not valid_sale_quantity(quantity, sale_unit):
+            raise serializers.ValidationError({'quantity': _('Quantity must be positive and a multiple of %(step)s.') % {'step': sale_quantity_step(sale_unit)}})
+        if not sale_unit_rule(sale_unit)['markingAllowed'] and item_requires_marking(catalog_item):
+            raise serializers.ValidationError({'catalog_item': _('Marked products require whole-piece sale units.')})
         if self.instance is not None:
             self.validate_update_constraints(instance=self.instance, attrs=attrs)
             return attrs

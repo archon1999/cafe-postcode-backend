@@ -4,6 +4,8 @@ Warehouse rows serialize ledger writes (including previously nonexistent balance
 Balances are projections; posted documents/movements are never rewritten. A count
 uses the ledger revision captured when its draft is created, not a moving target.
 """
+from common.sale_units import sale_quantity_step
+
 from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -575,7 +577,7 @@ def _recipe_availability(recipe, balances, modifier_options=None):
     result['tracked'] = True
     requirements = components_for(recipe, Decimal('1'), {str(getattr(value, 'pk', value)) for value in (modifier_options or [])})
     ingredients = {str(row.item_id): row.item for row in recipe.lines.all()}
-    minimum_sale_quantity = Decimal('0.001') if catalog_item.sale_unit == 'kg' else Decimal('1')
+    minimum_sale_quantity = sale_quantity_step(catalog_item.sale_unit)
     available, reasons = [], []
     for ingredient_id, required in requirements.items():
         ingredient = ingredients[ingredient_id]

@@ -4,12 +4,11 @@ from django.conf import settings
 from django.db import models
 
 from common.models import BaseModel
+from common.sale_units import SaleUnit
 
 
 class OrderItem(BaseModel):
-    class SaleUnit(models.TextChoices):
-        PIECE = 'piece', 'Piece'
-        KILOGRAM = 'kg', 'Kilogram'
+    SaleUnit = SaleUnit
 
     class Status(models.TextChoices):
         NEW = 'new', 'New'

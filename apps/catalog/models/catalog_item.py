@@ -4,6 +4,7 @@ import uuid
 from django.db import models
 
 from common.models import BaseModel
+from common.sale_units import SaleUnit
 from common.storages import CatalogItemImageStorage
 
 
@@ -18,9 +19,7 @@ class CatalogItem(BaseModel):
         PRODUCT = 'product', 'Product'
         SERVICE = 'service', 'Service'
 
-    class SaleUnit(models.TextChoices):
-        PIECE = 'piece', 'Piece'
-        KILOGRAM = 'kg', 'Kilogram'
+    SaleUnit = SaleUnit
 
     class ImageSource(models.TextChoices):
         MXIK_CACHE = 'mxik-cache', 'MXIK cache'

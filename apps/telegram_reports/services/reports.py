@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from common.sale_units import sale_unit_rule
+
 from datetime import date, timedelta
 
 from django.template.loader import render_to_string
@@ -93,8 +95,9 @@ class TelegramReportService:
 
     @staticmethod
     def get_quantity_unit(row: dict) -> str:
-        if row.get("sale_unit") == "kg":
-            return "kg"
+        unit = sale_unit_rule(row.get("sale_unit"))
+        if unit["quantityInput"]:
+            return unit["labels"]["uz"]
         if row.get("item_type") == "service":
             return "ta xizmat"
         return "ta"
