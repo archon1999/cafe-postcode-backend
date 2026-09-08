@@ -55,6 +55,10 @@ Inventory advice uses the server-only `INVENTORY_AI_API_KEY` and defaults to
 base64-encoded GitHub Actions secret `INVENTORY_AI_API_KEY_B64` into the private
 host environment file; the web container receives the decoded key at runtime.
 Never put this key into frontend build variables or commit it to the repository.
+An optional server-only `INVENTORY_AI_PROXY_URL` routes only inventory AI calls
+through an HTTP proxy, with TLS certificate verification enabled. Set the
+base64-encoded GitHub secret `INVENTORY_AI_PROXY_URL_B64` to synchronize it into
+the private host environment. Treat authenticated proxy URLs as credentials.
 The analysis endpoint requires inventory view, cost view, and analysis permissions,
 and only sends scoped inventory evidence to OpenAI with response storage disabled.
 

@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.inventory.ai import InventoryAIUnavailable, ai_configuration, analyze_inventory, validate_analysis
+from apps.inventory.ai import InventoryAIUnavailable, ai_configuration, ai_proxy_url, analyze_inventory, validate_analysis
 
 
 class InventoryAnalysisTests(SimpleTestCase):
@@ -23,12 +23,23 @@ class InventoryAnalysisTests(SimpleTestCase):
     def test_default_model_is_luna(self):
         self.assertEqual(ai_configuration(), ('test-key', 'gpt-5.6-luna'))
 
+    @override_settings(INVENTORY_AI_PROXY_URL='')
+    @patch.dict('os.environ', {'INVENTORY_AI_PROXY_URL': ''})
+    def test_proxy_is_optional(self):
+        self.assertIsNone(ai_proxy_url())
+
+    @override_settings(INVENTORY_AI_PROXY_URL='')
+    @patch.dict('os.environ', {'INVENTORY_AI_PROXY_URL': ' http://proxy.example:8000 '})
+    def test_proxy_configuration_from_environment(self):
+        self.assertEqual(ai_proxy_url(), 'http://proxy.example:8000')
+
     def test_unrecognized_evidence_is_rejected(self):
         self.analysis['recommendations'][0]['evidenceIds'] = ['invented-1']
         with self.assertRaises(InventoryAIUnavailable):
             validate_analysis(self.analysis, {'shortage-1'})
 
-    @override_settings(INVENTORY_AI_API_KEY='test-not-a-real-key', INVENTORY_AI_MODEL='configured-test-model')
+    @override_settings(INVENTORY_AI_API_KEY='test-not-a-real-key', INVENTORY_AI_MODEL='configured-test-model',
+                       INVENTORY_AI_PROXY_URL='http://operator:private-password@proxy.example:8000')
     @patch('apps.inventory.reports.insights')
     @patch('apps.inventory.ai.httpx.Client')
     def test_grounded_response_is_read_only_and_cached_per_tenant(self, client_type, insights):
@@ -50,6 +61,9 @@ class InventoryAnalysisTests(SimpleTestCase):
         self.assertNotIn('tools', body)
         self.assertEqual(body['model'], 'configured-test-model')
         self.assertEqual(body['reasoning'], {'effort': 'low'})
+        self.assertEqual(client_type.call_args.kwargs['proxy'], 'http://operator:private-password@proxy.example:8000')
+        self.assertNotIn('private-password', json.dumps(body))
+        self.assertNotIn('private-password', json.dumps(first))
 
     @override_settings(INVENTORY_AI_API_KEY='test-not-a-real-key', INVENTORY_AI_MODEL='configured-test-model')
     @patch('apps.inventory.reports.insights')
@@ -60,6 +74,18 @@ class InventoryAnalysisTests(SimpleTestCase):
         with self.assertRaises(InventoryAIUnavailable) as caught:
             analyze_inventory(SimpleNamespace(pk='restaurant-a'))
         self.assertNotIn('secret-value', str(caught.exception))
+
+    @override_settings(INVENTORY_AI_API_KEY='private-key')
+    @patch('apps.inventory.reports.insights')
+    @patch('apps.inventory.ai.httpx.Client')
+    def test_proxy_failure_does_not_leak_credentials(self, client_type, insights):
+        insights.return_value = self.facts
+        client_type.return_value.__enter__.return_value.post.side_effect = httpx.ProxyError(
+            'http://operator:private-password@proxy.example:8000')
+        with self.assertRaises(InventoryAIUnavailable) as caught:
+            analyze_inventory(SimpleNamespace(pk='restaurant-a'))
+        self.assertNotIn('private-password', str(caught.exception))
+        self.assertNotIn('private-key', str(caught.exception))
 
 
 class InventoryAnalysisAccessTests(TestCase):

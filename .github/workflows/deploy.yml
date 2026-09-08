@@ -33,6 +33,7 @@ jobs:
       - name: Deploy production over SSH
         env:
           INVENTORY_AI_API_KEY_B64: ${{ secrets.INVENTORY_AI_API_KEY_B64 }}
+          INVENTORY_AI_PROXY_URL_B64: ${{ secrets.INVENTORY_AI_PROXY_URL_B64 }}
           FAKTURA_USERNAME_B64: ${{ secrets.FAKTURA_USERNAME_B64 }}
           FAKTURA_PASSWORD_B64: ${{ secrets.FAKTURA_PASSWORD_B64 }}
           FAKTURA_CLIENT_ID_B64: ${{ secrets.FAKTURA_CLIENT_ID_B64 }}
@@ -46,7 +47,7 @@ jobs:
           port: ${{ secrets.PORT }}
           timeout: 60s
           command_timeout: 40m
-          envs: INVENTORY_AI_API_KEY_B64,FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
+          envs: INVENTORY_AI_API_KEY_B64,INVENTORY_AI_PROXY_URL_B64,FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
           script: |
             set -Eeuo pipefail
             exec 9>/home/postcode/.cafe-postcode-deploy.lock
@@ -81,6 +82,12 @@ jobs:
                     raise SystemExit('Empty inventory AI credential')
                 values['INVENTORY_AI_MODEL'] = 'gpt-5.6-luna'
 
+            inventory_proxy = os.environ.get('INVENTORY_AI_PROXY_URL_B64', '')
+            if inventory_proxy:
+                values['INVENTORY_AI_PROXY_URL'] = base64.b64decode(inventory_proxy, validate=True).decode('utf-8').strip()
+                if not values['INVENTORY_AI_PROXY_URL']:
+                    raise SystemExit('Empty inventory AI proxy configuration')
+
             env_path = Path('.env.production')
             original_lines = env_path.read_text(encoding='utf-8').splitlines()
             remaining = dict(values)
@@ -112,13 +119,13 @@ jobs:
             import re
             import time
             import httpx
-            from apps.inventory.ai import ai_configuration
+            from apps.inventory.ai import ai_configuration, ai_proxy_url
 
             key, model = ai_configuration()
-            print(json.dumps({'configured': bool(key and model), 'model': model}))
+            print(json.dumps({'configured': bool(key and model), 'model': model, 'proxyConfigured': bool(ai_proxy_url())}))
             started = time.monotonic()
             try:
-                with httpx.Client(timeout=httpx.Timeout(20, connect=10), follow_redirects=False) as client:
+                with httpx.Client(timeout=httpx.Timeout(20, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
                     response = client.post('https://api.openai.com/v1/responses',
                         headers={'Authorization': f'Bearer {key}'},
                         json={'model': model, 'store': False, 'input': 'Reply with exactly OK.',

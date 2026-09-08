@@ -34,6 +34,10 @@ def ai_available():
     return all(ai_configuration())
 
 
+def ai_proxy_url():
+    return str(getattr(settings, 'INVENTORY_AI_PROXY_URL', '') or os.getenv('INVENTORY_AI_PROXY_URL') or '').strip() or None
+
+
 ANALYSIS_SCHEMA = {
     'type': 'object', 'additionalProperties': False,
     'required': ['summary', 'recommendations'],
@@ -107,7 +111,7 @@ def analyze_inventory(restaurant, warehouse=None, language='uz'):
         'Keep summary under 1000 characters, titles under 160, and each detail under 1200.'
     )
     try:
-        with httpx.Client(timeout=httpx.Timeout(40, connect=10), follow_redirects=False) as client:
+        with httpx.Client(timeout=httpx.Timeout(40, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
             response = client.post(
                 'https://api.openai.com/v1/responses',
                 headers={'Authorization': f'Bearer {key}'},
