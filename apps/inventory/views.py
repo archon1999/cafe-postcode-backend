@@ -162,8 +162,10 @@ class SuppliersDetailView(SuppliersView):
 class CatalogOptionsView(InventoryView):
     def get(self, request):
         queryset = CatalogItem.objects.filter(restaurant=self.restaurant, item_type='product', is_active=True,
-                                              archived_at__isnull=True).prefetch_related('modifier_groups__options')
+                                              archived_at__isnull=True).select_related('category').prefetch_related('modifier_groups__options')
         return self.response([{'id': str(item.pk), 'name': item.name, 'sale_unit': item.sale_unit,
+            'category_id': str(item.category_id) if item.category_id and item.category.restaurant_id == self.restaurant.pk else None,
+            'category_name': item.category.name if item.category_id and item.category.restaurant_id == self.restaurant.pk else '',
             'modifier_options': [{'id': str(option.pk), 'name': option.name, 'group_name': group.name}
                                  for group in item.modifier_groups.all() if group.is_active
                                  for option in group.options.all() if option.is_active]} for item in queryset])

@@ -48,6 +48,16 @@ the UI origin as a separate cookie scope.
 
 ## Required Production Settings
 
+### Inventory AI
+
+Inventory advice uses the server-only `INVENTORY_AI_API_KEY` and defaults to
+`INVENTORY_AI_MODEL=gpt-5.6-luna`. The production workflow synchronizes the
+base64-encoded GitHub Actions secret `INVENTORY_AI_API_KEY_B64` into the private
+host environment file; the web container receives the decoded key at runtime.
+Never put this key into frontend build variables or commit it to the repository.
+The analysis endpoint requires inventory view, cost view, and analysis permissions,
+and only sends scoped inventory evidence to OpenAI with response storage disabled.
+
 `DJANGO_PRODUCTION=1` enforces:
 
 - `DEBUG=0`

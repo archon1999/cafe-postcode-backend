@@ -26,7 +26,7 @@ class InventoryAIUnavailable(APIException):
 def ai_configuration():
     return (
         str(getattr(settings, 'INVENTORY_AI_API_KEY', '') or os.getenv('INVENTORY_AI_API_KEY') or os.getenv('OPENAI_API_KEY') or '').strip(),
-        str(getattr(settings, 'INVENTORY_AI_MODEL', '') or os.getenv('INVENTORY_AI_MODEL') or '').strip(),
+        str(getattr(settings, 'INVENTORY_AI_MODEL', '') or os.getenv('INVENTORY_AI_MODEL') or 'gpt-5.6-luna').strip(),
     )
 
 
@@ -114,6 +114,7 @@ def analyze_inventory(restaurant, warehouse=None, language='uz'):
                 json={
                     'model': model, 'store': False, 'instructions': instructions,
                     'input': facts_json, 'max_output_tokens': 3000,
+                    'reasoning': {'effort': 'low'},
                     'text': {'format': {'type': 'json_schema', 'name': 'inventory_advice',
                                         'strict': True, 'schema': ANALYSIS_SCHEMA}},
                 },

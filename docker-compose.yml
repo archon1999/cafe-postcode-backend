@@ -4,6 +4,8 @@ services:
     build:
       context: .
     environment:
+      INVENTORY_AI_API_KEY: ${INVENTORY_AI_API_KEY:-}
+      INVENTORY_AI_MODEL: ${INVENTORY_AI_MODEL:-gpt-5.6-luna}
       DJANGO_PRODUCTION: "1"
       DEBUG: "0"
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env.production}

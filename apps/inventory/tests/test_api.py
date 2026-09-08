@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from apps.catalog.models import CatalogItem
+from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import Restaurant
 from apps.users.models import Permission, Role, User
@@ -201,6 +201,30 @@ class InventoryAPITests(TestCase):
         response = self.client.get(self.base + 'catalog-options/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()[0]['id'], str(self.catalog.pk))
+
+    def test_catalog_options_include_category_and_keep_tenant_scope(self):
+        category = CatalogCategory.objects.create(restaurant=self.restaurant, name='Hot dishes')
+        self.catalog.category = category
+        self.catalog.save()
+        uncategorized = CatalogItem.objects.create(restaurant=self.restaurant, name='Water')
+        CatalogItem.objects.create(restaurant=self.other, name='Other tenant product')
+        CatalogItem.objects.create(restaurant=self.restaurant, name='Inactive', is_active=False)
+        response = self.client.get(self.base + 'catalog-options/')
+        self.assertEqual(response.status_code, 200)
+        options = {row['id']: row for row in response.json()}
+        self.assertEqual(set(options), {str(self.catalog.pk), str(uncategorized.pk)})
+        self.assertEqual(options[str(self.catalog.pk)]['categoryId'], str(category.pk))
+        self.assertEqual(options[str(self.catalog.pk)]['categoryName'], category.name)
+        self.assertIsNone(options[str(uncategorized.pk)]['categoryId'])
+        self.assertEqual(options[str(uncategorized.pk)]['categoryName'], '')
+
+    def test_catalog_options_do_not_expose_cross_tenant_category(self):
+        category = CatalogCategory.objects.create(restaurant=self.other, name='Private category')
+        self.catalog.category = category
+        self.catalog.save()
+        option = self.client.get(self.base + 'catalog-options/').json()[0]
+        self.assertIsNone(option['categoryId'])
+        self.assertEqual(option['categoryName'], '')
 
     def test_base_unit_cannot_change_after_recipe_or_document(self):
         self.create_document()

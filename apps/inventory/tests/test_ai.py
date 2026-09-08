@@ -7,7 +7,7 @@ from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.inventory.ai import InventoryAIUnavailable, analyze_inventory, validate_analysis
+from apps.inventory.ai import InventoryAIUnavailable, ai_configuration, analyze_inventory, validate_analysis
 
 
 class InventoryAnalysisTests(SimpleTestCase):
@@ -17,6 +17,11 @@ class InventoryAnalysisTests(SimpleTestCase):
         self.analysis = {'summary': 'Qoldiqni tekshiring.', 'recommendations': [
             {'title': 'Qayta sanash', 'detail': 'Kartoshkani qayta torting.', 'evidenceIds': ['shortage-1']},
         ]}
+
+    @override_settings(INVENTORY_AI_API_KEY='', INVENTORY_AI_MODEL='')
+    @patch.dict('os.environ', {'INVENTORY_AI_API_KEY': 'test-key', 'INVENTORY_AI_MODEL': ''})
+    def test_default_model_is_luna(self):
+        self.assertEqual(ai_configuration(), ('test-key', 'gpt-5.6-luna'))
 
     def test_unrecognized_evidence_is_rejected(self):
         self.analysis['recommendations'][0]['evidenceIds'] = ['invented-1']
@@ -44,6 +49,7 @@ class InventoryAnalysisTests(SimpleTestCase):
         self.assertFalse(body['store'])
         self.assertNotIn('tools', body)
         self.assertEqual(body['model'], 'configured-test-model')
+        self.assertEqual(body['reasoning'], {'effort': 'low'})
 
     @override_settings(INVENTORY_AI_API_KEY='test-not-a-real-key', INVENTORY_AI_MODEL='configured-test-model')
     @patch('apps.inventory.reports.insights')

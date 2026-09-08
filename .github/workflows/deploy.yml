@@ -31,6 +31,7 @@ jobs:
     steps:
       - name: Deploy production over SSH
         env:
+          INVENTORY_AI_API_KEY_B64: ${{ secrets.INVENTORY_AI_API_KEY_B64 }}
           FAKTURA_USERNAME_B64: ${{ secrets.FAKTURA_USERNAME_B64 }}
           FAKTURA_PASSWORD_B64: ${{ secrets.FAKTURA_PASSWORD_B64 }}
           FAKTURA_CLIENT_ID_B64: ${{ secrets.FAKTURA_CLIENT_ID_B64 }}
@@ -44,7 +45,7 @@ jobs:
           port: ${{ secrets.PORT }}
           timeout: 60s
           command_timeout: 40m
-          envs: FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
+          envs: INVENTORY_AI_API_KEY_B64,FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
           script: |
             set -Eeuo pipefail
             exec 9>/home/postcode/.cafe-postcode-deploy.lock
@@ -71,6 +72,13 @@ jobs:
                 if not value:
                     raise SystemExit(f'Empty Faktura credential: {key}')
                 values[key] = value
+
+            inventory_key = os.environ.get('INVENTORY_AI_API_KEY_B64', '')
+            if inventory_key:
+                values['INVENTORY_AI_API_KEY'] = base64.b64decode(inventory_key, validate=True).decode('utf-8').strip()
+                if not values['INVENTORY_AI_API_KEY']:
+                    raise SystemExit('Empty inventory AI credential')
+                values['INVENTORY_AI_MODEL'] = 'gpt-5.6-luna'
 
             env_path = Path('.env.production')
             original_lines = env_path.read_text(encoding='utf-8').splitlines()
