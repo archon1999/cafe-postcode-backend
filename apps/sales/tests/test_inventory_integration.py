@@ -24,6 +24,29 @@ from apps.sales.services.marking import OrderMarkingScanService
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
 
+class LegacyInventoryCompatibilityTests(PosAPITestCase):
+    def test_unconfigured_old_agent_dispatch_without_inventory_fields_still_succeeds(self):
+        order = self.create_order_via_api({'channel': 'takeaway', 'guest_count': 1})
+        self.add_item_via_api(order['id'], quantity=1)
+        agent, token = LocalAgent.issue_for_restaurant(restaurant=self.restaurant, name='Legacy 2.0.4')
+        client = APIClient()
+        bind_agent_client(client, agent, token)
+        operation = {
+            'operationId': 'legacy-no-inventory-dispatch', 'userId': str(self.user.pk),
+            'method': 'POST', 'path': f"/api/v1/pos/sales/orders/{order['id']}/submit/", 'body': {},
+        }
+        for replayed in (False, True):
+            response = client.post('/api/v1/local-agent/sync/mutations/', {'operations': [operation]},
+                                   format='json', HTTP_AUTHORIZATION=f'Bearer {token}')
+            self.assertEqual(response.status_code, 200, response.data)
+            result = response.data['results'][0]
+            self.assertEqual(result['status'], 200, result)
+            self.assertEqual(result['replayed'], replayed)
+        self.assertFalse(OrderConsumption.objects.exists())
+        self.assertFalse(StockMovement.objects.exists())
+        self.assertFalse(StockBalance.objects.exists())
+
+
 class InventoryPOSIntegrationTests(PosAPITestCase):
     permission_codes = PosAPITestCase.permission_codes + (
         'pos_fiscal_receipts.skip', 'pos_kitchen_orders.cancel',

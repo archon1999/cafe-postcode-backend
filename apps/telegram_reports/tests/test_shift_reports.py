@@ -130,3 +130,20 @@ class ShiftReportsTests(PosTestCase):
             client.return_value.send_message.reset_mock(side_effect=True)
             send_shift_reports(str(shift.pk))
             client.return_value.send_message.assert_called_once_with(chat_id=123, text='second')
+
+    def test_schedule_and_replayed_historical_close_do_not_backfill_old_shifts(self):
+        from apps.telegram_reports.schedules import ensure_report_schedules
+        from apps.telegram_reports.tasks import dispatch_pending_shift_reports
+        self.shift.status = 'closed'
+        self.shift.closed_at = timezone.now() - timedelta(hours=1)
+        self.shift.save(update_fields=['status', 'closed_at'])
+        with patch('apps.telegram_reports.tasks.enqueue_shift_report') as enqueue:
+            self.assertTrue(ensure_report_schedules())
+            dispatch_pending_shift_reports()
+            CashShiftService().close_shift(
+                shift=self.shift, actual_closing_cash_amount=None,
+                closed_by=self.user, trusted_edge_replay=True,
+            )
+            dispatch_pending_shift_reports()
+        enqueue.assert_not_called()
+        self.assertFalse(TelegramShiftDelivery.objects.exists())
