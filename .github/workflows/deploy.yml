@@ -16,6 +16,7 @@ on:
         options:
           - deploy
           - inspect_agent_status
+          - inspect_inventory_ai
 
 permissions:
   contents: read
@@ -105,6 +106,34 @@ jobs:
             print('Faktura production credentials synchronized.')
             PY
             operation='${{ inputs.operation }}'
+            if [ "$operation" = 'inspect_inventory_ai' ]; then
+              docker compose --env-file .env.production exec -T web python manage.py shell -c "import sys; exec(sys.stdin.read())" <<'PY'
+            import json
+            import re
+            import time
+            import httpx
+            from apps.inventory.ai import ai_configuration
+
+            key, model = ai_configuration()
+            print(json.dumps({'configured': bool(key and model), 'model': model}))
+            started = time.monotonic()
+            try:
+                with httpx.Client(timeout=httpx.Timeout(20, connect=10), follow_redirects=False) as client:
+                    response = client.post('https://api.openai.com/v1/responses',
+                        headers={'Authorization': f'Bearer {key}'},
+                        json={'model': model, 'store': False, 'input': 'Reply with exactly OK.',
+                              'reasoning': {'effort': 'low'}, 'max_output_tokens': 128})
+                    payload = response.json()
+                code = str(payload.get('error', {}).get('code') or '')
+                print(json.dumps({'httpStatus': response.status_code, 'status': payload.get('status'),
+                    'errorCode': code if re.fullmatch(r'[a-z_]{0,80}', code) else 'redacted',
+                    'elapsedSeconds': round(time.monotonic() - started, 2)}))
+            except Exception as error:
+                print(json.dumps({'errorType': type(error).__name__,
+                    'elapsedSeconds': round(time.monotonic() - started, 2)}))
+            PY
+              exit 0
+            fi
             if [ "$operation" = 'inspect_agent_status' ]; then
               docker compose --env-file .env.production exec -T web python manage.py shell <<'PY'
             import json
