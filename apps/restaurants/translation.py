@@ -5,7 +5,8 @@ from .models import DistributionPoint, PrepStation, Restaurant
 
 @register(Restaurant)
 class RestaurantTranslationOptions(TranslationOptions):
-    fields = ('name', 'legal_name', 'address')
+    # Business names are identifiers shared by every interface language.
+    fields = ('address',)
 
 
 @register(PrepStation)
