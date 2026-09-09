@@ -6,8 +6,10 @@ from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 from apps.catalog.serializers.modifier import PosModifierGroupSerializer
 
+from .offline_translations import OfflineTranslationsMixin
 
-class PosCatalogItemSerializer(serializers.ModelSerializer):
+
+class PosCatalogItemSerializer(OfflineTranslationsMixin, serializers.ModelSerializer):
     menu_restaurant_context_key = 'pos_menu_restaurant'
     menu_default_prep_station_context_key = 'pos_menu_default_prep_station'
 
@@ -86,14 +88,13 @@ class PosCatalogItemSerializer(serializers.ModelSerializer):
         station = self._resolve_prep_station(obj)
         return station.name if station is not None else ''
 
-    @staticmethod
-    def get_modifier_groups(obj):
+    def get_modifier_groups(self, obj):
         assignments = getattr(obj, 'active_modifier_assignments', None)
         if assignments is None:
             assignments = obj.modifier_assignments.filter(modifier_group__is_active=True).select_related(
                 'modifier_group'
             ).prefetch_related('modifier_group__options')
-        return PosModifierGroupSerializer([assignment.modifier_group for assignment in assignments], many=True).data
+        return PosModifierGroupSerializer([assignment.modifier_group for assignment in assignments], many=True, context=self.context).data
 
     class Meta:
         model = CatalogItem

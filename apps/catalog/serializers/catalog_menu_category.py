@@ -6,8 +6,10 @@ from apps.catalog.utils.cash_sale import is_catalog_category_cash_sale_forbidden
 from .pos_catalog_item import PosCatalogItemSerializer
 from .catalog_item_group import PosCatalogItemGroupSerializer
 
+from .offline_translations import OfflineTranslationsMixin
 
-class CatalogMenuCategorySerializer(serializers.ModelSerializer):
+
+class CatalogMenuCategorySerializer(OfflineTranslationsMixin, serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
     item_groups = serializers.SerializerMethodField()
     cash_payment_forbidden = serializers.SerializerMethodField()

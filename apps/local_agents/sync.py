@@ -47,7 +47,7 @@ def _menu_snapshot(restaurant):
         .prefetch_related(Prefetch('items', queryset=items, to_attr='active_menu_items'))
         .order_by('sort_order', 'name')
     )
-    return CatalogMenuCategorySerializer(categories, many=True).data
+    return CatalogMenuCategorySerializer(categories, many=True, context={"offline_translations": True}).data
 
 
 def _hall_snapshot(restaurant):

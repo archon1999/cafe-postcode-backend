@@ -4,6 +4,8 @@ from rest_framework import serializers
 from apps.catalog.models import ModifierGroup, ModifierOption
 from common.api.scopes import get_optional_request_restaurant
 
+from .offline_translations import OfflineTranslationsMixin
+
 
 class ModifierOptionSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
@@ -23,7 +25,7 @@ class ModifierOptionSerializer(serializers.ModelSerializer):
         )
 
 
-class PosModifierOptionSerializer(serializers.ModelSerializer):
+class PosModifierOptionSerializer(OfflineTranslationsMixin, serializers.ModelSerializer):
     class Meta:
         model = ModifierOption
         fields = ("id", "name", "price_delta", "is_default", "sort_order")
@@ -153,7 +155,7 @@ class ModifierGroupSerializer(serializers.ModelSerializer):
         return instance
 
 
-class PosModifierGroupSerializer(serializers.ModelSerializer):
+class PosModifierGroupSerializer(OfflineTranslationsMixin, serializers.ModelSerializer):
     options = serializers.SerializerMethodField()
 
     class Meta:
@@ -168,11 +170,10 @@ class PosModifierGroupSerializer(serializers.ModelSerializer):
             "options",
         )
 
-    @staticmethod
-    def get_options(obj):
+    def get_options(self, obj):
         prefetched_options = getattr(obj, "active_options", None)
         if prefetched_options is None:
             prefetched_options = obj.options.filter(is_active=True).order_by(
                 "sort_order", "name"
             )
-        return PosModifierOptionSerializer(prefetched_options, many=True).data
+        return PosModifierOptionSerializer(prefetched_options, many=True, context=self.context).data
