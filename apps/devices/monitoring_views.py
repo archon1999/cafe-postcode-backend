@@ -132,38 +132,38 @@ class MonitoringOverviewView(APIView):
             for row in Device.objects.filter(restaurant_id__in=restaurant_ids)
             .values("restaurant_id")
             .annotate(
-                active=Count("id", filter=Q(status=Device.Status.ACTIVE)),
+                active=Count("id", filter=Q(revoked_at__isnull=True, status=Device.Status.ACTIVE)),
                 online=Count(
                     "id",
                     filter=Q(
-                        status=Device.Status.ACTIVE,
+                        status=Device.Status.ACTIVE, revoked_at__isnull=True,
                         last_seen_at__gte=device_online_cutoff,
                     ),
                 ),
                 revoked=Count("id", filter=Q(status=Device.Status.REVOKED)),
                 active_local_agent=Count(
                     "id",
-                    filter=Q(status=Device.Status.ACTIVE, type=Device.Type.LOCAL_AGENT),
+                    filter=Q(revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.LOCAL_AGENT),
                 ),
                 active_pos=Count(
                     "id",
                     filter=Q(
-                        status=Device.Status.ACTIVE, type=Device.Type.POS_TERMINAL
+                        revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.POS_TERMINAL
                     ),
                 ),
                 active_tv=Count(
                     "id",
-                    filter=Q(status=Device.Status.ACTIVE, type=Device.Type.TV_MONITOR),
+                    filter=Q(revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.TV_MONITOR),
                 ),
                 active_control=Count(
                     "id",
                     filter=Q(
-                        status=Device.Status.ACTIVE, type=Device.Type.CONTROL_DEVICE
+                        revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.CONTROL_DEVICE
                     ),
                 ),
                 last_seen_at=Max(
                     "last_seen_at",
-                    filter=Q(status=Device.Status.ACTIVE),
+                    filter=Q(revoked_at__isnull=True, status=Device.Status.ACTIVE),
                 ),
             )
         }
@@ -182,14 +182,13 @@ class MonitoringOverviewView(APIView):
             .values("restaurant_id")
             .annotate(last_order_at=Max("created_at"))
         }
-        telegram_subscription_counts = {
-            row["restaurant_id"]: row["total"]
-            for row in TelegramBranchSubscription.objects.filter(
-                restaurant_id__in=restaurant_ids,
-            )
-            .values("restaurant_id")
-            .annotate(total=Count("id"))
-        }
+        telegram_subscriptions = list(TelegramBranchSubscription.objects.filter(
+            restaurant_id__in=restaurant_ids,
+        ).select_related("restaurant", "account"))
+        telegram_subscription_counts = {}
+        for subscription in telegram_subscriptions:
+            restaurant_id = subscription.restaurant_id
+            telegram_subscription_counts[restaurant_id] = telegram_subscription_counts.get(restaurant_id, 0) + 1
         security_aggregates = {
             row["restaurant_id"]: row
             for row in SecurityEvent.objects.filter(
@@ -439,9 +438,32 @@ class MonitoringOverviewView(APIView):
             "telegram": sum(telegram_subscription_counts.values()),
         }
 
+        inventory = [
+            {"id": str(device.id), "restaurantId": str(device.restaurant_id),
+             "restaurantName": device.restaurant.name, "type": device.type,
+             "name": device.name, "version": device.app_version,
+             "lastSeenAt": device.last_seen_at.isoformat() if device.last_seen_at else None}
+            for device in Device.objects.filter(restaurant_id__in=restaurant_ids,
+                status=Device.Status.ACTIVE, revoked_at__isnull=True).select_related("restaurant")
+        ]
+        inventory.extend(
+            {"id": str(sub.id), "restaurantId": str(sub.restaurant_id),
+             "restaurantName": sub.restaurant.name, "type": "telegram",
+             "name": sub.account.username or sub.account.first_name or str(sub.account.telegram_user_id),
+             "version": "", "lastSeenAt": sub.created_at.isoformat()}
+            for sub in telegram_subscriptions
+        )
+        inventory.extend(
+            {"id": str(pair.id), "restaurantId": None, "restaurantName": "",
+             "type": "pairing", "name": pair.requested_name,
+             "version": pair.app_version, "lastSeenAt": pair.created_at.isoformat()}
+            for pair in scoped_pending_pairings.filter(status=DevicePairing.Status.PENDING, expires_at__gt=now)
+        )
+
         return Response(
             {
                 "generatedAt": now.isoformat(),
+                "inventory": inventory,
                 "summary": {
                     "totalBranches": len(branches),
                     "agentOnline": agent_online,

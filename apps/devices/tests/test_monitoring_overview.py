@@ -751,3 +751,26 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(pos.status, Device.Status.ACTIVE)
         self.assertEqual(pos.updated_at, original_device_updated_at)
         self.assertEqual(legacy_pos_migration_enabled(now=now), migration_window_before)
+
+    def test_inventory_excludes_revoked_devices_and_matches_counts(self):
+        branch = Restaurant.objects.create(name="Inventory branch")
+        active = self.create_device(restaurant=branch, index=401, device_type=Device.Type.POS_TERMINAL)
+        self.create_device(restaurant=branch, index=402, device_type=Device.Type.POS_TERMINAL, device_status=Device.Status.REVOKED)
+        inconsistent = self.create_device(restaurant=branch, index=403, device_type=Device.Type.POS_TERMINAL)
+        Device.objects.filter(pk=inconsistent.pk).update(revoked_at=timezone.now())
+        self.client.force_authenticate(self.superuser)
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data["inventory"]], [str(active.id)])
+        self.assertEqual(response.data["summary"]["activeDevices"], 1)
+        self.assertEqual(response.data["insights"]["deviceTypes"]["pos"], 1)
+
+    def test_security_filters_accept_multiple_values_with_and_between_filters(self):
+        self.client.force_authenticate(self.superuser)
+        chosen = SecurityEvent.objects.create(event_type="FIRST", severity="HIGH")
+        other = SecurityEvent.objects.create(event_type="SECOND", severity="MEDIUM")
+        SecurityEvent.objects.create(event_type="THIRD", severity="HIGH")
+        SecurityEvent.objects.create(event_type="FIRST", severity="INFO")
+        response = self.client.get("/api/v1/admin/security-events/", {"event_type": "FIRST,SECOND", "severity": "HIGH,MEDIUM"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({item["id"] for item in response.data["data"]}, {str(chosen.id), str(other.id)})

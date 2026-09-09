@@ -828,7 +828,10 @@ class SecurityEventListView(generics.ListAPIView):
         for field, query_name in filters.items():
             value = _query_value(self.request, query_name)
             if value:
-                queryset = queryset.filter(**{field: value})
+                if field in {'event_type', 'severity'}:
+                    queryset = queryset.filter(**{f'{field}__in': [item.strip() for item in value.split(',') if item.strip()]})
+                else:
+                    queryset = queryset.filter(**{field: value})
         acknowledged = str(self.request.query_params.get('acknowledged') or '').strip().lower()
         if acknowledged in {'true', 'false'}:
             queryset = queryset.filter(acknowledged_at__isnull=acknowledged == 'false')
