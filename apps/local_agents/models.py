@@ -37,6 +37,7 @@ class LocalAgent(BaseModel):
     capabilities = models.JSONField(default=list, blank=True)
     lan_endpoints = models.JSONField(default=list, blank=True)
     protocol_version = models.PositiveSmallIntegerField(default=1)
+    operational_health = models.JSONField(default=dict, blank=True)
     rollout_state = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
     credential_migrated_at = models.DateTimeField(blank=True, null=True)

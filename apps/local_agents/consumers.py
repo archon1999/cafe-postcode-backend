@@ -1,3 +1,4 @@
+from .operational_health import normalize_health
 import json
 import time
 import uuid
@@ -166,6 +167,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
                 lan_endpoints=content.get('lanEndpoints') if isinstance(content.get('lanEndpoints'), list) else None,
                 protocol_version=content.get('protocolVersion'),
                 rollout_state=rollout_state_from_heartbeat(content.get('legacyPosBridge')),
+                operational_health=content.get('operationalHealth'),
             )
             if not online:
                 await self.close(code=4410)
@@ -325,6 +327,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         lan_endpoints=None,
         protocol_version=None,
         rollout_state=None,
+        operational_health=None,
     ):
         now = timezone.now()
         values = {
@@ -342,6 +345,10 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             values['protocol_version'] = protocol_version
         if rollout_state is not None:
             values['rollout_state'] = rollout_state
+
+        health = normalize_health(operational_health, now)
+        if health is not None:
+            values['operational_health'] = health
 
         def persist_heartbeat():
             with transaction.atomic():

@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from apps.billing.models import CashShift
 from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
+from apps.local_agents.operational_health import assess_operational_health
 from apps.platform.api.admin.permissions import PlatformAccountPermission
 from apps.restaurants.models import Restaurant
 from apps.sales.models import Order
@@ -75,29 +76,9 @@ def _agent_offline_assessment(
 
 
 def _branch_health_priority(branch, *, now):
-    agent = branch["agent"]
-    devices = branch["devices"]
-    security = branch["security"]
-    critical = security["unacknowledgedCritical"] > 0 or (
-        agent is not None and agent["deviceStatus"] != Device.Status.ACTIVE
-    )
-    if critical:
-        return 2
-
-    last_seen_at = devices["lastSeenAt"]
-    attention = (
-        security["unacknowledgedHigh"] > 0
-        or agent is None
-        or (not agent["online"] and not agent["expectedOffline"])
-        or devices["activePOS"] == 0
-        or last_seen_at is None
-        or (
-            not (agent and agent["expectedOffline"])
-            and now - datetime.fromisoformat(last_seen_at)
-            > BRANCH_ACTIVITY_STALE_WINDOW
-        )
-    )
-    return 1 if attention else 0
+    return {'healthy': 0, 'attention': 1, 'critical': 2, 'unknown': 3}[
+        branch.get('operationalHealth', {}).get('status', 'unknown')
+    ]
 
 
 class MonitoringOverviewView(APIView):
@@ -401,6 +382,7 @@ class MonitoringOverviewView(APIView):
                     "restaurantId": str(restaurant.id),
                     "restaurantName": restaurant.name,
                     "agent": agent_payload,
+                    "operationalHealth": assess_operational_health(agent.operational_health if agent else None, now),
                     "devices": {
                         "active": device_counts.get("active", 0),
                         "online": device_counts.get("online", 0),

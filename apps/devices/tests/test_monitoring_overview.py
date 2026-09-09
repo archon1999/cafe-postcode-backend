@@ -272,7 +272,7 @@ class MonitoringOverviewApiTests(APITestCase):
         }
         self.assertEqual(
             list(branches),
-            ["Alpha branch", "Gamma branch", "Beta branch", "Delta branch"],
+            ["Alpha branch", "Beta branch", "Delta branch", "Gamma branch"],
         )
         self.assertEqual(
             branches["Alpha branch"]["devices"],
@@ -449,54 +449,26 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(branch["devices"]["active"], 2)
         self.assertEqual(branch["devices"]["online"], 1)
 
-    def test_overview_orders_healthy_then_attention_then_critical(self):
+    def test_overview_orders_by_technical_evidence_and_keeps_security_separate(self):
         now = timezone.now()
-        healthy = Restaurant.objects.create(name="Zulu Healthy")
-        attention = Restaurant.objects.create(name="Bravo Attention")
-        Restaurant.objects.create(name="Alpha Critical")
-
-        for index, restaurant in enumerate((healthy, attention), start=401):
-            agent_device = self.create_device(
-                restaurant=restaurant,
-                index=index,
-                device_type=Device.Type.LOCAL_AGENT,
-                last_seen_at=now,
-            )
-            self.create_device(
-                restaurant=restaurant,
-                index=index + 10,
-                device_type=Device.Type.POS_TERMINAL,
-                last_seen_at=now,
-            )
-            agent, _ = LocalAgent.issue_for_restaurant(
-                restaurant=restaurant,
-                name=f"{restaurant.name} agent",
-                version="1.1.0",
-            )
-            agent.device = agent_device
-            agent.status = LocalAgent.Status.ONLINE
-            agent.last_seen_at = now
-            agent.save(update_fields=["device", "status", "last_seen_at", "updated_at"])
-
-        SecurityEvent.objects.create(
-            event_type="ATTENTION_HIGH",
-            severity=SecurityEvent.Severity.HIGH,
-            restaurant=attention,
-        )
-        SecurityEvent.objects.create(
-            event_type="CRITICAL_EVENT",
-            severity=SecurityEvent.Severity.CRITICAL,
-            restaurant=Restaurant.objects.get(name="Alpha Critical"),
-        )
-
-        self.client.force_authenticate(self.superuser)
-        response = self.client.get(self.endpoint)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(
-            [branch["restaurantName"] for branch in response.data["branches"]],
-            ["Zulu Healthy", "Bravo Attention", "Alpha Critical"],
-        )
+        for name, component, state, expected in (
+            ('Zulu Healthy', 'storage', 'ok', 'healthy'),
+            ('Bravo Attention', 'printer', 'error', 'attention'),
+            ('Alpha Critical', 'storage', 'error', 'critical'),
+        ):
+            restaurant = Restaurant.objects.create(name=name)
+            agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
+            agent.operational_health = {
+                'schemaVersion': 1, 'checkedAt': now.isoformat(),
+                'checks': [{'component': component, 'resource': 'test', 'state': state, 'consecutiveFailures': 3}],
+            }
+            agent.save(update_fields=['operational_health'])
+            SecurityEvent.objects.create(event_type='DENIED', severity=SecurityEvent.Severity.CRITICAL, restaurant=restaurant)
+        Restaurant.objects.create(name='Unknown')
+        self.client.force_authenticate(user=self.superuser)
+        response = self.client.get('/api/v1/admin/monitoring/overview/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([b['operationalHealth']['status'] for b in response.data['branches']], ['healthy', 'attention', 'critical', 'unknown'])
 
     def test_offline_agent_is_healthy_when_business_stopped_naturally(self):
         now = timezone.now()

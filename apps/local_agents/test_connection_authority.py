@@ -306,9 +306,12 @@ class LocalAgentAuthoritativeWebSocketTests(TransactionTestCase):
                     'protocolVersion': 3,
                     'capabilities': ['system_health'],
                     'lanEndpoints': ['http://192.168.1.20:18181'],
+                    'operationalHealth': {'schemaVersion': 1, 'checkedAt': timezone.now().isoformat(), 'checks': [{'component': 'storage', 'state': 'ok'}]},
                 }
             )
             self.assertEqual((await signed.receive_json_from())['type'], 'heartbeat_ack')
+            persisted = await LocalAgent.objects.aget(pk=self.agent.pk)
+            self.assertEqual(persisted.operational_health['checks'][0]['state'], 'ok')
             displaced = await legacy.receive_output()
             self.assertEqual(displaced['type'], 'websocket.close')
             self.assertEqual(displaced['code'], 4410)
