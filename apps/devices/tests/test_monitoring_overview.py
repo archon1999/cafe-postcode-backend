@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone as datetime_timezone
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 from zoneinfo import ZoneInfo
 
 from django.db import connection
@@ -774,3 +774,43 @@ class MonitoringOverviewApiTests(APITestCase):
         response = self.client.get("/api/v1/admin/security-events/", {"event_type": "FIRST,SECOND", "severity": "HIGH,MEDIUM"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual({item["id"] for item in response.data["data"]}, {str(chosen.id), str(other.id)})
+
+    def test_bulk_acknowledge_is_bounded_atomic_and_idempotent(self):
+        self.client.force_authenticate(self.superuser)
+        first = SecurityEvent.objects.create(event_type="ONE", severity="HIGH")
+        second = SecurityEvent.objects.create(event_type="TWO", severity="MEDIUM")
+        untouched = SecurityEvent.objects.create(event_type="THREE", severity="INFO")
+        endpoint = "/api/v1/admin/security-events/bulk-acknowledge/"
+        invalid = self.client.post(endpoint, {"ids": [str(first.id), "00000000-0000-0000-0000-000000000000"]}, format="json")
+        self.assertEqual(invalid.status_code, 404)
+        first.refresh_from_db()
+        self.assertIsNone(first.acknowledged_at)
+        for ids in ([], ["invalid"], [str(first.id)] * 101):
+            self.assertEqual(self.client.post(endpoint, {"ids": ids}, format="json").status_code, 400)
+        response = self.client.post(endpoint, {"ids": [str(first.id), str(second.id)]}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["updated"], 2)
+        first.refresh_from_db()
+        untouched.refresh_from_db()
+        self.assertEqual(first.acknowledged_by_id, self.superuser.id)
+        self.assertIsNone(untouched.acknowledged_at)
+        original = first.acknowledged_at
+        self.assertEqual(self.client.post(endpoint, {"ids": [str(first.id)]}, format="json").data["updated"], 0)
+        first.refresh_from_db()
+        self.assertEqual(first.acknowledged_at, original)
+        self.client.force_authenticate(self.regular_user)
+        self.assertEqual(self.client.post(endpoint, {"ids": [str(untouched.id)]}, format="json").status_code, 403)
+
+    def test_bulk_acknowledge_cannot_cross_branch_scope(self):
+        own_branch = Restaurant.objects.create(name="Own bulk scope")
+        other_branch = Restaurant.objects.create(name="Other bulk scope")
+        own = SecurityEvent.objects.create(event_type="OWN", restaurant=own_branch)
+        other = SecurityEvent.objects.create(event_type="OTHER", restaurant=other_branch)
+        self.client.force_authenticate(self.product_owner)
+        with patch.object(User, 'get_restaurant_scope', return_value=own_branch), patch.object(User, 'can_access_admin_ui', new_callable=PropertyMock, return_value=True):
+            response = self.client.post("/api/v1/admin/security-events/bulk-acknowledge/", {"ids": [str(own.id), str(other.id)]}, format="json")
+        self.assertEqual(response.status_code, 404)
+        own.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIsNone(own.acknowledged_at)
+        self.assertIsNone(other.acknowledged_at)

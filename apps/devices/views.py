@@ -869,3 +869,23 @@ class SecurityEventAcknowledgeView(APIView):
             event.acknowledged_by = request.user
             event.save(update_fields=['acknowledged_at', 'acknowledged_by', 'updated_at'])
         return Response({'event': SecurityEventSerializer(event).data})
+
+
+class SecurityEventsBulkAcknowledgeView(APIView):
+    permission_classes = [permissions.IsAuthenticated, CanViewSecurityEvents]
+
+    def post(self, request):
+        field = serializers.ListField(child=serializers.UUIDField(), min_length=1, max_length=100)
+        ids = set(field.run_validation(request.data.get('ids')))
+        queryset = SecurityEvent.objects.filter(pk__in=ids)
+        if not request.user.is_superuser:
+            queryset = queryset.filter(restaurant=request.user.get_restaurant_scope())
+        with transaction.atomic():
+            events = list(queryset.select_for_update())
+            if len(events) != len(ids):
+                return Response({'detail': 'One or more events are unavailable.'}, status=status.HTTP_404_NOT_FOUND)
+            now = timezone.now()
+            updated = queryset.filter(acknowledged_at__isnull=True).update(
+                acknowledged_at=now, acknowledged_by=request.user, updated_at=now,
+            )
+        return Response({'updated': updated, 'ids': [str(pk) for pk in ids]})
