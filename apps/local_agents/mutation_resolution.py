@@ -27,13 +27,21 @@ def resolve_rejected_mutation(*, agent, operation, reason):
         if inbox.state == LocalAgentMutationInbox.State.RESOLVED:
             return _metadata(inbox, {**inbox.last_result, 'replayed': True})
         original = copy.deepcopy(inbox.last_result)
+        path = str(inbox.operation.get('path') or '')
+        is_report_print = (
+            path == '/api/v1/pos/billing/shifts/current/print-report/'
+            and str(inbox.operation.get('method') or '').upper() == 'POST'
+        )
+        obsolete_report_user = (
+            is_report_print and original.get('status') == 403
+            and original.get('code') == 'POS_USER_INVALID'
+        )
         if (inbox.state != LocalAgentMutationInbox.State.NEEDS_REVIEW
                 or original.get('ok') or original.get('retryable')
-                or original.get('status') not in {400, 404, 422}):
+                or (original.get('status') not in {400, 404, 422} and not obsolete_report_user)):
             raise ValidationError('Only definitively rejected operations can be cancelled. Reconcile other results first.')
-        path = str(inbox.operation.get('path') or '')
         # Cancellation is never a substitute for receipt/payment reconciliation.
-        if '/billing/' in path:
+        if '/billing/' in path and not is_report_print:
             if path != '/api/v1/pos/billing/shifts/open/':
                 raise ValidationError('Payment, refund and fiscal-close evidence must be reconciled, not cancelled.')
             from apps.billing.models import CashShift

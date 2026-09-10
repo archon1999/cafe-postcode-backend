@@ -65,3 +65,27 @@ class MutationResolutionTests(TestCase):
             receive_and_apply(agent=self.agent, operation=op, apply=lambda _: {'ok': False, 'status': status, 'retryable': retryable})
             with self.assertRaises(ValidationError):
                 resolve_rejected_mutation(agent=self.agent, operation=op, reason='Must not discard')
+
+    def test_obsolete_report_user_can_be_resolved_without_applying_report(self):
+        op = {**self.op, 'operationId': str(uuid.uuid4()), 'sequence': None, 'eventVersion': 1,
+              'path': '/api/v1/pos/billing/shifts/current/print-report/', 'body': {'cashShiftId': str(uuid.uuid4())}}
+        receive_and_apply(agent=self.agent, operation=op, apply=lambda _: {
+            'ok': False, 'status': 403, 'code': 'POS_USER_INVALID', 'retryable': False})
+        result = resolve_rejected_mutation(agent=self.agent, operation=op, reason='Obsolete report request')
+        self.assertFalse(result['applied'])
+        inbox = LocalAgentMutationInbox.objects.get(operation_id=op['operationId'])
+        self.assertEqual(inbox.state, 'resolved')
+        self.assertIsNone(inbox.applied_at)
+        self.assertEqual(inbox.operation, op)
+
+    def test_report_exception_does_not_allow_unknown_results_or_other_permission_failures(self):
+        for path, code, response_status, retryable in [
+            ('/api/v1/pos/billing/orders/any/pay/', 'POS_USER_INVALID', 403, False),
+            ('/api/v1/pos/billing/shifts/current/print-report/', 'PERMISSION_DENIED', 403, False),
+            ('/api/v1/pos/billing/shifts/current/print-report/', 'TIMEOUT', 503, True),
+        ]:
+            op = {**self.op, 'operationId': str(uuid.uuid4()), 'sequence': None, 'eventVersion': 1, 'path': path}
+            receive_and_apply(agent=self.agent, operation=op, apply=lambda _: {
+                'ok': False, 'status': response_status, 'code': code, 'retryable': retryable})
+            with self.assertRaises(ValidationError):
+                resolve_rejected_mutation(agent=self.agent, operation=op, reason='Must not discard')
