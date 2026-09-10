@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-FRESHNESS = timedelta(minutes=10)
+FRESHNESS = timedelta(hours=12)
 COMPONENTS = {'storage', 'runtime', 'pos_login', 'order_save', 'printer', 'payment', 'fiscal', 'sync'}
 CRITICAL = {'storage', 'runtime', 'pos_login', 'order_save'}
 
@@ -42,7 +42,7 @@ def normalize_health(value, now):
 
 
 def assess_operational_health(value, now):
-    result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': 10}
+    result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': int(FRESHNESS.total_seconds() // 60)}
     if not isinstance(value, dict) or value.get('schemaVersion') != 1:
         return result
     checked = _timestamp(value.get('checkedAt'))
