@@ -1,5 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+from apps.integrations.tax_identifiers import fiscal_tax_identifier
+
 from .fiscal_drive_types import FiscalDriveError
 from .fiscal_total_allocation import settled_order_lines
 
@@ -236,8 +238,10 @@ class FiscalDriveReceiptPayloadMixin:
             or self.settings.get('taxNumber')
             or getattr(order.restaurant, 'tax_number', '')
         )
-        if tax_number:
-            payload['TIN'] = str(tax_number).strip()
+        try:
+            payload.update(fiscal_tax_identifier(tax_number))
+        except ValueError as error:
+            raise FiscalDriveError(str(error)) from error
         if payment.method == payment.Method.QR and payment.external_ref:
             payload['QRPaymentID'] = str(payment.external_ref).strip()
         return payload

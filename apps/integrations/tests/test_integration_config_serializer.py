@@ -10,6 +10,17 @@ class IntegrationConfigSerializerTests(TestCase):
     def setUpTestData(cls):
         cls.restaurant = Restaurant.objects.create(name='Test restaurant')
 
+    def test_fiscal_single_tax_identifier_accepts_stir_or_jshshir(self):
+        for key in ('tax_number', 'taxNumber'):
+            for value, valid in [(' 123456789 ', True), ('33112976090034', True), ('', True), ('12345678', False), ('123456789x', False)]:
+                serializer = IntegrationConfigSerializer(data={
+                    'kind': 'fiscal', 'provider': 'fiscal-drive-service', 'settings': {key: value},
+                })
+                with self.subTest(key=key, value=value):
+                    self.assertEqual(serializer.is_valid(), valid, serializer.errors)
+                    if valid:
+                        self.assertEqual(serializer.validated_data['settings'][key], value.strip())
+
     def test_windows_raw_system_printer_uses_local_agent_transport(self):
         serializer = IntegrationConfigSerializer(
             data={

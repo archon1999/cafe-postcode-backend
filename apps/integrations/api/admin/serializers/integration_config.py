@@ -3,6 +3,7 @@ from urllib.parse import urlsplit
 from rest_framework import serializers
 
 from apps.integrations.models import IntegrationConfig
+from apps.integrations.tax_identifiers import fiscal_tax_identifier
 
 
 _LOCAL_AGENT_TRANSPORT_ALIASES = (
@@ -278,6 +279,16 @@ class IntegrationConfigSerializer(serializers.ModelSerializer):
 
         if kind == IntegrationConfig.Kind.FISCAL and provider == "fiscal-drive-service":
             settings = _normalize_local_agent_transport_settings(settings)
+            for key in ("tax_number", "taxNumber"):
+                if key not in settings:
+                    continue
+                identifier = str(settings[key] or "").strip()
+                try:
+                    fiscal_tax_identifier(identifier)
+                except ValueError as error:
+                    raise serializers.ValidationError({key: str(error)}) from error
+                settings[key] = identifier
+
 
         return settings
 

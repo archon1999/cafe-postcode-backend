@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.integrations.tax_identifiers import fiscal_tax_identifier
+
 
 class SetupIntegrationSerializer(serializers.Serializer):
     id = serializers.UUIDField(required=False)
@@ -7,6 +9,19 @@ class SetupIntegrationSerializer(serializers.Serializer):
     provider = serializers.CharField(max_length=120)
     settings = serializers.JSONField(required=False, default=dict)
     is_enabled = serializers.BooleanField(required=False, default=True)
+
+    def validate(self, attrs):
+        if attrs['provider'] == 'fiscal-drive-service':
+            settings = attrs['settings']
+            for key in ('tax_number', 'taxNumber'):
+                if key not in settings:
+                    continue
+                try:
+                    fiscal_tax_identifier(settings[key])
+                except ValueError as error:
+                    raise serializers.ValidationError({'settings': {key: str(error)}}) from error
+                settings[key] = str(settings[key] or '').strip()
+        return attrs
 
 
 class SetupCashDeskSerializer(serializers.Serializer):
