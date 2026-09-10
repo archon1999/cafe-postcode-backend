@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.local_agents.admin_serializers import LocalAgentFleetSerializer
+from apps.local_agents.fleet_ordering import order_fleet_by_recent_minute
 from apps.local_agents.models import LocalAgent, LocalAgentMutationReceipt
 from apps.local_agents.releases import agent_update_status
 from apps.local_agents.sanitization import sanitize_remote_logs_result, sanitize_remote_text
@@ -64,6 +65,9 @@ class LocalAgentFleetListView(generics.ListAPIView):
             queryset = queryset.filter(online_query)
         elif status_filter == LocalAgent.Status.OFFLINE:
             queryset = queryset.exclude(online_query)
+
+        if not ordering or ordering == '-lastSeenAt':
+            return order_fleet_by_recent_minute(queryset)
 
         descending = ordering.startswith('-')
         ordering_key = ordering[1:] if descending else ordering
