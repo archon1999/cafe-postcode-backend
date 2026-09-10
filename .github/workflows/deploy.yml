@@ -198,7 +198,7 @@ jobs:
               docker compose --env-file .env.production logs --since 30m --no-color web ws qcluster | grep -Ei '9D7IH87|OB1DGDK|b94edc|685da1|local.agent|heartbeat' | tail -n 200 || true
               exit 0
             fi
-            migration_deadline='2026-09-19T19:30:00Z'
+            migration_deadline='2026-10-19T19:30:00Z'
             if grep -q '^DEVICE_LEGACY_MIGRATION_DEADLINE=' .env.production; then
               sed -i "s|^DEVICE_LEGACY_MIGRATION_DEADLINE=.*$|DEVICE_LEGACY_MIGRATION_DEADLINE=${migration_deadline}|" .env.production
             else
