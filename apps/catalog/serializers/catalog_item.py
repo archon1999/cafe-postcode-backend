@@ -30,6 +30,9 @@ class CatalogItemSerializer(
     prep_station_name = serializers.SerializerMethodField()
     requires_marking = serializers.BooleanField(required=False)
     marking_gtin = serializers.CharField(required=False, allow_blank=True)
+    barcode = serializers.RegexField(
+        r'\A(?:[0-9]{8}|[0-9]{12,14})\Z', required=False, allow_blank=True, max_length=14
+    )
     modifier_groups = serializers.PrimaryKeyRelatedField(
         many=True, required=False, queryset=ModifierGroup.objects.none()
     )
@@ -83,6 +86,7 @@ class CatalogItemSerializer(
             "name_uz_crl",
             "name_ru",
             "mxik_code",
+            "barcode",
             "mxik_name",
             "mxik_payload",
             "requires_marking",

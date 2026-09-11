@@ -41,6 +41,7 @@ class CatalogItem(BaseModel):
         blank=True,
     )
     name = models.CharField(max_length=255)
+    barcode = models.CharField(max_length=14, blank=True, default='', db_index=True)
     mxik_code = models.CharField(max_length=17, blank=True, db_index=True)
     mxik_name = models.CharField(max_length=512, blank=True)
     mxik_payload = models.JSONField(default=dict, blank=True)
