@@ -11,7 +11,7 @@ from common.api.throttling import LocalAgentRateThrottle
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.serializers import CatalogMenuCategorySerializer
 from apps.catalog.selectors import active_modifier_assignments_prefetch
-from apps.billing.models import CashExpense, CashShift, ExpenseCategory
+from apps.billing.models import CashExpense, CashShift, ExpenseCategory, Payment, Receipt
 from apps.billing.serializers import CashExpenseSerializer, CashShiftSerializer
 from apps.billing.services import CashExpenseService
 from apps.floor.api.admin.serializers import HallSerializer, TableSessionSerializer
@@ -56,9 +56,25 @@ def _hall_snapshot(restaurant):
 
 def _order_snapshot(restaurant, now):
     active_statuses = [Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY]
+    # Durable fiscal retries still need the original payment after the UI history
+    # window expires. Keep evidence for unfinished shifts and unresolved receipts.
+    unfinished_shift_orders = Payment.objects.filter(
+        order__restaurant=restaurant,
+        cash_shift__status__in=[CashShift.Status.OPEN, CashShift.Status.RECONCILING],
+    ).values('order_id')
+    unresolved_receipt_orders = Receipt.objects.filter(
+        order__restaurant=restaurant,
+        kind__in=[Receipt.Kind.FISCAL, Receipt.Kind.REFUND],
+        status__in=[Receipt.Status.CREATED, Receipt.Status.UNKNOWN, Receipt.Status.FAILED],
+    ).values('order_id')
     orders = (
         Order.objects.filter(restaurant=restaurant)
-        .filter(Q(status__in=active_statuses) | Q(closed_at__gte=now - timedelta(days=1)))
+        .filter(
+            Q(status__in=active_statuses)
+            | Q(closed_at__gte=now - timedelta(days=1))
+            | Q(pk__in=unfinished_shift_orders)
+            | Q(pk__in=unresolved_receipt_orders)
+        )
         .select_related(
             'restaurant',
             'table_session',
