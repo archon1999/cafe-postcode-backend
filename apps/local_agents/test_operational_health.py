@@ -14,18 +14,18 @@ class OperationalHealthTests(SimpleTestCase):
     def test_missing_and_stale_diagnostics_are_unknown(self):
         self.assertEqual(assess_operational_health({}, self.now)['status'], 'unknown')
         report = self.report([{'component': 'storage', 'state': 'ok'}])
-        self.assertEqual(assess_operational_health(report, self.now + timedelta(hours=12, seconds=1))['status'], 'unknown')
+        self.assertEqual(assess_operational_health(report, self.now + timedelta(hours=24, seconds=1))['status'], 'unknown')
 
-    def test_diagnostics_remain_fresh_for_twelve_hours(self):
+    def test_diagnostics_remain_fresh_for_twenty_four_hours(self):
         report = self.report([{'component': 'storage', 'state': 'ok'}])
-        for age in (timedelta(minutes=11), timedelta(hours=11), timedelta(hours=12)):
+        for age in (timedelta(minutes=11), timedelta(hours=12), timedelta(hours=23), timedelta(hours=24)):
             with self.subTest(age=age):
                 result = assess_operational_health(report, self.now + age)
                 self.assertEqual(result['status'], 'healthy')
-                self.assertEqual(result['freshnessMinutes'], 720)
+                self.assertEqual(result['freshnessMinutes'], 1440)
 
     def test_missing_diagnostics_publish_same_freshness_window(self):
-        self.assertEqual(assess_operational_health({}, self.now)['freshnessMinutes'], 720)
+        self.assertEqual(assess_operational_health({}, self.now)['freshnessMinutes'], 1440)
 
     def test_healthy_requires_storage_evidence(self):
         self.assertEqual(assess_operational_health(self.report([]), self.now)['status'], 'unknown')

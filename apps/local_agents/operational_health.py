@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
-FRESHNESS = timedelta(hours=12)
+FRESHNESS = timedelta(hours=24)
 COMPONENTS = {'storage', 'runtime', 'pos_login', 'order_save', 'printer', 'payment', 'fiscal', 'sync'}
 CRITICAL = {'storage', 'runtime', 'pos_login', 'order_save'}
 
