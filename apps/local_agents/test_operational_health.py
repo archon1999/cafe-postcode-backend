@@ -44,6 +44,18 @@ class OperationalHealthTests(SimpleTestCase):
     def test_confirmed_storage_failure_is_critical_immediately(self):
         self.assertEqual(assess_operational_health(self.report([{'component': 'storage', 'state': 'error', 'confirmed': True}]), self.now)['status'], 'critical')
 
+    def test_current_integration_probe_supersedes_legacy_duplicate(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {'component': 'printer', 'resource': 'printer-id', 'state': 'error', 'consecutiveFailures': 9},
+            {'component': 'printer', 'resource': 'probe/printer-id', 'state': 'ok'},
+        ]
+        self.assertEqual(assess_operational_health(self.report(checks), self.now)['status'], 'healthy')
+
+        checks[2]['state'] = 'error'
+        checks[2]['consecutiveFailures'] = 3
+        self.assertEqual(assess_operational_health(self.report(checks), self.now)['status'], 'attention')
+
     def test_unknown_runtime_is_not_healthy_and_invalid_reports_are_ignored(self):
         self.assertEqual(assess_operational_health(self.report([{'component': 'storage', 'state': 'ok'}, {'component': 'runtime', 'state': 'unknown'}]), self.now)['status'], 'unknown')
         self.assertIsNone(normalize_health({'schemaVersion': 1, 'checkedAt': 'invalid', 'checks': []}, self.now))

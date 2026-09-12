@@ -6,6 +6,7 @@ from django.utils import timezone
 FRESHNESS = timedelta(hours=24)
 COMPONENTS = {'storage', 'runtime', 'pos_login', 'order_save', 'printer', 'payment', 'fiscal', 'sync'}
 CRITICAL = {'storage', 'runtime', 'pos_login', 'order_save'}
+INTEGRATION_COMPONENTS = {'printer', 'payment', 'fiscal'}
 
 
 def _timestamp(value):
@@ -52,6 +53,15 @@ def assess_operational_health(value, now):
     if now - checked > FRESHNESS or checked > now + timedelta(minutes=1):
         return result
     checks = value.get('checks', [])
+    resources = {(c.get('component'), str(c.get('resource', ''))) for c in checks}
+    checks = [
+        c for c in checks
+        if not (
+            c.get('component') in INTEGRATION_COMPONENTS
+            and not str(c.get('resource', '')).startswith('probe/')
+            and (c.get('component'), f"probe/{c.get('resource', '')}") in resources
+        )
+    ]
     reasons = [c for c in checks if c.get('state') == 'error' and (
         c.get('consecutiveFailures', 0) >= 3 or (c.get('confirmed') and c.get('component') in ('storage', 'runtime'))
     )]
