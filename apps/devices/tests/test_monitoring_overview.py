@@ -449,6 +449,30 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(branch["devices"]["active"], 2)
         self.assertEqual(branch["devices"]["online"], 1)
 
+    def test_overview_exposes_rolling_seven_day_order_count(self):
+        now = timezone.now()
+        busy = Restaurant.objects.create(name="Busy branch")
+        quiet = Restaurant.objects.create(name="Quiet branch")
+        recent_orders = [
+            Order.objects.create(restaurant=busy, order_number=index)
+            for index in range(1, 4)
+        ]
+        old_order = Order.objects.create(restaurant=busy, order_number=4)
+        Order.objects.create(restaurant=quiet, order_number=1)
+        Order.objects.filter(pk=old_order.pk).update(created_at=now - timedelta(days=7, seconds=1))
+        Order.objects.filter(pk__in=[order.pk for order in recent_orders]).update(
+            created_at=now - timedelta(days=6, hours=23)
+        )
+
+        self.client.force_authenticate(self.superuser)
+        with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
+            response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        branches = {branch["restaurantName"]: branch for branch in response.data["branches"]}
+        self.assertEqual(branches["Busy branch"]["ordersLast7Days"], 3)
+        self.assertEqual(branches["Quiet branch"]["ordersLast7Days"], 1)
+
     def test_overview_orders_by_technical_evidence_and_keeps_security_separate(self):
         now = timezone.now()
         for name, component, state, expected in (

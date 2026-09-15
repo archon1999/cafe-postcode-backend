@@ -176,11 +176,17 @@ class MonitoringOverviewView(APIView):
             .values("cash_desk__restaurant_id")
             .annotate(total=Count("id"))
         }
-        last_order_activity = {
-            row["restaurant_id"]: row["last_order_at"]
+        order_activity = {
+            row["restaurant_id"]: row
             for row in Order.objects.filter(restaurant_id__in=restaurant_ids)
             .values("restaurant_id")
-            .annotate(last_order_at=Max("created_at"))
+            .annotate(
+                last_order_at=Max("created_at"),
+                orders_last_7_days=Count(
+                    "id",
+                    filter=Q(created_at__gte=now - timedelta(days=7)),
+                ),
+            )
         }
         telegram_subscriptions = list(TelegramBranchSubscription.objects.filter(
             restaurant_id__in=restaurant_ids,
@@ -326,7 +332,7 @@ class MonitoringOverviewView(APIView):
                 agent_is_online=agent_is_online,
                 device_status=agent_device_status,
                 open_cash_shifts=open_cash_shift_counts.get(restaurant.id, 0),
-                last_order_at=last_order_activity.get(restaurant.id),
+                last_order_at=order_activity.get(restaurant.id, {}).get("last_order_at"),
                 recent_risk_event_count=(
                     agent_risk_event_counts.get(agent.device_id, 0)
                     if agent and agent.device_id
@@ -380,6 +386,9 @@ class MonitoringOverviewView(APIView):
                 {
                     "restaurantId": str(restaurant.id),
                     "restaurantName": restaurant.name,
+                    "ordersLast7Days": order_activity.get(restaurant.id, {}).get(
+                        "orders_last_7_days", 0
+                    ),
                     "agent": agent_payload,
                     "operationalHealth": assess_operational_health(agent.operational_health if agent else None, now),
                     "devices": {

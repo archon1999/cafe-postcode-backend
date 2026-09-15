@@ -387,6 +387,54 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
         self.assertEqual(device.app_version, '1.1.1')
         self.assertGreaterEqual(device.last_seen_at, before)
 
+    def test_heartbeat_applies_recent_local_pos_presence_to_bound_devices(self):
+        from apps.local_agents.consumers import LocalAgentConsumer
+
+        now = timezone.now()
+        pos_device = Device.objects.create(
+            restaurant=self.restaurant,
+            type=Device.Type.POS_TERMINAL,
+            name='Locally active POS',
+            public_key_algorithm=Device.PublicKeyAlgorithm.P256_SHA256,
+            public_key='pos-public-key',
+            public_key_fingerprint='f' * 64,
+            paired_at=now,
+            lease_expires_at=now + timedelta(hours=1),
+            last_seen_at=now - timedelta(days=2),
+        )
+        reported_at = now - timedelta(seconds=10)
+        agent = LocalAgent.objects.get(restaurant=self.restaurant)
+        consumer = LocalAgentConsumer()
+        consumer.agent = agent
+        consumer.device = agent.device
+        consumer.connection_id = uuid.uuid4()
+        consumer.connection_identity = ConnectionIdentity(
+            version='2.1.8',
+            runtime_instance_id='abcdefghijklmnopqrstuv',
+            protocol_version=3,
+            attested=True,
+        )
+        consumer.channel_name = 'specific.test!pos-presence'
+        claim_connection_authority(
+            agent_id=agent.pk,
+            connection_id=consumer.connection_id,
+            channel_name=consumer.channel_name,
+            identity=consumer.connection_identity,
+        )
+
+        async_to_sync(consumer._mark_online)(
+            version='2.1.8',
+            pos_presence=[
+                {
+                    'backendDeviceId': str(pos_device.pk),
+                    'lastSeenAt': reported_at.isoformat(),
+                }
+            ],
+        )
+
+        pos_device.refresh_from_db()
+        self.assertEqual(pos_device.last_seen_at, reported_at)
+
     def test_query_token_is_rejected(self):
         from core.asgi import application
 

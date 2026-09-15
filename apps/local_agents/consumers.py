@@ -2,13 +2,14 @@ from .operational_health import normalize_health
 import json
 import time
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone as datetime_timezone
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import OperationalError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from apps.local_agents.lan import private_lan_endpoints
 from apps.local_agents.device_state import pos_device_state_snapshot
@@ -28,6 +29,8 @@ from apps.devices.models import Device
 
 
 SQLITE_LOCK_RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
+POS_PRESENCE_MAX_DEVICES = 128
+POS_PRESENCE_MAX_AGE = timedelta(hours=24)
 PRE_HELLO_RECOVERY_COMMAND_TYPES = ('agent.update_now',)
 PRE_HELLO_RECOVERY_COMMAND_STATUSES = (
     LocalAgentCommand.Status.PENDING,
@@ -168,6 +171,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
                 protocol_version=content.get('protocolVersion'),
                 rollout_state=rollout_state_from_heartbeat(content.get('legacyPosBridge')),
                 operational_health=content.get('operationalHealth'),
+                pos_presence=content.get('posPresence'),
             )
             if not online:
                 await self.close(code=4410)
@@ -328,6 +332,7 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         protocol_version=None,
         rollout_state=None,
         operational_health=None,
+        pos_presence=None,
     ):
         now = timezone.now()
         values = {
@@ -349,6 +354,25 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
         health = normalize_health(operational_health, now)
         if health is not None:
             values['operational_health'] = health
+
+        normalized_pos_presence = {}
+        if isinstance(pos_presence, list):
+            for item in pos_presence[:POS_PRESENCE_MAX_DEVICES]:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    device_id = uuid.UUID(str(item.get('backendDeviceId') or ''))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+                last_seen_at = parse_datetime(str(item.get('lastSeenAt') or ''))
+                if last_seen_at is None or timezone.is_naive(last_seen_at):
+                    continue
+                last_seen_at = last_seen_at.astimezone(datetime_timezone.utc)
+                if not now - POS_PRESENCE_MAX_AGE <= last_seen_at <= now + timedelta(minutes=5):
+                    continue
+                current = normalized_pos_presence.get(device_id)
+                if current is None or last_seen_at > current:
+                    normalized_pos_presence[device_id] = last_seen_at
 
         def persist_heartbeat():
             with transaction.atomic():
@@ -387,6 +411,26 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
                     if version:
                         device_values['app_version'] = version
                     Device.objects.filter(pk=self.device.pk).update(**device_values)
+                if normalized_pos_presence:
+                    pos_devices = Device.objects.filter(
+                        pk__in=normalized_pos_presence,
+                        restaurant_id=agent.restaurant_id,
+                        type=Device.Type.POS_TERMINAL,
+                        status=Device.Status.ACTIVE,
+                        revoked_at__isnull=True,
+                    )
+                    changed_devices = []
+                    for pos_device in pos_devices:
+                        reported_at = normalized_pos_presence[pos_device.pk]
+                        if pos_device.last_seen_at is None or reported_at > pos_device.last_seen_at:
+                            pos_device.last_seen_at = reported_at
+                            pos_device.updated_at = now
+                            changed_devices.append(pos_device)
+                    if changed_devices:
+                        Device.objects.bulk_update(
+                            changed_devices,
+                            ['last_seen_at', 'updated_at'],
+                        )
                 return True
 
         return bool(_with_database_lock_retry(persist_heartbeat))
