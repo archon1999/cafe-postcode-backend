@@ -1,7 +1,9 @@
 from copy import deepcopy
 from importlib import import_module
+from types import SimpleNamespace
 
 from django.apps import apps as django_apps
+from django.db import connection
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -84,6 +86,7 @@ class PrintTemplateAdminApiTests(APITestCase):
                 )
             plain_blocks = preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN]['blocks']
             plain_items = next(block for block in plain_blocks if block['type'] == 'items_table')
+            self.assertEqual(plain_items['columns'][-1]['value'], '{{item.lineTotal}}')
             self.assertTrue(plain_items['showHeaders'])
             self.assertFalse(plain_items.get('showVat', False))
             self.assertFalse(
@@ -95,6 +98,7 @@ class PrintTemplateAdminApiTests(APITestCase):
                 if block['type'] == 'items_table'
             )
             self.assertTrue(fiscal_items['showVat'])
+            self.assertEqual(fiscal_items['columns'][-1]['value'], '{{item.lineTotal}}')
             fiscal_qr = next(
                 block
                 for block in preset['templates'][PrintTemplate.Kind.PAYMENT_RECEIPT_FISCAL]['blocks']
@@ -122,6 +126,36 @@ class PrintTemplateAdminApiTests(APITestCase):
             self.assertEqual(plain_blocks[totals_index - 1]['type'], 'divider')
             self.assertLess(service_fees_index, totals_index)
             self.assertEqual(plain_blocks[totals_index]['rows'][-1]['value'], '{{totals.total}}')
+
+    def test_line_total_migration_preserves_custom_layout_and_history(self):
+        template = PrintTemplate.objects.get(
+            restaurant=self.restaurant, kind=PrintTemplate.Kind.PAYMENT_RECEIPT_PLAIN,
+        )
+        previous = template.published_version
+        layout = deepcopy(previous.layout)
+        items = next(block for block in layout['blocks'] if block['type'] == 'items_table')
+        items['columns'][-1]['value'] = '{{ item.unitPrice }}'
+        items['columns'][-1]['label'] = 'Custom amount'
+        previous.layout = layout
+        previous.save(update_fields=('layout',))
+        draft = PrintTemplateVersion.objects.create(
+            template=template, revision=2, status='draft', layout=deepcopy(layout),
+        )
+        migration = import_module('apps.printing.migrations.0014_publish_item_line_totals')
+        migration.publish_item_line_totals(django_apps, SimpleNamespace(connection=connection))
+        template.refresh_from_db()
+        previous.refresh_from_db()
+        draft.refresh_from_db()
+        expected = deepcopy(layout)
+        next(block for block in expected['blocks'] if block['type'] == 'items_table')['columns'][-1]['value'] = '{{item.lineTotal}}'
+        self.assertEqual(template.published_version.layout, expected)
+        self.assertEqual(template.published_version.revision, 3)
+        self.assertEqual(previous.layout, layout)
+        self.assertEqual(previous.status, 'retired')
+        self.assertEqual(draft.layout, expected)
+        self.assertEqual(draft.status, 'draft')
+        migration.publish_item_line_totals(django_apps, SimpleNamespace(connection=connection))
+        self.assertEqual(template.versions.count(), 3)
 
     def test_create_draft_from_preset_and_publish_retires_previous_version(self):
         template = PrintTemplate.objects.get(
