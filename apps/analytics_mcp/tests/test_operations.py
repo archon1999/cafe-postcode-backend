@@ -192,6 +192,7 @@ class OperationsTests(TestCase):
     def test_oauth_security_headers_and_asset_allowlist(self):
         response = self.client.get("/oauth/login/")
         self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response["Referrer-Policy"], "strict-origin")
         self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
         self.assertIn("https://chatgpt.com", response["Content-Security-Policy"])
         asset = self.client.get("/assets/nunito-sans.woff2")
