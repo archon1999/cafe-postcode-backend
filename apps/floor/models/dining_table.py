@@ -8,6 +8,8 @@ from .zone_or_cabin import ZoneOrCabin
 
 
 class DiningTable(BaseModel):
+    MIN_SEAT_COUNT = 2
+    MAX_SEAT_COUNT = 100
     SHAPE_VARIANTS_BY_SEAT_COUNT = {
         2: ('seat2_horizontal', 'seat2_vertical'),
         3: ('seat3_triangle',),
@@ -89,15 +91,18 @@ class DiningTable(BaseModel):
 
     @classmethod
     def get_supported_seat_counts(cls):
-        return tuple(cls.SHAPE_VARIANTS_BY_SEAT_COUNT.keys())
+        return range(cls.MIN_SEAT_COUNT, cls.MAX_SEAT_COUNT + 1)
 
     @classmethod
     def get_supported_variants_for_seat_count(cls, seat_count: int):
+        if 6 <= seat_count <= cls.MAX_SEAT_COUNT:
+            seat_count = 6
         return cls.SHAPE_VARIANTS_BY_SEAT_COUNT.get(seat_count, ())
 
     @classmethod
     def get_default_shape_variant(cls, seat_count: int):
-        return cls.DEFAULT_SHAPE_VARIANT_BY_SEAT_COUNT.get(seat_count, cls.ShapeVariant.SEAT4_SQUARE)
+        variants = cls.get_supported_variants_for_seat_count(seat_count)
+        return variants[0] if variants else cls.ShapeVariant.SEAT4_SQUARE
 
     @classmethod
     def infer_shape_from_variant(cls, shape_variant: str):

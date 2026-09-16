@@ -179,7 +179,11 @@ class DiningTableSerializer(serializers.ModelSerializer):
     def validate_seat_count(self, value):
         if value not in DiningTable.get_supported_seat_counts():
             raise serializers.ValidationError(
-                _("Only 2, 3, 4, 5, or 6 seat tables are supported.")
+                _("Seat count must be between %(min)s and %(max)s.")
+                % {
+                    "min": DiningTable.MIN_SEAT_COUNT,
+                    "max": DiningTable.MAX_SEAT_COUNT,
+                }
             )
         return value
 

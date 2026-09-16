@@ -126,6 +126,39 @@ class AdminHallConstructorApiTests(APITestCase):
         self.table_two.refresh_from_db()
         self.assertEqual(self.table_two.table_number, 'VIP-2')
 
+    def test_custom_seat_count_uses_large_table_variants(self):
+        self.authenticate()
+        url = f'/api/v1/admin/floor/halls/{self.hall.id}/constructor/'
+        payload = self.client.get(url).data
+        payload['deleted_table_ids'] = []
+        payload['tables'][0]['seat_count'] = 24
+        payload['tables'][0]['shape_variant'] = DiningTable.ShapeVariant.SEAT6_HORIZONTAL
+
+        response = self.client.put(url, payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.table_one.refresh_from_db()
+        self.assertEqual(self.table_one.seat_count, 24)
+        self.assertEqual(
+            self.table_one.shape_variant,
+            DiningTable.ShapeVariant.SEAT6_HORIZONTAL,
+        )
+        self.assertEqual(
+            DiningTable.get_supported_variants_for_seat_count(24),
+            (
+                DiningTable.ShapeVariant.SEAT6_HORIZONTAL,
+                DiningTable.ShapeVariant.SEAT6_VERTICAL,
+            ),
+        )
+
+        payload = response.data
+        payload['deleted_table_ids'] = []
+        payload['tables'][0]['seat_count'] = DiningTable.MAX_SEAT_COUNT + 1
+        invalid_response = self.client.put(url, payload, format='json')
+
+        self.assertEqual(invalid_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('tables', invalid_response.data)
+
     def test_put_updates_layout_creates_and_deletes_inactive_tables(self):
         self.authenticate()
         session = TableSession.objects.create(
