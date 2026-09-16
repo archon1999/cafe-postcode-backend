@@ -257,7 +257,11 @@ class CoreSettings(Settings):
     MCP_MAX_DAYS = env_int('MCP_MAX_DAYS', 90)
     MCP_RATE_PER_MINUTE = env_int('MCP_RATE_PER_MINUTE', 60)
     MCP_MAX_CONCURRENT_REPORTS = env_int('MCP_MAX_CONCURRENT_REPORTS', 8)
-    MCP_REPORT_MODULES = ['apps.analytics_mcp.reports.sales', 'apps.analytics_mcp.reports.operations']
+    MCP_REPORT_MODULES = [
+        'apps.analytics_mcp.reports.sales',
+        'apps.analytics_mcp.reports.operations',
+        'apps.analytics_mcp.reports.inventory',
+    ]
     OAUTH2_PROVIDER = {
         'OAUTH2_VALIDATOR_CLASS': 'apps.analytics_mcp.oauth.AnalyticsOAuthValidator',
         'SCOPES': {'analytics:read': 'Read statistics for your authorized Cafe Postcode branches'},

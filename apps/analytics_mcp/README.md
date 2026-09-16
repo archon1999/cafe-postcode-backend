@@ -20,9 +20,15 @@ by tools. OAuth records and short-lived report snapshots are stored in the DB.
 | `get_table_performance` | Closed dine-in orders by primary table and hall |
 | `get_payment_breakdown` | Successful payments minus refunds by payment method |
 | `get_cash_shifts` | Shift totals for shifts opened in the selected period |
+| `get_inventory_summary` | Current stock, low/negative counts and value by authorized restaurant/warehouse |
+| `get_inventory_variance` | Count variances and tolerance evidence for a selected period |
+| `get_production_yield` | Planned versus actual preparation output and yield percentage |
+| `get_recipe_costs` | Active catalog/preparation recipe cost snapshots |
+| `get_purchase_recommendations` | Evidence-based shortages and recent supplier price movement |
 
-Inventory is deliberately deferred. Single-restaurant presentation contains no
-branch list, count, selector or comparison; multiple restaurants retain these.
+Inventory tools are read-only and require the restaurant's inventory permission;
+monetary output additionally follows inventory cost access. Single-restaurant
+presentation contains no branch list, count, selector or comparison; multiple restaurants retain these.
 Staff totals describe attributed sales, not employee quality or cashier receipts.
 Table totals do not allocate refunds; cash-shift totals cover the whole shift,
 not just the selected date interval. Each result includes its metric definition.

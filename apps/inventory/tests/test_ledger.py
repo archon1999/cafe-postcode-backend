@@ -12,7 +12,7 @@ from apps.restaurants.models import Restaurant
 from apps.sales.models import Order, OrderItem, OrderItemModifier
 from apps.users.models import User
 from apps.inventory import reports, services
-from apps.inventory.models import (InventoryItem, OrderConsumption, Recipe, StockBalance,
+from apps.inventory.models import (InventoryItem, OrderConsumption, StockBalance,
                                    StockDocument, StockMovement, Supplier, Warehouse)
 
 
@@ -66,6 +66,24 @@ class InventoryLedgerTests(TestCase):
         self.assertEqual(issue.lines.get().unit_cost, Decimal('8000'))
         self.assertEqual(issue.total_value, Decimal('-8000'))
 
+    def test_receipt_discount_is_snapshotted_into_net_inventory_cost(self):
+        receipt = self.document(lines=[{
+            'item': str(self.item.pk), 'quantity': '10', 'unit_cost': '8000',
+            'input_unit': 'purchase', 'discount_percent': '10', 'discount_amount': '200',
+        }])
+        line = receipt.lines.get()
+        self.assertEqual(line.list_unit_cost, Decimal('8000'))
+        self.assertEqual(line.discount_percent, Decimal('10'))
+        self.assertEqual(line.discount_amount, Decimal('200'))
+        self.assertEqual(line.unit_cost, Decimal('7000'))
+        self.assertEqual(self.balance().average_cost, Decimal('7'))
+
+    def test_purchase_discount_is_rejected_on_outbound_document(self):
+        with self.assertRaises(ValidationError):
+            self.document(kind='issue', post=False, lines=[{
+                'item': str(self.item.pk), 'quantity': '1', 'discount_percent': '5',
+            }])
+
     def test_idempotent_create_post_and_conflicting_key(self):
         first = self.document(idempotency_key='receipt-test')
         second = self.document(idempotency_key='receipt-test')
@@ -98,6 +116,104 @@ class InventoryLedgerTests(TestCase):
         doc.refresh_from_db()
         with self.assertRaises(DjangoValidationError):
             doc.save()
+
+    def test_transfer_is_atomic_cost_preserving_and_reversible(self):
+        self.document(quantity='10000', cost='8')
+        production = Warehouse.objects.create(
+            restaurant=self.restaurant, name='Ishlab chiqarish', kind=Warehouse.Kind.PRODUCTION
+        )
+        transfer = services.create_document(self.restaurant, {
+            'kind': 'transfer',
+            'warehouse': str(self.warehouse.pk),
+            'destination_warehouse': str(production.pk),
+            'reference': 'TR-1',
+            'responsible_name': 'Omborchi',
+            'lines': [{'item': str(self.item.pk), 'quantity': '4000'}],
+        }, self.user)
+        services.post_document(transfer, self.user)
+        self.assertEqual(transfer.movements.count(), 2)
+        self.assertEqual(self.balance().quantity, Decimal('6000'))
+        received = StockBalance.objects.get(warehouse=production, item=self.item)
+        self.assertEqual(received.quantity, Decimal('4000'))
+        self.assertEqual(received.average_cost, Decimal('8'))
+        services.reverse_document(transfer, 'Transfer xatosi', self.user)
+        self.assertEqual(self.balance().quantity, Decimal('10000'))
+        received.refresh_from_db()
+        self.assertEqual(received.quantity, Decimal('0'))
+
+    def test_production_creates_prep_stock_then_menu_consumes_it(self):
+        self.document(quantity='10000', cost='8')
+        self.warehouse.kind = Warehouse.Kind.RAW
+        self.warehouse.save(update_fields=['kind', 'updated_at'])
+        production = Warehouse.objects.create(
+            restaurant=self.restaurant, name='Ishlab chiqarish', kind=Warehouse.Kind.PRODUCTION
+        )
+        transfer = services.create_document(self.restaurant, {
+            'kind': 'transfer', 'warehouse': str(self.warehouse.pk),
+            'destination_warehouse': str(production.pk), 'reference': 'TR-2',
+            'responsible_name': 'Omborchi',
+            'lines': [{'item': str(self.item.pk), 'quantity': '4000'}],
+        }, self.user)
+        services.post_document(transfer, self.user)
+        patty = InventoryItem.objects.create(
+            restaurant=self.restaurant, name='Chicken Patty 120 g', kind=InventoryItem.Kind.SEMI_FINISHED,
+            base_unit='piece', availability_mode='block',
+        )
+        prep_recipe = services.create_recipe(self.restaurant, {
+            'output_item': str(patty.pk), 'name': 'Chicken Patty', 'yield_quantity': '1',
+            'lines': [{'item': str(self.item.pk), 'quantity': '100'}],
+        }, self.user)
+        batch = services.create_document(self.restaurant, {
+            'kind': 'production', 'warehouse': str(production.pk),
+            'production_recipe': str(prep_recipe.pk), 'planned_quantity': '10', 'actual_quantity': '8',
+            'reference': 'PR-1', 'responsible_name': 'Oshpaz', 'lines': [],
+        }, self.user)
+        services.post_document(batch, self.user)
+        self.assertEqual(StockBalance.objects.get(warehouse=production, item=self.item).quantity, Decimal('3000'))
+        prep_balance = StockBalance.objects.get(warehouse=production, item=patty)
+        self.assertEqual(prep_balance.quantity, Decimal('8'))
+        self.assertEqual(prep_balance.average_cost, Decimal('1000'))
+        yield_insight = next(
+            row for row in reports.insights(self.restaurant)['items']
+            if row['id'].startswith('production-yield:')
+        )
+        self.assertEqual(yield_insight['evidence']['deviation_percent'], '-20.000000')
+        self.warehouse.is_default = False
+        self.warehouse.save(update_fields=['is_default', 'updated_at'])
+        production.is_default = True
+        production.save(update_fields=['is_default', 'updated_at'])
+        services.create_recipe(self.restaurant, {
+            'catalog_item': str(self.catalog.pk),
+            'lines': [{'item': str(patty.pk), 'quantity': '1'}],
+        }, self.user)
+        services.consume_order_items(self.order, [self.order_item()], self.user)
+        prep_balance.refresh_from_db()
+        self.assertEqual(prep_balance.quantity, Decimal('7'))
+
+    def test_prep_recipe_cycle_is_rejected(self):
+        first = InventoryItem.objects.create(
+            restaurant=self.restaurant, name='Prep A', kind=InventoryItem.Kind.SEMI_FINISHED, base_unit='g'
+        )
+        second = InventoryItem.objects.create(
+            restaurant=self.restaurant, name='Prep B', kind=InventoryItem.Kind.SEMI_FINISHED, base_unit='g'
+        )
+        services.create_recipe(self.restaurant, {
+            'output_item': str(first.pk), 'lines': [{'item': str(second.pk), 'quantity': '1'}],
+        }, self.user)
+        with self.assertRaises(ValidationError):
+            services.create_recipe(self.restaurant, {
+                'output_item': str(second.pk), 'lines': [{'item': str(first.pk), 'quantity': '1'}],
+            }, self.user)
+
+    def test_recipe_service_requires_exactly_one_output(self):
+        prep = InventoryItem.objects.create(
+            restaurant=self.restaurant, name='Yarim tayyor', kind=InventoryItem.Kind.SEMI_FINISHED, base_unit='g'
+        )
+        for targets in ({}, {'catalog_item': str(self.catalog.pk), 'output_item': str(prep.pk)}):
+            with self.subTest(targets=targets), self.assertRaises(ValidationError):
+                services.create_recipe(self.restaurant, {
+                    **targets, 'lines': [{'item': str(self.item.pk), 'quantity': '1'}],
+                }, self.user)
 
     def test_receipt_and_return_require_document_metadata(self):
         doc = self.document(post=False, reference='')
@@ -150,6 +266,32 @@ class InventoryLedgerTests(TestCase):
         OrderItemModifier.objects.create(order_item=row, modifier_option=modifier, group_name='Extra', option_name='Extra potato')
         services.consume_order_items(self.order, [row], self.user)
         self.assertEqual(self.balance().quantity, Decimal('9640'))
+
+    def test_not_selected_modifier_condition_omits_removed_ingredient(self):
+        self.document()
+        group = ModifierGroup.objects.create(restaurant=self.restaurant, name='Remove')
+        modifier = ModifierOption.objects.create(group=group, name='Without potato')
+        CatalogItemModifierGroup.objects.create(catalog_item=self.catalog, modifier_group=group)
+        self.recipe(lines=[{
+            'item': str(self.item.pk),
+            'quantity': '100',
+            'modifier_option': str(modifier.pk),
+            'modifier_condition': 'not_selected',
+        }])
+
+        regular = self.order_item('2')
+        services.consume_order_items(self.order, [regular], self.user)
+        self.assertEqual(self.balance().quantity, Decimal('9800'))
+
+        removed = self.order_item('3')
+        OrderItemModifier.objects.create(
+            order_item=removed,
+            modifier_option=modifier,
+            group_name='Remove',
+            option_name='Without potato',
+        )
+        services.consume_order_items(self.order, [removed], self.user)
+        self.assertEqual(self.balance().quantity, Decimal('9800'))
 
     def test_unlinked_modifier_rejected(self):
         group = ModifierGroup.objects.create(restaurant=self.restaurant, name='Other')

@@ -31,7 +31,9 @@ from .models import (ConsumptionResolution, InventoryItem, OrderConsumption, Rec
 
 ZERO = Decimal('0')
 SIX = Decimal('0.000001')
-MANUAL_KINDS = {'opening', 'receipt', 'issue', 'supplier_return', 'customer_return', 'stocktake'}
+MANUAL_KINDS = {
+    'opening', 'receipt', 'issue', 'supplier_return', 'customer_return', 'stocktake', 'transfer', 'production'
+}
 INBOUND_KINDS = {'opening', 'receipt', 'customer_return', 'sale_return'}
 _replay = ContextVar('inventory_replay', default=None)
 
@@ -133,11 +135,32 @@ def set_document_lines(document, lines):
             raise ValidationError({'quantity': _('Asosiy birlikka o‘girilgan miqdor juda katta.')})
         if item.base_unit == 'piece' and base_quantity != base_quantity.to_integral_value():
             raise ValidationError({'quantity': _('Dona bilan hisoblanadigan mahsulot butun bo‘lishi kerak.')})
-        preserved_cost = (previous.unit_cost if previous.input_unit == unit else q(previous.base_unit_cost * factor)) if previous else ZERO
-        cost = decimal(raw.get('unit_cost', preserved_cost), 'unitCost', minimum=ZERO)
+        previous_factor = item.purchase_factor if previous and previous.input_unit == 'purchase' else Decimal('1')
+        preserved_list_cost = (
+            previous.list_unit_cost if previous.input_unit == unit else q(previous.list_unit_cost / previous_factor * factor)
+        ) if previous else ZERO
+        list_cost = decimal(raw.get('unit_cost', preserved_list_cost), 'unitCost', minimum=ZERO)
+        discount_percent = decimal(
+            raw.get('discount_percent', previous.discount_percent if previous else 0),
+            'discountPercent', minimum=ZERO,
+        )
+        discount_amount = decimal(
+            raw.get('discount_amount', previous.discount_amount if previous else 0),
+            'discountAmount', minimum=ZERO,
+        )
+        if document.kind not in INBOUND_KINDS and (discount_percent or discount_amount):
+            raise ValidationError({'discountPercent': _('Xarid chegirmasi faqat kirim hujjatiga kiritiladi.')})
+        if discount_percent > 100:
+            raise ValidationError({'discountPercent': _('Chegirma foizi 100 dan oshmasligi kerak.')})
+        cost = q(list_cost - list_cost * discount_percent / Decimal('100') - discount_amount)
+        if cost < 0:
+            raise ValidationError({'discountAmount': _('Chegirma narxdan oshmasligi kerak.')})
         balance = locked_balance(document.warehouse, item)
-        prepared.append(dict(document=document, item=item, item_name=item.name, base_unit=item.base_unit,
+        prepared.append(dict(document=document, item=item, item_name=item.name,
+                             role=raw.get('role', StockDocumentLine.Role.NORMAL), base_unit=item.base_unit,
                              quantity=quantity, count_recorded=count_recorded, input_unit=unit, unit_cost=cost,
+                             list_unit_cost=list_cost, discount_percent=discount_percent,
+                             discount_amount=discount_amount,
                              base_quantity=base_quantity, base_unit_cost=q(cost / factor),
                              expected_quantity=balance.quantity, expected_revision=balance.revision,
                              tolerance_percent=item.tolerance_percent, tolerance_quantity=item.tolerance_quantity,
@@ -145,6 +168,25 @@ def set_document_lines(document, lines):
                              lot_number=raw.get('lot_number', ''), expires_on=raw.get('expires_on')))
     document.lines.all().delete()  # Draft-only caller; posted rows never enter here.
     StockDocumentLine.objects.bulk_create([StockDocumentLine(**values) for values in prepared])
+
+
+def production_document_lines(recipe, planned_quantity, actual_quantity):
+    lines = [
+        {
+            'item': str(line.item_id),
+            'quantity': str(q(line.quantity * planned_quantity / recipe.yield_quantity)),
+            'input_unit': 'base',
+            'role': StockDocumentLine.Role.INPUT,
+        }
+        for line in recipe.lines.all()
+    ]
+    lines.append({
+        'item': str(recipe.output_item_id),
+        'quantity': str(actual_quantity),
+        'input_unit': 'base',
+        'role': StockDocumentLine.Role.OUTPUT,
+    })
+    return lines
 
 
 @transaction.atomic
@@ -164,12 +206,46 @@ def create_document(restaurant, data, actor=None):
                 raise ValidationError({'idempotencyKey': _('Kalit boshqa hujjat uchun ishlatilgan.')})
             return existing
     warehouse = scoped(Warehouse, restaurant, data.get('warehouse'), 'warehouse', is_active=True)
-    Warehouse.objects.select_for_update().get(pk=warehouse.pk)
+    destination = None
+    production_recipe = None
+    planned_quantity = None
+    actual_quantity = None
+    if kind == 'transfer':
+        destination = scoped(
+            Warehouse, restaurant, data.get('destination_warehouse'), 'destinationWarehouse', is_active=True
+        )
+        if destination.pk == warehouse.pk:
+            raise ValidationError({'destinationWarehouse': _('Qabul qiluvchi ombor manba ombordan farq qilishi kerak.')})
+    elif data.get('destination_warehouse'):
+        raise ValidationError({'destinationWarehouse': _('Qabul qiluvchi ombor faqat transfer uchun kiritiladi.')})
+    if kind == 'production':
+        production_recipe = scoped(
+            Recipe, restaurant, data.get('production_recipe'), 'productionRecipe', is_active=True,
+            output_item__isnull=False,
+        )
+        production_recipe = Recipe.objects.select_for_update().prefetch_related('lines').get(pk=production_recipe.pk)
+        actual_quantity = decimal(data.get('actual_quantity'), 'actualQuantity', minimum=SIX)
+        planned_quantity = decimal(
+            data.get('planned_quantity') or actual_quantity, 'plannedQuantity', minimum=SIX
+        )
+    elif data.get('production_recipe') or data.get('planned_quantity') is not None or data.get('actual_quantity') is not None:
+        raise ValidationError({'productionRecipe': _('Ishlab chiqarish maydonlari faqat ishlab chiqarish hujjatiga tegishli.')})
+    warehouse_ids = {warehouse.pk}
+    if destination:
+        warehouse_ids.add(destination.pk)
+    list(Warehouse.objects.select_for_update().filter(pk__in=warehouse_ids).order_by('pk'))
     supplier = scoped(Supplier, restaurant, data['supplier'], 'supplier', is_active=True) if data.get('supplier') else None
     fields = {key: data[key] for key in ('reference', 'reason', 'occurred_at', 'attachment_url', 'responsible_name', 'notes') if key in data}
-    document = make_document(restaurant, warehouse, kind, actor, supplier=supplier,
+    document = make_document(
+        restaurant, warehouse, kind, actor, supplier=supplier, destination_warehouse=destination,
+        production_recipe=production_recipe, planned_quantity=planned_quantity, actual_quantity=actual_quantity,
                              idempotency_key=key, request_digest=digest, **fields)
-    set_document_lines(document, data.get('lines'))
+    lines = (
+        production_document_lines(production_recipe, planned_quantity, actual_quantity)
+        if kind == 'production'
+        else data.get('lines')
+    )
+    set_document_lines(document, lines)
     return document
 
 
@@ -178,9 +254,16 @@ def update_document(document, data):
     document = StockDocument.objects.select_for_update().get(pk=document.pk)
     if document.status != 'draft':
         raise ValidationError(_('Tasdiqlangan hujjatni tahrirlash mumkin emas. Teskari hujjat yarating.'))
-    Warehouse.objects.select_for_update().get(pk=document.warehouse_id)
+    warehouse_ids = {document.warehouse_id}
+    if document.destination_warehouse_id:
+        warehouse_ids.add(document.destination_warehouse_id)
+    list(Warehouse.objects.select_for_update().filter(pk__in=warehouse_ids).order_by('pk'))
     if 'kind' in data and data['kind'] != document.kind or 'warehouse' in data and str(data['warehouse']) != str(document.warehouse_id):
         raise ValidationError(_('Ombor yoki hujjat turini almashtirish uchun yangi hujjat yarating.'))
+    if 'destination_warehouse' in data and str(data['destination_warehouse']) != str(document.destination_warehouse_id):
+        raise ValidationError(_('Qabul qiluvchi omborni almashtirish uchun yangi transfer yarating.'))
+    if 'production_recipe' in data and str(data['production_recipe']) != str(document.production_recipe_id):
+        raise ValidationError(_('Retseptni almashtirish uchun yangi ishlab chiqarish hujjati yarating.'))
     if document.kind == 'stocktake' and 'lines' in data:
         # Preserve the original cut-off when entering/correcting counted quantities.
         previous = {str(line.item_id): line for line in document.lines.all()}
@@ -191,7 +274,20 @@ def update_document(document, data):
             old = previous[str(line.item_id)]
             line.expected_quantity, line.expected_revision = old.expected_quantity, old.expected_revision
             line.save(update_fields=['expected_quantity', 'expected_revision'])
+    elif document.kind == 'production' and ({'planned_quantity', 'actual_quantity'} & set(data)):
+        document.planned_quantity = decimal(
+            data.get('planned_quantity', document.planned_quantity), 'plannedQuantity', minimum=SIX
+        )
+        document.actual_quantity = decimal(
+            data.get('actual_quantity', document.actual_quantity), 'actualQuantity', minimum=SIX
+        )
+        recipe = Recipe.objects.prefetch_related('lines').get(pk=document.production_recipe_id)
+        set_document_lines(
+            document, production_document_lines(recipe, document.planned_quantity, document.actual_quantity)
+        )
     elif 'lines' in data:
+        if document.kind == 'production':
+            raise ValidationError({'lines': _('Ishlab chiqarish ingredientlari retseptdan avtomatik hisoblanadi.')})
         set_document_lines(document, data['lines'])
     if 'supplier' in data:
         document.supplier = scoped(Supplier, document.restaurant, data['supplier'], 'supplier') if data['supplier'] else None
@@ -202,8 +298,9 @@ def update_document(document, data):
     return document
 
 
-def record_movement(document, line, quantity, cost, *, order_item=None, exact_value=None):
-    balance = locked_balance(document.warehouse, line.item)
+def record_movement(document, line, quantity, cost, *, warehouse=None, order_item=None, exact_value=None):
+    warehouse = warehouse or document.warehouse
+    balance = locked_balance(warehouse, line.item)
     quantity, cost = q(quantity), q(cost)
     value = q(quantity * cost) if exact_value is None else q(exact_value)
     old_quantity, old_value = balance.quantity, balance.value
@@ -235,7 +332,7 @@ def record_movement(document, line, quantity, cost, *, order_item=None, exact_va
             balance.value = ZERO
     balance.revision += 1
     balance.save()
-    return StockMovement.objects.create(document=document, line=line, warehouse=document.warehouse,
+    return StockMovement.objects.create(document=document, line=line, warehouse=warehouse,
                                         item=line.item, quantity=quantity, unit_cost=cost, value=value,
                                         valuation_adjustment=valuation_adjustment,
                                         balance_after=balance.quantity, revision=balance.revision,
@@ -250,12 +347,66 @@ def finish_document(document, actor=None):
     return document
 
 
+def post_transfer(document, lines, *, allow_negative=False):
+    if not document.destination_warehouse_id or not document.destination_warehouse.is_active:
+        raise ValidationError({'destinationWarehouse': _('Faol qabul qiluvchi ombor majburiy.')})
+    if document.destination_warehouse_id == document.warehouse_id:
+        raise ValidationError({'destinationWarehouse': _('Qabul qiluvchi ombor manba ombordan farq qilishi kerak.')})
+    source_balances = {line.item_id: locked_balance(document.warehouse, line.item) for line in lines}
+    destination_balances = {
+        line.item_id: locked_balance(document.destination_warehouse, line.item) for line in lines
+    }
+    for line in lines:
+        source = source_balances[line.item_id]
+        if not allow_negative and source.quantity < line.base_quantity:
+            raise ValidationError({'lines': _('%(item)s: manba omborda yetarli qoldiq yo‘q.') % {'item': line.item_name}})
+    for line in lines:
+        source = source_balances[line.item_id]
+        cost = source.average_cost
+        line.base_unit_cost = cost
+        factor = line.base_quantity / line.quantity if line.input_unit == 'purchase' and line.quantity else Decimal('1')
+        line.unit_cost = q(cost * factor)
+        line.save()
+        record_movement(document, line, -line.base_quantity, cost, warehouse=document.warehouse)
+        record_movement(document, line, line.base_quantity, cost, warehouse=document.destination_warehouse)
+    return destination_balances
+
+
+def post_production(document, lines, *, allow_negative=False):
+    inputs = [line for line in lines if line.role == StockDocumentLine.Role.INPUT]
+    outputs = [line for line in lines if line.role == StockDocumentLine.Role.OUTPUT]
+    if not inputs or len(outputs) != 1:
+        raise ValidationError({'lines': _('Ishlab chiqarishda ingredientlar va bitta natija bo‘lishi kerak.')})
+    balances = {line.item_id: locked_balance(document.warehouse, line.item) for line in lines}
+    for line in inputs:
+        balance = balances[line.item_id]
+        if not allow_negative and balance.quantity < line.base_quantity:
+            raise ValidationError({'lines': _('%(item)s: ishlab chiqarish omborida qoldiq yetarli emas.') % {'item': line.item_name}})
+    input_value = ZERO
+    for line in inputs:
+        cost = balances[line.item_id].average_cost
+        line.base_unit_cost = cost
+        line.unit_cost = cost
+        line.save()
+        movement = record_movement(document, line, -line.base_quantity, cost)
+        input_value = q(input_value - movement.value)
+    output = outputs[0]
+    output_cost = q(input_value / output.base_quantity)
+    output.base_unit_cost = output_cost
+    output.unit_cost = output_cost
+    output.save()
+    record_movement(document, output, output.base_quantity, output_cost)
+
+
 @transaction.atomic
 def post_document(document, actor=None, allow_negative=False):
     document = StockDocument.objects.select_for_update().get(pk=document.pk)
     if document.status != 'draft':
         return document
-    Warehouse.objects.select_for_update().get(pk=document.warehouse_id)
+    warehouse_ids = {document.warehouse_id}
+    if document.destination_warehouse_id:
+        warehouse_ids.add(document.destination_warehouse_id)
+    list(Warehouse.objects.select_for_update().filter(pk__in=warehouse_ids).order_by('pk'))
     if not document.warehouse.is_active:
         raise ValidationError({'warehouse': _('Faol bo‘lmagan ombor uchun yangi hujjat tasdiqlanmaydi.')})
     if document.kind not in MANUAL_KINDS:
@@ -271,6 +422,14 @@ def post_document(document, actor=None, allow_negative=False):
     lines = list(document.lines.select_related('item'))
     if not lines:
         raise ValidationError({'lines': _('Mahsulot qatorlari kerak.')})
+    if document.kind == 'transfer':
+        post_transfer(document, lines, allow_negative=allow_negative)
+        return finish_document(document, actor)
+    if document.kind == 'production':
+        if not document.production_recipe_id or document.actual_quantity is None or document.planned_quantity is None:
+            raise ValidationError({'productionRecipe': _('Ishlab chiqarish retsepti va miqdorlari majburiy.')})
+        post_production(document, lines, allow_negative=allow_negative)
+        return finish_document(document, actor)
     for line in lines:
         balance = locked_balance(document.warehouse, line.item)
         if document.kind == 'stocktake':
@@ -320,33 +479,69 @@ def reverse_document(document, reason, actor=None):
     reversal = make_document(document.restaurant, document.warehouse, 'reversal', actor,
                              reversal_of=document, reason=reason, reference=document.number,
                              responsible_name=actor_name(actor))
-    for original in document.movements.select_related('line', 'item').all():
-        balance = locked_balance(document.warehouse, original.item)
+    for original in document.movements.select_related('line', 'item', 'warehouse').all():
+        balance = locked_balance(original.warehouse, original.item)
         if document.kind == 'stocktake' and balance.revision != original.revision:
             raise ValidationError(_('Sanashdan keyin harakatlar bor. Yangi inventarizatsiya bilan tuzating.'))
         line = StockDocumentLine.objects.create(document=reversal, item=original.item,
+                    role=original.line.role,
                     item_name=original.line.item_name, base_unit=original.line.base_unit,
                     quantity=abs(original.quantity), base_quantity=abs(original.quantity),
                     unit_cost=original.unit_cost, base_unit_cost=original.unit_cost,
                     expected_quantity=balance.quantity, expected_revision=balance.revision)
-        record_movement(reversal, line, -original.quantity, original.unit_cost, exact_value=-original.value)
+        record_movement(
+            reversal, line, -original.quantity, original.unit_cost,
+            warehouse=original.warehouse, exact_value=-original.value,
+        )
     document.status = 'reversed'
     document.save(update_fields=['status', 'updated_at'])
     if document.kind in {'opening', 'stocktake'}:
         for original in document.movements.all():
-            latest = StockMovement.objects.filter(warehouse=document.warehouse, item_id=original.item_id,
+            latest = StockMovement.objects.filter(warehouse=original.warehouse, item_id=original.item_id,
                 document__kind__in=['opening', 'stocktake'], document__status='posted').order_by('-created_at').first()
-            StockBalance.objects.filter(warehouse=document.warehouse, item_id=original.item_id).update(
+            StockBalance.objects.filter(warehouse=original.warehouse, item_id=original.item_id).update(
                 last_counted_at=latest.created_at if latest else None)
     return finish_document(reversal, actor)
 
 
+def validate_prep_recipe_cycle(restaurant, output_item, ingredient_ids):
+    graph = defaultdict(set)
+    active = Recipe.objects.filter(
+        restaurant=restaurant, is_active=True, output_item__isnull=False
+    ).prefetch_related('lines')
+    for recipe in active:
+        graph[str(recipe.output_item_id)].update(str(line.item_id) for line in recipe.lines.all())
+    graph[str(output_item.pk)] = {str(value) for value in ingredient_ids}
+    target = str(output_item.pk)
+    stack = list(graph[target])
+    visited = set()
+    while stack:
+        current = stack.pop()
+        if current == target:
+            raise ValidationError({'lines': _('Yarim tayyor retseptlar yopiq sikl hosil qilmasligi kerak.')})
+        if current not in visited:
+            visited.add(current)
+            stack.extend(graph.get(current, ()))
+
+
 @transaction.atomic
 def create_recipe(restaurant, data, actor=None):
-    catalog_item = scoped(CatalogItem, restaurant, data.get('catalog_item'), 'catalogItem', is_active=True)
-    CatalogItem.objects.select_for_update().get(pk=catalog_item.pk)
-    if catalog_item.item_type != 'product':
-        raise ValidationError({'catalogItem': _('Xizmat uchun ombor retsepti yaratilmaydi.')})
+    catalog_item = None
+    output_item = None
+    if bool(data.get('catalog_item')) == bool(data.get('output_item')):
+        raise ValidationError(_('Katalog mahsuloti yoki yarim tayyor natijadan faqat bittasini tanlang.'))
+    if data.get('catalog_item'):
+        catalog_item = scoped(CatalogItem, restaurant, data.get('catalog_item'), 'catalogItem', is_active=True)
+        CatalogItem.objects.select_for_update().get(pk=catalog_item.pk)
+        if catalog_item.item_type != 'product':
+            raise ValidationError({'catalogItem': _('Xizmat uchun ombor retsepti yaratilmaydi.')})
+    elif data.get('output_item'):
+        output_item = scoped(InventoryItem, restaurant, data.get('output_item'), 'outputItem', is_active=True)
+        InventoryItem.objects.select_for_update().get(pk=output_item.pk)
+        if output_item.kind not in {InventoryItem.Kind.SEMI_FINISHED, InventoryItem.Kind.FINISHED}:
+            raise ValidationError({'outputItem': _('Ishlab chiqarish natijasi yarim tayyor yoki tayyor mahsulot bo‘lishi kerak.')})
+    else:
+        raise ValidationError(_('Retsept natijasini tanlang.'))
     yield_quantity = decimal(data.get('yield_quantity', 1), 'yieldQuantity', minimum=SIX)
     lines = data.get('lines')
     if not isinstance(lines, list) or not lines or len(lines) > 200:
@@ -355,20 +550,38 @@ def create_recipe(restaurant, data, actor=None):
     for raw in lines:
         item = scoped(InventoryItem, restaurant, raw.get('item'), 'item', is_active=True)
         modifier = None
+        if raw.get('modifier_option') and output_item:
+            raise ValidationError({'modifierOption': _('Yarim tayyor mahsulot retseptida modifikator bo‘lmaydi.')})
         if raw.get('modifier_option'):
             modifier = ModifierOption.objects.filter(pk=raw['modifier_option'], group__restaurant=restaurant,
                                                       group__catalog_items=catalog_item, is_active=True).first()
             if not modifier:
                 raise ValidationError({'modifierOption': _('Modifikator taomga tegishli emas.')})
-        unique = (str(item.pk), str(getattr(modifier, 'pk', '')))
+        modifier_condition = raw.get('modifier_condition', RecipeLine.ModifierCondition.SELECTED)
+        if not modifier:
+            modifier_condition = RecipeLine.ModifierCondition.SELECTED
+        if modifier_condition not in RecipeLine.ModifierCondition.values:
+            raise ValidationError({'modifierCondition': _('Modifikator sarf qoidasi noto‘g‘ri.')})
+        unique = (str(item.pk), str(getattr(modifier, 'pk', '')), modifier_condition)
         if unique in seen:
             raise ValidationError({'lines': _('Ingredient va modifikator juftligi takrorlanmasin.')})
         seen.add(unique)
-        prepared.append(dict(item=item, quantity=decimal(raw.get('quantity'), minimum=SIX), modifier_option=modifier))
-    version = (Recipe.objects.filter(catalog_item=catalog_item).aggregate(n=Max('version'))['n'] or 0) + 1
-    Recipe.objects.filter(catalog_item=catalog_item, is_active=True).update(is_active=False)
-    recipe = Recipe.objects.create(restaurant=restaurant, catalog_item=catalog_item, version=version,
-                yield_quantity=yield_quantity, trigger=data.get('trigger', 'dispatch'), name=data.get('name', ''), created_by=actor)
+        prepared.append(dict(
+            item=item,
+            quantity=decimal(raw.get('quantity'), minimum=SIX),
+            modifier_option=modifier,
+            modifier_condition=modifier_condition,
+        ))
+    target_filter = {'catalog_item': catalog_item} if catalog_item else {'output_item': output_item}
+    if output_item:
+        validate_prep_recipe_cycle(restaurant, output_item, [line['item'].pk for line in prepared])
+    version = (Recipe.objects.filter(**target_filter).aggregate(n=Max('version'))['n'] or 0) + 1
+    Recipe.objects.filter(**target_filter, is_active=True).update(is_active=False)
+    recipe = Recipe.objects.create(
+        restaurant=restaurant, catalog_item=catalog_item, output_item=output_item, version=version,
+        yield_quantity=yield_quantity, trigger=data.get('trigger', 'dispatch') if catalog_item else 'dispatch',
+        name=data.get('name', ''), created_by=actor,
+    )
     RecipeLine.objects.bulk_create([RecipeLine(recipe=recipe, **line) for line in prepared])
     return recipe
 
@@ -376,7 +589,13 @@ def create_recipe(restaurant, data, actor=None):
 def components_for(recipe, quantity, modifier_ids):
     components = defaultdict(lambda: ZERO)
     for line in recipe.lines.all():
-        if line.modifier_option_id is None or str(line.modifier_option_id) in modifier_ids:
+        modifier_id = str(line.modifier_option_id) if line.modifier_option_id else None
+        applies = (
+            modifier_id is None
+            or (line.modifier_condition == RecipeLine.ModifierCondition.SELECTED and modifier_id in modifier_ids)
+            or (line.modifier_condition == RecipeLine.ModifierCondition.NOT_SELECTED and modifier_id not in modifier_ids)
+        )
+        if applies:
             components[str(line.item_id)] += line.quantity * quantity / recipe.yield_quantity
     return {item_id: q(quantity) for item_id, quantity in components.items()}
 
@@ -648,7 +867,9 @@ def validate_catalog_stock(catalog_item, quantity, modifier_options=None):
 def inventory_snapshot(restaurant):
     warehouse = Warehouse.objects.filter(restaurant=restaurant, is_default=True, is_active=True).first()
     warehouses = list(Warehouse.objects.filter(restaurant=restaurant, is_active=True))
-    recipes = Recipe.objects.filter(restaurant=restaurant, is_active=True).select_related('catalog_item').prefetch_related('lines')
+    recipes = Recipe.objects.filter(
+        restaurant=restaurant, is_active=True, catalog_item__isnull=False
+    ).select_related('catalog_item').prefetch_related('lines')
     from apps.sales.models import Order
     active_order_ids = Order.objects.filter(restaurant=restaurant).exclude(status__in=['closed', 'cancelled']).values_list('pk', flat=True)
     consumptions = OrderConsumption.objects.filter(restaurant=restaurant, order_id__in=active_order_ids).select_related('recipe')
@@ -662,7 +883,8 @@ def inventory_snapshot(restaurant):
         'recipes': [{'id': str(row.pk), 'catalog_item_id': str(row.catalog_item_id), 'version': row.version,
                      'yield_quantity': str(row.yield_quantity), 'trigger': row.trigger, 'sale_unit': row.catalog_item.sale_unit,
                      'lines': [{'item_id': str(line.item_id), 'quantity': str(line.quantity),
-                                'modifier_option_id': str(line.modifier_option_id) if line.modifier_option_id else None}
+                                'modifier_option_id': str(line.modifier_option_id) if line.modifier_option_id else None,
+                                'modifier_condition': line.modifier_condition}
                                for line in row.lines.all()]} for row in recipes],
         'consumptions': [{'order_item_id': str(row.order_item_id), 'recipe_id': str(row.recipe_id),
                           'recipe_version': row.recipe.version, 'quantity': str(row.quantity),

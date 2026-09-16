@@ -9,7 +9,7 @@ from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.platform.models import RestaurantEntitlement
 from apps.restaurants.models import Restaurant
 from apps.users.models import Permission, Role, User
-from apps.inventory.models import InventoryAttachment, InventoryItem, StockBalance, StockDocument, StockMovement, Supplier
+from apps.inventory.models import InventoryAttachment, InventoryItem, StockBalance, StockDocument, StockMovement, Supplier, Warehouse
 from apps.inventory import services
 
 
@@ -66,6 +66,83 @@ class InventoryAPITests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn('attachment', response['Content-Disposition'])
         self.assertEqual(self.client.get(self.base + f'documents/{doc["id"]}/export/').status_code, 200)
+
+    def test_transfer_and_production_api_contract(self):
+        receipt = self.create_document(
+            lines=[{
+                'item': str(self.item.pk),
+                'quantity': '1000',
+                'unitCost': '10',
+                'discountPercent': '20',
+            }],
+        )
+        self.assertEqual(Decimal(receipt['lines'][0]['listUnitCost']), Decimal('10'))
+        self.assertEqual(Decimal(receipt['lines'][0]['unitCost']), Decimal('8'))
+        self.assertEqual(self.client.post(
+            self.base + f'documents/{receipt["id"]}/post/', {}, format='json'
+        ).status_code, 200)
+
+        production_warehouse = Warehouse.objects.create(
+            restaurant=self.restaurant,
+            name='Ishlab chiqarish',
+            kind='production',
+        )
+        transfer = self.client.post(self.base + 'documents/', {
+            'kind': 'transfer',
+            'warehouse': str(self.warehouse.pk),
+            'destinationWarehouse': str(production_warehouse.pk),
+            'reference': 'TR-1',
+            'responsibleName': 'Omborchi',
+            'lines': [{'item': str(self.item.pk), 'quantity': '400'}],
+        }, format='json')
+        self.assertEqual(transfer.status_code, 201, transfer.data)
+        self.assertEqual(transfer.json()['destinationWarehouse'], str(production_warehouse.pk))
+        posted_transfer = self.client.post(
+            self.base + f'documents/{transfer.json()["id"]}/post/', {}, format='json'
+        )
+        self.assertEqual(posted_transfer.status_code, 200, posted_transfer.data)
+
+        prep = InventoryItem.objects.create(
+            restaurant=self.restaurant,
+            name='Kartoshka yarim tayyor',
+            kind='semi_finished',
+            base_unit='g',
+        )
+        recipe = self.client.post(self.base + 'recipes/', {
+            'outputItem': str(prep.pk),
+            'yieldQuantity': '100',
+            'lines': [{'item': str(self.item.pk), 'quantity': '120'}],
+        }, format='json')
+        self.assertEqual(recipe.status_code, 201, recipe.data)
+        self.assertEqual(recipe.json()['targetType'], 'preparation')
+
+        production = self.client.post(self.base + 'documents/', {
+            'kind': 'production',
+            'warehouse': str(production_warehouse.pk),
+            'productionRecipe': recipe.json()['id'],
+            'plannedQuantity': '100',
+            'actualQuantity': '95',
+            'reference': 'PR-1',
+            'responsibleName': 'Oshpaz',
+        }, format='json')
+        self.assertEqual(production.status_code, 201, production.data)
+        payload = production.json()
+        self.assertEqual(payload['productionRecipe'], recipe.json()['id'])
+        self.assertEqual(Decimal(payload['plannedQuantity']), Decimal('100'))
+        self.assertEqual(Decimal(payload['actualQuantity']), Decimal('95'))
+        self.assertEqual({line['role'] for line in payload['lines']}, {'input', 'output'})
+        posted = self.client.post(
+            self.base + f'documents/{payload["id"]}/post/', {}, format='json'
+        )
+        self.assertEqual(posted.status_code, 200, posted.data)
+        self.assertEqual(
+            StockBalance.objects.get(warehouse=production_warehouse, item=self.item).quantity,
+            Decimal('280'),
+        )
+        self.assertEqual(
+            StockBalance.objects.get(warehouse=production_warehouse, item=prep).quantity,
+            Decimal('95'),
+        )
 
     def test_posted_document_and_lines_are_immutable(self):
         doc = self.create_document()

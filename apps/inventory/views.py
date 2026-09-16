@@ -7,6 +7,7 @@ from pathlib import Path
 
 from django.utils.translation import gettext as _
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.http import FileResponse, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -173,13 +174,19 @@ class CatalogOptionsView(InventoryView):
 
 class RecipesView(InventoryView):
     def get(self, request, pk=None):
-        queryset = Recipe.objects.filter(restaurant=self.restaurant).select_related('catalog_item').prefetch_related('lines__item', 'lines__modifier_option')
+        queryset = Recipe.objects.filter(restaurant=self.restaurant).select_related(
+            'catalog_item', 'output_item'
+        ).prefetch_related('lines__item', 'lines__modifier_option')
         if pk:
             return self.response(RecipeSerializer(get_object_or_404(queryset, pk=pk)).data)
         if request.query_params.get('catalogItem') or request.query_params.get('catalog_item'):
             catalog_id = request.query_params.get('catalogItem') or request.query_params.get('catalog_item')
             catalog = services.scoped(CatalogItem, self.restaurant, catalog_id, 'catalogItem')
             queryset = queryset.filter(catalog_item=catalog)
+        elif request.query_params.get('outputItem') or request.query_params.get('output_item'):
+            output_id = request.query_params.get('outputItem') or request.query_params.get('output_item')
+            output = services.scoped(InventoryItem, self.restaurant, output_id, 'outputItem')
+            queryset = queryset.filter(output_item=output)
         else:
             queryset = queryset.filter(is_active=True)
         return self.response(RecipeSerializer(queryset, many=True).data)
@@ -212,7 +219,9 @@ class RecipesDetailView(RecipesView):
 
 class DocumentsView(InventoryView):
     def queryset(self):
-        return StockDocument.objects.filter(restaurant=self.restaurant).select_related('warehouse', 'supplier').prefetch_related('lines')
+        return StockDocument.objects.filter(restaurant=self.restaurant).select_related(
+            'warehouse', 'destination_warehouse', 'supplier', 'production_recipe__output_item'
+        ).prefetch_related('lines')
 
     def get(self, request, pk=None):
         queryset = self.queryset()
@@ -223,10 +232,12 @@ class DocumentsView(InventoryView):
                 queryset = queryset.filter(**{field: request.query_params[field]})
         warehouse = self.warehouse()
         if warehouse:
-            queryset = queryset.filter(warehouse=warehouse)
+            if request.query_params.get('kind') == StockDocument.Kind.TRANSFER:
+                queryset = queryset.filter(Q(warehouse=warehouse) | Q(destination_warehouse=warehouse))
+            else:
+                queryset = queryset.filter(warehouse=warehouse)
         search = request.query_params.get('search', '')
         if search:
-            from django.db.models import Q
             queryset = queryset.filter(Q(number__icontains=search) | Q(reference__icontains=search) | Q(reason__icontains=search))
         limit, offset = self.page()
         return self.response(DocumentSerializer(queryset[offset:offset + limit], many=True).data)

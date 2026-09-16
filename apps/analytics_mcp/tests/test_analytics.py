@@ -512,7 +512,14 @@ class TransportTests(TransactionTestCase):
             )
             self.assertIn("serverInfo", init["result"])
             tools = rpc("tools/list")["result"]["tools"]
-            self.assertEqual(len(tools), 11)
+            self.assertEqual(len(tools), 16)
+            self.assertTrue({
+                "get_inventory_summary",
+                "get_inventory_variance",
+                "get_production_yield",
+                "get_recipe_costs",
+                "get_purchase_recommendations",
+            }.issubset({tool["name"] for tool in tools}))
             listed = rpc("tools/call", {"name": "list_branches", "arguments": {}})[
                 "result"
             ]
