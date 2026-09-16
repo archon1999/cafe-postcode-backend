@@ -15,6 +15,17 @@ by tools. OAuth records and short-lived report snapshots are stored in the DB.
 | `get_top_products` | Closed-order products by line revenue or quantity |
 | `compare_branches` | Same-period branch rows, with separate currency on each row |
 | `render_sales_chart` | Interactive chart/table from an authorized saved timeseries |
+| `get_expenses` | Posted cash expenses by category; requires `expenses.view` |
+| `get_staff_performance` | Closed-order item revenue/quantity by staff; requires `reports.view` |
+| `get_table_performance` | Closed dine-in orders by primary table and hall |
+| `get_payment_breakdown` | Successful payments minus refunds by payment method |
+| `get_cash_shifts` | Shift totals for shifts opened in the selected period |
+
+Inventory is deliberately deferred. Single-restaurant presentation contains no
+branch list, count, selector or comparison; multiple restaurants retain these.
+Staff totals describe attributed sales, not employee quality or cashier receipts.
+Table totals do not allocate refunds; cash-shift totals cover the whole shift,
+not just the selected date interval. Each result includes its metric definition.
 
 All dates use Asia/Tashkent. `last_7_days` includes today plus six previous days;
 `previous_week` means the previous Monday–Sunday. Date ranges are inclusive in
@@ -65,7 +76,8 @@ process needs the MCP SDK's ASGI lifespan.
    and scope `analytics:read`. Keep credentials out of source control/logs.
 4. Connect with an active restaurant account having `dashboard.view`, an enabled
    restaurant entitlement and branch access. A global superuser cannot connect.
-   Confirm the listed branches on the consent screen.
+   Confirm restaurant access on the consent screen. Existing account MFA applies;
+   accounts required to enroll must first set up Authenticator in Admin.
 5. Ask “Bugungi statistika”, “Oxirgi 7 kunlik grafik”, or “Top 10 mahsulot”.
    `/oauth/connections/` lets the restaurant user revoke their own connections.
 
@@ -128,7 +140,7 @@ is a separate release step: assign/verify a widget domain and CSP against the
 current submission requirements. The developer UI flags the missing unique
 widget domain; this implementation has not been submitted to the marketplace.
 
-## Add expenses, tables, staff or inventory reports
+## Add report domains
 
 The boundaries are intentionally separate:
 
@@ -165,10 +177,12 @@ poetry run python manage.py makemigrations --check --dry-run
 poetry run ruff check apps/analytics_mcp core/mcp_asgi.py core/settings/mcp.py --extend-select F401
 ```
 
-17 MCP tests cover tenancy, consent, roles/entitlements, superusers, audience,
+MCP tests cover tenancy, consent, roles/entitlements, superusers, audience,
 expiry, refunds, fractional units, midnight boundaries, currency, OAuth exchange,
-PKCE, refresh/replay/revocation, CSRF, transport and widget resource. The existing
-32 dashboard/reporting tests also pass.
+PKCE, refresh/replay/revocation, CSRF, transport, widget resource, additional
+report domains, MFA replay and asset/security headers. The release workflow runs
+MCP plus existing dashboard/reporting tests on PostgreSQL, then MCP tests again
+inside the final Alpine runtime image.
 
 The real Chrome/ChatGPT OAuth flow and all main report tools were exercised
 against a separate synthetic SQLite database. Only DEMO Chilonzor and DEMO
