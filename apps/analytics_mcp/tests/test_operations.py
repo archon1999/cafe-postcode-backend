@@ -197,5 +197,5 @@ class OperationsTests(TestCase):
         asset = self.client.get("/assets/nunito-sans.woff2")
         self.assertEqual(asset.status_code, 200)
         self.assertEqual(asset["Content-Type"], "font/woff2")
-        asset.close()
+        self.assertTrue(b"".join(asset.streaming_content))
         self.assertEqual(self.client.get("/assets/config.env").status_code, 404)
