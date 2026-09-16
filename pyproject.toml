@@ -48,6 +48,8 @@ polib = "1.2.0"
 django-prometheus = "^2.4.1"
 python-json-logger = "^4.1.0"
 channels-redis = "^4.3.0"
+mcp = ">=1.30,<2"
+django-oauth-toolkit = ">=3.4.1,<4"
 
 [build-system]
 requires = ["poetry-core"]

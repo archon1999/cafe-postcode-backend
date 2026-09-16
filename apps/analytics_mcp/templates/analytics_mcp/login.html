@@ -1,0 +1,4 @@
+{% extends 'analytics_mcp/base.html' %}{% block title %}Hisobga kirish{% endblock %}{% block content %}
+<div class="eyebrow">ChatGPT bilan ulanish</div><h1>Hisobingizga kiring</h1><p>Restoraningiz hisobotlarini ChatGPT orqali ko‘rish uchun Cafe Postcode hisobingizdan foydalaning.</p>
+<form method="post">{% csrf_token %}{{ form.non_field_errors }}<label for="id_username">Login</label>{{ form.username }}{{ form.username.errors }}<label for="id_password">Parol</label>{{ form.password }}{{ form.password.errors }}<input type="hidden" name="next" value="{{ next }}"><div class="actions"><button type="submit">Davom etish</button></div></form>
+<div class="footer"><p class="note">Parolingiz Cafe Postcode’da tekshiriladi va ChatGPT’ga berilmaydi. Keyingi qadamda ulanish huquqlarini ko‘rib chiqasiz.</p></div>{% endblock %}

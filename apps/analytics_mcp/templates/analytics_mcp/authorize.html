@@ -1,0 +1,10 @@
+{% extends 'analytics_mcp/base.html' %}{% block title %}Ulanishga ruxsat{% endblock %}{% block content %}
+<div class="eyebrow">Ulanish huquqlari</div><h1>Hisobotlaringizni ulang</h1>
+{% if error %}<p class="error">{{ error.description }}</p>{% else %}
+<p><strong>{{ application.name }}</strong> hisobingizdagi ruxsat etilgan statistikani o‘qiy oladi.</p>
+<div class="panel">{% if branches|length > 1 %}<p style="margin:0 0 10px">Ulanadigan filiallar</p>{% endif %}<ul>{% for branch in branches %}<li><strong>{{ branch.name }}</strong></li>{% endfor %}</ul></div>
+<div class="permission"><span class="check" aria-hidden="true">✓</span><div><strong>Hisobotlarni ko‘rish</strong><p>Savdo, xarajatlar, stollar, xodimlar va kassa statistikasi — hisobingizning mavjud huquqlari doirasida.</p></div></div>
+<div class="permission"><span class="check" aria-hidden="true">✓</span><div><strong>Faqat o‘qish huquqi</strong><p>Buyurtmalar, to‘lovlar va sozlamalar o‘zgartirilmaydi.</p></div></div>
+<form method="post">{% csrf_token %}{% for field in form %}{% if field.is_hidden %}{{ field }}{% endif %}{% endfor %}{{ form.errors }}<div class="actions"><button type="submit" name="allow" value="true">Ulashga ruxsat berish</button><button class="secondary" type="submit">Bekor qilish</button></div></form>
+<p class="note">Ulanishni istalgan vaqtda <a href="/oauth/connections/">hisob sozlamalaridan</a> bekor qilishingiz mumkin. Hisob huquqlari o‘zgarsa, ulanishga ham qo‘llanadi.</p>
+{% endif %}{% endblock %}

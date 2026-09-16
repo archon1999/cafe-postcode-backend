@@ -1,0 +1,52 @@
+# Dedicated Compose project. Does not replace/restart the POS stack.
+# Inject /home/postcode/mcp/.env with mode 0600; pin MCP_IMAGE to image ID.
+name: postcode-mcp
+services:
+  mcp:
+    image: ${MCP_IMAGE:?Set the verified immutable MCP image ID}
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: core.settings.mcp
+      DJANGO_SETTINGS_CLASS: MCPSettings
+      DJANGO_PRODUCTION: '1'
+      DEBUG: '0'
+      MCP_PUBLIC_ORIGIN: https://mcp.cafe-postcode.uz
+      ALLOWED_HOSTS: mcp.cafe-postcode.uz
+      CSRF_TRUSTED_ORIGINS: https://mcp.cafe-postcode.uz
+      SECURE_SSL_REDIRECT: '1'
+      SESSION_COOKIE_SECURE: '1'
+      CSRF_COOKIE_SECURE: '1'
+      ENABLE_API_DOCS: '0'
+      DISABLE_CSRF_CHECKS: '0'
+      DB_ENGINE: postgres
+      DB_HOST: postgres
+      DB_PORT: '5432'
+      DB_CONN_MAX_AGE: '0'
+      REDIS_URL: redis://redis:6379/2
+      PGOPTIONS: -c statement_timeout=15000 -c lock_timeout=3000 -c default_transaction_read_only=off
+      LOG_FORMAT: json
+      MCP_MAX_CONCURRENT_REPORTS: '4'
+    command: [uvicorn, 'core.mcp_asgi:application', --host, '0.0.0.0', --port, '8765', --workers, '2', --limit-concurrency, '32', --no-access-log, --no-proxy-headers]
+    ports: ['127.0.0.1:18765:8765']
+    networks: [backend]
+    restart: unless-stopped
+    mem_limit: 640m
+    cpus: 1.0
+    pids_limit: 128
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8765/readyz/', headers={'Host':'mcp.cafe-postcode.uz'}),timeout=4).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+networks:
+  backend:
+    external: true
+    name: backend_default

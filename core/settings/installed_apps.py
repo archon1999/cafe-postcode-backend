@@ -10,6 +10,7 @@ DEFAULT_APPS = [
 ]
 
 LOCAL_APPS = [
+    'apps.analytics_mcp',
     'apps.dashboard',
     'apps.users',
     'apps.platform',
@@ -30,6 +31,7 @@ LOCAL_APPS = [
 ]
 
 THIRD_PARTY_APPS = [
+    'oauth2_provider',
     'django_prometheus',
     'modeltranslation',
     'corsheaders',

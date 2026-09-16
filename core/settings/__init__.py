@@ -245,6 +245,33 @@ from .templates import TEMPLATES
 
 
 class CoreSettings(Settings):
+    OAUTH2_PROVIDER_APPLICATION_MODEL = 'oauth2_provider.Application'
+    OAUTH2_PROVIDER_GRANT_MODEL = 'oauth2_provider.Grant'
+    OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = 'oauth2_provider.AccessToken'
+    OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = 'oauth2_provider.RefreshToken'
+    OAUTH2_PROVIDER_ID_TOKEN_MODEL = 'oauth2_provider.IDToken'
+    OAUTH2_PROVIDER_DEVICE_GRANT_MODEL = 'oauth2_provider.DeviceGrant'
+    MCP_PUBLIC_ORIGIN = os.getenv('MCP_PUBLIC_ORIGIN', 'http://127.0.0.1:8765').rstrip('/')
+    MCP_CONNECTION_DAYS = env_int('MCP_CONNECTION_DAYS', 30)
+    MCP_REPORT_TTL_SECONDS = env_int('MCP_REPORT_TTL_SECONDS', 900)
+    MCP_MAX_DAYS = env_int('MCP_MAX_DAYS', 90)
+    MCP_RATE_PER_MINUTE = env_int('MCP_RATE_PER_MINUTE', 60)
+    MCP_MAX_CONCURRENT_REPORTS = env_int('MCP_MAX_CONCURRENT_REPORTS', 8)
+    MCP_REPORT_MODULES = ['apps.analytics_mcp.reports.sales', 'apps.analytics_mcp.reports.operations']
+    OAUTH2_PROVIDER = {
+        'OAUTH2_VALIDATOR_CLASS': 'apps.analytics_mcp.oauth.AnalyticsOAuthValidator',
+        'SCOPES': {'analytics:read': 'Read statistics for your authorized Cafe Postcode branches'},
+        'DEFAULT_SCOPES': ['analytics:read'],
+        'PKCE_REQUIRED': True,
+        'COMPLIANT_BCP_RFC9700_PKCE_METHOD': True,
+        'COMPLIANT_BCP_RFC9700_TOKEN_STORAGE': True,
+        'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+        'AUTHORIZATION_CODE_EXPIRE_SECONDS': 120,
+        'ROTATE_REFRESH_TOKEN': True,
+        'REFRESH_TOKEN_REUSE_PROTECTION': True,
+        'REFRESH_TOKEN_EXPIRE_SECONDS': 2592000,
+        'REQUEST_APPROVAL_PROMPT': 'force',
+    }
     ALLOWED_HOSTS = ALLOWED_HOSTS_VALUE
     INTERNAL_IPS = ['127.0.0.1']
     SECRET_KEY = SECRET_KEY_VALUE
