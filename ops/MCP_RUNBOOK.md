@@ -42,10 +42,10 @@ Restaurant credentials are entered at the Cafe Postcode origin, not ChatGPT.
 
 ## Current deployment and evidence
 
-The deployed application revision is `e65de9de5cbaae7c38e8d1c4c4bb4b66dc4725bd`.
+The deployed application revision is `ce8e774f2d029982f785684f3a77ed529ed2d896`.
 Its immutable image is
-`sha256:9596cf4ecb1e3f7d36bd11e87e4797cce6738122039eb55dcb323fdd7d9e53b0`.
-Release run `35103850188` passed 63 PostgreSQL tests, 28 runtime-image tests,
+`sha256:f88492777680f579a9b183de9eebc6ac9f57efc035bc3673d54204531896e5db`.
+Release run `35106947156` passed 64 PostgreSQL tests, 29 runtime-image tests,
 the HIGH/CRITICAL image scan, and signed-artifact verification on the host.
 The login corrections preserve CSRF protection with `Referrer-Policy:
 strict-origin`, skip profile synchronization on authentication metadata saves,
@@ -57,7 +57,16 @@ NEW YORK and BOHRAM DIYOR passed authenticated HTTPS report, tenant-isolation,
 chart-resource, and token-revocation checks on this release. NEW YORK also passed
 restricted-role session, consent, and PKCE exchange preflight. The user then
 confirmed successful real browser login; ChatGPT displayed today's statistics
-and the seven-day `sales-chart-v2.html` widget without single-restaurant branch UI.
+and the seven-day `sales-chart-v3.html` widget without single-restaurant branch UI.
+The v3 release removes routine offline/partial-day/profit disclaimers from
+normal answers while retaining accounting metadata, uses system sans typography,
+and removes the chart's cutoff, sync footer and duplicate border. New-chat
+acceptance confirmed the concise answer and rendered widget (a first template
+fetch failed transiently; the UI retry succeeded).
+The MCP server advertises the existing Cafe Postcode logo through server icons.
+The current ChatGPT developer app did not adopt it after refresh; its UI offered
+name/description editing only, with no logo field. Do not claim the plugin card
+icon has been updated. Logo publication remains a ChatGPT distribution step.
 Host evidence is stored under `/home/postcode/mcp/evidence/`: signed-release
 verification, backup checksums, restore result, migration plans, production
 report checks, HTTPS smoke results, and deployed image ID. The disposable
