@@ -15,6 +15,34 @@ from .test_analytics import SETTINGS, ReportingTests, issue_fixture_token
 
 @override_settings(**SETTINGS)
 class OperationsTests(TestCase):
+    @override_settings(
+        AUTHENTICATION_BACKENDS=["apps.analytics_mcp.backends.AnalyticsModelBackend"],
+        ADMIN_MFA_REQUIRED=False,
+    )
+    def test_login_preserves_legacy_password_and_does_not_touch_employee_profiles(self):
+        from django.contrib.auth.hashers import PBKDF2PasswordHasher
+        from django.db import connection
+        from apps.users.models import User
+
+        original = PBKDF2PasswordHasher().encode("test-only-password", "test-salt", iterations=1000)
+        User.objects.filter(pk=self.user.pk).update(password=original)
+
+        def restricted_login_queries(execute, sql, params, many, context):
+            self.assertNotIn('"users_employeeprofile"', sql)
+            if sql.lstrip().upper().startswith("UPDATE") and '"users_user"' in sql:
+                self.assertNotIn('"password" =', sql)
+            return execute(sql, params, many, context)
+
+        with connection.execute_wrapper(restricted_login_queries):
+            response = self.client.post(
+                "/oauth/login/",
+                {"username": self.user.username, "password": "test-only-password"},
+            )
+        self.assertEqual(response.status_code, 302)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.password, original)
+        self.assertIsNotNone(self.user.last_login)
+
     def setUp(self):
         ReportingTests.setUp(self)
         permissions = Permission.objects.filter(

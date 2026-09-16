@@ -9,6 +9,11 @@ from apps.users.models import EmployeeProfile, User
 def ensure_user_profiles(sender, instance: User, **kwargs):
     if kwargs.get('raw'):
         return
+    # Authentication metadata updates must not read/create employee profiles or
+    # synchronize POS PINs. Dedicated analytics login has no such privileges.
+    update_fields = kwargs.get('update_fields')
+    if update_fields and set(update_fields) <= {'last_login', 'password'}:
+        return
 
     EmployeeProfile.objects.get_or_create(user=instance)
     try:

@@ -9,6 +9,7 @@ class MCPSettings(CoreSettings):
         for alias, config in CoreSettings.DATABASES.items()
     }
     ROOT_URLCONF = "apps.analytics_mcp.urls"
+    AUTHENTICATION_BACKENDS = ["apps.analytics_mcp.backends.AnalyticsModelBackend"]
     DISABLE_CSRF_CHECKS = False
     SESSION_COOKIE_NAME = "cafe_mcp_session"
     CSRF_COOKIE_NAME = "cafe_mcp_csrf"
