@@ -3,16 +3,15 @@ from urllib.parse import urlparse
 
 from django.utils.translation import gettext as _
 from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
 
-from common.api.permissions import has_permission_code
 from .models import InventoryItem, Recipe, RecipeLine, StockDocument, StockDocumentLine, Supplier, Warehouse
 
 
 COST_FIELDS = {'unit_cost', 'base_unit_cost', 'average_cost', 'value', 'total_value', 'variance_value',
                'tolerance_value', 'estimated_cost', 'stock_value', 'receipt_value', 'issue_value',
                'sale_cost', 'valuation_adjustment'}
-COST_FIELDS.update({'purchase_value', 'previous_cost', 'latest_cost', 'cost_increase_percent'})
+COST_FIELDS.update({'purchase_value', 'previous_cost', 'latest_cost', 'cost_increase_percent',
+                    'list_unit_cost', 'discount_amount'})
 PRIVATE_DOCUMENT_FIELDS = {'attachment_url'}
 
 
@@ -44,7 +43,7 @@ class ScopedReferenceSerializer(serializers.ModelSerializer):
 class WarehouseSerializer(ScopedReferenceSerializer):
     class Meta:
         model = Warehouse
-        fields = ('id', 'name', 'is_active', 'is_default', 'created_at', 'updated_at')
+        fields = ('id', 'name', 'kind', 'is_active', 'is_default', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
         validators = []
 
@@ -66,7 +65,7 @@ class WarehouseSerializer(ScopedReferenceSerializer):
 class ItemSerializer(ScopedReferenceSerializer):
     class Meta:
         model = InventoryItem
-        fields = ('id', 'name', 'sku', 'base_unit', 'purchase_unit', 'purchase_factor', 'min_quantity',
+        fields = ('id', 'name', 'kind', 'sku', 'base_unit', 'purchase_unit', 'purchase_factor', 'min_quantity',
                   'tolerance_percent', 'tolerance_quantity', 'tolerance_value', 'availability_mode',
                   'is_active', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
@@ -108,15 +107,29 @@ class DocumentLineInputSerializer(serializers.Serializer):
     item = serializers.UUIDField()
     quantity = serializers.DecimalField(max_digits=20, decimal_places=6, allow_null=True)
     unit_cost = serializers.DecimalField(max_digits=20, decimal_places=6, min_value=0, required=False)
+    discount_percent = serializers.DecimalField(
+        max_digits=8, decimal_places=3, min_value=0, max_value=100, required=False
+    )
+    discount_amount = serializers.DecimalField(max_digits=20, decimal_places=6, min_value=0, required=False)
     input_unit = serializers.ChoiceField(choices=['base', 'purchase'], required=False)
     lot_number = serializers.CharField(max_length=100, allow_blank=True, default='')
     expires_on = serializers.DateField(allow_null=True, default=None)
 
 
 class DocumentInputSerializer(serializers.Serializer):
-    kind = serializers.ChoiceField(choices=['opening', 'receipt', 'issue', 'supplier_return', 'customer_return', 'stocktake'])
+    kind = serializers.ChoiceField(
+        choices=['opening', 'receipt', 'issue', 'supplier_return', 'customer_return', 'stocktake', 'transfer', 'production']
+    )
     warehouse = serializers.UUIDField()
+    destination_warehouse = serializers.UUIDField(allow_null=True, required=False)
     supplier = serializers.UUIDField(allow_null=True, required=False)
+    production_recipe = serializers.UUIDField(allow_null=True, required=False)
+    planned_quantity = serializers.DecimalField(
+        max_digits=20, decimal_places=6, min_value=Decimal('0.000001'), allow_null=True, required=False
+    )
+    actual_quantity = serializers.DecimalField(
+        max_digits=20, decimal_places=6, min_value=Decimal('0.000001'), allow_null=True, required=False
+    )
     reference = serializers.CharField(max_length=200, allow_blank=True, required=False)
     reason = serializers.CharField(max_length=500, allow_blank=True, required=False)
     occurred_at = serializers.DateTimeField(required=False)
@@ -124,7 +137,7 @@ class DocumentInputSerializer(serializers.Serializer):
     responsible_name = serializers.CharField(max_length=200, allow_blank=True, required=False)
     notes = serializers.CharField(max_length=20000, allow_blank=True, required=False)
     idempotency_key = serializers.CharField(max_length=200, allow_blank=True, required=False)
-    lines = DocumentLineInputSerializer(many=True)
+    lines = DocumentLineInputSerializer(many=True, required=False, default=list)
 
     def validate_attachment_url(self, value):
         if '/admin/inventory/attachments/' in value:
@@ -168,13 +181,18 @@ class DocumentLineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StockDocumentLine
-        fields = ('id', 'item', 'item_name', 'base_unit', 'quantity', 'count_recorded', 'unit_cost', 'input_unit',
+        fields = ('id', 'item', 'item_name', 'role', 'base_unit', 'quantity', 'count_recorded',
+                  'unit_cost', 'list_unit_cost', 'discount_percent', 'discount_amount', 'input_unit',
                   'base_quantity', 'expected_quantity', 'variance_quantity', 'variance_value', 'lot_number', 'expires_on')
 
 
 class DocumentSerializer(serializers.ModelSerializer):
     warehouse_name = serializers.CharField(source='warehouse.name')
+    destination_warehouse_name = serializers.CharField(
+        source='destination_warehouse.name', allow_null=True, default=None
+    )
     supplier_name = serializers.CharField(source='supplier.name', allow_null=True, default=None)
+    production_recipe_name = serializers.SerializerMethodField()
     lines = DocumentLineSerializer(many=True)
     purchase_value = serializers.SerializerMethodField()
     valuation_adjustment = serializers.SerializerMethodField()
@@ -199,9 +217,16 @@ class DocumentSerializer(serializers.ModelSerializer):
                                  for event in row.resolutions.all()]}
                 for row in obj.orderconsumption_set.select_related('recipe').prefetch_related('resolutions')]
 
+    def get_production_recipe_name(self, obj):
+        if not obj.production_recipe_id:
+            return None
+        return obj.production_recipe.name or getattr(obj.production_recipe.output_item, 'name', '')
+
     class Meta:
         model = StockDocument
-        fields = ('id', 'number', 'kind', 'status', 'warehouse', 'warehouse_name', 'supplier', 'supplier_name',
+        fields = ('id', 'number', 'kind', 'status', 'warehouse', 'warehouse_name',
+                  'destination_warehouse', 'destination_warehouse_name', 'supplier', 'supplier_name',
+                  'production_recipe', 'production_recipe_name', 'planned_quantity', 'actual_quantity',
                   'reference', 'reason', 'occurred_at', 'posted_at', 'created_at', 'attachment_url',
                   'responsible_name', 'notes', 'created_by_name', 'posted_by_name', 'reversal_of', 'total_value',
                   'purchase_value', 'valuation_adjustment', 'consumptions', 'lines')
@@ -211,14 +236,24 @@ class RecipeLineInputSerializer(serializers.Serializer):
     item = serializers.UUIDField()
     quantity = serializers.DecimalField(max_digits=20, decimal_places=6, min_value=Decimal('0.000001'))
     modifier_option = serializers.UUIDField(allow_null=True, default=None)
+    modifier_condition = serializers.ChoiceField(
+        choices=RecipeLine.ModifierCondition.choices,
+        default=RecipeLine.ModifierCondition.SELECTED,
+    )
 
 
 class RecipeInputSerializer(serializers.Serializer):
-    catalog_item = serializers.UUIDField()
+    catalog_item = serializers.UUIDField(allow_null=True, required=False)
+    output_item = serializers.UUIDField(allow_null=True, required=False)
     name = serializers.CharField(max_length=200, allow_blank=True, required=False)
     yield_quantity = serializers.DecimalField(max_digits=18, decimal_places=6, min_value=Decimal('0.000001'), default=1)
     trigger = serializers.ChoiceField(choices=['dispatch', 'sale'], default='dispatch')
     lines = RecipeLineInputSerializer(many=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get('catalog_item')) == bool(attrs.get('output_item')):
+            raise serializers.ValidationError(_('Katalog mahsuloti yoki yarim tayyor natijadan faqat bittasini tanlang.'))
+        return attrs
 
 
 class RecipeLineSerializer(serializers.ModelSerializer):
@@ -228,22 +263,32 @@ class RecipeLineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = RecipeLine
-        fields = ('id', 'item', 'item_name', 'base_unit', 'quantity', 'modifier_option', 'modifier_option_name')
+        fields = (
+            'id', 'item', 'item_name', 'base_unit', 'quantity', 'modifier_option',
+            'modifier_option_name', 'modifier_condition',
+        )
 
 
 class RecipeSerializer(serializers.ModelSerializer):
-    catalog_item_name = serializers.CharField(source='catalog_item.name')
+    catalog_item_name = serializers.CharField(source='catalog_item.name', allow_null=True, default=None)
+    output_item_name = serializers.CharField(source='output_item.name', allow_null=True, default=None)
+    target_type = serializers.SerializerMethodField()
     lines = RecipeLineSerializer(many=True)
     estimated_cost = serializers.SerializerMethodField()
 
     def get_estimated_cost(self, obj):
         from .models import StockBalance
-        from .services import q
-        costs = {row.item_id: row.average_cost for row in StockBalance.objects.filter(warehouse__restaurant=obj.restaurant, warehouse__is_default=True)}
-        return str(q(sum((line.quantity * costs.get(line.item_id, Decimal('0')) / obj.yield_quantity
-                         for line in obj.lines.all() if line.modifier_option_id is None), Decimal('0'))))
+        from .services import components_for, q
+        costs = {str(row.item_id): row.average_cost for row in StockBalance.objects.filter(warehouse__restaurant=obj.restaurant, warehouse__is_default=True)}
+        components = components_for(obj, Decimal('1'), set())
+        return str(q(sum((quantity * costs.get(item_id, Decimal('0'))
+                         for item_id, quantity in components.items()), Decimal('0'))))
+
+    def get_target_type(self, obj):
+        return 'catalog' if obj.catalog_item_id else 'preparation'
 
     class Meta:
         model = Recipe
-        fields = ('id', 'catalog_item', 'catalog_item_name', 'name', 'version', 'yield_quantity', 'trigger',
+        fields = ('id', 'catalog_item', 'catalog_item_name', 'output_item', 'output_item_name', 'target_type',
+                  'name', 'version', 'yield_quantity', 'trigger',
                   'is_active', 'estimated_cost', 'created_at', 'lines')

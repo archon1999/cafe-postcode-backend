@@ -21,22 +21,31 @@ permission; editing other draft fields preserves the existing attachment.
    availability; existing manual stop lists remain independent.
 2. Create an opening balance or receipt, enter the source reference, date,
    responsible person and supplier where required. Attach a PDF or photo if
-   needed. A draft changes no stock. Post the reviewed document to create ledger
-   movements. Corrections create a linked reversal; posted lines are immutable.
+   needed. Receipt rows keep the supplier list price and either a percentage or
+   fixed discount; stock valuation uses the resulting net price. A draft changes
+   no stock. Post the reviewed document to create ledger movements. Corrections
+   create a linked reversal; posted lines are immutable.
 3. Link a menu item to a recipe with gross ingredient quantities and recipe yield.
-   A modifier line adds ingredients only when that option was selected. Each edit
+   Restaurant Admin exposes this directly as the product's **Recipe** tab.
+   A modifier line can add ingredients when an option is selected or keep a base
+   ingredient unless an “without …” option is selected. Each edit
    creates a version. Prepared food consumes at dispatch; stocked finished goods
    may consume when fully paid. Quantity validation is repeated on the server.
-4. Choose what happened when cancelling a consumed item: `not_prepared` or
+4. Mark reusable prep as a semi-finished or finished inventory item and create a
+   preparation recipe for it. Transfer raw material into the production warehouse,
+   then post a production document with planned and actual output. Inputs and the
+   output are recorded in one transaction and the actual input value becomes the
+   output's weighted cost. Recipe cycles are rejected.
+5. Choose what happened when cancelling a consumed item: `not_prepared` or
    `returned` restores the original ingredients/cost, while `waste` preserves the
    consumption. A financial refund alone does not create physical stock. Use an
    explicit customer return document for a physical return after payment.
-5. Start a count to capture the expected balances and ledger revisions, then
+6. Start a count to capture the expected balances and ledger revisions, then
    enter every measured quantity (including an explicit zero). Posting rejects
    uncounted lines or intervening movements. Recount if operations changed the
    snapshot. Variance percentage uses recipe consumption since the previous
    count; with no consumption it is unknown, not zero.
-6. Review balances, values, movement history, count variances and evidence-backed
+7. Review balances, values, movement history, count variances and evidence-backed
    recommendations. CSV exports include source document and actor context.
 
 Balances and values are estimates from recorded movements. Weighted average
@@ -81,8 +90,9 @@ covered by the physical count. Avoid counting while terminals still have pending
 outbox entries. A later count clears the warning for the affected ingredients.
 
 Batch expiry fields are documentary warnings; they do not claim an exact
-remaining quantity per batch. FEFO, manufacturing of intermediate products,
-automatic OCR and inter-warehouse transfer documents are separate extensions.
+remaining quantity per batch. FEFO and automatic OCR remain separate extensions.
+Current transfers are atomic between warehouses inside one restaurant; a later
+shipping/receiving workflow can add in-transit stock for central kitchens.
 
 Tests: `poetry run python manage.py test apps.inventory
 apps.sales.tests.test_inventory_integration apps.sales.tests.test_pos_order_queryset`.

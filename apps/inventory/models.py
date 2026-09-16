@@ -11,8 +11,15 @@ from common.models import BaseModel
 
 
 class Warehouse(BaseModel):
+    class Kind(models.TextChoices):
+        GENERAL = 'general', 'Umumiy'
+        RAW = 'raw', 'Xomashyo'
+        PRODUCTION = 'production', 'Ishlab chiqarish'
+        SALES = 'sales', 'Sotuv'
+
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
     name = models.CharField(max_length=160)
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.GENERAL)
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
@@ -25,8 +32,16 @@ class Warehouse(BaseModel):
 
 
 class InventoryItem(BaseModel):
+    class Kind(models.TextChoices):
+        RAW = 'raw', 'Xomashyo'
+        SEMI_FINISHED = 'semi_finished', 'Yarim tayyor mahsulot'
+        FINISHED = 'finished', 'Tayyor mahsulot'
+        PACKAGING = 'packaging', 'Qadoqlash'
+        NON_FOOD = 'non_food', 'Xo‘jalik mahsuloti'
+
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
     name = models.CharField(max_length=200)
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.RAW)
     sku = models.CharField(max_length=80, blank=True)
     base_unit = models.CharField(max_length=10, choices=[('g', 'g'), ('ml', 'ml'), ('piece', 'dona')])
     purchase_unit = models.CharField(max_length=30, blank=True)
@@ -84,11 +99,25 @@ class StockDocument(BaseModel):
         STOCKTAKE = 'stocktake', 'Inventarizatsiya'
         SALE = 'sale', 'Retsept sarfi'
         SALE_RETURN = 'sale_return', 'Sarfni qaytarish'
+        TRANSFER = 'transfer', 'Omborlararo transfer'
+        PRODUCTION = 'production', 'Ishlab chiqarish'
         REVERSAL = 'reversal', 'Bekor qiluvchi hujjat'
 
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
+    destination_warehouse = models.ForeignKey(
+        Warehouse,
+        on_delete=models.PROTECT,
+        related_name='incoming_stock_documents',
+        null=True,
+        blank=True,
+    )
     supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, null=True, blank=True)
+    production_recipe = models.ForeignKey(
+        'Recipe', on_delete=models.PROTECT, related_name='production_documents', null=True, blank=True
+    )
+    planned_quantity = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
+    actual_quantity = models.DecimalField(max_digits=20, decimal_places=6, null=True, blank=True)
     number = models.CharField(max_length=40)
     kind = models.CharField(max_length=30, choices=Kind.choices)
     status = models.CharField(max_length=15, choices=[('draft', 'Draft'), ('posted', 'Posted'), ('reversed', 'Reversed')], default='draft')
@@ -131,14 +160,23 @@ class StockDocument(BaseModel):
 
 
 class StockDocumentLine(BaseModel):
+    class Role(models.TextChoices):
+        NORMAL = 'normal', 'Oddiy'
+        INPUT = 'input', 'Xomashyo'
+        OUTPUT = 'output', 'Natija'
+
     document = models.ForeignKey(StockDocument, on_delete=models.PROTECT, related_name='lines')
     item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
+    role = models.CharField(max_length=12, choices=Role.choices, default=Role.NORMAL)
     item_name = models.CharField(max_length=200)
     base_unit = models.CharField(max_length=10)
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
     count_recorded = models.BooleanField(default=True)
     input_unit = models.CharField(max_length=10, default='base')
     unit_cost = models.DecimalField(max_digits=20, decimal_places=6, default=0)
+    list_unit_cost = models.DecimalField(max_digits=20, decimal_places=6, default=0)
+    discount_percent = models.DecimalField(max_digits=8, decimal_places=3, default=0)
+    discount_amount = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     base_quantity = models.DecimalField(max_digits=20, decimal_places=6)
     base_unit_cost = models.DecimalField(max_digits=20, decimal_places=6, default=0)
     expected_quantity = models.DecimalField(max_digits=20, decimal_places=6, default=0)
@@ -168,7 +206,7 @@ class StockDocumentLine(BaseModel):
 
 class StockMovement(BaseModel):
     document = models.ForeignKey(StockDocument, on_delete=models.PROTECT, related_name='movements')
-    line = models.OneToOneField(StockDocumentLine, on_delete=models.PROTECT, related_name='movement')
+    line = models.ForeignKey(StockDocumentLine, on_delete=models.PROTECT, related_name='movements')
     warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT)
     item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
@@ -196,7 +234,10 @@ class StockMovement(BaseModel):
 
 class Recipe(BaseModel):
     restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
-    catalog_item = models.ForeignKey('catalog.CatalogItem', on_delete=models.PROTECT)
+    catalog_item = models.ForeignKey('catalog.CatalogItem', on_delete=models.PROTECT, null=True, blank=True)
+    output_item = models.ForeignKey(
+        InventoryItem, on_delete=models.PROTECT, related_name='production_recipes', null=True, blank=True
+    )
     name = models.CharField(max_length=200, blank=True)
     version = models.PositiveIntegerField()
     yield_quantity = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal('1'))
@@ -205,19 +246,49 @@ class Recipe(BaseModel):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
 
     class Meta:
-        ordering = ('catalog_item__name', '-version')
+        ordering = ('catalog_item__name', 'output_item__name', '-version')
         constraints = [
-            models.UniqueConstraint(fields=('catalog_item', 'version'), name='inv_recipe_version'),
-            models.UniqueConstraint(fields=('catalog_item',), condition=models.Q(is_active=True), name='inv_recipe_active'),
+            models.UniqueConstraint(
+                fields=('catalog_item', 'version'), condition=models.Q(catalog_item__isnull=False), name='inv_recipe_version'
+            ),
+            models.UniqueConstraint(
+                fields=('catalog_item',),
+                condition=models.Q(is_active=True, catalog_item__isnull=False),
+                name='inv_recipe_active',
+            ),
+            models.UniqueConstraint(
+                fields=('output_item', 'version'),
+                condition=models.Q(output_item__isnull=False),
+                name='inv_prep_recipe_version',
+            ),
+            models.UniqueConstraint(
+                fields=('output_item',),
+                condition=models.Q(is_active=True, output_item__isnull=False),
+                name='inv_prep_recipe_active',
+            ),
+            models.CheckConstraint(
+                condition=(models.Q(catalog_item__isnull=False, output_item__isnull=True)
+                           | models.Q(catalog_item__isnull=True, output_item__isnull=False)),
+                name='inv_recipe_one_output',
+            ),
             models.CheckConstraint(condition=models.Q(yield_quantity__gt=0), name='inv_recipe_positive_yield'),
         ]
 
 
 class RecipeLine(BaseModel):
+    class ModifierCondition(models.TextChoices):
+        SELECTED = 'selected', 'When selected'
+        NOT_SELECTED = 'not_selected', 'When not selected'
+
     recipe = models.ForeignKey(Recipe, on_delete=models.PROTECT, related_name='lines')
     item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT)
     quantity = models.DecimalField(max_digits=20, decimal_places=6)
     modifier_option = models.ForeignKey('catalog.ModifierOption', on_delete=models.PROTECT, null=True, blank=True)
+    modifier_condition = models.CharField(
+        max_length=16,
+        choices=ModifierCondition.choices,
+        default=ModifierCondition.SELECTED,
+    )
 
     class Meta:
         ordering = ('created_at',)

@@ -23,7 +23,7 @@ def balances(restaurant, warehouse=None):
         for item in items:
             row = current.get((store.pk, item.pk))
             quantity = row.quantity if row else ZERO
-            result.append({'item': str(item.pk), 'item_name': item.name, 'sku': item.sku,
+            result.append({'item': str(item.pk), 'item_name': item.name, 'item_kind': item.kind, 'sku': item.sku,
                 'base_unit': item.base_unit, 'warehouse': str(store.pk), 'warehouse_name': store.name,
                 'quantity': str(quantity), 'average_cost': str(row.average_cost if row else ZERO),
                 'value': str(row.value if row else ZERO), 'min_quantity': str(item.min_quantity),
@@ -140,6 +140,38 @@ def insights(restaurant, warehouse=None):
                     'Oxirgi 14 kundagi retsept sarfi bo‘yicha taxmin; kelajakdagi talab o‘zgarishi mumkin.', row['item'],
                     {'days_remaining': str(days), 'period_days': 14, 'consumption_quantity': str(total),
                      'quantity': row['quantity'], 'warehouse': row['warehouse']}, 'Yetkazib berish muddatini hisobga olib xarid buyurtmasini tayyorlang.')
+    production = StockDocument.objects.filter(
+        restaurant=restaurant,
+        kind='production',
+        status='posted',
+        posted_at__gte=now - timedelta(days=30),
+    ).select_related('production_recipe__output_item', 'warehouse')
+    if warehouse:
+        production = production.filter(warehouse=warehouse)
+    for document in production[:100]:
+        if not document.planned_quantity or document.actual_quantity is None:
+            continue
+        deviation = q((document.actual_quantity / document.planned_quantity - 1) * 100)
+        output = document.production_recipe.output_item
+        if abs(deviation) <= output.tolerance_percent:
+            continue
+        add(
+            f'production-yield:{document.pk}',
+            'warning',
+            f'{output.name}: ishlab chiqarish chiqishi rejadan farq qildi',
+            'Rejalashtirilgan va haqiqiy chiqish solishtirildi; bu sababni o‘zi aniqlamaydi.',
+            str(output.pk),
+            {
+                'document': str(document.pk),
+                'document_number': document.number,
+                'warehouse': str(document.warehouse_id),
+                'planned_quantity': str(document.planned_quantity),
+                'actual_quantity': str(document.actual_quantity),
+                'deviation_percent': str(deviation),
+                'tolerance_percent': str(output.tolerance_percent),
+            },
+            'Texnologik jarayon, o‘lchov va qayd etilgan chiqindilarni tekshiring.',
+        )
     recent_variance = variance(restaurant, warehouse, now - timedelta(days=30))
     for row in recent_variance:
         if row['requires_attention']:
