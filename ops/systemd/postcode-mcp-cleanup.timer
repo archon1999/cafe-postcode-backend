@@ -1,0 +1,8 @@
+[Unit]
+Description=Hourly Cafe Postcode MCP data expiry
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+[Install]
+WantedBy=timers.target

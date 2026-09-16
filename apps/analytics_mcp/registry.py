@@ -16,7 +16,7 @@ class ReportDefinition:
     input_model: type[InputModel]
     handler: Callable
     permission: str = "dashboard.view"
-    persist: bool = True
+    persist: bool = False
     requires_single_currency: bool = True
     max_branches: int | None = 50
     metric_basis: dict = field(default_factory=dict)

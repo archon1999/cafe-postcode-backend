@@ -1,0 +1,11 @@
+[Unit]
+Description=Expire Cafe Postcode MCP reports and OAuth tokens
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=/home/postcode/mcp
+ExecStart=/usr/bin/docker compose exec -T mcp python manage.py cleanup_mcp_reports
+ExecStart=/usr/bin/docker compose exec -T mcp python manage.py cleartokens
+TimeoutStartSec=120
+Nice=10

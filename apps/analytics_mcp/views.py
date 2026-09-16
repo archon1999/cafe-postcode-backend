@@ -1,9 +1,10 @@
 from uuid import UUID
+from pathlib import Path
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, FileResponse, Http404
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
@@ -14,6 +15,19 @@ from .config import SCOPE, origin, resource
 from .models import AnalyticsConnection
 from .policy import AnalyticsError, accessible_restaurants
 from .rate_limit import rate_allowed
+
+
+@require_GET
+def brand_asset(request, name):
+    types = {"admin-logo.webp": "image/webp", "nunito-sans.woff2": "font/woff2"}
+    if name not in types:
+        raise Http404
+    response = FileResponse(
+        Path(__file__).with_name("assets").joinpath(name).open("rb"),
+        content_type=types[name],
+    )
+    response["Cache-Control"] = "public, max-age=604800"
+    return response
 
 
 class AnalyticsLoginForm(AuthenticationForm):

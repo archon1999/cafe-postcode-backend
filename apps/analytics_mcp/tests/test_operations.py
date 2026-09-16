@@ -188,3 +188,14 @@ class OperationsTests(TestCase):
             "analytics_mcp/connections.html", {"connections": [connection]}
         )
         self.assertNotIn("1 filial", connections)
+
+    def test_oauth_security_headers_and_asset_allowlist(self):
+        response = self.client.get("/oauth/login/")
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])
+        self.assertIn("https://chatgpt.com", response["Content-Security-Policy"])
+        asset = self.client.get("/assets/nunito-sans.woff2")
+        self.assertEqual(asset.status_code, 200)
+        self.assertEqual(asset["Content-Type"], "font/woff2")
+        asset.close()
+        self.assertEqual(self.client.get("/assets/config.env").status_code, 404)

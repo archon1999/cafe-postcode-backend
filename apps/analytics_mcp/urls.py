@@ -6,6 +6,7 @@ from core.health import readyz
 from . import views
 
 urlpatterns = [
+    path("assets/<str:name>", views.brand_asset),
     path("readyz/", readyz),
     path(
         "healthz/",

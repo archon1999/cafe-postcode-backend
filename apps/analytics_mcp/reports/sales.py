@@ -302,6 +302,7 @@ REPORTS = (
         "Get daily or single-day hourly gross/refund/net sales points. last_7_days includes today and six earlier days. Call render_sales_chart with the returned report_id to show a graph.",
         SeriesInput,
         sales_timeseries,
+        persist=True,
         metric_basis=SALES_BASIS,
     ),
     ReportDefinition(

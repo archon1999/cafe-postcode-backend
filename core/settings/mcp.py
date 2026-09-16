@@ -10,6 +10,8 @@ class MCPSettings(CoreSettings):
     CSRF_COOKIE_NAME = "cafe_mcp_csrf"
     LOGIN_URL = "/oauth/login/"
     LOGIN_REDIRECT_URL = "/oauth/connections/"
+    DATA_UPLOAD_MAX_MEMORY_SIZE = 65536
+    DATA_UPLOAD_MAX_NUMBER_FIELDS = 30
     MIDDLEWARE = [
         "django.middleware.security.SecurityMiddleware",
         "django.contrib.sessions.middleware.SessionMiddleware",
@@ -18,4 +20,5 @@ class MCPSettings(CoreSettings):
         "django.contrib.auth.middleware.AuthenticationMiddleware",
         "django.contrib.messages.middleware.MessageMiddleware",
         "django.middleware.clickjacking.XFrameOptionsMiddleware",
+        "apps.analytics_mcp.middleware.OAuthSecurityHeaders",
     ]

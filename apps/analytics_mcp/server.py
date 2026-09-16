@@ -30,7 +30,7 @@ from .registry import report_registry
 from .service import execute_report, load_chart
 
 logger = logging.getLogger("analytics_mcp")
-CHART_URI = "ui://cafe-postcode/sales-chart-v1.html"
+CHART_URI = "ui://cafe-postcode/sales-chart-v2.html"
 ANNOTATIONS = types.ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, openWorldHint=False, idempotentHint=True
 )
@@ -51,7 +51,7 @@ def create_application():
     report_slots = asyncio.Semaphore(max(1, settings.MCP_MAX_CONCURRENT_REPORTS))
     server = Server(
         "cafe-postcode-analytics",
-        version="1.1.0",
+        version="1.2.0",
         instructions=(
             "Read-only Cafe Postcode branch analytics. Resolve branches before reports. Never invent figures. "
             "Show branch scope, currency, exact dates, partial-day cutoff and freshness warnings. "
