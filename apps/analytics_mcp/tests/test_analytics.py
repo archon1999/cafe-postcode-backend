@@ -529,3 +529,6 @@ class TransportTests(TransactionTestCase):
             widget = rpc("resources/read", {"uri": CHART_URI})["result"]["contents"][0]
             self.assertIn("ui/initialize", widget["text"])
             self.assertEqual(widget["mimeType"], "text/html;profile=mcp-app")
+            self.assertEqual(widget["_meta"]["ui"]["domain"], SETTINGS["MCP_PUBLIC_ORIGIN"])
+            self.assertEqual(widget["_meta"]["openai/widgetDomain"], SETTINGS["MCP_PUBLIC_ORIGIN"])
+            self.assertEqual(widget["_meta"]["ui"]["csp"], {"connectDomains": [], "resourceDomains": []})

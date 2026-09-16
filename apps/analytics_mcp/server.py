@@ -30,7 +30,7 @@ from .registry import report_registry
 from .service import execute_report, load_chart
 
 logger = logging.getLogger("analytics_mcp")
-CHART_URI = "ui://cafe-postcode/sales-chart-v3.html"
+CHART_URI = "ui://cafe-postcode/sales-chart-v4.html"
 ANNOTATIONS = types.ToolAnnotations(
     readOnlyHint=True, destructiveHint=False, openWorldHint=False, idempotentHint=True
 )
@@ -51,7 +51,7 @@ def create_application():
     report_slots = asyncio.Semaphore(max(1, settings.MCP_MAX_CONCURRENT_REPORTS))
     server = Server(
         "cafe-postcode-analytics",
-        version="1.3.0",
+        version="1.4.0",
         website_url="https://cafe-postcode.uz",
         icons=[types.Icon(src=f"{origin()}/assets/admin-logo.webp", mimeType="image/webp")],
         instructions=(
@@ -200,8 +200,11 @@ def create_application():
                 meta={
                     "ui": {
                         "prefersBorder": True,
+                        "domain": origin(),
                         "csp": {"connectDomains": [], "resourceDomains": []},
                     },
+                    "openai/widgetDomain": origin(),
+                    "openai/widgetPrefersBorder": True,
                     "openai/widgetCSP": {"connect_domains": [], "resource_domains": []},
                     "openai/widgetDescription": "Compact sales chart with metric selection and an optional data table. Do not repeat its contents or append routine disclaimers.",
                 },

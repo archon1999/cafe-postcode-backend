@@ -1,5 +1,6 @@
 from uuid import UUID
 from pathlib import Path
+import os
 from django import forms
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
@@ -24,6 +25,17 @@ from .config import SCOPE, origin, resource
 from .models import AnalyticsConnection
 from .policy import AnalyticsError, accessible_restaurants
 from .rate_limit import rate_allowed
+
+
+@require_GET
+def domain_challenge(request):
+    """Serve only the verification value issued by OpenAI; never a placeholder."""
+    token = os.environ.get("MCP_OPENAI_DOMAIN_CHALLENGE", "")
+    if not token or len(token) > 4096 or any(c.isspace() for c in token):
+        raise Http404
+    response = HttpResponse(token, content_type="text/plain; charset=utf-8")
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 @require_GET
