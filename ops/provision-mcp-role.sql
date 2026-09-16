@@ -24,7 +24,7 @@ FROM pg_tables WHERE schemaname='public' AND tablename IN (
  'billing_payment','billing_paymentrefund','billing_receipt','billing_cashshift','billing_cashexpense',
  'catalog_catalogitem','catalog_catalogcategory',
  'floor_tablesession','floor_diningtable','floor_hall',
- 'oauth2_provider_application','django_migrations'
+ 'oauth2_provider_application','django_migrations','django_site'
 )
 \gexec
 GRANT UPDATE(last_login) ON users_user TO :"app_user";

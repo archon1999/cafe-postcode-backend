@@ -194,5 +194,37 @@ Choy 1,176,000. The embedded chart and expandable data table rendered in ChatGPT
 [Verified ChatGPT conversation](https://chatgpt.com/c/6aaa79c2-7224-83ed-9401-0ffaa167ab9d)
 
 The test used a temporary Cloudflare HTTPS tunnel and local synthetic data.
-This does not constitute production deployment. The tunnel and local process
-must remain running for new demo queries; stored chat results remain visible.
+The tunnel and local process must remain running for new demo queries; stored
+chat results remain visible. Production uses the stable endpoint below.
+
+## Production release — 2026-09-16
+
+Endpoint: `https://mcp.cafe-postcode.uz/mcp`.
+Release revision: `1ac04ba18a31ba96df48cd47665b8cd6028fc7b3`.
+The immutable image is `sha256:d338879ae4d5315c216177c7271ad03c1abb22b273615e7fefa1f31eccf4422c`.
+[Release verification](https://github.com/archon1999/cafe-postcode-backend/actions/runs/35100882644)
+passed 62 PostgreSQL tests, 27 tests inside the final runtime, and Trivy's
+HIGH/CRITICAL gate. The artifact's Cosign OIDC signature, archive checksums,
+revision label and non-root UID were verified on the host before loading it.
+
+An isolated database restore completed successfully. NEW YORK and BOHRAM DIYOR
+reports passed both on the restored database and on production using the
+restricted MCP database role. All eight dated report tools were checked for
+today and the last seven days; closed-period summary/series/payment totals and
+expenses matched the canonical calculations. Single-restaurant presentation,
+chart authorization and revocation checks passed. Temporary verification records
+were rolled back. Public HTTPS MCP calls subsequently verified all 11 tools,
+the chart, other-tenant denial and immediate token rejection after revocation;
+the short-lived test credentials and reports were removed.
+
+Observed report computation was 36–114 ms; the HTTPS smoke sample was 188–324 ms
+per report. These are smoke-test samples, not a throughput or load-test guarantee.
+The dedicated service has two workers, limited concurrency/memory/CPU, read-only
+filesystem, no Linux capabilities, TLS through Cloudflare, and hourly report/token
+cleanup. The POS containers and their image were not replaced or restarted.
+
+The widget and OAuth pages now use the Admin logo, Nunito Sans, neutral forms
+and compact chart layout. UI resource version 2 avoids reusing the old cached
+widget. This production server is deployed; each ChatGPT connection still needs
+the restaurant user's own login and consent. It is not a marketplace publication.
+See [the deployment runbook](../../ops/MCP_RUNBOOK.md) for operations and rollback.
