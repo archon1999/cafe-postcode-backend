@@ -23,6 +23,7 @@ def accessible_restaurants(user):
     if (
         not user.is_active
         or user.is_superuser
+        or user.get_restaurant_scope() is None
         or "dashboard.view" not in user.permission_codes
     ):
         raise AnalyticsError(

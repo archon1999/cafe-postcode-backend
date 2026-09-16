@@ -50,6 +50,9 @@ jobs:
           poetry run python manage.py test apps.analytics_mcp.tests apps.dashboard.tests apps.reporting.tests --noinput
       - name: Build immutable image
         run: docker build -f Dockerfile.mcp --label org.opencontainers.image.revision="$GITHUB_SHA" -t postcode/mcp:$GITHUB_SHA .
+      - name: Verify final runtime against PostgreSQL
+        run: |
+          docker run --rm --network host -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e DB_CONN_MAX_AGE -e DEBUG -e ALLOWED_HOSTS postcode/mcp:$GITHUB_SHA python manage.py test apps.analytics_mcp.tests --noinput
       - name: Scan image
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1
         with:
