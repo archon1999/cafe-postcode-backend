@@ -4,6 +4,10 @@ from . import CoreSettings
 
 
 class MCPSettings(CoreSettings):
+    DATABASES = {
+        alias: {**config, "CONN_MAX_AGE": 0}
+        for alias, config in CoreSettings.DATABASES.items()
+    }
     ROOT_URLCONF = "apps.analytics_mcp.urls"
     DISABLE_CSRF_CHECKS = False
     SESSION_COOKIE_NAME = "cafe_mcp_session"
