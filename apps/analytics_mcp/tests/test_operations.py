@@ -199,3 +199,31 @@ class OperationsTests(TestCase):
         self.assertEqual(asset["Content-Type"], "font/woff2")
         self.assertTrue(b"".join(asset.streaming_content))
         self.assertEqual(self.client.get("/assets/config.env").status_code, 404)
+
+    def test_existing_mfa_is_required_and_code_cannot_be_replayed(self):
+        import time
+        from cryptography.fernet import Fernet
+        from django.utils import timezone
+        from apps.analytics_mcp.views import AnalyticsLoginForm
+        from apps.users.models import AdminMFAProfile
+        from apps.users.services.admin_mfa import (
+            encrypt_mfa_secret,
+            generate_totp_secret,
+            totp_code,
+        )
+
+        with override_settings(ADMIN_MFA_FERNET_KEYS=[Fernet.generate_key().decode()]):
+            secret = generate_totp_secret()
+            AdminMFAProfile.objects.create(
+                user=self.user,
+                encrypted_secret=encrypt_mfa_secret(secret),
+                confirmed_at=timezone.now(),
+            )
+            credentials = {
+                "username": self.user.username,
+                "password": "test-only-password",
+            }
+            self.assertFalse(AnalyticsLoginForm(data=credentials).is_valid())
+            valid = {**credentials, "otp": totp_code(secret, int(time.time()) // 30)}
+            self.assertTrue(AnalyticsLoginForm(data=valid).is_valid())
+            self.assertFalse(AnalyticsLoginForm(data=valid).is_valid())

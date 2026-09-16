@@ -17,7 +17,7 @@ SELECT format('REVOKE CREATE ON SCHEMA public FROM %I', :'app_user')
 \gexec
 SELECT format('GRANT SELECT ON TABLE %I TO %I', tablename, :'app_user')
 FROM pg_tables WHERE schemaname='public' AND tablename IN (
- 'users_user','users_role','users_permission','users_role_permissions','users_restaurantprofile',
+ 'users_user','users_role','users_permission','users_role_permissions','users_restaurantprofile','users_adminmfaprofile',
  'restaurants_restaurant','restaurants_cashdesk',
  'platform_restaurantentitlement','platform_restaurantentitlement_permissions','platform_tariff','platform_tariff_permissions',
  'sales_order','sales_orderitem',
@@ -28,6 +28,7 @@ FROM pg_tables WHERE schemaname='public' AND tablename IN (
 )
 \gexec
 GRANT UPDATE(last_login) ON users_user TO :"app_user";
+GRANT UPDATE(last_totp_counter,last_totp_code_digest) ON users_adminmfaprofile TO :"app_user";
 SELECT format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I TO %I', tablename, :'app_user')
 FROM pg_tables WHERE schemaname='public' AND (
  tablename LIKE 'analytics_mcp\_%' ESCAPE '\'

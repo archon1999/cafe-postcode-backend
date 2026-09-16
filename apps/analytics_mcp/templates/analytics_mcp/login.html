@@ -1,4 +1,5 @@
 {% extends 'analytics_mcp/base.html' %}{% block title %}Hisobga kirish{% endblock %}{% block content %}
 <h1>ChatGPT’ga ulanish</h1><p>Cafe Postcode hisobingiz bilan kiring.</p>
-<form method="post">{% csrf_token %}{{ form.non_field_errors }}<div class="field"><label for="id_username">Login</label>{{ form.username }}</div>{{ form.username.errors }}<div class="field"><label for="id_password">Parol</label>{{ form.password }}</div>{{ form.password.errors }}<input type="hidden" name="next" value="{{ next }}"><button type="submit">Kirish</button></form>
+<form method="post">{% csrf_token %}{{ form.non_field_errors }}<div class="field"><label for="id_username">Login</label>{{ form.username }}</div>{{ form.username.errors }}<div class="field"><label for="id_password">Parol</label>{{ form.password }}</div>{{ form.password.errors }}<input type="hidden" name="next" value="{{ next }}"><details style="margin:-4px 0 24px;color:#637381;font-size:12px" {% if form.mfa_needed %}open{% endif %}><summary style="cursor:pointer">Ikki bosqichli tasdiqlash kodi</summary><div class="field"><label for="id_otp">Authenticator kodi</label>{{ form.otp }}</div>{{ form.otp.errors }}</details><button type="submit">Kirish</button></form>
 <p class="note">Parolingiz ChatGPT’ga berilmaydi. Keyingi qadamda qaysi ma’lumotlar ulashilishini ko‘rasiz.</p>{% endblock %}
+

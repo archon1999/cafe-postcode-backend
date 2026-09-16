@@ -1,9 +1,12 @@
 from uuid import UUID
 from pathlib import Path
+from django import forms
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.views import LoginView
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpResponse, JsonResponse, FileResponse, Http404
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -11,6 +14,12 @@ from django.views.decorators.http import require_GET, require_http_methods
 from oauth2_provider.views import AuthorizationView, TokenView
 
 from common.api.client_ip import get_client_ip
+from apps.users.models import AdminMFAProfile
+from apps.users.services.admin_mfa import (
+    decrypt_mfa_secret,
+    totp_code_digest,
+    verify_totp,
+)
 from .config import SCOPE, origin, resource
 from .models import AnalyticsConnection
 from .policy import AnalyticsError, accessible_restaurants
@@ -31,12 +40,48 @@ def brand_asset(request, name):
 
 
 class AnalyticsLoginForm(AuthenticationForm):
+    otp = forms.CharField(
+        required=False,
+        max_length=6,
+        widget=forms.PasswordInput(
+            attrs={
+                "inputmode": "numeric",
+                "autocomplete": "one-time-code",
+                "pattern": "[0-9]{6}",
+            }
+        ),
+    )
+
+    @transaction.atomic
     def confirm_login_allowed(self, user):
         super().confirm_login_allowed(user)
         try:
             accessible_restaurants(user)
         except AnalyticsError as error:
             raise ValidationError(str(error), code="access_denied") from error
+        profile = AdminMFAProfile.objects.select_for_update().filter(user=user).first()
+        if profile is None:
+            if settings.ADMIN_MFA_REQUIRED:
+                raise ValidationError(
+                    "Avval Admin panelda ikki bosqichli tasdiqlashni sozlang."
+                )
+            return
+        self.mfa_needed = True
+        code = self.cleaned_data.get("otp", "")
+        secret = decrypt_mfa_secret(profile.encrypted_secret)
+        counter = verify_totp(
+            secret,
+            code,
+            last_counter=profile.last_totp_counter,
+            last_code_digest=profile.last_totp_code_digest,
+        )
+        if counter is None:
+            raise ValidationError(
+                "Authenticator ilovasidagi yangi 6 xonali kodni kiriting."
+            )
+        profile.last_totp_counter = counter
+        profile.last_totp_code_digest = totp_code_digest(secret, code)
+        profile.save(update_fields=["last_totp_counter", "last_totp_code_digest"])
 
 
 class AnalyticsLoginView(LoginView):

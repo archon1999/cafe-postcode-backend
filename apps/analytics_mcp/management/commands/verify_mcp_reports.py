@@ -28,13 +28,18 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--username", action="append", required=True)
+        parser.add_argument("--application-id", type=int)
 
     @transaction.atomic
     def handle(self, *args, **options):
-        app = Application.objects.create(
-            name="MCP transactional verification",
-            client_type="confidential",
-            authorization_grant_type="authorization-code",
+        app = (
+            Application.objects.get(pk=options["application_id"])
+            if options["application_id"]
+            else Application.objects.create(
+                name="MCP transactional verification",
+                client_type="confidential",
+                authorization_grant_type="authorization-code",
+            )
         )
         results = []
         try:
