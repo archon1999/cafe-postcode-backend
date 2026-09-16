@@ -42,8 +42,22 @@ Restaurant credentials are entered at the Cafe Postcode origin, not ChatGPT.
 
 ## Current deployment and evidence
 
-The deployed application revision is `1ac04ba18a31ba96df48cd47665b8cd6028fc7b3`;
-the subsequent `django_site` SELECT grant is an operations-only correction.
+The deployed application revision is `e65de9de5cbaae7c38e8d1c4c4bb4b66dc4725bd`.
+Its immutable image is
+`sha256:9596cf4ecb1e3f7d36bd11e87e4797cce6738122039eb55dcb323fdd7d9e53b0`.
+Release run `35103850188` passed 63 PostgreSQL tests, 28 runtime-image tests,
+the HIGH/CRITICAL image scan, and signed-artifact verification on the host.
+The login corrections preserve CSRF protection with `Referrer-Policy:
+strict-origin`, skip profile synchronization on authentication metadata saves,
+and verify legacy password hashes without requiring business-table writes.
+Both application and Nginx must retain the compatible referrer policy; using
+`no-referrer` makes native browser login form submissions send `Origin: null`.
+
+NEW YORK and BOHRAM DIYOR passed authenticated HTTPS report, tenant-isolation,
+chart-resource, and token-revocation checks on this release. NEW YORK also passed
+restricted-role session, consent, and PKCE exchange preflight. The user then
+confirmed successful real browser login; ChatGPT displayed today's statistics
+and the seven-day `sales-chart-v2.html` widget without single-restaurant branch UI.
 Host evidence is stored under `/home/postcode/mcp/evidence/`: signed-release
 verification, backup checksums, restore result, migration plans, production
 report checks, HTTPS smoke results, and deployed image ID. The disposable
@@ -81,4 +95,7 @@ The production developer app is configured in ChatGPT. Each restaurant user must
 sign in and approve its scope before ChatGPT can access that restaurant. Public
 marketplace publication is separate: finalize the widget domain, review CSP,
 privacy/support pages and OpenAI submission requirements before submitting.
+The browser acceptance run used the account's existing developer-mode CSP
+enforcement setting (disabled); repeat widget acceptance with enforcement enabled
+before public distribution. The account-wide setting was not changed.
 Inventory remains out of scope for this release.
