@@ -92,7 +92,7 @@ class OpenCheckOrderSerializer(serializers.ModelSerializer):
     receipts = serializers.SerializerMethodField()
     table_id = serializers.UUIDField(source='table_session.table_id', read_only=True)
     table_name = serializers.CharField(source='table_session.table.name', read_only=True)
-    table_number = serializers.IntegerField(source='table_session.table.table_number', read_only=True)
+    table_number = serializers.CharField(source='table_session.table.table_number', read_only=True)
     hall_name = serializers.CharField(source='table_session.hall.name', read_only=True)
     zone_name = serializers.CharField(source='table_session.hall.zone_or_cabin.name', read_only=True)
     show_zone_name = serializers.SerializerMethodField()

@@ -10,7 +10,7 @@ class KitchenTicketSerializer(serializers.ModelSerializer):
     channel = serializers.CharField(source='order.channel', read_only=True)
     hall_name = serializers.CharField(source='order.table_session.hall.name', read_only=True)
     table_name = serializers.CharField(source='order.table_session.table.name', read_only=True)
-    table_number = serializers.IntegerField(source='order.table_session.table.table_number', read_only=True)
+    table_number = serializers.CharField(source='order.table_session.table.table_number', read_only=True)
     zone_name = serializers.CharField(source='order.table_session.hall.zone_or_cabin.name', read_only=True)
     show_zone_name = serializers.SerializerMethodField()
     waiter_name = serializers.CharField(source='order.opened_by.full_name', read_only=True)

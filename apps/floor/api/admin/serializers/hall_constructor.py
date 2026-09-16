@@ -56,7 +56,7 @@ class HallConstructorSerializer(serializers.ModelSerializer):
 class HallConstructorTableWriteSerializer(serializers.Serializer):
     id = serializers.UUIDField(required=False)
     name = serializers.CharField(max_length=255)
-    table_number = serializers.IntegerField(min_value=1)
+    table_number = serializers.CharField(max_length=255)
     seat_count = serializers.IntegerField(min_value=2, max_value=6)
     shape_variant = serializers.ChoiceField(choices=DiningTable.ShapeVariant.choices)
     position_x = serializers.IntegerField(min_value=0)

@@ -231,7 +231,7 @@ SAMPLE_DATA = {
         'channel': 'hall',
         'channelLabel': 'Zal',
         'table': '12-stol',
-        'tableNumber': 12,
+        'tableNumber': '12',
         'hall': 'Asosiy zal',
         'zone': 'VIP kabina',
         'zoneDisplay': 'VIP kabina',

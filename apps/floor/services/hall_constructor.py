@@ -78,7 +78,7 @@ class HallConstructorService:
             )
 
         placements: list[_Placement] = []
-        table_numbers: set[int] = set()
+        table_numbers: set[str] = set()
 
         for item in tables_payload:
             table_id = str(item.get('id') or item['table_number'])

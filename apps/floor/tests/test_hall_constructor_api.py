@@ -97,8 +97,34 @@ class AdminHallConstructorApiTests(APITestCase):
         self.assertEqual(len(response.data['tables']), 2)
 
         tables_by_number = {row['table_number']: row for row in response.data['tables']}
-        self.assertEqual(tables_by_number[1]['shape_variant'], DiningTable.ShapeVariant.SEAT4_SQUARE)
-        self.assertEqual(tables_by_number[2]['position_x'], 1)
+        self.assertEqual(tables_by_number['1']['shape_variant'], DiningTable.ShapeVariant.SEAT4_SQUARE)
+        self.assertEqual(tables_by_number['2']['position_x'], 1)
+
+    def test_string_table_numbers_round_trip_and_validate(self):
+        self.authenticate()
+        url = f'/api/v1/admin/floor/halls/{self.hall.id}/constructor/'
+        payload = self.client.get(url).data
+        payload['deleted_table_ids'] = []
+        payload['tables'][0]['table_number'] = ' A1 '
+        payload['tables'][1]['table_number'] = 'VIP-2'
+        response = self.client.put(url, payload, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.table_one.refresh_from_db()
+        self.table_two.refresh_from_db()
+        self.assertEqual(self.table_one.table_number, 'A1')
+        self.assertEqual(self.table_two.table_number, 'VIP-2')
+        self.assertEqual(self.table_one.position_x, 0)
+        self.assertEqual(self.table_two.position_x, 1)
+        self.assertEqual(
+            {row['table_number'] for row in self.client.get(url).data['tables']},
+            {'A1', 'VIP-2'},
+        )
+        for invalid_number in ('A1', ' ', 'x' * 256):
+            payload['tables'][1]['table_number'] = invalid_number
+            response = self.client.put(url, payload, format='json')
+            self.assertEqual(response.status_code, 400, response.data)
+        self.table_two.refresh_from_db()
+        self.assertEqual(self.table_two.table_number, 'VIP-2')
 
     def test_put_updates_layout_creates_and_deletes_inactive_tables(self):
         self.authenticate()

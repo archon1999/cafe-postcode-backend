@@ -46,7 +46,7 @@ class TableSessionSerializer(serializers.ModelSerializer):
     service_fee_snapshot = serializers.JSONField(required=False, write_only=True)
     restaurant_name = serializers.CharField(source="restaurant.name", read_only=True)
     table_name = serializers.CharField(source="table.name", read_only=True)
-    table_number = serializers.IntegerField(source="table.table_number", read_only=True)
+    table_number = serializers.CharField(source="table.table_number", read_only=True)
     hall_name = serializers.CharField(source="hall.name", read_only=True)
     zone_name = serializers.CharField(source="hall.zone_or_cabin.name", read_only=True)
     show_zone_name = serializers.SerializerMethodField()

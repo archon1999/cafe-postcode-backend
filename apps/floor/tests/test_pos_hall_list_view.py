@@ -153,19 +153,48 @@ class PosHallListViewTests(TestCase):
         tables_by_number = {table['tableNumber']: table for table in halls[0]['tables']}
 
         self.assertEqual(halls[0]['gridColumns'], 8)
-        self.assertEqual(float(tables_by_number[4]['positionX']), 3.0)
-        self.assertEqual(tables_by_number[4]['status'], DiningTable.Status.RESERVED)
-        self.assertEqual(tables_by_number[4]['zoneName'], '1-qavat')
-        self.assertIsNone(tables_by_number[4]['activeSession'])
-        self.assertEqual(tables_by_number[4]['activeSessions'], [])
-        self.assertEqual(tables_by_number[4]['activeSessionCount'], 0)
-        self.assertEqual(tables_by_number[4]['occupiedGuestCount'], 0)
-        self.assertEqual(tables_by_number[4]['availableSeatCount'], 4)
-        self.assertEqual(tables_by_number[3]['activeSession']['serviceState'], 'new')
-        self.assertEqual(tables_by_number[3]['activeSessionCount'], 1)
-        self.assertEqual(tables_by_number[3]['occupiedGuestCount'], 2)
-        self.assertEqual(tables_by_number[3]['availableSeatCount'], 2)
-        self.assertEqual(tables_by_number[7]['activeSession']['serviceState'], 'pending_payment')
+        self.assertEqual(float(tables_by_number['4']['positionX']), 3.0)
+        self.assertEqual(tables_by_number['4']['status'], DiningTable.Status.RESERVED)
+        self.assertEqual(tables_by_number['4']['zoneName'], '1-qavat')
+        self.assertIsNone(tables_by_number['4']['activeSession'])
+        self.assertEqual(tables_by_number['4']['activeSessions'], [])
+        self.assertEqual(tables_by_number['4']['activeSessionCount'], 0)
+        self.assertEqual(tables_by_number['4']['occupiedGuestCount'], 0)
+        self.assertEqual(tables_by_number['4']['availableSeatCount'], 4)
+        self.assertEqual(tables_by_number['3']['activeSession']['serviceState'], 'new')
+        self.assertEqual(tables_by_number['3']['activeSessionCount'], 1)
+        self.assertEqual(tables_by_number['3']['occupiedGuestCount'], 2)
+        self.assertEqual(tables_by_number['3']['availableSeatCount'], 2)
+        self.assertEqual(tables_by_number['7']['activeSession']['serviceState'], 'pending_payment')
+
+    def test_string_number_survives_pos_sync_order_kitchen_and_printing(self):
+        from apps.billing.api.pos.serializers.open_checks import OpenCheckOrderSerializer
+        from apps.kitchen.api.pos.serializers.kitchen_ticket import KitchenTicketSerializer
+        from apps.local_agents.sync import _hall_snapshot, _table_session_snapshot, _order_snapshot
+        from apps.printing.services.print_snapshots import _table_parts
+        from apps.floor.selectors.floor import DiningTableListFilters
+        from django.utils import timezone
+
+        table = DiningTable.objects.get(hall=self.hall, table_number='3')
+        table.table_number = 'VIP-02'
+        table.save(update_fields=('table_number',))
+        halls = self.client.get('/api/v1/pos/floor/halls/').json()['data']
+        row = next(row for row in halls[0]['tables'] if row['id'] == str(table.id))
+        self.assertEqual(row['tableNumber'], 'VIP-02')
+        self.assertEqual(row['activeSession']['tableNumbers'], ['VIP-02'])
+        self.assertEqual(float(row['positionX']), 2)
+        synced = _hall_snapshot(self.restaurant)[0]['tables']
+        self.assertEqual(next(row for row in synced if str(row['id']) == str(table.id))['table_number'], 'VIP-02')
+        sessions = _table_session_snapshot(self.restaurant)
+        self.assertEqual(next(row for row in sessions if str(row['table']) == str(table.id))['table_number'], 'VIP-02')
+        order = Order.objects.get(table_session__table=table)
+        orders = _order_snapshot(self.restaurant, timezone.now())
+        self.assertEqual(next(row for row in orders if str(row['id']) == str(order.id))['table_number'], 'VIP-02')
+        self.assertEqual(OpenCheckOrderSerializer(order).data['table_number'], 'VIP-02')
+        ticket = KitchenTicket.objects.get(order=order)
+        self.assertEqual(KitchenTicketSerializer(ticket).data['table_number'], 'VIP-02')
+        self.assertEqual(_table_parts(order)[1], 'VIP-02')
+        self.assertEqual(list(DiningTableListFilters(search='VIP-0').apply(DiningTable.objects.all())), [table])
 
     def test_pos_halls_preserves_active_session_filtering_order_and_occupancy(self):
         table = DiningTable.objects.get(table_number=3)
@@ -234,7 +263,7 @@ class PosHallListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         tables = response.json()['data'][0]['tables']
-        payload = next(row for row in tables if row['tableNumber'] == 3)
+        payload = next(row for row in tables if row['tableNumber'] == '3')
         self.assertEqual(
             [row['id'] for row in payload['activeSessions']],
             [str(latest_session.id), str(original_session.id)],

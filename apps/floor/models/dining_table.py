@@ -56,7 +56,7 @@ class DiningTable(BaseModel):
         blank=True,
     )
     name = models.CharField(max_length=255)
-    table_number = models.PositiveIntegerField()
+    table_number = models.CharField(max_length=255)
     seat_count = models.PositiveIntegerField(default=4)
     shape = models.CharField(max_length=20, choices=Shape.choices, default=Shape.SQUARE)
     shape_variant = models.CharField(

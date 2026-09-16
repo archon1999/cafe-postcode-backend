@@ -80,7 +80,7 @@ def _channel_label(order) -> str:
     return labels.get(str(order.channel or ""), str(order.channel or ""))
 
 
-def _table_parts(order) -> tuple[str, int | None, str, str, str]:
+def _table_parts(order) -> tuple[str, str | None, str, str, str]:
     session = getattr(order, "table_session", None)
     table = getattr(session, "table", None) if session is not None else None
     hall = getattr(session, "hall", None) if session is not None else None

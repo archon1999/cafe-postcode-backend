@@ -100,12 +100,10 @@ class DiningTableListFilters:
         if self.search:
             search_query = (
                 Q(name__icontains=self.search)
-                | Q(code__icontains=self.search)
+                | Q(table_number__icontains=self.search)
                 | Q(hall__name__icontains=self.search)
                 | Q(zone__name__icontains=self.search)
             )
-            if self.search.isdigit():
-                search_query |= Q(table_number=int(self.search))
             queryset = queryset.filter(search_query)
         if self.hall_ids:
             queryset = queryset.filter(hall_id__in=self.hall_ids)
