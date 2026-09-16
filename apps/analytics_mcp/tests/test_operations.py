@@ -62,6 +62,13 @@ class OperationsTests(TestCase):
     def report(self, name, **extra):
         return execute_report(self.principal, name, {**self.args, **extra})
 
+    def test_today_keeps_accounting_metadata_without_routine_warning_footer(self):
+        result = execute_report(self.principal, "get_sales_summary", {"period": "today"})
+        self.assertTrue(result["period"]["is_partial"])
+        self.assertEqual(result["data_freshness"]["status"], "unknown")
+        self.assertTrue(result["metric_basis"])
+        self.assertEqual(result["warnings"], [])
+
     def test_expenses_exclude_voided_foreign_and_outside_period(self):
         category = ExpenseCategory.objects.create(
             restaurant=self.root, name="Transport"

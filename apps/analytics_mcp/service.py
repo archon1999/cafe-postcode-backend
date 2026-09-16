@@ -55,10 +55,6 @@ def execute_report(principal, name, arguments):
         context.period, metadata = resolve_period(params, generated_at)
         context.start_date = date.fromisoformat(metadata["start_date"])
         context.end_date = date.fromisoformat(metadata["end_date"])
-        if metadata["is_partial"]:
-            context.warnings.append(
-                "The current day is incomplete; values cover only the displayed cutoff."
-            )
     currencies = {r.currency for r in branches}
     if len(currencies) != 1 and definition.requires_single_currency:
         raise AnalyticsError(
@@ -74,6 +70,7 @@ def execute_report(principal, name, arguments):
             "scope_mode": "single" if len(branches) == 1 else "multiple",
             "show_branches": len(branches) > 1,
             "restaurant_name": branches[0].name if len(branches) == 1 else None,
+            "response_style": "Concise figures and dates. No routine footer about offline sync, incomplete days, cutoff/timezone, or not-profit. Explain methodology only when asked or needed to resolve a discrepancy.",
         },
         currency=next(iter(currencies)) if len(currencies) == 1 else None,
         period=metadata,
@@ -83,10 +80,7 @@ def execute_report(principal, name, arguments):
             "source": "central_database",
             "sync_watermark": None,
         },
-        warnings=context.warnings
-        + [
-            "Offline POS transactions not yet synchronized to the central server are not included."
-        ],
+        warnings=context.warnings,
         data=data,
     ).model_dump(mode="json")
     if definition.persist:
