@@ -19,6 +19,14 @@ def broadcast_operational_invalidation(*, restaurant_id) -> bool:
     permanent cache gap.
     """
 
+    return _broadcast_invalidation(restaurant_id=restaurant_id, scope='operational')
+
+
+def broadcast_configuration_invalidation(*, restaurant_id) -> bool:
+    return _broadcast_invalidation(restaurant_id=restaurant_id, scope='configuration')
+
+
+def _broadcast_invalidation(*, restaurant_id, scope) -> bool:
     agent_ids = list(
         LocalAgent.objects.filter(restaurant_id=restaurant_id, is_active=True)
         .values_list('id', flat=True)
@@ -27,7 +35,7 @@ def broadcast_operational_invalidation(*, restaurant_id) -> bool:
         return False
     channel_layer = get_channel_layer()
     event = {
-        'type': 'operational.invalidate',
+        'type': f'{scope}.invalidate',
         'server_time': timezone.now().isoformat(),
     }
     delivered = False
@@ -39,7 +47,7 @@ def broadcast_operational_invalidation(*, restaurant_id) -> bool:
             delivered = True
         except Exception:
             logger.exception(
-                'Local Agent operational invalidation could not be delivered.',
+                'Local Agent context invalidation could not be delivered.',
                 extra={
                     'restaurant_id': str(restaurant_id),
                     'local_agent_id': str(agent_id),

@@ -173,17 +173,18 @@ class LocalAgentWebSocketSecurityTests(TransactionTestCase):
             connected, _subprotocol = await communicator.connect()
             self.assertTrue(connected)
             await communicator.receive_json_from()
-            await get_channel_layer().group_send(
-                local_agent_group_name(agent.id),
-                {
-                    'type': 'operational.invalidate',
-                    'server_time': '2026-09-03T12:00:00+05:00',
-                },
-            )
-            message = await communicator.receive_json_from()
-            self.assertEqual(message['type'], 'context_invalidated')
-            self.assertEqual(message['scopes'], ['operational'])
-            self.assertEqual(message['serverTime'], '2026-09-03T12:00:00+05:00')
+            for scope in ('operational', 'configuration'):
+                await get_channel_layer().group_send(
+                    local_agent_group_name(agent.id),
+                    {
+                        'type': f'{scope}.invalidate',
+                        'server_time': '2026-09-03T12:00:00+05:00',
+                    },
+                )
+                message = await communicator.receive_json_from()
+                self.assertEqual(message['type'], 'context_invalidated')
+                self.assertEqual(message['scopes'], [scope])
+                self.assertEqual(message['serverTime'], '2026-09-03T12:00:00+05:00')
             await communicator.disconnect()
 
         async_to_sync(run_scenario)()
@@ -921,7 +922,7 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(legacy.status_code, status.HTTP_200_OK, legacy.data)
         configuration_fields = {
             'restaurant', 'posDevices', 'users', 'menu', 'expenseCategories',
-            'expenseRecipients', 'bindings', 'printTemplates',
+            'expenseRecipients', 'bindings', 'printTemplates', 'floorConfiguration',
         }
         operational_fields = {
             'halls', 'tableSessions', 'orders', 'kitchenTickets', 'cashShifts', 'cashExpenses',
@@ -947,6 +948,25 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             self.assertEqual(operational.data[field], legacy.data[field], field)
         self.assertIn(str(order.id), [str(item['id']) for item in operational.data['orders']])
         self.assertIn(str(shift.id), [str(item['id']) for item in operational.data['cashShifts']])
+
+    def test_floor_configuration_excludes_live_occupancy_and_sales_queries(self):
+        from apps.local_agents.floor_configuration import floor_configuration_snapshot
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.create_table_session(table=self.table, guest_count=2)
+        self.table.status = DiningTable.Status.OCCUPIED
+        self.table.save(update_fields=['status'])
+        with CaptureQueriesContext(connection) as queries:
+            data = floor_configuration_snapshot(self.restaurant)
+        table = next(t for h in data for t in h['tables'] if str(t['id']) == str(self.table.pk))
+        self.assertEqual(table['status'], 'available')
+        for field in ('active_session', 'active_sessions', 'active_session_count',
+                      'occupied_guest_count', 'available_seat_count'):
+            self.assertNotIn(field, table)
+        for query in queries:
+            for name in ('floor_tablesession', 'sales_order', 'billing_payment', 'kitchen_kitchenticket'):
+                self.assertNotIn(name, query['sql'].lower())
 
     def test_split_snapshots_require_header_agent_authentication(self):
         for path in (
@@ -1233,6 +1253,23 @@ class LocalAgentBootstrapTests(PosAPITestCase):
 
 
 class LocalAgentOperationalInvalidationTests(PosAPITestCase):
+    @patch('core.middleware.local_agent_invalidation.broadcast_operational_invalidation')
+    @patch('core.middleware.local_agent_invalidation.broadcast_configuration_invalidation')
+    def test_admin_floor_edit_wakes_only_configuration(self, configuration, operational):
+        from core.middleware.local_agent_invalidation import LocalAgentOperationalInvalidationMiddleware
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+        from unittest.mock import Mock
+
+        request = RequestFactory().patch('/api/v1/admin/floor/halls/example/', data='{}', content_type='application/json')
+        request.user = Mock(is_authenticated=True)
+        request.user.get_restaurant_scope.return_value = self.restaurant
+        with self.captureOnCommitCallbacks(execute=True):
+            response = LocalAgentOperationalInvalidationMiddleware(lambda _: HttpResponse(status=200))(request)
+        self.assertEqual(response.status_code, 200)
+        configuration.assert_called_once_with(restaurant_id=self.restaurant.pk)
+        operational.assert_not_called()
+
     def setUp(self):
         super().setUp()
         _agent, self.token = LocalAgent.issue_for_restaurant(

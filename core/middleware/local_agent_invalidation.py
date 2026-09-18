@@ -1,6 +1,6 @@
 from django.db import transaction
 
-from apps.local_agents.invalidation import broadcast_operational_invalidation
+from apps.local_agents.invalidation import broadcast_operational_invalidation, broadcast_configuration_invalidation
 
 
 class LocalAgentOperationalInvalidationMiddleware:
@@ -13,6 +13,13 @@ class LocalAgentOperationalInvalidationMiddleware:
         '/api/v1/pos/floor/',
         '/api/v1/pos/kitchen/',
     )
+    configuration_prefixes = (
+        '/api/v1/admin/floor/', '/api/v1/admin/catalog/',
+        '/api/v1/admin/restaurants/', '/api/v1/admin/integrations/',
+        '/api/v1/admin/printing/', '/api/v1/admin/users/',
+        '/api/v1/admin/employees/', '/api/v1/admin/roles/',
+        '/api/v1/admin/devices/',
+    )
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -24,9 +31,10 @@ class LocalAgentOperationalInvalidationMiddleware:
 
         restaurant = request.user.get_restaurant_scope()
         restaurant_id = restaurant.pk
-        transaction.on_commit(
-            lambda: broadcast_operational_invalidation(restaurant_id=restaurant_id)
-        )
+        broadcast = (broadcast_configuration_invalidation
+                     if request.path.startswith(self.configuration_prefixes)
+                     else broadcast_operational_invalidation)
+        transaction.on_commit(lambda: broadcast(restaurant_id=restaurant_id))
         return response
 
     def _should_notify(self, *, request, response):
@@ -34,7 +42,7 @@ class LocalAgentOperationalInvalidationMiddleware:
             return False
         if response.status_code < 200 or response.status_code >= 400:
             return False
-        if not any(request.path.startswith(prefix) for prefix in self.operational_prefixes):
+        if not request.path.startswith(self.operational_prefixes + self.configuration_prefixes):
             return False
         user = getattr(request, 'user', None)
         if not user or not getattr(user, 'is_authenticated', False):

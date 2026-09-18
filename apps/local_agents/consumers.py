@@ -205,13 +205,19 @@ class LocalAgentConsumer(AsyncJsonWebsocketConsumer):
             }
         )
 
+    async def configuration_invalidate(self, event):
+        await self._context_invalidate(event, 'configuration')
+
     async def operational_invalidate(self, event):
+        await self._context_invalidate(event, 'operational')
+
+    async def _context_invalidate(self, event, scope):
         if not await self._is_connection_authority():
             return
         await self.send_json(
             {
                 'type': 'context_invalidated',
-                'scopes': ['operational'],
+                'scopes': [scope],
                 'serverTime': event.get('server_time') or timezone.now().isoformat(),
             }
         )
