@@ -26,12 +26,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  catalog-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: catalog_ci
+          POSTGRES_USER: catalog_ci
+          POSTGRES_PASSWORD: catalog_ci_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U catalog_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    env:
+      DEBUG: '1'
+      DB_ENGINE: postgres
+      DB_NAME: catalog_ci
+      DB_USER: catalog_ci
+      DB_PASSWORD: catalog_ci_only
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      REDIS_URL: redis://127.0.0.1:6379/0
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Build release test image
+        run: docker build -t catalog-assistant-ci .
+      - name: Test catalog, permissions, bot and POS snapshots with PostgreSQL
+        run: >-
+          docker run --rm --network host
+          -e DEBUG -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e REDIS_URL
+          catalog-assistant-ci python manage.py test
+          apps.catalog_assistant.tests apps.catalog.tests apps.local_agents.tests.LocalAgentBootstrapTests --noinput
   deploy:
+    needs: catalog-tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - name: Deploy production over SSH
         env:
+          MANAGEMENT_BOT_TOKEN_B64: ${{ secrets.MANAGEMENT_BOT_TOKEN_B64 }}
+          MANAGEMENT_BOT_WEBHOOK_SECRET_B64: ${{ secrets.MANAGEMENT_BOT_WEBHOOK_SECRET_B64 }}
           INVENTORY_AI_API_KEY_B64: ${{ secrets.INVENTORY_AI_API_KEY_B64 }}
           INVENTORY_AI_PROXY_URL_B64: ${{ secrets.INVENTORY_AI_PROXY_URL_B64 }}
           FAKTURA_USERNAME_B64: ${{ secrets.FAKTURA_USERNAME_B64 }}
@@ -47,7 +86,7 @@ jobs:
           port: ${{ secrets.PORT }}
           timeout: 60s
           command_timeout: 40m
-          envs: INVENTORY_AI_API_KEY_B64,INVENTORY_AI_PROXY_URL_B64,FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
+          envs: MANAGEMENT_BOT_TOKEN_B64,MANAGEMENT_BOT_WEBHOOK_SECRET_B64,INVENTORY_AI_API_KEY_B64,INVENTORY_AI_PROXY_URL_B64,FAKTURA_USERNAME_B64,FAKTURA_PASSWORD_B64,FAKTURA_CLIENT_ID_B64,FAKTURA_CLIENT_SECRET_B64
           script: |
             set -Eeuo pipefail
             exec 9>/home/postcode/.cafe-postcode-deploy.lock
@@ -87,6 +126,15 @@ jobs:
                 values['INVENTORY_AI_PROXY_URL'] = base64.b64decode(inventory_proxy, validate=True).decode('utf-8').strip()
                 if not values['INVENTORY_AI_PROXY_URL']:
                     raise SystemExit('Empty inventory AI proxy configuration')
+
+            for key in ('MANAGEMENT_BOT_TOKEN', 'MANAGEMENT_BOT_WEBHOOK_SECRET'):
+                encoded = os.environ.get(f'{key}_B64', '')
+                if not encoded:
+                    raise SystemExit(f'Missing GitHub Actions secret: {key}_B64')
+                values[key] = base64.b64decode(encoded, validate=True).decode('utf-8').strip()
+                if not values[key]:
+                    raise SystemExit(f'Empty management bot credential: {key}')
+            values['MANAGEMENT_BOT_USERNAME'] = 'cafe_postcode_menu_bot'
 
             env_path = Path('.env.production')
             original_lines = env_path.read_text(encoding='utf-8').splitlines()
@@ -208,7 +256,7 @@ jobs:
               git stash push --message "pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)"
             fi
             git fetch --prune origin production
-            git checkout --detach origin/production
+            git checkout --detach '${{ github.sha }}'
             docker compose --env-file .env.production config >/dev/null
             docker compose --env-file .env.production build
             docker compose --env-file .env.production --profile operations run --rm migrate
@@ -224,3 +272,6 @@ jobs:
                 raise SystemExit('Faktura production lookup returned an unexpected company.')
             print('Faktura production lookup: OK')
             PY
+
+            docker compose --env-file .env.production exec -T web python manage.py configure_management_bot --webhook-url https://cafe-postcode.uz/api/v1/management-bot/webhook/
+            docker compose --env-file .env.production exec -T web python manage.py check_catalog_assistant --live-ai --webhook-url https://cafe-postcode.uz/api/v1/management-bot/webhook/

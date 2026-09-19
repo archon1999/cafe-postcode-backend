@@ -6,9 +6,12 @@ from apps.local_agents.pos_views import LocalAgentPOSSystemStatusView
 from common.constants import API_PREFIX, API_V1_PREFIX
 from core.admin_access import django_admin_urlpatterns
 from core.health import healthz, readyz
+from apps.catalog_assistant.bot_webhook import ManagementBotWebhookView
 
 urlpatterns = [
     path('healthz/', healthz, name='healthz'),
+    path(f'{API_V1_PREFIX}management-bot/webhook/', ManagementBotWebhookView.as_view()),
+    path(f'{API_V1_PREFIX}admin/catalog-assistant/', include('apps.catalog_assistant.urls')),
     path('readyz/', readyz, name='readyz'),
     path(f'{API_V1_PREFIX}system/status/', LocalAgentPOSSystemStatusView.as_view()),
     path('', include('django_prometheus.urls')),

@@ -16,6 +16,7 @@ LOCAL_APPS = [
     'apps.restaurants',
     'apps.floor',
     'apps.catalog',
+    'apps.catalog_assistant',
     'apps.sales',
     'apps.billing',
     'apps.kitchen',
