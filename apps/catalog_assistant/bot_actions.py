@@ -50,7 +50,7 @@ def apply_action(account, pending):
     # Related IDs are never accepted based on the serializer's global queryset.
     for field, related_kind in [('category', 'category'), ('zone_or_cabin_id', 'zone'), ('hall', 'hall')]:
         if field in data:
-            get_object_or_404(scoped_objects(account.user, account.restaurant_id, related_kind), pk=data[field])
+            get_object_or_404(scoped_objects(account.user, account.restaurant_id, related_kind), pk=data[field], is_active=True)
     if 'prep_station' in data:
         get_object_or_404(PrepStation, pk=data['prep_station'], restaurant_id=account.restaurant_id, is_active=True)
     if data.get('is_active') is False and kind in ('hall', 'table', 'zone'):
@@ -60,6 +60,8 @@ def apply_action(account, pending):
         if TableSessionTable.objects.filter(**{lookup: pk}, released_at__isnull=True,
                                             session__status__in=ACTIVE_SESSION_STATUSES).exists():
             raise ValidationError('Bu joy boshqa stol sessiyasiga biriktirilgan. Avval uni yakunlang.')
+        if kind == 'zone' and Hall.objects.filter(zone_or_cabin_id=pk, is_active=True).exists():
+            raise ValidationError('Hududni yashirishdan oldin undagi zallarni yashiring.')
     if kind == 'table' and not pk:
         data['table_number'] = data['name']
     if kind == 'table' and 'seat_count' in data:

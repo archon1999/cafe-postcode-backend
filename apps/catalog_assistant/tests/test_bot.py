@@ -156,3 +156,13 @@ class BotTests(APITestCase):
             client.return_value.answer_callback_query.side_effect = TelegramAPIError('expired', error_code=400)
             ManagementBotHandler().handle(self.callback('dashboard'))
             client.return_value.send_message.assert_called_once()
+
+    def test_hidden_parent_cannot_receive_new_halls_or_items(self):
+        zone = ZoneOrCabin.objects.create(restaurant=self.restaurant, name='Zone')
+        hall = Hall.objects.create(zone_or_cabin=zone, name='Hall')
+        with self.assertRaises(ValidationError):
+            apply_action(self.account, {'kind': 'zone', 'pk': str(zone.pk), 'data': {'is_active': False}})
+        apply_action(self.account, {'kind': 'hall', 'pk': str(hall.pk), 'data': {'is_active': False}})
+        apply_action(self.account, {'kind': 'zone', 'pk': str(zone.pk), 'data': {'is_active': False}})
+        with self.assertRaises(Http404):
+            apply_action(self.account, {'kind': 'hall', 'data': {'name': 'New', 'zone_or_cabin_id': str(zone.pk)}})
