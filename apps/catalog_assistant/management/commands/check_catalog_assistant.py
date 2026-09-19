@@ -31,10 +31,10 @@ class Command(BaseCommand):
             workbook = io.BytesIO()
             book.save(workbook)
             picture = Image.new('RGB', (600, 150), 'white')
-            ImageDraw.Draw(picture).text((30, 40), 'Choy 6000 UZS', fill='black', font_size=40)
+            ImageDraw.Draw(picture).text((30, 40), 'Choy 6000', fill='black', font_size=40)
             photo = io.BytesIO()
             picture.save(photo, 'PNG')
-            content = normalize_input('Osh 35000 UZS', [
+            content = normalize_input('Osh 35000', [
                 SimpleUploadedFile('menu.xlsx', workbook.getvalue()),
                 SimpleUploadedFile('menu.png', photo.getvalue(), 'image/png'),
             ])
@@ -44,6 +44,8 @@ class Command(BaseCommand):
             expected = {'osh': 35000, 'manti': 8000, 'choy': 6000}
             if prices != expected:
                 raise CommandError('Synthetic menu extraction did not match all three source prices.')
+            if any(row['sale_unit'] != 'piece' or row['warning'] for row in rows):
+                raise CommandError('Clear prices without currency/unit labels should use UZS and piece without warnings.')
             self.stdout.write(json.dumps({'liveAI': 'passed', 'rows': len(rows), 'seconds': round(time.monotonic() - started, 2)}))
         if options['webhook_url']:
             url = options['webhook_url']
