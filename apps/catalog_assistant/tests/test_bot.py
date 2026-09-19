@@ -9,6 +9,7 @@ from apps.restaurants.models import Restaurant, PrepStation
 from apps.telegram_reports.client import TelegramAPIError
 from apps.users.models import User
 from apps.catalog_assistant.bot import ManagementBotHandler
+from apps.catalog_assistant.bot_client import ManagementBotClient
 from apps.catalog_assistant.bot_actions import apply_action
 from apps.catalog_assistant.bot_tasks import process_update
 from apps.catalog_assistant.models import ManagementBotAccount, ManagementBotUpdate
@@ -24,9 +25,92 @@ class BotTests(APITestCase):
         self.category = CatalogCategory.objects.create(restaurant=self.restaurant, name='Taomlar')
         self.item = CatalogItem.objects.create(restaurant=self.restaurant, category=self.category, name='Osh', price=100)
 
-    def callback(self, value):
+    def callback(self, value, message_id=None):
         return {'callback_query': {'id': 'cb', 'from': {'id': 123}, 'data': value,
-                                  'message': {'chat': {'id': 123, 'type': 'private'}}}}
+                                  'message': {'message_id': message_id, 'chat': {'id': 123, 'type': 'private'}}}}
+
+    def message(self, text):
+        return {'message': {'text': text, 'from': {'id': 123}, 'chat': {'id': 123, 'type': 'private'}}}
+
+    def test_navigation_edit_validation_and_confirmation_reuse_session_message(self):
+        with patch('apps.catalog_assistant.bot.ManagementBotClient') as factory:
+            client = factory.return_value
+            client.send_message.return_value = {'message_id': 700}
+            ManagementBotHandler().handle(self.message('/menu'))
+            for value in ('list:category:0', f'view:category:{self.category.pk}',
+                          f'children:item:{self.category.pk}', f'view:item:{self.item.pk}', 'edit:price'):
+                ManagementBotHandler().handle(self.callback(value, 700))
+            ManagementBotHandler().handle(self.message('invalid price'))
+            self.assertIn('Butun son', client.call.call_args.args[1]['text'])
+            self.account.refresh_from_db()
+            self.assertEqual(self.account.state['input'], 'edit')
+            ManagementBotHandler().handle(self.message('35000'))
+            self.account.refresh_from_db()
+            nonce = self.account.state['nonce']
+            self.item.refresh_from_db()
+            self.assertEqual(self.item.price, 100)
+            ManagementBotHandler().handle(self.callback('confirm:' + nonce, 700))
+            self.item.refresh_from_db()
+            self.assertEqual(self.item.price, 35000)
+            for value in ('list:zone:0', 'home', 'branch:' + str(self.restaurant.pk)):
+                ManagementBotHandler().handle(self.callback(value, 700))
+            self.account.refresh_from_db()
+            self.assertEqual(self.account.state, {'_message_id': 700})
+            client.send_message.assert_called_once()
+            self.assertGreater(client.call.call_count, 10)
+            for call in client.call.call_args_list:
+                self.assertEqual(call.args[0], 'editMessageText')
+                self.assertEqual(call.args[1]['message_id'], 700)
+                self.assertIn('inline_keyboard', call.args[1]['reply_markup'])
+
+    def test_legacy_callback_adopts_existing_message(self):
+        with patch('apps.catalog_assistant.bot.ManagementBotClient') as factory:
+            ManagementBotHandler().handle(self.callback('dashboard', 701))
+            factory.return_value.send_message.assert_not_called()
+            self.assertEqual(factory.return_value.call.call_args.args[1]['message_id'], 701)
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.state['_message_id'], 701)
+
+    def test_deleted_session_message_is_replaced_once(self):
+        self.account.state = {'_message_id': 701}
+        self.account.save()
+        with patch('apps.catalog_assistant.bot.ManagementBotClient') as factory:
+            client = factory.return_value
+            client.call.side_effect = [TelegramAPIError('message to edit not found', error_code=400), {'message_id': 702}]
+            client.send_message.return_value = {'message_id': 702}
+            ManagementBotHandler().handle(self.message('/menu'))
+            ManagementBotHandler().handle(self.callback('list:category:0', 702))
+            client.send_message.assert_called_once()
+            self.assertEqual(client.call.call_args.args[1]['message_id'], 702)
+        self.account.refresh_from_db()
+        self.assertEqual(self.account.state['_message_id'], 702)
+
+    def test_transport_error_does_not_create_another_message(self):
+        self.account.state = {'_message_id': 701}
+        self.account.save()
+        with patch('apps.catalog_assistant.bot.ManagementBotClient') as factory:
+            factory.return_value.call.side_effect = TelegramAPIError('rate limited', error_code=429, retry_after=5)
+            with self.assertRaises(TelegramAPIError):
+                ManagementBotHandler().handle(self.message('/menu'))
+            factory.return_value.send_message.assert_not_called()
+
+    def test_identical_edit_is_a_successful_noop(self):
+        with patch('apps.telegram_reports.client.TelegramBotClient.call',
+                   side_effect=TelegramAPIError('Bad Request: message is not modified', error_code=400)) as call:
+            result = ManagementBotClient().call('editMessageText', {'message_id': 701})
+            self.assertEqual(result, {'message_id': 701})
+            call.assert_called_once()
+
+    def test_old_message_cannot_confirm_pending_change(self):
+        self.account.state = {'_message_id': 702, 'pending': {'kind': 'item', 'pk': str(self.item.pk),
+                              'data': {'price': 200}}, 'nonce': 'abc'}
+        self.account.save()
+        with patch('apps.catalog_assistant.bot.ManagementBotClient') as factory:
+            ManagementBotHandler().handle(self.callback('confirm:abc', 701))
+            factory.return_value.send_message.assert_not_called()
+            self.assertEqual(factory.return_value.call.call_args.args[1]['message_id'], 702)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.price, 100)
 
     def test_webhook_secret_raw_payload_and_durable_dedup(self):
         url = '/api/v1/management-bot/webhook/'

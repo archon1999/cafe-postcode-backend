@@ -43,11 +43,28 @@ class ManagementBotHandler:
         if len(text) > 3900:
             # Truncate plain text before escaping, never cut an HTML entity/tag.
             text = html.escape(html.unescape(re.sub(r'<[^>]*>', '', text))[:3800])
-        return self.client.send_message(chat_id=self.account.chat_id, text=text,
-                                        reply_markup={'inline_keyboard': list(rows)})
+        markup = {'inline_keyboard': list(rows)}
+        message_id = self.account.state.get('_message_id')
+        if message_id:
+            try:
+                return self.client.call('editMessageText', {
+                    'chat_id': self.account.chat_id, 'message_id': message_id,
+                    'text': text, 'parse_mode': 'HTML', 'disable_web_page_preview': True,
+                    'reply_markup': markup,
+                })
+            except TelegramAPIError as error:
+                if error.error_code != 400:
+                    raise
+                # The session message may have been deleted or become uneditable.
+        result = self.client.send_message(chat_id=self.account.chat_id, text=text, reply_markup=markup)
+        if isinstance(result, dict) and type(result.get('message_id')) is int:
+            self.account.state['_message_id'] = result['message_id']
+            self.account.save(update_fields=['state', 'updated_at'])
+        return result
 
     def state(self, **values):
-        self.account.state = values
+        message_id = self.account.state.get('_message_id')
+        self.account.state = {**values, **({'_message_id': message_id} if message_id else {})}
         self.account.save(update_fields=['state', 'updated_at'])
 
     def home(self, page=0):
@@ -97,9 +114,18 @@ class ManagementBotHandler:
             if not self.account:
                 self.client.send_message(chat_id=chat['id'], text='🔐 Admin panel → Katalog → “Telegram orqali boshqarish” orqali shaxsiy havola oling.')
                 return
+            if callback and type(message.get('message_id')) is int:
+                message_id = self.account.state.get('_message_id')
+                if not message_id:
+                    # Existing bot messages become the session without a new reply.
+                    self.account.state['_message_id'] = message['message_id']
+                    self.account.save(update_fields=['state', 'updated_at'])
+                elif message_id != message['message_id']:
+                    return self.send('Bu tugma eski xabarga tegishli. Joriy menyudan davom eting.',
+                                     [[button('🏠 Bosh menyu', 'dashboard')]])
             if text == '/disconnect':
+                self.send('Telegram ulanishi uzildi. Qayta ulash uchun admin paneldan yangi havola oling.')
                 self.account.delete()
-                self.client.send_message(chat_id=chat['id'], text='Telegram ulanishi uzildi. Qayta ulash uchun admin paneldan yangi havola oling.')
                 return
             if not restaurants_for(self.account.user).exists():
                 raise ValidationError('Shahobcha boshqaruvi uchun ruxsatingiz hozir mavjud emas.')
@@ -110,7 +136,11 @@ class ManagementBotHandler:
             return self.message(text, message)
         except (APIException, Http404, ValueError, KeyError, IndexError) as error:
             detail = getattr(error, 'detail', 'Obyekt topilmadi yoki unga ruxsat yo‘q.')
-            self.client.send_message(chat_id=chat['id'], text='⚠️ ' + safe(error_message(detail))[:3500] + '\n/cancel — bosh menyu')
+            text = '⚠️ ' + safe(error_message(detail))[:3500] + '\n/cancel — bosh menyu'
+            if self.account:
+                self.send(text, [[button('🏠 Bosh menyu', 'dashboard')]])
+            else:
+                self.client.send_message(chat_id=chat['id'], text=text)
 
     def inline(self, query):
         account = ManagementBotAccount.objects.select_related('user').filter(telegram_user_id=query['from']['id']).first()

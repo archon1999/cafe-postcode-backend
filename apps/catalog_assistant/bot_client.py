@@ -16,6 +16,8 @@ class ManagementBotClient(TelegramBotClient):
         try:
             return super().call(method, payload)
         except TelegramAPIError as error:
+            if method == 'editMessageText' and error.error_code == 400 and 'message is not modified' in str(error).lower():
+                return {'message_id': payload['message_id']}
             # Transport exception URLs contain the bot token. Never chain them.
             raise TelegramAPIError('Telegram bilan bog‘lanib bo‘lmadi.',
                                    error_code=error.error_code, retry_after=error.retry_after) from None
