@@ -71,6 +71,7 @@ jobs:
           apps.restaurants.tests.test_service_fee_migration_rehearsal
           apps.restaurants.tests.test_service_fee_mode_migration
           apps.restaurants.tests.test_service_fee_formula_api
+          apps.restaurants.tests.test_service_fee_ai
           apps.sales.tests.test_formula_service_fees
           apps.printing.tests.test_template_migrations
           apps.printing.tests.test_print_documents --noinput

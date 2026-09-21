@@ -3,13 +3,15 @@
 Schema contract: https://developers.openai.com/api/docs/guides/structured-outputs
 """
 import json
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
 
 from apps.inventory.ai import ai_configuration, ai_proxy_url
-from common.service_fee_formulas import FormulaError
+from common.service_fee_formulas import FormulaError, evaluate_formula
 from common.service_fee_formulas.catalog import normalize_definition
 
 
@@ -62,7 +64,14 @@ subsequent shift pricing, charge the arrival rate once, then use
 if(duration_minutes <= 60, 0, minutes_in(add_minutes(session.started_at,60),
 calculation.at,"09:00","18:00")/60*day_rate +
 minutes_in(add_minutes(session.started_at,60),calculation.at,"18:00","09:00")/60*night_rate).
+Every let binding is evaluated eagerly, in order, BEFORE return. A later if in
+return does NOT protect a minutes_in call in an earlier let binding.
 Keep these later windows inside the lazy if; a start later than end is invalid.
+If storing later minutes in a binding, guard the binding itself, for example:
+let later_day = if(duration_minutes <= 60, 0,
+minutes_in(add_minutes(session.started_at,60),calculation.at,"09:00","18:00"));
+Do the same for every later window. Check sessions of 0, 30, 59, 60, 61 and 90
+minutes, including arrivals at shift boundaries and across midnight.
 Windows include start and exclude end, reverse bounds cross midnight, equal bounds invalid.
 Use the requested timezone supplied as data. No changing it in source.
 Examples: subtotal*percent/100; duration_minutes/60*hourly_rate;
@@ -75,6 +84,25 @@ percentage basis, shift crossing policy, or post-first-hour billing are ambiguou
 return source="", parameters=[] and at most 5 concrete questions. Otherwise questions=[].
 Zero fee is NOT a placeholder for missing information. Use at most 32 bindings,
 32 parameters, 8000 source characters. Keep source readable and explanation concise.'''
+
+
+def validate_draft_examples(definition):
+    """Catch runtime failures in AI output; these samples are not a proof of tariff correctness."""
+    zone = ZoneInfo(definition['timezone'])
+    for hour in range(24):
+        start = datetime(2026, 9, 21, hour, tzinfo=zone)
+        for duration in (0, 30, 59, 60, 61, 90, 1440):
+            try:
+                evaluate_formula(
+                    definition['source'], definition['parameters'],
+                    timezone_name=definition['timezone'], subtotal=500000, guest_count=1,
+                    started_at=start, calculated_at=start + timedelta(minutes=duration),
+                )
+            except FormulaError:
+                raise FormulaAIUnavailable(
+                    f'AI formulasi {hour:02d}:00 da boshlangan {duration} daqiqalik seans sinovidan '
+                    'o‘tmadi. Qayta tayyorlang yoki formulani qo‘lda tuzating.'
+                ) from None
 
 
 def generate_formula_draft(text, timezone_name='Asia/Tashkent'):
@@ -107,6 +135,7 @@ def generate_formula_draft(text, timezone_name='Asia/Tashkent'):
                 raise FormulaAIUnavailable()
             definition = normalize_definition({'name': draft['name'], 'source': draft['source'],
                                                'parameters': parameters, 'timezone': timezone_name})
+            validate_draft_examples(definition)
         return {'definition': definition, 'explanation': draft['explanation'], 'questions': draft['questions']}
     except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, serializers.ValidationError, FormulaError):
         raise FormulaAIUnavailable() from None
