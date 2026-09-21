@@ -1384,6 +1384,55 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         order = Order.objects.get(id=order_id, restaurant=self.restaurant)
         self.assertEqual(order.created_at, occurred_at)
 
+    def test_precheck_print_mutation_is_replayed_once(self):
+        printer = IntegrationConfig.objects.create(
+            restaurant=self.restaurant,
+            name='Receipt printer',
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='escpos',
+            settings={'connectionType': 'system_printer', 'printerName': 'POS-80'},
+        )
+        self.cash_desk.printer_integration = printer
+        self.cash_desk.save(update_fields=('printer_integration', 'updated_at'))
+        table_session = self.create_table_session()
+        order = self.create_order_via_api(
+            {'tableSession': str(table_session.id), 'channel': Order.Channel.HALL}
+        )
+        self.add_item_via_api(order['id'])
+        self.submit_order_via_api(order['id'])
+        operation = {
+            'operationId': 'edge-precheck-print-1',
+            'userId': str(self.user.id),
+            'occurredAt': timezone.now().isoformat(),
+            'method': 'POST',
+            'path': f'/api/v1/pos/billing/orders/{order["id"]}/precheck/print-document/',
+            'body': {},
+        }
+
+        first = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        second = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertEqual(first.data['results'][0]['status'], status.HTTP_200_OK, first.data)
+        self.assertFalse(first.data['results'][0]['replayed'])
+        self.assertTrue(second.data['results'][0]['replayed'])
+        self.assertEqual(
+            PrintDocument.objects.filter(source_id=order['id'], kind=PrintTemplate.Kind.ORDER_PRECHECK).count(),
+            1,
+        )
+        table_session.refresh_from_db()
+        self.assertEqual(table_session.status, TableSession.Status.PENDING_PAYMENT)
+
     def test_future_order_occurrence_time_is_quarantined(self):
         order_id = uuid.uuid4()
         response = self.client.post(
