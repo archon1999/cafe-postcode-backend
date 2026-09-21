@@ -34,7 +34,6 @@ class FormulaAuthoringView(AdminPermissionRequiredMixin, APIView):
 
 class FormulaCatalogView(FormulaAuthoringView):
     def get(self, request):
-        get_request_restaurant(request)
         return Response({
             'version': VERSION,
             'templates': TEMPLATES,
@@ -73,7 +72,6 @@ class FormulaPreviewSerializer(serializers.Serializer):
 
 class FormulaPreviewView(FormulaAuthoringView):
     def post(self, request):
-        get_request_restaurant(request)
         serializer = FormulaPreviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -101,7 +99,6 @@ class FormulaAIDraftView(FormulaAuthoringView):
     throttle_classes = [FormulaAIThrottle]
 
     def post(self, request):
-        get_request_restaurant(request)
         serializer = FormulaAIInputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data

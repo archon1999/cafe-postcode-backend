@@ -79,9 +79,12 @@ class ServiceFeeFormulaApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.data['errors'][0]['message'], 'Division by zero.')
 
-    def test_selected_restaurant_is_required(self):
+    def test_pure_authoring_works_before_a_restaurant_is_selected(self):
         self.client.credentials()
-        self.assertEqual(self.preview('100').status_code, 400)
+        self.assertEqual(self.preview('100').status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/admin/restaurants/service-fees/catalog/').status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/admin/restaurants/service-fees/assignments/').status_code, 400)
+        self.assertFalse(ServiceFeePolicy.objects.exists())
 
     def test_anonymous_is_denied(self):
         self.client.force_authenticate(None)
