@@ -147,7 +147,7 @@ class Order(BaseModel):
 
     def get_service_fee_snapshot(self) -> list[dict]:
         snapshot = normalize_service_fee_snapshot(self.service_fee_snapshot)
-        if any(component['mode'] == ServiceFeeMode.HOURLY for component in snapshot):
+        if any(component['mode'] in (ServiceFeeMode.HOURLY, ServiceFeeMode.FORMULA) for component in snapshot):
             return snapshot
         legacy_snapshot = self._legacy_service_fee_snapshot()
         return legacy_snapshot if legacy_snapshot else snapshot
@@ -165,12 +165,7 @@ class Order(BaseModel):
         snapshot = []
         if self.table_session_id:
             snapshot = normalize_service_fee_snapshot(self.table_session.service_fee_snapshot)
-            if not snapshot:
-                snapshot = build_service_fee_snapshot(
-                    restaurant=self.restaurant,
-                    hall=self.table_session.hall,
-                    table=self.table_session.table,
-                )
+            # An empty snapshot is an explicit no-fee session, not missing config.
             self.service_fee_started_at = self.table_session.opened_at
         else:
             snapshot = build_service_fee_snapshot(restaurant=self.restaurant)
@@ -207,9 +202,24 @@ class Order(BaseModel):
             for component in self.get_service_fee_snapshot()
         )
 
+    @property
+    def has_formula_service_fee(self) -> bool:
+        return any(component['mode'] == ServiceFeeMode.FORMULA for component in self.get_service_fee_snapshot())
+
+    @property
+    def has_time_dependent_service_fee(self) -> bool:
+        return any(
+            component['mode'] == ServiceFeeMode.HOURLY
+            or (component['mode'] == ServiceFeeMode.FORMULA and component['formula']['program']['time_dependent'])
+            for component in self.get_service_fee_snapshot()
+        )
+
     def get_service_fee_billable_minutes(self, *, as_of=None) -> int:
-        if not self.has_hourly_service_fee:
+        if not self.has_time_dependent_service_fee:
             return 0
+        if self.has_formula_service_fee and not self.has_hourly_service_fee:
+            end = self.service_fee_frozen_at or as_of or timezone.now()
+            return max(0, int((end - self.service_fee_started_at).total_seconds() // 60)) if self.service_fee_started_at else 0
         return service_fee_billable_minutes(
             started_at=self.service_fee_started_at,
             ended_at=self.service_fee_frozen_at or as_of,
@@ -240,7 +250,7 @@ class Order(BaseModel):
         return self.get_calculated_total(as_of=as_of)
 
     def freeze_service_fee(self, *, at=None):
-        if not self.has_hourly_service_fee or self.service_fee_frozen_at is not None:
+        if not (self.has_time_dependent_service_fee or self.has_formula_service_fee) or self.service_fee_frozen_at is not None:
             return
         self.service_fee_frozen_at = at or timezone.now()
         # The first successful payment already makes totals immutable. Persist
@@ -258,6 +268,7 @@ class Order(BaseModel):
 
     def recalculate_totals(self, *, preserve_override=False, as_of=None):
         from .order_item import OrderItem
+        from common.service_fee_formulas import FormulaError
 
         if self.payments.filter(status='succeeded').exists():
             # Fulfillment updates must never rewrite the settled financial facts.
@@ -267,15 +278,23 @@ class Order(BaseModel):
         subtotal = active_items.aggregate(total=models.Sum('line_total')).get('total') or 0
         service_fee = 0
         if self.channel == self.Channel.HALL:
-            service_fee = sum(
-                int(component.get('amount') or 0)
-                for component in calculate_service_fee_components(
-                    snapshot=self.get_service_fee_snapshot(),
-                    subtotal=int(subtotal or 0),
-                    started_at=self.service_fee_started_at,
-                    ended_at=self.service_fee_frozen_at or as_of,
+            try:
+                service_fee = sum(
+                    int(component.get('amount') or 0)
+                    for component in calculate_service_fee_components(
+                        snapshot=self.get_service_fee_snapshot(),
+                        subtotal=int(subtotal or 0),
+                        started_at=self.service_fee_started_at,
+                        ended_at=self.service_fee_frozen_at or as_of,
+                    )
                 )
-            )
+            except FormulaError:
+                # Keep the edit/replay so a later item correction can recover.
+                # Retain the last confirmed stored total; quote readers expose
+                # null totals + an error, and payment/printing still fail closed.
+                self.subtotal = subtotal
+                self.save(update_fields=['subtotal', 'updated_at'])
+                return
 
         calculated_total = subtotal + service_fee
         self.subtotal = subtotal

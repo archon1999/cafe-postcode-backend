@@ -1101,6 +1101,38 @@ class LocalAgentBootstrapTests(PosAPITestCase):
             ['restaurant', 'hall', 'table'],
         )
 
+    def test_formula_definition_survives_configuration_and_bootstrap_wire_format(self):
+        from common.service_fee_formulas.catalog import normalize_definition
+        definition = normalize_definition({
+            'name': 'Technical shift tariff',
+            'source': 'minutes_in("09:00", "18:00") / 60 * dayRate + day_rate',
+            'parameters': {'dayRate': '60000', 'day_rate': '1000'},
+        })
+        for target in (self.restaurant, self.hall, self.table):
+            target.service_fee_enabled = True
+            target.service_fee_mode = 'formula'
+            target.service_fee_formula = definition
+            target.save(update_fields=['service_fee_enabled', 'service_fee_mode', 'service_fee_formula'])
+        table_session = self.create_table_session(guest_count=3)
+        for endpoint in ('configuration', 'bootstrap'):
+            with self.subTest(endpoint=endpoint):
+                response = self.client.get(f'/api/v1/local-agent/sync/{endpoint}/',
+                                           HTTP_AUTHORIZATION=f'Bearer {self.token}')
+                self.assertEqual(response.status_code, 200, response.data)
+                wire = response.json()
+                self.assertEqual(wire['restaurant']['serviceFeeFormula'], definition)
+                halls = wire['floorConfiguration'] if endpoint == 'configuration' else wire['halls']
+                hall = next(row for row in halls if row['id'] == str(self.hall.pk))
+                table = next(row for row in hall['tables'] if row['id'] == str(self.table.pk))
+                self.assertEqual(hall['serviceFeeFormula'], definition)
+                self.assertEqual(table['serviceFeeFormula'], definition)
+                if endpoint == 'bootstrap':
+                    session = next(row for row in wire['tableSessions'] if row['id'] == str(table_session.pk))
+                    self.assertEqual(len(session['serviceFeeComponents']), 3)
+                    for component in session['serviceFeeComponents']:
+                        self.assertEqual(component['formula'], definition)
+                        self.assertEqual(component['guestCount'], 3)
+
     def test_bootstrap_keeps_grouped_secondary_table_on_the_same_session(self):
         source = self.create_table_session(table=self.table, guest_count=2)
         self.table.status = DiningTable.Status.OCCUPIED

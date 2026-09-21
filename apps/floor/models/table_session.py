@@ -65,6 +65,7 @@ class TableSession(BaseModel):
             'service_fee_mode',
             'service_fee_percent',
             'service_fee_hourly_rate',
+            'service_fee_formula',
         )
         restaurant = self._meta.get_field('restaurant').remote_field.model.objects.only(*config_fields).get(
             pk=self.restaurant_id
@@ -75,6 +76,7 @@ class TableSession(BaseModel):
             restaurant=restaurant,
             hall=hall,
             table=table,
+            guest_count=self.guest_count,
         )
 
     def save(self, *args, **kwargs):

@@ -1,3 +1,4 @@
+from common.api.service_fee_fields import ServiceFeeFormulaField
 from rest_framework import serializers
 
 from apps.floor.models import DiningTable, Hall
@@ -26,6 +27,7 @@ class HallConstructorTableReadSerializer(serializers.ModelSerializer):
             'service_fee_mode',
             'service_fee_percent',
             'service_fee_hourly_rate',
+            'service_fee_formula',
             'is_active',
         )
 
@@ -45,6 +47,7 @@ class HallConstructorSerializer(serializers.ModelSerializer):
             'service_fee_mode',
             'service_fee_percent',
             'service_fee_hourly_rate',
+            'service_fee_formula',
             'tables',
         )
 
@@ -79,6 +82,7 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
         default=0,
     )
     service_fee_hourly_rate = serializers.IntegerField(min_value=0, required=False, default=0)
+    service_fee_formula = ServiceFeeFormulaField(required=False, default=dict)
     is_active = serializers.BooleanField(required=False, default=True)
 
     def validate(self, attrs):
@@ -87,6 +91,7 @@ class HallConstructorTableWriteSerializer(serializers.Serializer):
             mode=attrs['service_fee_mode'],
             percent=attrs['service_fee_percent'],
             hourly_rate=attrs['service_fee_hourly_rate'],
+            formula=attrs['service_fee_formula'],
         )
         if errors:
             raise serializers.ValidationError(errors)
@@ -108,6 +113,7 @@ class HallConstructorUpdateSerializer(serializers.Serializer):
         default=0,
     )
     service_fee_hourly_rate = serializers.IntegerField(min_value=0, required=False, default=0)
+    service_fee_formula = ServiceFeeFormulaField(required=False, default=dict)
     tables = HallConstructorTableWriteSerializer(many=True)
     deleted_table_ids = serializers.ListField(
         child=serializers.UUIDField(),
@@ -121,6 +127,7 @@ class HallConstructorUpdateSerializer(serializers.Serializer):
             mode=attrs['service_fee_mode'],
             percent=attrs['service_fee_percent'],
             hourly_rate=attrs['service_fee_hourly_rate'],
+            formula=attrs['service_fee_formula'],
         )
         if errors:
             raise serializers.ValidationError(errors)

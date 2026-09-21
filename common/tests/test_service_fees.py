@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.test import SimpleTestCase
 from django.utils import timezone
@@ -11,6 +12,17 @@ from common.service_fees import (
 
 
 class ServiceFeeCalculatorTests(SimpleTestCase):
+    @patch('common.service_fees.evaluate_formula', side_effect=AssertionError('percentage must not execute DSL'))
+    def test_percentage_is_native_and_keeps_its_rate_without_a_session(self, evaluator):
+        components = calculate_service_fee_components(
+            snapshot=[{'scope': 'restaurant', 'mode': 'percentage', 'percent': '12.50'}],
+            subtotal=100,
+        )
+        self.assertEqual(components[0]['amount'], 13)
+        self.assertEqual(components[0]['percent'], 12.5)
+        self.assertNotIn('formula', components[0])
+        evaluator.assert_not_called()
+
     def test_hourly_rate_for_ninety_minutes(self):
         self.assertEqual(
             calculate_hourly_service_fee(hourly_rate=100_000, minutes=90),

@@ -161,12 +161,15 @@ PAYMENT_VARIABLES = COMMON_VARIABLES + (
     'totals.restaurantServiceFee',
     'totals.restaurantServiceFeePercent',
     'totals.restaurantServiceFeeRateLabel',
+    'totals.restaurantServiceFeeLabel',
     'totals.hallServiceFee',
     'totals.hallServiceFeePercent',
     'totals.hallServiceFeeRateLabel',
+    'totals.hallServiceFeeLabel',
     'totals.tableServiceFee',
     'totals.tableServiceFeePercent',
     'totals.tableServiceFeeRateLabel',
+    'totals.tableServiceFeeLabel',
     'totals.total',
 )
 
@@ -182,12 +185,15 @@ PRECHECK_VARIABLES = COMMON_VARIABLES + (
     'totals.restaurantServiceFee',
     'totals.restaurantServiceFeePercent',
     'totals.restaurantServiceFeeRateLabel',
+    'totals.restaurantServiceFeeLabel',
     'totals.hallServiceFee',
     'totals.hallServiceFeePercent',
     'totals.hallServiceFeeRateLabel',
+    'totals.hallServiceFeeLabel',
     'totals.tableServiceFee',
     'totals.tableServiceFeePercent',
     'totals.tableServiceFeeRateLabel',
+    'totals.tableServiceFeeLabel',
     'totals.total',
 )
 
@@ -290,12 +296,15 @@ SAMPLE_DATA = {
         'restaurantServiceFee': 3750,
         'restaurantServiceFeePercent': 5,
         'restaurantServiceFeeRateLabel': '5%',
+        'restaurantServiceFeeLabel': 'Restoran xizmati (5%)',
         'hallServiceFee': 1875,
         'hallServiceFeePercent': 2.5,
         'hallServiceFeeRateLabel': '2.5%',
+        'hallServiceFeeLabel': 'Zal xizmati (2.5%)',
         'tableServiceFee': 1875,
         'tableServiceFeePercent': 2.5,
         'tableServiceFeeRateLabel': '2.5%',
+        'tableServiceFeeLabel': 'Stol xizmati (2.5%)',
         'vat': 8839,
         'vatPercent': 12,
         'total': 82500,
@@ -387,19 +396,19 @@ def _items_block(*, show_price: bool, large: bool = False, show_vat: bool = Fals
 def _payment_blocks(*, fiscal: bool, detailed: bool) -> list[dict]:
     service_fee_rows = [
         {
-            'label': 'Restoran xizmati ({{totals.restaurantServiceFeeRateLabel}})',
+            'label': '{{totals.restaurantServiceFeeLabel}}',
             'value': '{{totals.restaurantServiceFee}}',
             'format': 'money',
             'hideZero': True,
         },
         {
-            'label': 'Zal xizmati ({{totals.hallServiceFeeRateLabel}})',
+            'label': '{{totals.hallServiceFeeLabel}}',
             'value': '{{totals.hallServiceFee}}',
             'format': 'money',
             'hideZero': True,
         },
         {
-            'label': 'Stol xizmati ({{totals.tableServiceFeeRateLabel}})',
+            'label': '{{totals.tableServiceFeeLabel}}',
             'value': '{{totals.tableServiceFee}}',
             'format': 'money',
             'hideZero': True,
@@ -476,19 +485,19 @@ def _precheck_blocks() -> list[dict]:
             'rows': [
                 {'label': 'Oraliq jami', 'value': '{{totals.subtotal}}', 'format': 'money'},
                 {
-                    'label': 'Restoran xizmati ({{totals.restaurantServiceFeeRateLabel}})',
+                    'label': '{{totals.restaurantServiceFeeLabel}}',
                     'value': '{{totals.restaurantServiceFee}}',
                     'format': 'money',
                     'hideZero': True,
                 },
                 {
-                    'label': 'Zal xizmati ({{totals.hallServiceFeeRateLabel}})',
+                    'label': '{{totals.hallServiceFeeLabel}}',
                     'value': '{{totals.hallServiceFee}}',
                     'format': 'money',
                     'hideZero': True,
                 },
                 {
-                    'label': 'Stol xizmati ({{totals.tableServiceFeeRateLabel}})',
+                    'label': '{{totals.tableServiceFeeLabel}}',
                     'value': '{{totals.tableServiceFee}}',
                     'format': 'money',
                     'hideZero': True,
@@ -694,19 +703,19 @@ def build_legacy_layout(kind: str) -> dict:
                     'type': 'totals',
                     'rows': [
                         {
-                            'label': 'RESTORAN XIZMATI ({{totals.restaurantServiceFeeRateLabel}})',
+                            'label': '{{totals.restaurantServiceFeeLabel}}',
                             'value': '{{totals.restaurantServiceFee}}',
                             'format': 'money',
                             'hideZero': True,
                         },
                         {
-                            'label': 'ZAL XIZMATI ({{totals.hallServiceFeeRateLabel}})',
+                            'label': '{{totals.hallServiceFeeLabel}}',
                             'value': '{{totals.hallServiceFee}}',
                             'format': 'money',
                             'hideZero': True,
                         },
                         {
-                            'label': 'STOL XIZMATI ({{totals.tableServiceFeeRateLabel}})',
+                            'label': '{{totals.tableServiceFeeLabel}}',
                             'value': '{{totals.tableServiceFee}}',
                             'format': 'money',
                             'hideZero': True,

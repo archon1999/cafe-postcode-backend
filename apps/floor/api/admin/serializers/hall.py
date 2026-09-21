@@ -1,3 +1,4 @@
+from common.api.service_fee_fields import ServiceFeeFormulaField
 from decimal import Decimal
 
 from django.utils.translation import gettext_lazy as _
@@ -13,6 +14,7 @@ from .zone_or_cabin import ZoneOrCabinSerializer
 
 
 class HallSerializer(serializers.ModelSerializer):
+    service_fee_formula = ServiceFeeFormulaField(required=False)
     restaurant_name = serializers.CharField(
         source="zone_or_cabin.restaurant.name", read_only=True
     )
@@ -51,6 +53,7 @@ class HallSerializer(serializers.ModelSerializer):
             "service_fee_mode",
             "service_fee_percent",
             "service_fee_hourly_rate",
+            "service_fee_formula",
             "sort_order",
             "is_active",
             "zone_or_cabin_id",
@@ -79,6 +82,7 @@ class HallSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         service_fee_errors = validate_service_fee_configuration(
+            formula=attrs.get("service_fee_formula", getattr(self.instance, "service_fee_formula", {})),
             enabled=attrs.get("service_fee_enabled", getattr(self.instance, "service_fee_enabled", False)),
             mode=attrs.get("service_fee_mode", getattr(self.instance, "service_fee_mode", "percentage")),
             percent=attrs.get("service_fee_percent", getattr(self.instance, "service_fee_percent", 0)),

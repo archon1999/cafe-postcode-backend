@@ -62,6 +62,7 @@ class Restaurant(BaseModel):
     )
     service_fee_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     service_fee_hourly_rate = models.PositiveIntegerField(default=0)
+    service_fee_formula = models.JSONField(default=dict, blank=True)
     vat_enabled = models.BooleanField(default=True)
     vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=12)
     marking_check_enabled = models.BooleanField(default=False)

@@ -7,6 +7,18 @@ from apps.printing.services.print_snapshots import _print_item_values, _service_
 
 
 class PrintDocumentChannelLabelTests(SimpleTestCase):
+    def test_formula_receipt_hides_its_name_and_source_but_percentage_keeps_rate(self):
+        order = SimpleNamespace(service_fee_percent=10)
+        totals = _service_fee_totals(order, components=[
+            {'scope': 'restaurant', 'mode': 'percentage', 'percent': 10, 'amount': 1000},
+            {'scope': 'table', 'mode': 'formula', 'amount': 5900,
+             'formula': {'name': 'Private technical tariff', 'source': 'subtotal * rate'}},
+        ])
+        self.assertEqual(totals['restaurantServiceFeeLabel'], 'Restoran xizmati (10%)')
+        self.assertEqual(totals['tableServiceFeeLabel'], 'Xizmat haqi')
+        self.assertEqual(totals['tableServiceFeeRateLabel'], '')
+        self.assertEqual(totals['tableServiceFee'], 5900)
+
     def test_hourly_service_fee_snapshot_uses_hourly_label_without_rate(self):
         order = SimpleNamespace(
             service_fee_percent=0,

@@ -36,6 +36,7 @@ class HallConstructorView(AdminPermissionRequiredMixin, views.APIView):
             service_fee_mode=serializer.validated_data['service_fee_mode'],
             service_fee_percent=serializer.validated_data['service_fee_percent'],
             service_fee_hourly_rate=serializer.validated_data['service_fee_hourly_rate'],
+            service_fee_formula=serializer.validated_data['service_fee_formula'],
             tables_payload=serializer.validated_data['tables'],
             deleted_table_ids=serializer.validated_data.get('deleted_table_ids', []),
         )

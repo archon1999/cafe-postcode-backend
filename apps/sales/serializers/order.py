@@ -11,6 +11,7 @@ from apps.floor.services import restaurant_has_multiple_active_zones
 from apps.restaurants.models import DistributionPoint
 from apps.sales.helpers import get_order_model
 from common.api.scopes import get_optional_request_restaurant
+from common.api.service_fee_order import ServiceFeeOrderRepresentationMixin
 
 from .order_item import OrderItemSerializer
 
@@ -18,7 +19,7 @@ Order = get_order_model()
 DELIVERY_PHONE_RE = re.compile(r'^\d{2}-\d{3}-\d{2}-\d{2}$')
 
 
-class OrderSerializer(serializers.ModelSerializer):
+class OrderSerializer(ServiceFeeOrderRepresentationMixin, serializers.ModelSerializer):
     CREATE_ONLY_FIELDS = ('table_session', 'distribution_point', 'guest_count')
     SERVER_CONTROLLED_FIELDS = (
         'restaurant_service_fee_percent',
@@ -56,6 +57,7 @@ class OrderSerializer(serializers.ModelSerializer):
     service_fee_components = serializers.SerializerMethodField()
     service_fee_billable_minutes = serializers.SerializerMethodField()
     service_fee_quote = serializers.SerializerMethodField()
+    service_fee_error = serializers.SerializerMethodField()
     calculated_total = serializers.SerializerMethodField()
     total = serializers.SerializerMethodField()
     vat_enabled = serializers.SerializerMethodField()
@@ -161,7 +163,7 @@ class OrderSerializer(serializers.ModelSerializer):
         return instance
 
     def get_service_fee(self, obj):
-        return obj.get_service_fee_amount(as_of=self._service_fee_as_of(obj))
+        return self._fee_value(obj, obj.get_service_fee_amount)
 
     def _service_fee_as_of(self, obj):
         if obj.service_fee_frozen_at is not None:
@@ -174,9 +176,11 @@ class OrderSerializer(serializers.ModelSerializer):
         return cache[obj.pk]
 
     def get_calculated_total(self, obj):
-        return obj.get_calculated_total(as_of=self._service_fee_as_of(obj))
+        return self._fee_value(obj, obj.get_calculated_total)
 
     def get_total(self, obj):
+        if self.get_service_fee_error(obj):
+            return None
         return obj.get_total(as_of=self._service_fee_as_of(obj))
 
     @staticmethod
@@ -190,13 +194,13 @@ class OrderSerializer(serializers.ModelSerializer):
         return obj.service_fee_enabled
 
     def get_service_fee_components(self, obj):
-        return obj.get_service_fee_components(as_of=self._service_fee_as_of(obj))
+        return self._fee_value(obj, obj.get_service_fee_components, fallback=obj.get_service_fee_snapshot())
 
     def get_service_fee_billable_minutes(self, obj):
         return obj.get_service_fee_billable_minutes(as_of=self._service_fee_as_of(obj))
 
     def get_service_fee_quote(self, obj):
-        if not obj.has_hourly_service_fee:
+        if not obj.has_time_dependent_service_fee or self.get_service_fee_error(obj):
             return None
         as_of = self._service_fee_as_of(obj)
         return {
@@ -212,6 +216,8 @@ class OrderSerializer(serializers.ModelSerializer):
             rate = Decimal(str(percent or 0))
         except Exception:
             return 0
+        if amount is None:
+            return None
         if amount <= 0 or rate <= 0:
             return 0
         included_vat = Decimal(amount) * rate / (Decimal('100') + rate)
@@ -277,6 +283,7 @@ class OrderSerializer(serializers.ModelSerializer):
             'service_fee_components',
             'service_fee_billable_minutes',
             'service_fee_quote',
+            'service_fee_error',
             'restaurant_service_fee_percent',
             'hall_service_fee_percent',
             'table_service_fee_percent',

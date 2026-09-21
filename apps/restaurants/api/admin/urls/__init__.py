@@ -16,8 +16,17 @@ from apps.restaurants.api.admin.views.restaurants import (
     RestaurantReadDetailView,
 )
 from apps.restaurants.api.admin.views.setup import RestaurantSetupApplyView, RestaurantSetupReadinessView
+from apps.restaurants.api.admin.views.service_fee_formulas import (
+    FormulaCatalogView, FormulaPreviewView, ServiceFeePolicyListView, ServiceFeePolicyDetailView, FormulaAssignmentsView, FormulaAIDraftView,
+)
 
 urlpatterns = [
+    path('service-fees/catalog/', FormulaCatalogView.as_view()),
+    path('service-fees/assignments/', FormulaAssignmentsView.as_view()),
+    path('service-fees/preview/', FormulaPreviewView.as_view()),
+    path('service-fees/ai-draft/', FormulaAIDraftView.as_view()),
+    path('service-fees/policies/', ServiceFeePolicyListView.as_view()),
+    path('service-fees/policies/<uuid:pk>/', ServiceFeePolicyDetailView.as_view()),
     path('setup/readiness/', RestaurantSetupReadinessView.as_view()),
     path('setup/apply/', RestaurantSetupApplyView.as_view()),
     path('settings/', RestaurantConfigView.as_view()),

@@ -14,7 +14,6 @@ from common.api.scopes import (
 )
 from common.service_fees import (
     ServiceFeeMode,
-    build_service_fee_snapshot,
     normalize_service_fee_snapshot,
 )
 
@@ -90,14 +89,7 @@ class TableSessionSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_service_fee_components(obj):
-        snapshot = normalize_service_fee_snapshot(obj.service_fee_snapshot)
-        if snapshot:
-            return snapshot
-        return build_service_fee_snapshot(
-            restaurant=obj.restaurant,
-            hall=obj.hall,
-            table=obj.table,
-        )
+        return normalize_service_fee_snapshot(obj.service_fee_snapshot)
 
     def get_service_fee_percent(self, obj):
         return sum(

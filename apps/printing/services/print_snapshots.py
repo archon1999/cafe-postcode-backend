@@ -36,10 +36,19 @@ def _service_fee_totals(order, *, as_of=None, components=None) -> dict:
         component = by_scope.get(scope, {})
         if component.get("mode") == "hourly":
             return "Soatlik"
+        if component.get('mode') == 'formula':
+            return ''
         percent = _json_number(component.get("percent"))
         return f"{percent}%"
 
+    def fee_label(scope):
+        if by_scope.get(scope, {}).get('mode') == 'formula':
+            return 'Xizmat haqi'
+        label = {'restaurant': 'Restoran xizmati', 'hall': 'Zal xizmati', 'table': 'Stol xizmati'}[scope]
+        return f'{label} ({rate_label(scope)})'
+
     return {
+        **{f'{scope}ServiceFeeLabel': fee_label(scope) for scope in ('restaurant', 'hall', 'table')},
         "serviceFeePercent": _json_number(order.service_fee_percent),
         "serviceFeeComponents": [
             {

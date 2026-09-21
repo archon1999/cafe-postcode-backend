@@ -70,7 +70,7 @@ AUTH_SESSION_TTL_SECONDS = {
 JSON_CAMEL_CASE = {
     'JSON_UNDERSCOREIZE': {
         'no_underscore_before_number': False,
-        'ignore_fields': ('mxik_payload',),
+        'ignore_fields': ('mxik_payload', 'service_fee_formula', 'formula'),
         'ignore_keys': None,
     },
 }

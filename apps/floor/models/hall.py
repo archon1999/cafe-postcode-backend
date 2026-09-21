@@ -21,6 +21,7 @@ class Hall(BaseModel):
     )
     service_fee_percent = models.PositiveSmallIntegerField(default=0)
     service_fee_hourly_rate = models.PositiveIntegerField(default=0)
+    service_fee_formula = models.JSONField(default=dict, blank=True)
     sort_order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
 

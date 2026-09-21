@@ -23,6 +23,7 @@ SAFE_RESTAURANT_SETTING_FIELDS = (
     'service_fee_mode',
     'service_fee_percent',
     'service_fee_hourly_rate',
+    'service_fee_formula',
     'vat_enabled',
     'vat_percent',
     'marking_check_enabled',

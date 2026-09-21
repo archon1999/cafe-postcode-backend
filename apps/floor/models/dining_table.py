@@ -80,6 +80,7 @@ class DiningTable(BaseModel):
     )
     service_fee_percent = models.PositiveSmallIntegerField(default=0)
     service_fee_hourly_rate = models.PositiveIntegerField(default=0)
+    service_fee_formula = models.JSONField(default=dict, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:

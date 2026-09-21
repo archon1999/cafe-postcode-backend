@@ -8,12 +8,15 @@ from rest_framework.views import exception_handler
 
 from common.api.error_codes import ErrorCode
 from core.observability import normalize_request_id, request_id_context
+from common.service_fee_formulas import FormulaError
 
 
 logger = logging.getLogger(__name__)
 
 
 def custom_exception_handler(exc, context):
+    if isinstance(exc, FormulaError):
+        return Response({'code': 'SERVICE_FEE_FORMULA_ERROR', 'message': str(exc)}, status=409)
     if isinstance(exc, RequestDataTooBig):
         return Response(
             {

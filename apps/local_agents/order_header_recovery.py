@@ -107,7 +107,7 @@ def recover_order_header(*, agent, operation, reason, request_id=''):
             hall_service_fee_percent=percentages.get('hall', 0), table_service_fee_percent=percentages.get('table', 0),
         )
         order.refresh_from_db()
-        response = json.loads(json.dumps(camelize(OrderSerializer(order).data), default=str))
+        response = json.loads(json.dumps(camelize(OrderSerializer(order).data, ignore_fields=('formula', 'service_fee_formula')), default=str))
         digest = request_hash(user_id=str(user.pk), method=original['method'], path=original['path'], body=original['body'])
         command = LocalAgentCommand.objects.filter(
             agent=agent, pk=request_id, command_type='support.execute', payload__name='sync.reconcile',

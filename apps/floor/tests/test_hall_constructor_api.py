@@ -100,6 +100,30 @@ class AdminHallConstructorApiTests(APITestCase):
         self.assertEqual(tables_by_number['1']['shape_variant'], DiningTable.ShapeVariant.SEAT4_SQUARE)
         self.assertEqual(tables_by_number['2']['position_x'], 1)
 
+    def test_layout_edit_preserves_hall_and_table_formula_definitions(self):
+        from common.service_fee_formulas.catalog import normalize_definition
+        self.authenticate()
+        definition = normalize_definition({
+            'name': 'Technical tariff', 'source': 'dayRate + day_rate',
+            'parameters': {'dayRate': '60000', 'day_rate': '120000'},
+        })
+        for target in (self.hall, self.table_one):
+            target.service_fee_enabled = True
+            target.service_fee_mode = 'formula'
+            target.service_fee_formula = definition
+            target.save(update_fields=['service_fee_enabled', 'service_fee_mode', 'service_fee_formula'])
+        url = f'/api/v1/admin/floor/halls/{self.hall.id}/constructor/'
+        payload = self.client.get(url).json()
+        payload['gridColumns'] = 10
+        response = self.client.put(url, payload, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.hall.refresh_from_db()
+        self.table_one.refresh_from_db()
+        self.assertEqual(self.hall.grid_columns, 10)
+        for target in (self.hall, self.table_one):
+            self.assertEqual(target.service_fee_mode, 'formula')
+            self.assertEqual(target.service_fee_formula, definition)
+
     def test_string_table_numbers_round_trip_and_validate(self):
         self.authenticate()
         url = f'/api/v1/admin/floor/halls/{self.hall.id}/constructor/'

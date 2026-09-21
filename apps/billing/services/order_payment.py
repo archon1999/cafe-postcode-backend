@@ -1,4 +1,6 @@
 import logging
+from datetime import timedelta
+from django.utils.dateparse import parse_datetime
 
 from django.db import transaction
 from django.utils import timezone
@@ -54,11 +56,27 @@ class OrderPaymentService(
         trusted_edge_replay,
         trusted_frozen_at=None,
     ):
-        if not order.has_hourly_service_fee or order.service_fee_frozen_at is not None:
+        if not order.has_time_dependent_service_fee or order.service_fee_frozen_at is not None:
             order.recalculate_totals(preserve_override=True)
+            # Editing is allowed while a formula is invalid; payment is not,
+            # including when a cashier previously supplied a total override.
+            order.get_service_fee_amount(as_of=order.service_fee_frozen_at)
             return order.service_fee_frozen_at
 
         quote_at = trusted_frozen_at if trusted_edge_replay and trusted_frozen_at else timezone.now()
+        expired_formula_quote = False
+        if order.has_formula_service_fee and not trusted_edge_replay:
+            raw_at = (quote or {}).get('quotedAt', (quote or {}).get('quoted_at')) if isinstance(quote, dict) else None
+            try:
+                proposed = parse_datetime(raw_at) if isinstance(raw_at, str) else None
+            except (ValueError, TypeError):
+                proposed = None
+            if (proposed is not None and timezone.is_aware(proposed)
+                    and quote_at - timedelta(seconds=30) <= proposed <= quote_at
+                    and (order.service_fee_started_at is None or proposed >= order.service_fee_started_at)):
+                quote_at = proposed
+            else:
+                expired_formula_quote = True
         current = {
             "quotedAt": quote_at.isoformat(),
             "billableMinutes": order.get_service_fee_billable_minutes(as_of=quote_at),
@@ -81,7 +99,7 @@ class OrderPaymentService(
                 "serviceFee": quote_int("serviceFee", "service_fee"),
                 "calculatedTotal": quote_int("calculatedTotal", "calculated_total"),
             }
-            if expected != {key: current[key] for key in expected}:
+            if expired_formula_quote or expected != {key: current[key] for key in expected}:
                 raise ServiceFeeQuoteStale(
                     detail={
                         "code": "SERVICE_FEE_QUOTE_STALE",

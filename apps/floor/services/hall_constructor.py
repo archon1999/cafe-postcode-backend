@@ -122,6 +122,7 @@ class HallConstructorService:
         service_fee_hourly_rate: int,
         tables_payload: list[dict],
         deleted_table_ids: Iterable[str],
+        service_fee_formula=None,
     ):
         hall = Hall.objects.select_for_update(of=('self',)).get(pk=hall.pk)
         deleted_table_ids = {str(table_id) for table_id in deleted_table_ids}
@@ -154,6 +155,7 @@ class HallConstructorService:
                 'service_fee_mode': item.get('service_fee_mode', 'percentage'),
                 'service_fee_percent': item.get('service_fee_percent', 0),
                 'service_fee_hourly_rate': item.get('service_fee_hourly_rate', 0),
+                'service_fee_formula': item.get('service_fee_formula', getattr(table, 'service_fee_formula', {})),
                 'is_active': item.get('is_active', True),
             }
 
@@ -175,6 +177,8 @@ class HallConstructorService:
         hall.service_fee_mode = service_fee_mode
         hall.service_fee_percent = service_fee_percent
         hall.service_fee_hourly_rate = service_fee_hourly_rate
+        if service_fee_formula is not None:
+            hall.service_fee_formula = service_fee_formula
         hall.save(
             update_fields=[
                 'grid_columns',
@@ -182,6 +186,7 @@ class HallConstructorService:
                 'service_fee_mode',
                 'service_fee_percent',
                 'service_fee_hourly_rate',
+                'service_fee_formula',
                 'updated_at',
             ]
         )

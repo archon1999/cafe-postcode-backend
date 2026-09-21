@@ -62,6 +62,18 @@ jobs:
           -e DEBUG -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e REDIS_URL
           catalog-assistant-ci python manage.py test
           apps.catalog_assistant.tests apps.catalog.tests apps.local_agents.tests.LocalAgentBootstrapTests --noinput
+      - name: Test service fee migrations and offline replay contracts with PostgreSQL
+        run: >-
+          docker run --rm --network host
+          -e DEBUG -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e REDIS_URL
+          catalog-assistant-ci python manage.py test
+          common.tests.test_service_fee_formulas
+          apps.restaurants.tests.test_service_fee_migration_rehearsal
+          apps.restaurants.tests.test_service_fee_mode_migration
+          apps.restaurants.tests.test_service_fee_formula_api
+          apps.sales.tests.test_formula_service_fees
+          apps.printing.tests.test_template_migrations
+          apps.printing.tests.test_print_documents --noinput
   deploy:
     needs: catalog-tests
     runs-on: ubuntu-latest

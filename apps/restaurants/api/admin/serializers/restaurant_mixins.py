@@ -1,3 +1,4 @@
+from common.api.service_fee_fields import ServiceFeeFormulaField
 from decimal import Decimal
 
 from rest_framework import serializers
@@ -39,6 +40,7 @@ class RestaurantEntitlementFieldsMixin(serializers.Serializer):
 
 
 class RestaurantSettingsFieldsMixin(serializers.Serializer):
+    service_fee_formula = ServiceFeeFormulaField(required=False)
     pos_auth_background_image = SecureImageField(
         required=False, allow_null=True, write_only=True
     )
@@ -74,6 +76,7 @@ class RestaurantSettingsFieldsMixin(serializers.Serializer):
         if clear_image:
             attrs["pos_auth_background_image"] = None
         errors = validate_service_fee_configuration(
+            formula=attrs.get("service_fee_formula", getattr(self.instance, "service_fee_formula", {})),
             enabled=attrs.get(
                 "service_fee_enabled",
                 getattr(self.instance, "service_fee_enabled", False),

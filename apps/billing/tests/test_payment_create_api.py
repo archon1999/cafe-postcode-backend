@@ -242,6 +242,41 @@ class PaymentCreateApiTests(APITestCase):
         self.assertEqual(order.total, 30000)
         self.assertEqual(order.calculated_total, 30000)
 
+    @patch('apps.billing.services.order_payment.charge_payment',
+           return_value={'ok': True, 'provider': 'cash', 'reference': ''})
+    def test_formula_payment_replay_preserves_offline_freeze_and_is_idempotent(self, _charge_payment):
+        from common.service_fee_formulas.catalog import normalize_definition
+        order = self.create_hourly_hall_order()
+        frozen_at = timezone.now() - timedelta(minutes=5)
+        order.service_fee_started_at = frozen_at - timedelta(hours=1)
+        order.service_fee_snapshot = [{
+            'scope': 'restaurant', 'mode': 'formula', 'guest_count': 1,
+            'formula': normalize_definition({
+                'name': 'Offline technical tariff',
+                'source': 'duration_minutes * rate + dayRate + day_rate',
+                'parameters': {'rate': '1000', 'dayRate': '100', 'day_rate': '200'},
+            }),
+        }]
+        order.save(update_fields=['service_fee_started_at', 'service_fee_snapshot'])
+        order.recalculate_totals(as_of=frozen_at)
+        operation_id = 'formula-offline-payment:' + str(uuid4())
+        payload = {
+            'method': Payment.Method.CASH, 'amount': 1000,
+            'edgeOperationId': operation_id, 'serviceFeeFrozenAt': frozen_at.isoformat(),
+            'serviceFeeQuote': {'quotedAt': frozen_at.isoformat(), 'billableMinutes': 60,
+                                'serviceFee': 60300, 'calculatedTotal': 90300},
+        }
+        path = f'/api/v1/pos/billing/orders/{order.id}/pay/'
+        response = self.project_payment(path, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        order.refresh_from_db()
+        self.assertEqual(order.service_fee_frozen_at, frozen_at)
+        self.assertEqual(order.get_service_fee_amount(as_of=timezone.now() + timedelta(hours=5)), 60300)
+        self.assertEqual(order.total, 90300)
+        repeated = self.project_payment(path, payload, format='json')
+        self.assertEqual(repeated.status_code, status.HTTP_201_CREATED, repeated.data)
+        self.assertEqual(order.payments.count(), 1)
+
     @patch('apps.billing.services.order_payment.charge_payment')
     def test_hourly_quote_validator_rejects_stale_quote_before_charge(self, charge_payment):
         from apps.billing.services.order_payment import OrderPaymentService, ServiceFeeQuoteStale

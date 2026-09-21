@@ -493,6 +493,10 @@ PERMISSION_DEFINITIONS = [
         endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/restaurants/settings/'),
             ('GET', 'api/v1/admin/restaurants/my-restaurant/'),
+            ('GET', 'api/v1/admin/restaurants/service-fees/catalog/'),
+            ('GET', 'api/v1/admin/restaurants/service-fees/assignments/'),
+            ('GET', 'api/v1/admin/restaurants/service-fees/policies/'),
+            ('GET', 'api/v1/admin/restaurants/service-fees/policies/<uuid:pk>/'),
         ),
         default_roles=RESTAURANT_SETUP_ROLES,
     ),
@@ -504,7 +508,15 @@ PERMISSION_DEFINITIONS = [
         ui_visible=True,
         group_key='restaurant_settings',
         name='Restoran sozlamalarini tahrirlash',
-        endpoints=endpoint_specs(('PUT', 'api/v1/admin/restaurants/settings/'), ('PATCH', 'api/v1/admin/restaurants/settings/')),
+        endpoints=endpoint_specs(
+            ('PUT', 'api/v1/admin/restaurants/settings/'),
+            ('PATCH', 'api/v1/admin/restaurants/settings/'),
+            ('POST', 'api/v1/admin/restaurants/service-fees/preview/'),
+            ('POST', 'api/v1/admin/restaurants/service-fees/ai-draft/'),
+            ('POST', 'api/v1/admin/restaurants/service-fees/assignments/'),
+            ('POST', 'api/v1/admin/restaurants/service-fees/policies/'),
+            ('PATCH', 'api/v1/admin/restaurants/service-fees/policies/<uuid:pk>/'),
+        ),
         default_roles=RESTAURANT_SETUP_ROLES,
     ),
     permission_definition(
