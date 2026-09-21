@@ -19,6 +19,12 @@ class LocalAgentMutationLifecycleTests(SimpleTestCase):
                 "/api/v1/pos/billing/expenses/00000000-0000-4000-8000-000000000001/void/",
             )
         )
+        self.assertTrue(
+            allowed_mutation(
+                "POST",
+                "/api/v1/pos/billing/orders/00000000-0000-4000-8000-000000000001/precheck/print-document/",
+            )
+        )
         for action in ("transfer", "group", "ungroup"):
             self.assertTrue(
                 allowed_mutation(

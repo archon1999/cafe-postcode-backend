@@ -27,6 +27,7 @@ MUTATION_PATHS = (
     re.compile(r"^/api/v1/pos/billing/shifts/current/expenses/$"),
     re.compile(r"^/api/v1/pos/billing/expenses/[0-9a-f-]+/void/$"),
     re.compile(r"^/api/v1/pos/billing/orders/[0-9a-f-]+/pay/$"),
+    re.compile(r"^/api/v1/pos/billing/orders/[0-9a-f-]+/precheck/print-document/$"),
     re.compile(r"^/api/v1/pos/billing/payments/[0-9a-f-]+/retry-fiscal/$"),
     re.compile(r"^/api/v1/pos/billing/payments/[0-9a-f-]+/print-document/$"),
     re.compile(r"^/api/v1/pos/billing/[0-9a-f-]+/refund/$"),
