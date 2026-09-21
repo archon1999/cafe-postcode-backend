@@ -55,7 +55,7 @@ if [[ ! -s "${temporary_path}" ]]; then
 fi
 
 docker compose --project-directory "${repo_dir}" --env-file "${env_file}" exec -T postgres \
-    sh -ceu 'pg_restore --list - >/dev/null' < "${temporary_path}"
+    sh -ceu 'pg_restore --list >/dev/null' < "${temporary_path}"
 
 chmod 0600 -- "${temporary_path}"
 mv -- "${temporary_path}" "${final_path}"
