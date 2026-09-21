@@ -26,7 +26,7 @@ class OrderPrecheckPrintDocumentView(APIView):
         restaurant = get_request_restaurant(request)
         with transaction.atomic():
             order = generics.get_object_or_404(
-                Order.objects.select_for_update().select_related(
+                Order.objects.select_for_update(of=("self",)).select_related(
                     "restaurant",
                     "table_session__table",
                     "table_session__hall",
