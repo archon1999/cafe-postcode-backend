@@ -52,7 +52,7 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         self.assertTrue(document.idempotency_key.startswith('order-precheck:'))
         self.assertEqual(document.metadata['cashDeskId'], str(self.cash_desk.id))
         self.assertEqual(document.data_snapshot['order']['table'], self.table.name)
-        self.assertEqual(document.data_snapshot['order']['tableNumber'], self.table.table_number)
+        self.assertEqual(document.data_snapshot['order']['tableNumber'], str(self.table.table_number))
         self.assertEqual(document.data_snapshot['order']['zone'], self.zone.name)
         self.assertEqual(document.data_snapshot['order']['zoneDisplay'], '')
         self.assertEqual(document.data_snapshot['items'][0]['quantity'], 2)
@@ -61,9 +61,12 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         order = Order.objects.get(id=self.order['id'])
         self.table_session.refresh_from_db()
         self.assertEqual(order.status, Order.Status.OPEN)
-        self.assertEqual(self.table_session.status, TableSession.Status.OPEN)
+        self.assertEqual(self.table_session.status, TableSession.Status.PENDING_PAYMENT)
         self.assertFalse(Payment.objects.filter(order=order).exists())
         self.assertFalse(Receipt.objects.filter(order=order).exists())
+        halls = self.client.get('/api/v1/pos/floor/halls/').json()['data']
+        table = next(row for row in halls[0]['tables'] if row['id'] == str(self.table.id))
+        self.assertEqual(table['activeSession']['serviceState'], 'pending_payment')
 
     def test_precheck_includes_zone_display_when_restaurant_has_multiple_active_zones(
         self,
@@ -165,6 +168,20 @@ class OrderPrecheckPrintApiTests(PosAPITestCase):
         order = Order.objects.get(id=self.order['id'])
         self.table_session.refresh_from_db()
         self.assertEqual(order.status, Order.Status.OPEN)
-        self.assertEqual(self.table_session.status, TableSession.Status.OPEN)
+        self.assertEqual(self.table_session.status, TableSession.Status.PENDING_PAYMENT)
         self.assertFalse(Payment.objects.filter(order=order).exists())
         self.assertFalse(Receipt.objects.filter(order=order).exists())
+
+    def test_takeaway_precheck_does_not_change_any_table_session(self):
+        takeaway_order = self.create_order_via_api({'channel': Order.Channel.TAKEAWAY})
+        self.add_item_via_api(takeaway_order['id'])
+
+        response = self.client.post(
+            f'/api/v1/pos/billing/orders/{takeaway_order["id"]}/precheck/print-document/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.table_session.refresh_from_db()
+        self.assertEqual(self.table_session.status, TableSession.Status.OPEN)
