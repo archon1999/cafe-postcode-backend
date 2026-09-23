@@ -4,12 +4,57 @@ This only affects trusted Local Agent projection. It never changes the user's
 stored active flag or permits PIN/JWT login after archival.
 """
 
+import re
+
 from django.db.models import Q
 
 from apps.local_agents.models import LocalAgentMutationInbox
 from apps.local_agents.mutation_inbox import _hash, financial_event_metadata
 from apps.users.models import User
 from apps.users.models.employee_profile import EmployeeProfile
+
+
+_ORDER_ITEM_CREATE = re.compile(
+    r'^/api/v1/pos/sales/orders/(?P<order_id>[0-9a-f-]+)/items/$'
+)
+
+
+def _belongs_to_proven_historical_order(*, agent, operation, user_id, device_id, occurred_at):
+    """Admit old unsequenced item creates only under their applied original header.
+
+    Older Agent versions had no owner epoch. The header's durable, applied
+    envelope supplies a narrower provenance boundary than a backdated clock.
+    """
+    if str(operation.get('method') or '').upper() != 'POST':
+        return False
+    match = _ORDER_ITEM_CREATE.fullmatch(str(operation.get('path') or ''))
+    if match is None:
+        return False
+
+    from apps.sales.models import Order
+
+    order_id = match.group('order_id')
+    if not Order.objects.filter(
+        pk=order_id, restaurant=agent.restaurant, opened_by_id=user_id
+    ).exists():
+        return False
+
+    headers = LocalAgentMutationInbox.objects.filter(
+        restaurant=agent.restaurant,
+        state=LocalAgentMutationInbox.State.APPLIED,
+        operation__body__id=order_id,
+    )
+    for header in headers:
+        original = header.operation
+        if (str(original.get('method') or '').upper() != 'POST'
+                or original.get('path') != '/api/v1/pos/sales/orders/'
+                or str(original.get('userId') or original.get('user_id') or '') != user_id
+                or str(original.get('deviceId') or original.get('device_id') or '') != device_id
+                or header.occurred_at is None
+                or header.occurred_at > occurred_at):
+            continue
+        return True
+    return False
 
 
 def archived_historical_pos_user(*, agent, operation, user_id, device_id, occurred_at):
@@ -49,8 +94,12 @@ def archived_historical_pos_user(*, agent, operation, user_id, device_id, occurr
     # only previously received legacy evidence qualifies. Sequenced events
     # must belong to an epoch/device already observed before the archive.
     metadata = financial_event_metadata(operation)
-    if (metadata['eventVersion'] != 2 or not metadata['ownerEpoch']
-            or not metadata['sequence']):
+    if metadata['eventVersion'] != 2:
+        return user if _belongs_to_proven_historical_order(
+            agent=agent, operation=operation, user_id=user_id,
+            device_id=device_id, occurred_at=occurred_at,
+        ) else None
+    if not metadata['ownerEpoch'] or not metadata['sequence']:
         return None
     prior = LocalAgentMutationInbox.objects.filter(
         restaurant=agent.restaurant,
