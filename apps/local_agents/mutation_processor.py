@@ -10,6 +10,7 @@ from apps.local_agents.models import LocalAgentMutationReceipt
 from apps.local_agents.mutation_dispatch import LocalAgentMutationDispatchMixin
 from apps.local_agents.mutation_reconciliation import allowed_mutation, request_hash
 from apps.local_agents.mutation_inbox import receive_and_apply, financial_event_metadata
+from apps.local_agents.mutation_historical_user import archived_historical_pos_user
 from apps.local_agents.mutation_replay import LocalAgentMutationReplayMixin
 from apps.local_agents.mutation_results import (
     CLASSIFICATION_ACTION_REQUIRED,
@@ -140,6 +141,15 @@ class LocalAgentMutationProcessor(
             .select_related("role", "restaurant_profile", "employee_profile")
             .first()
         )
+        if user is None:
+            user = archived_historical_pos_user(
+                agent=agent, operation=operation, user_id=user_id,
+                device_id=device_id, occurred_at=occurred_at,
+            )
+            if user is not None:
+                # The internal replay uses this object only. The stored user
+                # remains archived, so ordinary login and API auth stay denied.
+                user.is_active = True
         if user is None or not user.can_access_pos_ui:
             return mutation_error_result(
                 operation_id=operation_id,
