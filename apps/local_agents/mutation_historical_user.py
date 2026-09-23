@@ -14,26 +14,45 @@ from apps.users.models import User
 from apps.users.models.employee_profile import EmployeeProfile
 
 
-_ORDER_ITEM_CREATE = re.compile(
-    r'^/api/v1/pos/sales/orders/(?P<order_id>[0-9a-f-]+)/items/$'
-)
+_ORDER_PATH = re.compile(r'^/api/v1/pos/sales/orders/(?P<order_id>[0-9a-f-]+)/$')
+_ORDER_ITEM_CREATE = re.compile(r'^/api/v1/pos/sales/orders/(?P<order_id>[0-9a-f-]+)/items/$')
+_ORDER_SUBMIT = re.compile(r'^/api/v1/pos/sales/orders/(?P<order_id>[0-9a-f-]+)/(?:submit|serve-ready)/$')
+_ORDER_ITEM_DELETE = re.compile(r'^/api/v1/pos/sales/orders/items/(?P<item_id>[0-9a-f-]+)/$')
+
+
+def _historical_order_id(*, agent, operation):
+    method = str(operation.get('method') or '').upper()
+    path = str(operation.get('path') or '')
+    if method == 'POST':
+        match = _ORDER_ITEM_CREATE.fullmatch(path) or _ORDER_SUBMIT.fullmatch(path)
+    elif method == 'PATCH':
+        match = _ORDER_PATH.fullmatch(path)
+    elif method == 'DELETE':
+        match = _ORDER_ITEM_DELETE.fullmatch(path)
+        if match:
+            from apps.sales.models import OrderItem
+
+            order_id = OrderItem.objects.filter(
+                pk=match.group('item_id'), order__restaurant=agent.restaurant
+            ).values_list('order_id', flat=True).first()
+            return str(order_id) if order_id else None
+    else:
+        return None
+    return match.group('order_id') if match else None
 
 
 def _belongs_to_proven_historical_order(*, agent, operation, user_id, device_id, occurred_at):
-    """Admit old unsequenced item creates only under their applied original header.
+    """Admit old unsequenced order edits only under their applied original header.
 
     Older Agent versions had no owner epoch. The header's durable, applied
     envelope supplies a narrower provenance boundary than a backdated clock.
     """
-    if str(operation.get('method') or '').upper() != 'POST':
-        return False
-    match = _ORDER_ITEM_CREATE.fullmatch(str(operation.get('path') or ''))
-    if match is None:
+    order_id = _historical_order_id(agent=agent, operation=operation)
+    if order_id is None:
         return False
 
     from apps.sales.models import Order
 
-    order_id = match.group('order_id')
     if not Order.objects.filter(
         pk=order_id, restaurant=agent.restaurant, opened_by_id=user_id
     ).exists():

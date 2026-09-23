@@ -8,7 +8,7 @@ from apps.local_agents.mutation_historical_user import archived_historical_pos_u
 from apps.local_agents.mutation_inbox import _hash
 from apps.local_agents.mutation_processor import LocalAgentMutationProcessor
 from apps.devices.models import Device
-from apps.sales.models import Order
+from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 from apps.users.models.employee_profile import EmployeeProfile
 
@@ -147,6 +147,20 @@ class ArchivedHistoricalUserTests(PosAPITestCase):
         }
         self.record(item)
         self.assertEqual(self.allowed(item).pk, self.user.pk)
+        order = Order.objects.get(pk=header['body']['id'])
+        order_item = OrderItem.objects.create(
+            order=order, catalog_item=self.catalog_item, created_by=self.user,
+            quantity=1, unit_price=self.catalog_item.price,
+        )
+        for method, path, body in (
+            ('PATCH', f"/api/v1/pos/sales/orders/{order.pk}/", {'note': ''}),
+            ('POST', f"/api/v1/pos/sales/orders/{order.pk}/submit/", {}),
+            ('DELETE', f"/api/v1/pos/sales/orders/items/{order_item.pk}/", {}),
+        ):
+            edit = {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+                    'method': method, 'path': path, 'body': body}
+            self.record(edit)
+            self.assertEqual(self.allowed(edit).pk, self.user.pk)
         self.user.refresh_from_db()
         self.assertFalse(self.user.is_active)
 
@@ -159,6 +173,10 @@ class ArchivedHistoricalUserTests(PosAPITestCase):
              'occurredAt': (self.archived_at + timedelta(seconds=1)).isoformat()},
             {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
              'path': f"/api/v1/pos/billing/orders/{header['body']['id']}/pay/"},
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+             'path': f"/api/v1/pos/sales/orders/{order.pk}/scan-marking/"},
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()), 'method': 'DELETE',
+             'path': f"/api/v1/pos/sales/orders/items/{uuid.uuid4()}/"},
         ):
             self.record(changed)
             self.assertIsNone(self.allowed(changed))
