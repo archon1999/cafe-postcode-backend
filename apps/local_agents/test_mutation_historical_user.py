@@ -54,8 +54,8 @@ class ArchivedHistoricalUserTests(PosAPITestCase):
             payload_hash=_hash(op),
             operation=op,
             event_version=op['eventVersion'],
-            owner_epoch=op['ownerEpoch'],
-            sequence=op['sequence'],
+            owner_epoch=op.get('ownerEpoch', ''),
+            sequence=op.get('sequence'),
             occurred_at=self.occurred_at,
         )
         if before_archive:
@@ -122,3 +122,43 @@ class ArchivedHistoricalUserTests(PosAPITestCase):
         )
         result = LocalAgentMutationProcessor().process(agent=self.agent, operation=after_archive)
         self.assertEqual(result['code'], 'POS_USER_INVALID')
+
+    def test_legacy_item_requires_same_applied_order_header_user_and_device(self):
+        device = Device.objects.create(
+            restaurant=self.restaurant, type=Device.Type.POS_TERMINAL,
+            name='Historical POS', status=Device.Status.ACTIVE,
+            paired_at=timezone.now(),
+            lease_expires_at=timezone.now() + timedelta(days=1),
+        )
+        self.device_id = str(device.pk)
+        header = self.operation(version=1)
+        self.record(header, before_archive=True)
+        result = LocalAgentMutationProcessor().process(agent=self.agent, operation=header)
+        self.assertTrue(result['applied'], result)
+        # An original header recovered after archival is still durable proof.
+        LocalAgentMutationInbox.objects.filter(operation_id=header['operationId']).update(
+            created_at=timezone.now(),
+        )
+        item = {
+            **self.operation(version=1, occurred_at=self.occurred_at + timedelta(minutes=1)),
+            'path': f"/api/v1/pos/sales/orders/{header['body']['id']}/items/",
+            'body': {'id': str(uuid.uuid4()), 'quantity': 1},
+            'ownerEpoch': '', 'sequence': None,
+        }
+        self.record(item)
+        self.assertEqual(self.allowed(item).pk, self.user.pk)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+
+        for changed in (
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+             'deviceId': str(uuid.uuid4())},
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+             'path': f"/api/v1/pos/sales/orders/{uuid.uuid4()}/items/"},
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+             'occurredAt': (self.archived_at + timedelta(seconds=1)).isoformat()},
+            {**item, 'operationId': 'pos:' + str(uuid.uuid4()),
+             'path': f"/api/v1/pos/billing/orders/{header['body']['id']}/pay/"},
+        ):
+            self.record(changed)
+            self.assertIsNone(self.allowed(changed))
