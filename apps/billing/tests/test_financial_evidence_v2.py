@@ -18,6 +18,7 @@ from apps.integrations.models import IntegrationConfig
 from apps.kitchen.services.kitchen_status import KitchenStatusService
 from apps.local_agents.models import LocalAgent, LocalAgentMutationInbox
 from apps.local_agents.mutation_processor import LocalAgentMutationProcessor
+from apps.restaurants.models import Restaurant
 from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosTestCase
 
@@ -391,6 +392,34 @@ class FinancialEvidenceTests(PosTestCase):
         self.assertEqual(
             FiscalShiftSession.objects.get(edge_session_id="current").status, "open"
         )
+
+    def test_same_physical_session_can_be_recorded_after_card_moves_restaurants(self):
+        from apps.billing.models import FiscalShiftSession
+
+        service = CashShiftService()
+        previous_restaurant = Restaurant.objects.create(name="Previous fiscal card owner")
+        evidence = {"ok": True, "provider": "fiscal-drive-service", "terminal_id": "TEST-T1"}
+        key = "shared-physical-session"
+        service.open_fiscal_shift(
+            restaurant=previous_restaurant,
+            provider_result=evidence,
+            session_key=key,
+        )
+        service.open_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            provider_result=evidence,
+            session_key=key,
+        )
+        self.assertEqual(FiscalShiftSession.objects.filter(edge_session_id=key).count(), 2)
+        service.close_fiscal_shift(
+            restaurant=self.restaurant,
+            cash_desk=self.cash_desk,
+            provider_result=evidence,
+            session_key=key,
+        )
+        self.assertEqual(FiscalShiftSession.objects.get(restaurant=self.restaurant, edge_session_id=key).status, "closed")
+        self.assertEqual(FiscalShiftSession.objects.get(restaurant=previous_restaurant, edge_session_id=key).status, "open")
 
     def test_paid_order_total_cannot_be_changed_by_kitchen_or_recalculation(self):
         self.pay()

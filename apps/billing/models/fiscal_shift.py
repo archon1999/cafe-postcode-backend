@@ -40,10 +40,16 @@ class FiscalShiftSession(BaseModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     open_payload = models.JSONField(default=dict, blank=True)
     close_payload = models.JSONField(default=dict, blank=True)
-    edge_session_id = models.CharField(max_length=128, null=True, blank=True, unique=True)
+    edge_session_id = models.CharField(max_length=128, null=True, blank=True)
 
     class Meta:
         ordering = ('-opened_at',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['restaurant', 'edge_session_id'],
+                name='fiscalshift_rest_edge_session_uniq',
+            ),
+        ]
         indexes = [
             scoped_status_index('restaurant', name='fiscalshift_rest_status_idx'),
             scoped_timestamp_index('restaurant', 'opened_at', name='fiscalshift_rest_opened_idx'),
