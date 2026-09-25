@@ -499,13 +499,29 @@ class MonitoringOverviewApiTests(APITestCase):
     def test_fiscal_failure_only_affects_health_after_a_recent_attempt(self):
         now = timezone.now()
         restaurant = Restaurant.objects.create(name='Plain receipt branch')
+        fiscal = IntegrationConfig.objects.create(
+            restaurant=restaurant,
+            name='Cashier fiscal',
+            kind=IntegrationConfig.Kind.FISCAL,
+            provider='fiscal-drive-service',
+        )
+        CashDesk.objects.create(
+            restaurant=restaurant,
+            name='Main cash desk',
+            fiscal_integration=fiscal,
+        )
         agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
         agent.operational_health = {
             'schemaVersion': 1,
             'checkedAt': now.isoformat(),
             'checks': [
                 {'component': 'storage', 'resource': 'local_database', 'state': 'ok', 'consecutiveFailures': 0},
-                {'component': 'fiscal', 'resource': 'probe/fiscal-id', 'state': 'error', 'consecutiveFailures': 3},
+                {
+                    'component': 'fiscal',
+                    'resource': f'probe/{fiscal.id}',
+                    'state': 'error',
+                    'consecutiveFailures': 3,
+                },
             ],
         }
         agent.save(update_fields=['operational_health'])
@@ -535,6 +551,15 @@ class MonitoringOverviewApiTests(APITestCase):
         response = self.client.get(self.endpoint)
 
         self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'attention')
+
+        fiscal.is_enabled = False
+        fiscal.save(update_fields=['is_enabled'])
+
+        response = self.client.get(self.endpoint)
+
+        health = response.data['branches'][0]['operationalHealth']
+        self.assertEqual(health['status'], 'healthy')
+        self.assertEqual(health['reasons'][0]['component'], 'fiscal')
 
     def test_non_cashier_printer_failure_stays_visible_without_lowering_health(self):
         now = timezone.now()

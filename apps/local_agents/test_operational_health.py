@@ -83,6 +83,51 @@ class OperationalHealthTests(SimpleTestCase):
         )
         self.assertEqual(result['status'], 'healthy')
 
+    def test_unbound_fiscal_probe_is_advisory_even_after_recent_attempt(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {
+                'component': 'fiscal',
+                'resource': 'probe/inactive-fiscal',
+                'state': 'error',
+                'consecutiveFailures': 3,
+            },
+        ]
+        result = assess_operational_health(
+            self.report(checks),
+            self.now,
+            fiscal_attempted_recently=True,
+            cashier_fiscal_ids=set(),
+        )
+        self.assertEqual(result['status'], 'healthy')
+        self.assertEqual(result['reasons'][0]['resource'], 'probe/inactive-fiscal')
+
+        result = assess_operational_health(
+            self.report(checks),
+            self.now,
+            fiscal_attempted_recently=True,
+            cashier_fiscal_ids={'inactive-fiscal'},
+        )
+        self.assertEqual(result['status'], 'attention')
+
+    def test_unresolved_financial_operation_still_blocks_without_bound_fiscal(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {
+                'component': 'fiscal',
+                'resource': 'unresolved_financial_operations',
+                'state': 'error',
+                'consecutiveFailures': 3,
+            },
+        ]
+        result = assess_operational_health(
+            self.report(checks),
+            self.now,
+            fiscal_attempted_recently=False,
+            cashier_fiscal_ids=set(),
+        )
+        self.assertEqual(result['status'], 'attention')
+
     def test_non_cashier_printer_failure_is_advisory(self):
         checks = [
             {'component': 'storage', 'state': 'ok'},
