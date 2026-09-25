@@ -125,10 +125,6 @@ class CashShiftOpenView(APIView):
                 return Response(
                     {"cashierId": ["Selected cashier was not found."]}, status=400
                 )
-        elif trusted_edge_replay:
-            # The owner defaults omitted assignment to the acting cashier.
-            # Preserve that resolved fact even for a custom cashier role.
-            cashier = request.user
         elif len(available_cash_desks) > 1:
             return Response(
                 {"cashierId": ["Cashier selection is required."]}, status=400

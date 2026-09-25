@@ -119,6 +119,7 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(current_shift['expected_closing_cash_amount'], 150000)
 
         shift = CashShift.objects.get(pk=current_shift['id'])
+        self.assertIsNone(shift.cashier_id)
         order = Order.objects.create(
             restaurant=self.restaurant,
             branch=self.branch,
