@@ -924,6 +924,8 @@ PERMISSION_DEFINITIONS = [
             ('GET', 'api/v1/admin/reporting/top-staff/export/'),
             ('GET', 'api/v1/admin/reporting/payment-breakdown/'),
             ('GET', 'api/v1/admin/reporting/payment-breakdown/export/'),
+            ('GET', 'api/v1/admin/reporting/z-reports/'),
+            ('GET', 'api/v1/admin/reporting/z-reports/export/'),
             ('GET', 'api/v1/admin/reporting/shifts/'),
             ('GET', 'api/v1/admin/reporting/shifts/export/'),
         ),
