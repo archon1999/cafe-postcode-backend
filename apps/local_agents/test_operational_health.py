@@ -56,6 +56,27 @@ class OperationalHealthTests(SimpleTestCase):
         checks[2]['consecutiveFailures'] = 3
         self.assertEqual(assess_operational_health(self.report(checks), self.now)['status'], 'attention')
 
+    def test_unused_fiscal_probe_is_an_advisory_but_real_fiscal_operations_still_affect_status(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {'component': 'fiscal', 'resource': 'probe/fiscal-id', 'state': 'error', 'consecutiveFailures': 3},
+        ]
+        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        self.assertEqual(result['status'], 'healthy')
+        self.assertEqual(result['reasons'][0]['component'], 'fiscal')
+
+        checks[1]['resource'] = 'unresolved_financial_operations'
+        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        self.assertEqual(result['status'], 'attention')
+
+    def test_unused_fiscal_unknown_does_not_hide_other_healthy_evidence(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {'component': 'fiscal', 'resource': 'diagnostics', 'state': 'unknown'},
+        ]
+        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        self.assertEqual(result['status'], 'healthy')
+
     def test_unknown_runtime_is_not_healthy_and_invalid_reports_are_ignored(self):
         self.assertEqual(assess_operational_health(self.report([{'component': 'storage', 'state': 'ok'}, {'component': 'runtime', 'state': 'unknown'}]), self.now)['status'], 'unknown')
         self.assertIsNone(normalize_health({'schemaVersion': 1, 'checkedAt': 'invalid', 'checks': []}, self.now))

@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.billing.models import Receipt
 from apps.devices.migration_window import legacy_pos_migration_enabled
 from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
@@ -493,6 +494,35 @@ class MonitoringOverviewApiTests(APITestCase):
         response = self.client.get('/api/v1/admin/monitoring/overview/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual([b['operationalHealth']['status'] for b in response.data['branches']], ['healthy', 'attention', 'critical', 'unknown'])
+
+    def test_unused_fiscal_failure_stays_visible_without_lowering_branch_health(self):
+        now = timezone.now()
+        restaurant = Restaurant.objects.create(name='Plain receipt branch')
+        agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
+        agent.operational_health = {
+            'schemaVersion': 1,
+            'checkedAt': now.isoformat(),
+            'checks': [
+                {'component': 'storage', 'resource': 'local_database', 'state': 'ok', 'consecutiveFailures': 0},
+                {'component': 'fiscal', 'resource': 'probe/fiscal-id', 'state': 'error', 'consecutiveFailures': 3},
+            ],
+        }
+        agent.save(update_fields=['operational_health'])
+        self.client.force_authenticate(user=self.superuser)
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        health = response.data['branches'][0]['operationalHealth']
+        self.assertEqual(health['status'], 'healthy')
+        self.assertEqual(health['reasons'][0]['component'], 'fiscal')
+
+        order = Order.objects.create(restaurant=restaurant, order_number=1)
+        Receipt.objects.create(order=order, kind=Receipt.Kind.FISCAL, status=Receipt.Status.FAILED)
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'attention')
 
     def test_offline_agent_is_healthy_when_business_stopped_naturally(self):
         now = timezone.now()
