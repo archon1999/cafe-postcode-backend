@@ -36,7 +36,9 @@ class CashShift(BaseModel):
     closed_at = models.DateTimeField(null=True, blank=True)
     opening_cash_amount = models.PositiveIntegerField(default=0)
     actual_closing_cash_amount = models.PositiveIntegerField(default=0)
-    expected_closing_cash_amount = models.PositiveIntegerField(default=0)
+    # A shift can refund cash collected in an earlier shift. In that case the
+    # drawer expectation is negative and must remain visible for reconciliation.
+    expected_closing_cash_amount = models.IntegerField(default=0)
     cash_difference_amount = models.IntegerField(default=0)
     cash_total = models.PositiveIntegerField(default=0)
     card_total = models.PositiveIntegerField(default=0)
