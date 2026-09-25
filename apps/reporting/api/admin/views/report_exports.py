@@ -73,10 +73,10 @@ class SalesReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = SalesReportFilters.from_request(request)
-        rows = localize_sales_rows(list(filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period))))
+        rows = localize_sales_rows(list(filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None))))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_SALES),
-            columns=get_sales_columns(),
+            columns=self.get_export_columns(get_sales_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,
@@ -96,7 +96,7 @@ class OpenChecksReportExportView(AdminBaseReportView):
         )
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_OPEN_CHECKS),
-            columns=get_open_checks_columns(),
+            columns=self.get_export_columns(get_open_checks_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,
@@ -127,7 +127,7 @@ class ReceiptsReportExportView(AdminBaseReportView):
         )
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_RECEIPTS),
-            columns=get_receipts_columns(),
+            columns=self.get_export_columns(get_receipts_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,
@@ -146,10 +146,10 @@ class TopItemsReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = TopItemsReportFilters.from_request(request)
-        rows = list(filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period)))
+        rows = list(filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None)))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_TOP_ITEMS),
-            columns=get_top_items_columns(),
+            columns=self.get_export_columns(get_top_items_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,
@@ -167,10 +167,10 @@ class TopStaffReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = TopStaffReportFilters.from_request(request)
-        rows = list(filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period)))
+        rows = list(filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None)))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_TOP_STAFF),
-            columns=get_top_staff_columns(),
+            columns=self.get_export_columns(get_top_staff_columns()),
             rows=rows,
             filters=self.get_filter_pairs(filters.period, [('search', filters.search)]),
         )
@@ -183,11 +183,11 @@ class PaymentBreakdownExportView(AdminBaseReportView):
     def get(self, request):
         filters = PaymentBreakdownReportFilters.from_request(request)
         rows = localize_payment_breakdown_rows(
-            list(filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period)))
+            list(filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None)))
         )
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_PAYMENT_BREAKDOWN),
-            columns=get_sales_columns(),
+            columns=self.get_export_columns(get_sales_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,
@@ -205,7 +205,7 @@ class ShiftReportExportView(AdminBaseReportView):
         rows = localize_shift_rows(list(filters.apply(get_shift_report_queryset(self.get_restaurant(), filters.period))))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_SHIFTS),
-            columns=get_shift_columns(),
+            columns=self.get_export_columns(get_shift_columns()),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,

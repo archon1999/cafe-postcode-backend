@@ -22,6 +22,12 @@ class AdminBaseReportView(APIView):
         # meaning for an authenticated account whose tenant profile is absent.
         return get_request_restaurant(self.request)
 
+    def get_export_columns(self, columns):
+        if self.get_restaurant() is None:
+            from django.utils.translation import gettext as _
+            return [('restaurant_name', _('Branch')), *columns]
+        return columns
+
     def get_period(self) -> ReportPeriod:
         return SummaryReportFilters.from_request(self.request).period
 

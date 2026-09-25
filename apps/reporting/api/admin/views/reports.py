@@ -43,7 +43,7 @@ class DashboardSummaryView(AdminBaseReportView):
 class SalesReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = SalesReportFilters.from_request(request)
-        queryset = filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period))
+        queryset = filters.apply(get_sales_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -67,7 +67,7 @@ class ReceiptsReportView(AdminPaginatedReportView):
 class TopItemsReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = TopItemsReportFilters.from_request(request)
-        queryset = filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period))
+        queryset = filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -75,7 +75,7 @@ class TopItemsReportView(AdminPaginatedReportView):
 class TopStaffReportView(AdminPaginatedReportView):
     def get(self, request):
         filters = TopStaffReportFilters.from_request(request)
-        queryset = filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period))
+        queryset = filters.apply(get_top_staff_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 
@@ -83,7 +83,7 @@ class TopStaffReportView(AdminPaginatedReportView):
 class PaymentBreakdownView(AdminPaginatedReportView):
     def get(self, request):
         filters = PaymentBreakdownReportFilters.from_request(request)
-        queryset = filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period))
+        queryset = filters.apply(get_payment_breakdown_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None))
         page = self.paginate_queryset(queryset)
         return self.get_paginated_response(list(page))
 

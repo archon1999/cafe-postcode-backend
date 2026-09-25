@@ -26,6 +26,24 @@ from common.utils.date import TASHKENT_TIMEZONE
 
 
 class ReportsApiTests(PosAPITestCase):
+    def test_all_branch_tables_include_branch_names_and_separate_sales(self):
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        for name in ('sales', 'receipts', 'shifts', 'top-items', 'top-staff'):
+            response = self.client.get(f'/api/v1/admin/reporting/{name}/', self.current_range_params())
+            self.assertEqual(response.status_code, 200, name)
+            rows = response.data['data']
+            self.assertTrue(rows, name)
+            self.assertTrue(all(row.get('restaurant_name') for row in rows), name)
+            if name == 'sales':
+                self.assertEqual(len({row['restaurant_id'] for row in rows}), 2)
+                self.assertEqual(len({row['method'] for row in rows}), 1)
+        export = self.client.get('/api/v1/admin/reporting/sales/export/', self.current_range_params())
+        self.assertEqual(export.status_code, 200)
+        values = [cell.value for row in load_workbook(BytesIO(export.content)).active for cell in row]
+        self.assertIn('Other restaurant', values)
+        self.assertIn(self.restaurant.name, values)
+
     def test_excel_export_escapes_formula_prefixes(self):
         payload = ReportExcelExportService().build_table_file(
             title='Security export',
