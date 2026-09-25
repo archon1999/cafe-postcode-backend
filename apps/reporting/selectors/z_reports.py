@@ -12,7 +12,7 @@ def get_z_report_queryset(restaurant, period, params):
         status=FiscalShiftSession.Status.CLOSED,
         closed_at__gte=period.start,
         closed_at__lt=period.end,
-    ).select_related('cash_desk', 'closed_by')
+    ).select_related('cash_desk', 'closed_by', 'restaurant')
     if restaurant is not None:
         queryset = queryset.filter(restaurant=restaurant)
     cash_desk_id = get_str_query_param(params, 'cashDeskId', aliases=('cash_desk_id',))
@@ -64,6 +64,8 @@ def build_z_report_row(session):
 
     return {
         'id': str(session.id),
+        'restaurant_id': str(session.restaurant_id),
+        'restaurant_name': session.restaurant.name,
         'cash_desk_name': session.cash_desk.name if session.cash_desk else '',
         'cashier_name': session.closed_by.full_name if session.closed_by else '',
         'terminal_id': session.terminal_id,

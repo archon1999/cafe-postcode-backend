@@ -166,14 +166,18 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
     }
 
 
-def get_sales_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
+def _branch_values(path, enabled):
+    return {'restaurant_id': F(f'{path}__id'), 'restaurant_name': F(f'{path}__name')} if enabled else {}
+
+
+def get_sales_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
     queryset = Payment.objects.filter(
         status=Payment.Status.SUCCEEDED,
         paid_at__gte=period.start,
         paid_at__lt=period.end,
     )
     queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
-    return queryset.values('method').annotate(count=Count('id'), total=Sum('amount'))
+    return queryset.values('method', **_branch_values('order__restaurant', by_branch)).annotate(count=Count('id'), total=Sum('amount'))
 
 
 def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
@@ -190,17 +194,18 @@ def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySe
         hall_id=F('table_session__hall_id'),
         hall_name=F('table_session__hall__name'),
         table_name=F('table_session__table__name'),
+        restaurant_name=F('restaurant__name'),
     )
 
 
-def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
+def get_top_items_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
     queryset = OrderItem.objects.filter(
         order__status=Order.Status.CLOSED,
         order__closed_at__gte=period.start,
         order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
     queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
-    if restaurant is not None and not hasattr(restaurant, 'pk'):
+    if not by_branch and restaurant is not None and not hasattr(restaurant, 'pk'):
         return queryset.values(
             'sale_unit',
             item_type=F('catalog_item__item_type'),
@@ -219,13 +224,14 @@ def get_top_items_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         catalog_item_name=F('catalog_item__name'),
         category_id=F('catalog_item__category_id'),
         category_name=F('catalog_item__category__name'),
+        **_branch_values('order__restaurant', by_branch),
     ).annotate(
         quantity=Sum('quantity'),
         revenue=Sum('line_total'),
     )
 
 
-def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
+def get_top_staff_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
     queryset = OrderItem.objects.filter(
         order__status=Order.Status.CLOSED,
         order__closed_at__gte=period.start,
@@ -235,6 +241,7 @@ def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     return queryset.values(
         staff_id=F('created_by__id'),
         staff_name=Coalesce(F('created_by__full_name'), Value("Noma'lum")),
+        **_branch_values('order__restaurant', by_branch),
     ).annotate(
         order_count=Count('order_id', distinct=True),
         items_count=Sum('quantity'),
@@ -242,8 +249,8 @@ def get_top_staff_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
     )
 
 
-def get_payment_breakdown_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
-    return get_sales_report_queryset(restaurant, period)
+def get_payment_breakdown_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
+    return get_sales_report_queryset(restaurant, period, by_branch=by_branch)
 
 
 def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
@@ -270,6 +277,7 @@ def get_shift_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         'opened_by_id',
         cashier_name=Coalesce(F('cashier__full_name'), F('opened_by__full_name')),
         cash_desk_name=F('cash_desk__name'),
+        **_branch_values('cash_desk__restaurant', True),
         precheck_count=Count(
             'payments__receipts',
             filter=Q(payments__receipts__kind=Receipt.Kind.PLAIN),
@@ -301,6 +309,7 @@ def get_receipts_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
             Value("Noma'lum"),
         ),
         cash_desk_name=F('payment__cash_desk__name'),
+        **_branch_values('order__restaurant', True),
     )
 
 

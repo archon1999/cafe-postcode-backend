@@ -41,6 +41,7 @@ class ZReportTests(PosAPITestCase):
         self.assertEqual(response.data['count'], 1)
         row = response.data['data'][0]
         self.assertEqual(row['id'], str(self.session.id))
+        self.assertEqual(row['restaurant_name'], self.restaurant.name)
         self.assertEqual(row['sale_total'], 1750.5)
         self.assertEqual(row['refund_total'], 100)
         self.assertIsNone(row['qr_total'])

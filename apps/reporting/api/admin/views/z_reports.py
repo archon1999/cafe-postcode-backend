@@ -21,12 +21,12 @@ class ZReportExportView(AdminPaginatedReportView):
             ('cash_desk_name', _('Cash desk')), ('cashier_name', _('Cashier')),
             ('terminal_id', _('Terminal ID')), ('opened_at', _('Opened at')),
             ('closed_at', _('Closed at')), ('cash_total', _('Cash (UZS)')),
-            ('card_total', _('Card (UZS)')), ('qr_total', _('QR (UZS)')),
+            ('card_total', _('Card (UZS)')),
             ('sale_total', _('Sales (UZS)')), ('refund_total', _('Refunds (UZS)')),
             ('sale_count', _('Sale count')), ('refund_count', _('Refund count')),
         ]
         payload = ReportExcelExportService().build_table_file(
-            title=_('Z reports'), columns=columns,
+            title=_('Z reports'), columns=self.get_export_columns(columns),
             rows=[build_z_report_row(row) for row in queryset],
             filters=self.get_filter_pairs(period),
         )
