@@ -208,6 +208,54 @@ class CashierShiftApiTests(PosAPITestCase):
         self.assertEqual(context_response.data['current_shift']['card_total'], 13000)
         self.assertEqual(context_response.data['current_shift']['expected_closing_cash_amount'], 170000)
 
+    def test_close_shift_persists_negative_cash_expectation_for_prior_shift_refund(self):
+        open_response = self.open_shift_via_api(cash_desk_id=self.cash_desk.id)
+        shift = CashShift.objects.get(pk=open_response['current_shift']['id'])
+        order = Order.objects.create(
+            restaurant=self.restaurant,
+            branch=self.branch,
+            distribution_point=self.takeaway_distribution,
+            opened_by=self.user,
+            cashier=self.user,
+            order_number=79,
+            channel=Order.Channel.TAKEAWAY,
+            status=Order.Status.CLOSED,
+            guest_count=1,
+            total=779000,
+            closed_at=timezone.now(),
+        )
+        payment = Payment.objects.create(
+            order=order,
+            cash_desk=self.cash_desk,
+            received_by=self.user,
+            method=Payment.Method.CASH,
+            amount=779000,
+            status=Payment.Status.SUCCEEDED,
+            register_fiscal=False,
+            paid_at=timezone.now(),
+        )
+        PaymentRefund.objects.create(
+            payment=payment,
+            cash_shift=shift,
+            amount=779000,
+            refunded_by=self.user,
+            status=PaymentRefund.Status.SUCCEEDED,
+            refunded_at=timezone.now(),
+        )
+
+        context_response = self.client.get('/api/v1/pos/billing/context/')
+        self.assertEqual(
+            context_response.data['current_shift']['expected_closing_cash_amount'],
+            -779000,
+        )
+        response = self.close_shift_via_api(actual_closing_cash_amount=0)
+
+        self.assertIsNone(response['current_shift'])
+        shift.refresh_from_db()
+        self.assertEqual(shift.status, CashShift.Status.CLOSED)
+        self.assertEqual(shift.expected_closing_cash_amount, -779000)
+        self.assertEqual(shift.cash_difference_amount, 779000)
+
     def test_original_close_evidence_projects_both_shifts_without_device_rpc(self):
         self.close_evidence = {'ok': True, 'provider': 'fiscal-drive-service', 'response': {'TerminalID': 'LG420'}}
         self.open_shift_via_api(cash_desk_id=self.cash_desk.id, opening_cash_amount=150000)
