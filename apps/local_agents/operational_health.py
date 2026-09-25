@@ -42,7 +42,13 @@ def normalize_health(value, now):
     return {'schemaVersion': 1, 'checkedAt': checked.isoformat(), 'receivedAt': now.isoformat(), 'checks': normalized}
 
 
-def assess_operational_health(value, now, *, fiscal_in_use=True):
+def assess_operational_health(
+    value,
+    now,
+    *,
+    fiscal_attempted_recently=True,
+    cashier_printer_ids=None,
+):
     result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': int(FRESHNESS.total_seconds() // 60)}
     if not isinstance(value, dict) or value.get('schemaVersion') != 1:
         return result
@@ -68,12 +74,19 @@ def assess_operational_health(value, now, *, fiscal_in_use=True):
     result['reasons'] = reasons
 
     def affects_status(check):
-        if fiscal_in_use or check.get('component') != 'fiscal':
-            return True
-        # A configured fiscal device remains visible in diagnostics even before
-        # the restaurant starts fiscalizing sales. Actual fiscal operations and
-        # unresolved financial outcomes always affect the branch status.
-        return str(check.get('resource', '')) in ('local_api', 'unresolved_financial_operations')
+        component = check.get('component')
+        resource = str(check.get('resource', ''))
+        if component == 'fiscal' and not fiscal_attempted_recently:
+            # Device availability remains visible as an advisory. A concrete
+            # financial operation with an unknown outcome must still block a
+            # healthy result until it is reconciled.
+            return resource == 'unresolved_financial_operations'
+        if component == 'printer' and cashier_printer_ids is not None:
+            if resource == 'diagnostics':
+                return bool(cashier_printer_ids)
+            integration_id = resource.removeprefix('probe/')
+            return integration_id in cashier_printer_ids
+        return True
 
     status_checks = [check for check in checks if affects_status(check)]
     status_reasons = [reason for reason in reasons if affects_status(reason)]

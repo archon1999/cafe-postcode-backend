@@ -12,9 +12,10 @@ from rest_framework.test import APITestCase
 from apps.billing.models import Receipt
 from apps.devices.migration_window import legacy_pos_migration_enabled
 from apps.devices.models import Device, DevicePairing, SecurityEvent
+from apps.integrations.models import IntegrationConfig
 from apps.local_agents.models import LocalAgent
 from apps.platform.models import BusinessPartner
-from apps.restaurants.models import Restaurant
+from apps.restaurants.models import CashDesk, Restaurant
 from apps.sales.models import Order
 from apps.telegram_reports.models import TelegramAccount, TelegramBranchSubscription
 from apps.users.models import AuthSession, Role, User
@@ -478,7 +479,7 @@ class MonitoringOverviewApiTests(APITestCase):
         now = timezone.now()
         for name, component, state, expected in (
             ('Zulu Healthy', 'storage', 'ok', 'healthy'),
-            ('Bravo Attention', 'printer', 'error', 'attention'),
+            ('Bravo Attention', 'sync', 'error', 'attention'),
             ('Alpha Critical', 'storage', 'error', 'critical'),
         ):
             restaurant = Restaurant.objects.create(name=name)
@@ -495,7 +496,7 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([b['operationalHealth']['status'] for b in response.data['branches']], ['healthy', 'attention', 'critical', 'unknown'])
 
-    def test_unused_fiscal_failure_stays_visible_without_lowering_branch_health(self):
+    def test_fiscal_failure_only_affects_health_after_a_recent_attempt(self):
         now = timezone.now()
         restaurant = Restaurant.objects.create(name='Plain receipt branch')
         agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
@@ -518,7 +519,68 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(health['reasons'][0]['component'], 'fiscal')
 
         order = Order.objects.create(restaurant=restaurant, order_number=1)
-        Receipt.objects.create(order=order, kind=Receipt.Kind.FISCAL, status=Receipt.Status.FAILED)
+        receipt = Receipt.objects.create(
+            order=order,
+            kind=Receipt.Kind.FISCAL,
+            status=Receipt.Status.FAILED,
+        )
+        Receipt.objects.filter(pk=receipt.pk).update(created_at=now - timedelta(hours=25))
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'healthy')
+
+        Receipt.objects.filter(pk=receipt.pk).update(created_at=now - timedelta(hours=23))
+
+        response = self.client.get(self.endpoint)
+
+        self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'attention')
+
+    def test_non_cashier_printer_failure_stays_visible_without_lowering_health(self):
+        now = timezone.now()
+        restaurant = Restaurant.objects.create(name='Kitchen printer branch')
+        cashier_printer = IntegrationConfig.objects.create(
+            restaurant=restaurant,
+            name='Cashier printer',
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+        )
+        kitchen_printer = IntegrationConfig.objects.create(
+            restaurant=restaurant,
+            name='Kitchen printer',
+            kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+        )
+        CashDesk.objects.create(
+            restaurant=restaurant,
+            name='Main cash desk',
+            printer_integration=cashier_printer,
+        )
+        agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
+        agent.operational_health = {
+            'schemaVersion': 1,
+            'checkedAt': now.isoformat(),
+            'checks': [
+                {'component': 'storage', 'resource': 'local_database', 'state': 'ok', 'consecutiveFailures': 0},
+                {
+                    'component': 'printer',
+                    'resource': f'probe/{kitchen_printer.id}',
+                    'state': 'error',
+                    'consecutiveFailures': 3,
+                },
+            ],
+        }
+        agent.save(update_fields=['operational_health'])
+        self.client.force_authenticate(user=self.superuser)
+
+        response = self.client.get(self.endpoint)
+
+        health = response.data['branches'][0]['operationalHealth']
+        self.assertEqual(health['status'], 'healthy')
+        self.assertEqual(health['reasons'][0]['component'], 'printer')
+
+        agent.operational_health['checks'][1]['resource'] = f'probe/{cashier_printer.id}'
+        agent.save(update_fields=['operational_health'])
 
         response = self.client.get(self.endpoint)
 

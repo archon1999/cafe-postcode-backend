@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, time, timedelta
 
 from django.db.models import Count, Max, Q
@@ -6,12 +7,12 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.billing.models import CashShift, Receipt
+from apps.billing.models import CashShift, Payment, Receipt
 from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
 from apps.local_agents.operational_health import assess_operational_health
 from apps.platform.api.admin.permissions import PlatformAccountPermission
-from apps.restaurants.models import Restaurant
+from apps.restaurants.models import CashDesk, Restaurant
 from apps.sales.models import Order
 from apps.telegram_reports.models import TelegramBranchSubscription
 from common.api.admin_permissions import ADMIN_PERMISSION_CLASSES
@@ -118,12 +119,31 @@ class MonitoringOverviewView(APIView):
             ).order_by("name", "id")
         )
         restaurant_ids = [restaurant.id for restaurant in branches]
-        fiscal_usage_restaurant_ids = set(
+        fiscal_attempt_cutoff = now - timedelta(hours=24)
+        fiscal_attempt_restaurant_ids = set(
             Receipt.objects.filter(
                 order__restaurant_id__in=restaurant_ids,
-                kind=Receipt.Kind.FISCAL,
+                kind__in=(Receipt.Kind.FISCAL, Receipt.Kind.REFUND),
+                created_at__gte=fiscal_attempt_cutoff,
             ).values_list('order__restaurant_id', flat=True).distinct()
         )
+        fiscal_attempt_restaurant_ids.update(
+            Payment.objects.filter(
+                order__restaurant_id__in=restaurant_ids,
+                register_fiscal=True,
+            ).filter(
+                Q(created_at__gte=fiscal_attempt_cutoff)
+                | Q(occurred_at__gte=fiscal_attempt_cutoff)
+                | Q(paid_at__gte=fiscal_attempt_cutoff)
+            ).values_list('order__restaurant_id', flat=True).distinct()
+        )
+        cashier_printer_ids = defaultdict(set)
+        for restaurant_id, integration_id in CashDesk.objects.filter(
+            restaurant_id__in=restaurant_ids,
+            is_active=True,
+            printer_integration__is_enabled=True,
+        ).values_list('restaurant_id', 'printer_integration_id'):
+            cashier_printer_ids[restaurant_id].add(str(integration_id))
         scoped_security_events = SecurityEvent.objects.all()
         scoped_pending_pairings = DevicePairing.objects.all()
         if business_partner_id:
@@ -399,7 +419,10 @@ class MonitoringOverviewView(APIView):
                     "operationalHealth": assess_operational_health(
                         agent.operational_health if agent else None,
                         now,
-                        fiscal_in_use=restaurant.id in fiscal_usage_restaurant_ids,
+                        fiscal_attempted_recently=(
+                            restaurant.id in fiscal_attempt_restaurant_ids
+                        ),
+                        cashier_printer_ids=cashier_printer_ids[restaurant.id],
                     ),
                     "devices": {
                         "active": device_counts.get("active", 0),

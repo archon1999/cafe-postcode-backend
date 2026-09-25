@@ -56,26 +56,53 @@ class OperationalHealthTests(SimpleTestCase):
         checks[2]['consecutiveFailures'] = 3
         self.assertEqual(assess_operational_health(self.report(checks), self.now)['status'], 'attention')
 
-    def test_unused_fiscal_probe_is_an_advisory_but_real_fiscal_operations_still_affect_status(self):
+    def test_inactive_fiscal_probe_is_advisory_but_unresolved_operations_still_affect_status(self):
         checks = [
             {'component': 'storage', 'state': 'ok'},
             {'component': 'fiscal', 'resource': 'probe/fiscal-id', 'state': 'error', 'consecutiveFailures': 3},
         ]
-        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        result = assess_operational_health(
+            self.report(checks), self.now, fiscal_attempted_recently=False
+        )
         self.assertEqual(result['status'], 'healthy')
         self.assertEqual(result['reasons'][0]['component'], 'fiscal')
 
         checks[1]['resource'] = 'unresolved_financial_operations'
-        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        result = assess_operational_health(
+            self.report(checks), self.now, fiscal_attempted_recently=False
+        )
         self.assertEqual(result['status'], 'attention')
 
-    def test_unused_fiscal_unknown_does_not_hide_other_healthy_evidence(self):
+    def test_inactive_fiscal_unknown_does_not_hide_other_healthy_evidence(self):
         checks = [
             {'component': 'storage', 'state': 'ok'},
             {'component': 'fiscal', 'resource': 'diagnostics', 'state': 'unknown'},
         ]
-        result = assess_operational_health(self.report(checks), self.now, fiscal_in_use=False)
+        result = assess_operational_health(
+            self.report(checks), self.now, fiscal_attempted_recently=False
+        )
         self.assertEqual(result['status'], 'healthy')
+
+    def test_non_cashier_printer_failure_is_advisory(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {'component': 'printer', 'resource': 'probe/kitchen-printer', 'state': 'error', 'consecutiveFailures': 3},
+        ]
+        result = assess_operational_health(
+            self.report(checks),
+            self.now,
+            cashier_printer_ids={'cashier-printer'},
+        )
+        self.assertEqual(result['status'], 'healthy')
+        self.assertEqual(result['reasons'][0]['resource'], 'probe/kitchen-printer')
+
+        checks[1]['resource'] = 'probe/cashier-printer'
+        result = assess_operational_health(
+            self.report(checks),
+            self.now,
+            cashier_printer_ids={'cashier-printer'},
+        )
+        self.assertEqual(result['status'], 'attention')
 
     def test_unknown_runtime_is_not_healthy_and_invalid_reports_are_ignored(self):
         self.assertEqual(assess_operational_health(self.report([{'component': 'storage', 'state': 'ok'}, {'component': 'runtime', 'state': 'unknown'}]), self.now)['status'], 'unknown')
