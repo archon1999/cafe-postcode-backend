@@ -19,7 +19,11 @@ from apps.reporting.api.admin.views.reports import (
     TopStaffReportView,
 )
 
+from apps.reporting.api.admin.views.z_reports import ZReportView, ZReportExportView
+
 urlpatterns = [
+    path('z-reports/', ZReportView.as_view()),
+    path('z-reports/export/', ZReportExportView.as_view()),
     path('summary/', DashboardSummaryView.as_view()),
     path('summary/export/', SummaryReportExportView.as_view()),
     path('sales/', SalesReportView.as_view()),
