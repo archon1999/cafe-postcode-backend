@@ -42,7 +42,7 @@ def normalize_health(value, now):
     return {'schemaVersion': 1, 'checkedAt': checked.isoformat(), 'receivedAt': now.isoformat(), 'checks': normalized}
 
 
-def assess_operational_health(value, now):
+def assess_operational_health(value, now, *, fiscal_in_use=True):
     result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': int(FRESHNESS.total_seconds() // 60)}
     if not isinstance(value, dict) or value.get('schemaVersion') != 1:
         return result
@@ -65,9 +65,20 @@ def assess_operational_health(value, now):
     reasons = [c for c in checks if c.get('state') == 'error' and (
         c.get('consecutiveFailures', 0) >= 3 or (c.get('confirmed') and c.get('component') in ('storage', 'runtime'))
     )]
-    if reasons:
-        result['status'] = 'critical' if any(c['component'] in CRITICAL for c in reasons) else 'attention'
-        result['reasons'] = reasons
-    elif any(c.get('component') == 'storage' and c.get('state') == 'ok' for c in checks) and not any(c.get('state') == 'unknown' for c in checks):
+    result['reasons'] = reasons
+
+    def affects_status(check):
+        if fiscal_in_use or check.get('component') != 'fiscal':
+            return True
+        # A configured fiscal device remains visible in diagnostics even before
+        # the restaurant starts fiscalizing sales. Actual fiscal operations and
+        # unresolved financial outcomes always affect the branch status.
+        return str(check.get('resource', '')) in ('local_api', 'unresolved_financial_operations')
+
+    status_checks = [check for check in checks if affects_status(check)]
+    status_reasons = [reason for reason in reasons if affects_status(reason)]
+    if status_reasons:
+        result['status'] = 'critical' if any(c['component'] in CRITICAL for c in status_reasons) else 'attention'
+    elif any(c.get('component') == 'storage' and c.get('state') == 'ok' for c in status_checks) and not any(c.get('state') == 'unknown' for c in status_checks):
         result['status'] = 'healthy'
     return result

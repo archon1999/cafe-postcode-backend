@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.billing.models import CashShift
+from apps.billing.models import CashShift, Receipt
 from apps.devices.models import Device, DevicePairing, SecurityEvent
 from apps.local_agents.models import LocalAgent
 from apps.local_agents.operational_health import assess_operational_health
@@ -118,6 +118,12 @@ class MonitoringOverviewView(APIView):
             ).order_by("name", "id")
         )
         restaurant_ids = [restaurant.id for restaurant in branches]
+        fiscal_usage_restaurant_ids = set(
+            Receipt.objects.filter(
+                order__restaurant_id__in=restaurant_ids,
+                kind=Receipt.Kind.FISCAL,
+            ).values_list('order__restaurant_id', flat=True).distinct()
+        )
         scoped_security_events = SecurityEvent.objects.all()
         scoped_pending_pairings = DevicePairing.objects.all()
         if business_partner_id:
@@ -390,7 +396,11 @@ class MonitoringOverviewView(APIView):
                         "orders_last_7_days", 0
                     ),
                     "agent": agent_payload,
-                    "operationalHealth": assess_operational_health(agent.operational_health if agent else None, now),
+                    "operationalHealth": assess_operational_health(
+                        agent.operational_health if agent else None,
+                        now,
+                        fiscal_in_use=restaurant.id in fiscal_usage_restaurant_ids,
+                    ),
                     "devices": {
                         "active": device_counts.get("active", 0),
                         "online": device_counts.get("online", 0),
