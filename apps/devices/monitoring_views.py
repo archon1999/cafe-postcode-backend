@@ -137,7 +137,14 @@ class MonitoringOverviewView(APIView):
                 | Q(paid_at__gte=fiscal_attempt_cutoff)
             ).values_list('order__restaurant_id', flat=True).distinct()
         )
+        cashier_fiscal_ids = defaultdict(set)
         cashier_printer_ids = defaultdict(set)
+        for restaurant_id, integration_id in CashDesk.objects.filter(
+            restaurant_id__in=restaurant_ids,
+            is_active=True,
+            fiscal_integration__is_enabled=True,
+        ).values_list('restaurant_id', 'fiscal_integration_id'):
+            cashier_fiscal_ids[restaurant_id].add(str(integration_id))
         for restaurant_id, integration_id in CashDesk.objects.filter(
             restaurant_id__in=restaurant_ids,
             is_active=True,
@@ -422,6 +429,7 @@ class MonitoringOverviewView(APIView):
                         fiscal_attempted_recently=(
                             restaurant.id in fiscal_attempt_restaurant_ids
                         ),
+                        cashier_fiscal_ids=cashier_fiscal_ids[restaurant.id],
                         cashier_printer_ids=cashier_printer_ids[restaurant.id],
                     ),
                     "devices": {

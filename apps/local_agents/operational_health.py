@@ -47,6 +47,7 @@ def assess_operational_health(
     now,
     *,
     fiscal_attempted_recently=True,
+    cashier_fiscal_ids=None,
     cashier_printer_ids=None,
 ):
     result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': int(FRESHNESS.total_seconds() // 60)}
@@ -76,11 +77,22 @@ def assess_operational_health(
     def affects_status(check):
         component = check.get('component')
         resource = str(check.get('resource', ''))
-        if component == 'fiscal' and not fiscal_attempted_recently:
+        if component == 'fiscal':
             # Device availability remains visible as an advisory. A concrete
             # financial operation with an unknown outcome must still block a
             # healthy result until it is reconciled.
-            return resource == 'unresolved_financial_operations'
+            if resource == 'unresolved_financial_operations':
+                return True
+            if cashier_fiscal_ids is not None:
+                if resource == 'diagnostics':
+                    if not cashier_fiscal_ids:
+                        return False
+                elif resource.startswith('probe/'):
+                    integration_id = resource.removeprefix('probe/')
+                    if integration_id not in cashier_fiscal_ids:
+                        return False
+            if not fiscal_attempted_recently:
+                return False
         if component == 'printer' and cashier_printer_ids is not None:
             if resource == 'diagnostics':
                 return bool(cashier_printer_ids)
