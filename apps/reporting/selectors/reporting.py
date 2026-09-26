@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from datetime import date as date_cls, datetime
+from datetime import date as date_cls, datetime, timedelta
 
 from django.db.models import Count, F, Q, QuerySet, Sum, UUIDField, Value
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate, TruncMonth, TruncWeek
 from django.utils.dateparse import parse_date
 
 from apps.billing.helpers import (
@@ -13,7 +13,13 @@ from apps.billing.helpers import (
 )
 from apps.sales.helpers import get_order_item_model, get_order_model
 from common.api.query_params import get_str_query_param
-from common.utils.date import tashkent_day_bounds, tashkent_month_bounds, tashkent_now, tashkent_year_bounds
+from common.utils.date import (
+    TASHKENT_TIMEZONE,
+    tashkent_day_bounds,
+    tashkent_month_bounds,
+    tashkent_now,
+    tashkent_year_bounds,
+)
 
 CashShift = get_cash_shift_model()
 Order = get_order_model()
@@ -163,6 +169,92 @@ def build_summary_payload(restaurant, period: ReportPeriod) -> dict:
         'average_check': average_check,
         'prechecks_count': receipt_counts['prechecks_count'],
         'receipts_count': receipt_counts['receipts_count'],
+    }
+
+
+def build_summary_charts_payload(restaurant, period: ReportPeriod) -> dict:
+    """Chart aggregates for the admin summary, using the same period and tenant scope."""
+    start_date = period.start.astimezone(TASHKENT_TIMEZONE).date()
+    end_date = (period.end - timedelta(microseconds=1)).astimezone(TASHKENT_TIMEZONE).date()
+    day_count = (end_date - start_date).days + 1
+    granularity = 'day' if day_count <= 31 else 'week' if day_count <= 180 else 'month'
+    truncation = {
+        'day': TruncDate,
+        'week': TruncWeek,
+        'month': TruncMonth,
+    }[granularity]
+
+    payments = apply_restaurant_scope(
+        Payment.objects.filter(
+            status=Payment.Status.SUCCEEDED,
+            paid_at__gte=period.start,
+            paid_at__lt=period.end,
+        ),
+        'order__restaurant',
+        restaurant,
+    )
+    refunds = apply_restaurant_scope(
+        PaymentRefund.objects.filter(
+            status=PaymentRefund.Status.SUCCEEDED,
+            refunded_at__gte=period.start,
+            refunded_at__lt=period.end,
+        ),
+        'payment__order__restaurant',
+        restaurant,
+    )
+
+    def totals_by_bucket(queryset, timestamp_field):
+        rows = queryset.annotate(
+            bucket=truncation(timestamp_field, tzinfo=TASHKENT_TIMEZONE)
+        ).values('bucket').annotate(total=Sum('amount'))
+        return {
+            (row['bucket'].date() if isinstance(row['bucket'], datetime) else row['bucket']): int(row['total'] or 0)
+            for row in rows
+        }
+
+    gross_by_bucket = totals_by_bucket(payments, 'paid_at')
+    refunds_by_bucket = totals_by_bucket(refunds, 'refunded_at')
+    bucket = (
+        start_date
+        if granularity == 'day'
+        else start_date - timedelta(days=start_date.weekday())
+        if granularity == 'week'
+        else start_date.replace(day=1)
+    )
+    trend = []
+    while bucket <= end_date:
+        gross = gross_by_bucket.get(bucket, 0)
+        refunded = refunds_by_bucket.get(bucket, 0)
+        trend.append({
+            'date': bucket.isoformat(),
+            'gross_sales_total': gross,
+            'refunds_total': refunded,
+            'sales_total': gross - refunded,
+        })
+        if granularity == 'day':
+            bucket += timedelta(days=1)
+        elif granularity == 'week':
+            bucket += timedelta(days=7)
+        else:
+            bucket = date_cls(bucket.year + (bucket.month == 12), bucket.month % 12 + 1, 1)
+
+    payment_breakdown = [
+        {'method': row['method'], 'total': int(row['total'] or 0), 'count': row['count']}
+        for row in payments.values('method').annotate(total=Sum('amount'), count=Count('id')).order_by('-total')
+    ]
+    top_items = [
+        {
+            'name': row['catalog_item_name'] or "Noma'lum",
+            'revenue': int(row['revenue'] or 0),
+        }
+        for row in get_top_items_report_queryset(restaurant, period)
+        .order_by('-revenue', 'catalog_item_name')[:5]
+    ]
+    return {
+        'sales_trend_granularity': granularity,
+        'sales_trend': trend,
+        'payment_breakdown': payment_breakdown,
+        'top_items': top_items,
     }
 
 

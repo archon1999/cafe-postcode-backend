@@ -262,6 +262,70 @@ class ReportsApiTests(PosAPITestCase):
         self.assertNotIn('open_checks', response.data)
         self.assertNotIn('active_tables', response.data)
 
+    def test_summary_charts_follow_range_and_branch_scope(self):
+        previous_date = self.report_date - timedelta(days=1)
+        Payment.objects.create(
+            order=self.closed_order,
+            received_by=self.user,
+            method=Payment.Method.CARD,
+            amount=7000,
+            status=Payment.Status.SUCCEEDED,
+            paid_at=datetime(previous_date.year, previous_date.month, previous_date.day, 12, tzinfo=TASHKENT_TIMEZONE),
+        )
+        PaymentRefund.objects.create(
+            payment=self.shift_payment,
+            amount=5000,
+            refunded_by=self.user,
+            status=PaymentRefund.Status.SUCCEEDED,
+            refunded_at=timezone.now(),
+        )
+
+        response = self.client.get('/api/v1/admin/reporting/summary/', {
+            'start_date': previous_date.isoformat(),
+            'end_date': self.report_date.isoformat(),
+        })
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['sales_trend_granularity'], 'day')
+        self.assertEqual(response.data['sales_trend'], [
+            {
+                'date': previous_date.isoformat(),
+                'gross_sales_total': 7000,
+                'refunds_total': 0,
+                'sales_total': 7000,
+            },
+            {
+                'date': self.report_date.isoformat(),
+                'gross_sales_total': self.closed_order.total,
+                'refunds_total': 5000,
+                'sales_total': self.closed_order.total - 5000,
+            },
+        ])
+        self.assertEqual(
+            {row['method']: row['total'] for row in response.data['payment_breakdown']},
+            {Payment.Method.CASH: self.closed_order.total, Payment.Method.CARD: 7000},
+        )
+        self.assertEqual(response.data['top_items'][0]['revenue'], self.closed_order.subtotal)
+
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        all_branch_response = self.client.get('/api/v1/admin/reporting/summary/', self.current_range_params())
+        self.assertGreater(all_branch_response.data['sales_trend'][0]['gross_sales_total'], self.closed_order.total)
+
+    def test_summary_trend_groups_long_ranges_without_losing_sales(self):
+        for days, expected_granularity in ((45, 'week'), (210, 'month')):
+            with self.subTest(granularity=expected_granularity):
+                response = self.client.get('/api/v1/admin/reporting/summary/', {
+                    'start_date': (self.report_date - timedelta(days=days)).isoformat(),
+                    'end_date': self.report_date.isoformat(),
+                })
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(response.data['sales_trend_granularity'], expected_granularity)
+                self.assertEqual(
+                    sum(row['gross_sales_total'] for row in response.data['sales_trend']),
+                    self.closed_order.total,
+                )
+
     def test_open_checks_report_returns_current_branch_rows(self):
         response = self.client.get('/api/v1/admin/reporting/open-checks/', self.current_range_params())
 

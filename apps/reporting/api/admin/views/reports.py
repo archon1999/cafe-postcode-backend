@@ -11,6 +11,7 @@ from apps.reporting.helpers import (
     TopStaffReportFilters,
 )
 from apps.reporting.services import (
+    build_summary_charts_payload,
     build_summary_payload,
     get_open_checks_report_queryset,
     get_payment_breakdown_report_queryset,
@@ -37,7 +38,11 @@ from .report_exports import (
 class DashboardSummaryView(AdminBaseReportView):
     def get(self, request):
         filters = SummaryReportFilters.from_request(request)
-        return Response(build_summary_payload(self.get_restaurant(), filters.period))
+        restaurant = self.get_restaurant()
+        return Response({
+            **build_summary_payload(restaurant, filters.period),
+            **build_summary_charts_payload(restaurant, filters.period),
+        })
 
 
 class SalesReportView(AdminPaginatedReportView):
