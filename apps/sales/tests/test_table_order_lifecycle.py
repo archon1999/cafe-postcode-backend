@@ -95,7 +95,7 @@ class TableOrderLifecycleTests(PosAPITestCase):
         self.assertEqual(session.status, TableSession.Status.CLOSED)
         self.assertEqual(session.closed_at, cancelled.closed_at)
 
-    def test_removing_last_draft_item_keeps_the_sitting_open(self):
+    def test_removing_last_draft_item_closes_the_sitting_and_releases_table(self):
         session = self.create_table_session()
         order = self.create_order_via_api({'table_session': str(session.pk)})
         item = self.add_item_via_api(order['id'])
@@ -103,9 +103,12 @@ class TableOrderLifecycleTests(PosAPITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(Order.objects.filter(pk=order['id']).exists())
         session.refresh_from_db()
-        self.assertEqual(session.status, TableSession.Status.OPEN)
-        self.assertIsNone(session.closed_at)
-        self.create_order_via_api({'table_session': str(session.pk)})
+        self.table.refresh_from_db()
+        self.assertEqual(session.status, TableSession.Status.CLOSED)
+        self.assertIsNotNone(session.closed_at)
+        self.assertEqual(self.table.status, DiningTable.Status.AVAILABLE)
+        rejected = self.client.post('/api/v1/pos/sales/orders/', {'table_session': str(session.pk)}, format='json')
+        self.assertEqual(rejected.status_code, 400, rejected.data)
 
     def test_merged_session_and_existing_active_order_are_rejected(self):
         session = self.create_table_session(status=TableSession.Status.MERGED)

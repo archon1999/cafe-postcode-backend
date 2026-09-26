@@ -315,6 +315,7 @@ class OrderStateService:
             raise ValidationError({'code': 'PAID_ORDER_REQUIRES_REFUND', 'detail': _('A paid order cannot be discarded.')})
 
         if order.status == Order.Status.OPEN and not order.payments.exists():
+            table_session = order.table_session
             locked_restaurant = Restaurant.objects.select_for_update().get(pk=order.restaurant_id)
             if locked_restaurant.last_order_number == order.order_number:
                 previous_number = (
@@ -342,8 +343,14 @@ class OrderStateService:
                 if shift is not None:
                     shift.next_order_number = max(shift.next_order_number - 1, 0)
                     shift.save(update_fields=['next_order_number', 'updated_at'])
-
             order.delete()
+            if table_session is not None and not table_session.orders.filter(
+                status__in=self.MUTABLE_ORDER_STATUSES,
+            ).exists():
+                table_session.status = TableSession.Status.CLOSED
+                table_session.closed_at = timezone.now()
+                table_session.save(update_fields=['status', 'closed_at', 'updated_at'])
+                sync_table_status(table_session.table)
             return True
 
         order.status = Order.Status.CANCELLED
