@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils.translation import gettext_lazy as _
@@ -15,6 +15,7 @@ from common.sale_units import sale_quantity_step, sale_unit_rule, valid_sale_qua
 from .order_item_modifier import OrderItemModifierSerializer, SelectedModifierGroupSerializer
 
 OrderItem = get_order_item_model()
+MAX_LINE_TOTAL = 2_147_483_647  # PostgreSQL integer backing OrderItem.line_total.
 
 
 class QuantityDecimalField(serializers.DecimalField):
@@ -174,6 +175,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'catalog_item': _('Marked products require whole-piece sale units.')})
         if self.instance is not None:
             self.validate_update_constraints(instance=self.instance, attrs=attrs)
+            if 'quantity' in attrs:
+                self._validate_line_total(quantity, self.instance.unit_price)
             return attrs
 
         errors = {}
@@ -237,8 +240,17 @@ class OrderItemSerializer(serializers.ModelSerializer):
                     {'selected_modifiers': _('%(group)s contains an unavailable option.') % {'group': group.name}}
                 )
             resolved.extend((assignment, active_options[option_id]) for option_id in option_ids)
+        base_unit_price = int(manual_price) if item_type == CatalogItem.ItemType.SERVICE else int(catalog_item.price or 0)
+        unit_price = base_unit_price + sum(int(option.price_delta or 0) for _, option in resolved)
+        self._validate_line_total(quantity, unit_price)
         attrs['_resolved_modifiers'] = resolved
         return attrs
+
+    @staticmethod
+    def _validate_line_total(quantity, unit_price):
+        total = (Decimal(quantity) * Decimal(unit_price)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)
+        if total > MAX_LINE_TOTAL:
+            raise serializers.ValidationError({'quantity': _('Line total exceeds the supported amount.')})
 
     def validate_update_constraints(self, *, instance, attrs):
         errors = {

@@ -1,5 +1,6 @@
 from rest_framework import status
 
+from apps.catalog.models import CatalogItem
 from apps.sales.models import Order, OrderItem
 from apps.sales.tests.support.pos_api import PosAPITestCase
 
@@ -90,6 +91,42 @@ class OrderItemNoteFlowApiTests(PosAPITestCase):
             [(item['quantity'], item['note']) for item in snapshot['items']],
             [(2, 'Ko‘proq pishloq'), (1, 'Piyozsiz')],
         )
+
+    def test_bulk_rejects_overflowing_line_without_saving_other_items(self):
+        order_id = self.create_takeaway_order()
+        self.catalog_item.price = 150000
+        self.catalog_item.sale_unit = CatalogItem.SaleUnit.KILOGRAM
+        self.catalog_item.save(update_fields=['price', 'sale_unit'])
+
+        response = self.client.post(
+            f'/api/v1/pos/sales/orders/{order_id}/items/bulk/',
+            {'items': [
+                {'catalog_item': str(self.catalog_item.id), 'quantity': '1.000'},
+                {'catalog_item': str(self.catalog_item.id), 'quantity': '150000.000'},
+            ]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn('quantity', response.data['items'][1])
+        self.assertFalse(OrderItem.objects.filter(order_id=order_id).exists())
+
+    def test_quantity_update_rejects_overflowing_line(self):
+        order_id = self.create_takeaway_order()
+        self.catalog_item.price = 150000
+        self.catalog_item.sale_unit = CatalogItem.SaleUnit.KILOGRAM
+        self.catalog_item.save(update_fields=['price', 'sale_unit'])
+        item = self.add_item_via_api(order_id)
+
+        response = self.client.patch(
+            f"/api/v1/pos/sales/orders/items/{item['id']}/",
+            {'quantity': '150000.000'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn('quantity', response.data)
+        self.assertEqual(OrderItem.objects.get(pk=item['id']).quantity, 1)
 
     def test_dispatched_item_note_remains_immutable_and_print_snapshot_keeps_it(self):
         order_id = self.create_takeaway_order(order_note='Umumiy izoh')
