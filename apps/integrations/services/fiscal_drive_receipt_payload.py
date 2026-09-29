@@ -38,6 +38,7 @@ class FiscalDriveReceiptPayloadMixin:
             'Operation': 0,
             'ReceivedCash': received_cash,
             'ReceivedCard': received_card,
+            'PaymentType': self._payment_type(received_cash, received_card, payment.method),
             'Items': items,
         }
         location = self._location_payload()
@@ -47,6 +48,14 @@ class FiscalDriveReceiptPayloadMixin:
         if extra_info:
             payload['ExtraInfo'] = extra_info
         return payload
+
+    @staticmethod
+    def _payment_type(cash: int, card: int, method: str) -> int:
+        if cash > 0 and card > 0:
+            return 4
+        if card > 0:
+            return 3 if method == 'qr' else 2
+        return 1
 
     def _build_sale_items(self, *, order) -> list[dict]:
         items = []
