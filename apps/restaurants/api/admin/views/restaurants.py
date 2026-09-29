@@ -21,10 +21,16 @@ from apps.restaurants.selectors.restaurants import (
     with_restaurant_list_annotations,
 )
 from common.api.admin_permissions import AdminPermissionRequiredMixin
+from common.api.paginations import Pagination
+
+
+class RestaurantListPagination(Pagination):
+    max_page_size = 500
 
 
 class RestaurantListCreateView(NonRestaurantPermissionRequiredMixin, generics.ListCreateAPIView):
     serializer_class = RestaurantSerializer
+    pagination_class = RestaurantListPagination
 
     def get_serializer_class(self):
         if self.request.method == 'GET':

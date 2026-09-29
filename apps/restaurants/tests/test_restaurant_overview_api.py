@@ -268,6 +268,32 @@ class RestaurantOverviewApiTests(APITestCase):
         self.assertEqual(branch_row['parentName'], self.root.name)
         self.assertNotIn(str(self.malformed_foreign_branch.id), rows_by_id)
 
+    def test_list_accepts_page_size_500_without_truncating_at_100(self):
+        Restaurant.objects.bulk_create(
+            Restaurant(
+                business_partner=self.partner,
+                name=f'Additional restaurant {index:03d}',
+            )
+            for index in range(101)
+        )
+
+        response = self.client.get(
+            '/api/v1/admin/restaurants/',
+            {'page': 1, 'pageSize': 500},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['pageSize'], 500)
+        self.assertEqual(response.data['count'], 106)
+        self.assertEqual(len(response.data['data']), 106)
+
+        capped_response = self.client.get(
+            '/api/v1/admin/restaurants/',
+            {'page': 1, 'pageSize': 501},
+        )
+        self.assertEqual(capped_response.status_code, status.HTTP_200_OK, capped_response.data)
+        self.assertEqual(capped_response.data['pageSize'], 500)
+
     def test_search_branch_type_and_metric_ordering(self):
         cases = (
             ({'search': self.root.tax_number}, {str(self.root.id)}),
