@@ -1,7 +1,7 @@
 from django.utils.translation import gettext as _
 
 from apps.reporting.helpers import build_excel_attachment
-from apps.reporting.selectors.z_reports import build_z_report_row, get_z_report_queryset
+from apps.reporting.selectors.z_reports import build_z_report_row, get_z_report_queryset, get_z_report_totals
 from apps.reporting.services import ReportExcelExportService
 
 from .report_base import AdminPaginatedReportView
@@ -10,7 +10,10 @@ from .report_base import AdminPaginatedReportView
 class ZReportView(AdminPaginatedReportView):
     def get(self, request):
         queryset = get_z_report_queryset(self.get_restaurant(), self.get_period(), request.query_params)
-        return self.get_paginated_response([build_z_report_row(row) for row in self.paginate_queryset(queryset)])
+        totals = get_z_report_totals(queryset)
+        return self.get_paginated_response(
+            [build_z_report_row(row) for row in self.paginate_queryset(queryset)], totals=totals,
+        )
 
 
 class ZReportExportView(AdminPaginatedReportView):

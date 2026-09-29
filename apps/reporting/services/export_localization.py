@@ -137,6 +137,14 @@ def get_shift_columns() -> list[tuple[str, str]]:
     ]
 
 
+def get_top_categories_columns() -> list[tuple[str, str]]:
+    return [
+        ('category_name', _('Category')),
+        ('item_count', _('Items')),
+        ('revenue', _('Revenue')),
+    ]
+
+
 def get_receipts_columns() -> list[tuple[str, str]]:
     return [
         ('order_number', _('Order')),

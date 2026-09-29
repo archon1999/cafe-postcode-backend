@@ -208,6 +208,44 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['method'], Payment.Method.CASH)
         self.assertEqual(rows[0]['total'], self.closed_order.total)
 
+    def test_table_totals_cover_all_filtered_rows_across_pages(self):
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        params = {**self.current_range_params(), 'page_size': 1}
+        response = self.client.get('/api/v1/admin/reporting/sales/', params)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['total'], 2)
+        self.assertEqual(response.data['totals'], {
+            'count': 2,
+            'total': self.closed_order.total + 50000,
+        })
+
+        filtered = self.client.get('/api/v1/admin/reporting/sales/', {
+            **params, 'payment_method': Payment.Method.CARD,
+        })
+        self.assertEqual(filtered.data['total'], 0)
+        self.assertEqual(filtered.data['totals'], {'count': 0, 'total': 0})
+
+    def test_category_view_groups_items_and_matches_excel_export(self):
+        params = {**self.current_range_params(), 'group_by': 'category'}
+        response = self.client.get('/api/v1/admin/reporting/top-items/', params)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['total'], 1)
+        self.assertEqual(response.data['data'][0]['category_name'], self.catalog_item.category.name)
+        self.assertEqual(response.data['data'][0]['item_count'], 1)
+        self.assertEqual(response.data['totals'], {
+            'item_count': 1, 'revenue': self.closed_order.subtotal,
+        })
+
+        export = self.client.get('/api/v1/admin/reporting/top-items/export/', params)
+        self.assertEqual(export.status_code, 200)
+        values = [cell.value for row in load_workbook(BytesIO(export.content)).active for cell in row]
+        self.assertIn(self.catalog_item.category.name, values)
+        self.assertIn(_('Items'), values)
+
     def test_sales_report_uses_tashkent_midnight_boundary(self):
         report_date = datetime(2031, 1, 15, tzinfo=TASHKENT_TIMEZONE)
         Payment.objects.create(
@@ -424,6 +462,8 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(rows[0]['sale_unit'], 'piece')
         self.assertEqual(rows[0]['item_type'], 'product')
         self.assertEqual(rows[0]['revenue'], self.closed_order.subtotal)
+        self.assertEqual(response.data['totals']['quantity_by_unit']['piece'], 1)
+        self.assertEqual(response.data['totals']['revenue'], self.closed_order.subtotal)
 
     def test_top_staff_report_labels_unknown_item_creator(self):
         unknown_order = Order.objects.create(

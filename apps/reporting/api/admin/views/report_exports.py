@@ -34,6 +34,7 @@ from apps.reporting.services import (
     get_shift_columns,
     get_shift_report_queryset,
     get_summary_metrics,
+    get_top_categories_columns,
     get_top_items_columns,
     get_top_items_report_queryset,
     get_top_staff_columns,
@@ -146,10 +147,15 @@ class TopItemsReportExportView(AdminBaseReportView):
 
     def get(self, request):
         filters = TopItemsReportFilters.from_request(request)
-        rows = list(filters.apply(get_top_items_report_queryset(self.get_restaurant(), filters.period, by_branch=self.get_restaurant() is None)))
+        rows = list(filters.apply(get_top_items_report_queryset(
+            self.get_restaurant(), filters.period,
+            by_branch=self.get_restaurant() is None, group_by=filters.group_by,
+        )))
         payload = self.export_service_class().build_table_file(
             title=get_report_title(REPORT_TITLE_TOP_ITEMS),
-            columns=self.get_export_columns(get_top_items_columns()),
+            columns=self.get_export_columns(
+                get_top_categories_columns() if filters.group_by == 'category' else get_top_items_columns()
+            ),
             rows=rows,
             filters=self.get_filter_pairs(
                 filters.period,

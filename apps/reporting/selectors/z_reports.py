@@ -79,3 +79,19 @@ def build_z_report_row(session):
         'sale_count': report.get('TotalSaleCount'),
         'refund_count': report.get('TotalRefundCount'),
     }
+
+
+def get_z_report_totals(queryset):
+    fields = ('sale_total', 'cash_total', 'card_total', 'refund_total', 'sale_count', 'refund_count')
+    totals = {field: Decimal('0') for field in fields}
+    present = {field: False for field in fields}
+    for session in queryset.iterator():
+        row = build_z_report_row(session)
+        for field in fields:
+            if row[field] is not None:
+                totals[field] += Decimal(str(row[field]))
+                present[field] = True
+    return {
+        field: (float(totals[field]) if field.endswith('_total') else int(totals[field])) if present[field] else None
+        for field in fields
+    }

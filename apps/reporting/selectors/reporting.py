@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import date as date_cls, datetime, timedelta
+from decimal import Decimal
 
 from django.db.models import Count, F, Q, QuerySet, Sum, UUIDField, Value
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth, TruncWeek
@@ -262,6 +263,27 @@ def _branch_values(path, enabled):
     return {'restaurant_id': F(f'{path}__id'), 'restaurant_name': F(f'{path}__name')} if enabled else {}
 
 
+def get_report_totals(queryset: QuerySet, *fields: str) -> dict:
+    """Sum numeric report columns across every filtered row, before pagination."""
+    values = queryset.order_by().aggregate(**{f'sum_{field}': Sum(field) for field in fields})
+    return {
+        field: float(value) if isinstance(value := values[f'sum_{field}'] or 0, Decimal) else value
+        for field in fields
+    }
+
+
+def get_top_items_report_totals(queryset: QuerySet, *, group_by='item') -> dict:
+    if group_by == 'category':
+        return get_report_totals(queryset, 'item_count', 'revenue')
+
+    totals = get_report_totals(queryset, 'revenue')
+    quantity_by_unit = {}
+    for sale_unit, quantity in queryset.values_list('sale_unit', 'quantity').iterator():
+        quantity_by_unit[sale_unit] = quantity_by_unit.get(sale_unit, 0) + quantity
+    totals['quantity_by_unit'] = {unit: float(quantity) for unit, quantity in quantity_by_unit.items()}
+    return totals
+
+
 def get_sales_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
     queryset = Payment.objects.filter(
         status=Payment.Status.SUCCEEDED,
@@ -290,13 +312,22 @@ def get_open_checks_report_queryset(restaurant, period: ReportPeriod) -> QuerySe
     )
 
 
-def get_top_items_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False) -> QuerySet:
+def get_top_items_report_queryset(restaurant, period: ReportPeriod, *, by_branch=False, group_by='item') -> QuerySet:
     queryset = OrderItem.objects.filter(
         order__status=Order.Status.CLOSED,
         order__closed_at__gte=period.start,
         order__closed_at__lt=period.end,
     ).exclude(status=OrderItem.Status.CANCELLED)
     queryset = apply_restaurant_scope(queryset, 'order__restaurant', restaurant)
+    if group_by == 'category':
+        return queryset.values(
+            category_id=F('catalog_item__category_id'),
+            category_name=F('catalog_item__category__name'),
+            **_branch_values('order__restaurant', by_branch),
+        ).annotate(
+            item_count=Count('catalog_item_id', distinct=True),
+            revenue=Sum('line_total'),
+        )
     if not by_branch and restaurant is not None and not hasattr(restaurant, 'pk'):
         return queryset.values(
             'sale_unit',

@@ -25,6 +25,7 @@ TOP_ITEMS_ORDERING_FIELDS = {
     'categoryName': ('category_name', 'catalog_item_name'),
     'quantity': 'quantity',
     'revenue': 'revenue',
+    'itemCount': 'item_count',
 }
 TOP_STAFF_ORDERING_FIELDS = {
     'staffName': ('staff_name', 'total_sales'),
@@ -201,6 +202,7 @@ class TopItemsReportFilters:
     period: ReportPeriod
     search: str = ''
     category_id: str = ''
+    group_by: str = 'item'
     ordering: tuple[str, ...] = ()
 
     @classmethod
@@ -210,17 +212,22 @@ class TopItemsReportFilters:
             period=get_report_period(query_params),
             search=get_str_query_param(query_params, 'search'),
             category_id=get_str_query_param(query_params, 'category_id', aliases=('categoryId',)),
+            group_by=get_choice_query_param(query_params, 'group_by', {'item', 'category'}, alias='groupBy') or 'item',
             ordering=get_ordering_query_param(query_params, TOP_ITEMS_ORDERING_FIELDS),
         )
 
     def apply(self, queryset: QuerySet) -> QuerySet:
         if self.search:
-            queryset = queryset.filter(
-                Q(catalog_item_name__icontains=self.search) | Q(category_name__icontains=self.search)
-            )
+            search_query = Q(category_name__icontains=self.search)
+            if self.group_by == 'item':
+                search_query |= Q(catalog_item_name__icontains=self.search)
+            queryset = queryset.filter(search_query)
         if self.category_id:
             queryset = queryset.filter(category_id=self.category_id)
-        return apply_ordering(queryset, self.ordering, default_ordering=('-quantity', '-revenue'))
+        default_ordering = ('-revenue', 'category_name') if self.group_by == 'category' else ('-quantity', '-revenue')
+        excluded_fields = {'quantity', 'catalog_item_name'} if self.group_by == 'category' else {'item_count'}
+        ordering = tuple(field for field in self.ordering if field.lstrip('-') not in excluded_fields)
+        return apply_ordering(queryset, ordering, default_ordering=default_ordering)
 
 
 @dataclass(frozen=True)

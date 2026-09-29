@@ -64,5 +64,8 @@ class AdminPaginatedReportView(AdminBaseReportView):
         self.paginator = paginator
         return page
 
-    def get_paginated_response(self, data):
-        return self.paginator.get_paginated_response(data)
+    def get_paginated_response(self, data, *, totals=None):
+        response = self.paginator.get_paginated_response(data)
+        if totals is not None:
+            response.data['totals'] = totals
+        return response

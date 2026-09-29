@@ -45,6 +45,8 @@ class ZReportTests(PosAPITestCase):
         self.assertEqual(row['sale_total'], 1750.5)
         self.assertEqual(row['refund_total'], 100)
         self.assertIsNone(row['qr_total'])
+        self.assertEqual(response.data['totals']['sale_total'], 1750.5)
+        self.assertEqual(response.data['totals']['sale_count'], 3)
 
     def test_search_cash_desk_and_export_use_same_rows(self):
         params = {**self.params, 'cashDeskId': str(self.cash_desk.id), 'search': 'TERM-Z'}
@@ -59,6 +61,7 @@ class ZReportTests(PosAPITestCase):
             response = self.client.get('/api/v1/admin/reporting/z-reports/', {**params, **change})
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['count'], 0)
+            self.assertIsNone(response.data['totals']['sale_total'])
 
     def test_missing_or_malformed_evidence_is_not_zero(self):
         for payload in ({}, {'provider_result': []}, {'provider_result': {'provider_report': {'z_info': {
