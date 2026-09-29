@@ -264,6 +264,11 @@ class MonitoringOverviewView(APIView):
                 activity_start_date + timedelta(days=offset) for offset in range(7)
             )
         }
+        revoked_retry_filter = Q(
+            event_type='DEVICE_PROOF_FAILED', severity=SecurityEvent.Severity.HIGH,
+            metadata__reason='revoked', device_id__isnull=False,
+        )
+        repeated_revoked_attempts = 0
         security_activity_rows = (
             scoped_security_events.filter(
                 created_at__gte=activity_start,
@@ -279,6 +284,8 @@ class MonitoringOverviewView(APIView):
             .annotate(
                 medium=Count("id", filter=Q(severity=SecurityEvent.Severity.MEDIUM)),
                 high=Count("id", filter=Q(severity=SecurityEvent.Severity.HIGH)),
+                revoked_attempts=Count('id', filter=revoked_retry_filter),
+                revoked_devices=Count('device_id', filter=revoked_retry_filter, distinct=True),
                 critical=Count(
                     "id", filter=Q(severity=SecurityEvent.Severity.CRITICAL)
                 ),
@@ -289,7 +296,9 @@ class MonitoringOverviewView(APIView):
             bucket = security_activity.get(row["activity_date"])
             if bucket is not None:
                 bucket["medium"] = row["medium"]
-                bucket["high"] = row["high"]
+                repeats = row['revoked_attempts'] - row['revoked_devices']
+                repeated_revoked_attempts += repeats
+                bucket["high"] = row["high"] - repeats
                 bucket["critical"] = row["critical"]
 
         global_security = scoped_security_events.filter(
@@ -538,6 +547,7 @@ class MonitoringOverviewView(APIView):
                 },
                 "insights": {
                     "securityActivity": list(security_activity.values()),
+                    "repeatedRevokedAttempts": repeated_revoked_attempts,
                     "agentVersions": [
                         agent_versions[version] for version in sorted(agent_versions)
                     ],
