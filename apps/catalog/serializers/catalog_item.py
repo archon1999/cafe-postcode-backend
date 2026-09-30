@@ -161,6 +161,10 @@ class CatalogItemSerializer(
             attrs["price"] = 0
             attrs["sale_unit"] = CatalogItem.SaleUnit.PIECE
             sale_unit = CatalogItem.SaleUnit.PIECE
+        elif attrs.get("price", getattr(self.instance, "price", 0)) <= 0:
+            raise serializers.ValidationError(
+                {"price": _("Product price must be greater than zero.")}
+            )
         if not sale_unit_rule(sale_unit)["markingAllowed"] and attrs["requires_marking"]:
             raise serializers.ValidationError(
                 {"sale_unit": _("Marked products require whole-piece sale units.")}
