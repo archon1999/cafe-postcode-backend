@@ -285,6 +285,7 @@ class MonitoringOverviewApiTests(APITestCase):
                 "revoked": 1,
                 "activeLocalAgent": 1,
                 "activePOS": 1,
+                "onlinePOS": 1,
                 "activeTV": 1,
                 "activeControl": 0,
                 "telegramSubscriptions": 2,
@@ -468,6 +469,25 @@ class MonitoringOverviewApiTests(APITestCase):
             device_type=Device.Type.TV_MONITOR,
             last_seen_at=now - timedelta(minutes=5, seconds=1),
         )
+        self.create_device(
+            restaurant=restaurant,
+            index=203,
+            device_type=Device.Type.POS_TERMINAL,
+            last_seen_at=now - timedelta(minutes=5, seconds=1),
+        )
+        self.create_device(
+            restaurant=restaurant,
+            index=204,
+            device_type=Device.Type.POS_TERMINAL,
+            device_status=Device.Status.REVOKED,
+            last_seen_at=now,
+        )
+        self.create_device(
+            restaurant=restaurant,
+            index=205,
+            device_type=Device.Type.TV_MONITOR,
+            last_seen_at=now,
+        )
 
         self.client.force_authenticate(self.superuser)
         with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
@@ -475,8 +495,9 @@ class MonitoringOverviewApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         branch = response.data["branches"][0]
-        self.assertEqual(branch["devices"]["active"], 2)
-        self.assertEqual(branch["devices"]["online"], 1)
+        self.assertEqual(branch["devices"]["active"], 4)
+        self.assertEqual(branch["devices"]["online"], 2)
+        self.assertEqual(branch["devices"]["onlinePOS"], 1)
 
     def test_overview_exposes_rolling_seven_day_order_count(self):
         now = timezone.now()

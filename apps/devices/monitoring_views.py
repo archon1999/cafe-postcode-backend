@@ -184,6 +184,15 @@ class MonitoringOverviewView(APIView):
                         revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.POS_TERMINAL
                     ),
                 ),
+                online_pos=Count(
+                    "id",
+                    filter=Q(
+                        revoked_at__isnull=True,
+                        status=Device.Status.ACTIVE,
+                        type=Device.Type.POS_TERMINAL,
+                        last_seen_at__gte=device_online_cutoff,
+                    ),
+                ),
                 active_tv=Count(
                     "id",
                     filter=Q(revoked_at__isnull=True, status=Device.Status.ACTIVE, type=Device.Type.TV_MONITOR),
@@ -447,6 +456,7 @@ class MonitoringOverviewView(APIView):
                         "revoked": device_counts.get("revoked", 0),
                         "activeLocalAgent": device_counts.get("active_local_agent", 0),
                         "activePOS": device_counts.get("active_pos", 0),
+                        "onlinePOS": device_counts.get("online_pos", 0),
                         "activeTV": device_counts.get("active_tv", 0),
                         "activeControl": device_counts.get("active_control", 0),
                         "telegramSubscriptions": telegram_subscription_counts.get(
