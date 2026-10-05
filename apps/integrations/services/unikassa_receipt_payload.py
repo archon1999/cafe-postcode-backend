@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
+from apps.catalog.utils.fiscal_classification import fiscal_package_code, fiscal_units
 from apps.sales.models import OrderItem
 
 from .unikassa_types import FiscalReceiptPart, UnikassaFiscalError
@@ -300,17 +301,11 @@ class UnikassaReceiptPayloadMixin:
         item_payload['VAT'] = int((Decimal(fiscal_amount) * percent / (Decimal('100') + percent)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
     def _extract_units(self, *, item) -> int | None:
-        value = self._find_first(
-            [
-                getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
-                getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
-            ],
-            {'unit_code', 'unitCode', 'common_unit_code', 'commonUnitCode', 'units', 'Units', 'unit', 'Unit'},
+        value = fiscal_units(
+            getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
+            getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
         )
-        try:
-            return int(value) if value not in (None, '') else self._default_unit_code()
-        except (TypeError, ValueError):
-            return self._default_unit_code()
+        return value if value is not None else self._default_unit_code()
 
     def _default_unit_code(self) -> int | None:
         try:
@@ -330,14 +325,10 @@ class UnikassaReceiptPayloadMixin:
         return ''.join(ch for ch in str(value or '') if ch.isdigit())[:64]
 
     def _extract_package_code(self, *, item) -> str:
-        value = self._find_first(
-            [
-                getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
-                getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
-            ],
-            {'package_code', 'packageCode', 'PackageCode', 'package', 'Package'},
+        return fiscal_package_code(
+            getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
+            getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
         )
-        return str(value or '').strip()[:64]
 
     def _extract_labels(self, *, item) -> list[str]:
         labels = []

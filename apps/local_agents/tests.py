@@ -892,6 +892,21 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['totalSaleAmount'], 40000)
         self.assertEqual(response.data['posDevices'], [])
 
+    def test_bootstrap_keeps_tasnif_category_package_for_partial_item_payload(self):
+        self.category.mxik_payload = {'commonUnitCode': 112, 'packages': [{'code': 1378885}]}
+        self.category.save(update_fields=['mxik_payload', 'updated_at'])
+        self.catalog_item.mxik_payload = {'unitCode': None, 'barcode': '001234'}
+        self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        items = [item for category in response.data['menu'] for item in category['items']]
+        item = next(item for item in items if str(item['id']) == str(self.catalog_item.id))
+        self.assertEqual(item['mxik_payload']['packageCode'], '1378885')
+        self.assertEqual(item['mxik_payload']['unitCode'], 112)
+
     def test_split_snapshots_partition_configuration_from_live_state_without_data_gaps(self):
         shift = self.create_cash_shift()
         order = Order.objects.create(
@@ -2414,7 +2429,10 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                     'fiscal_sign': '123',
                     'qr_code_url': 'https://ofd.uz/71',
                     'response': {'TerminalID': 'TERM-1', 'ReceiptSeq': 71},
-                    'request': {'receipt': {'ReceivedCash': order.total * 100, 'ReceivedCard': 0}},
+                    'request': {'receipt': {
+                        'ReceivedCash': order.total * 100, 'ReceivedCard': 0,
+                        'Items': [{'SPIC': '02202002006000000', 'Units': 112, 'PackageCode': '1378885'}],
+                    }},
                 }]),
             },
         }
@@ -2434,6 +2452,19 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(receipt.payload['receipt_number'], '71')
         self.assertEqual(receipt.payload['response']['TerminalID'], 'TERM-1')
         self.assertEqual(receipt.payload['request']['receipt']['ReceivedCash'], order.total * 100)
+        self.assertEqual(receipt.payload['request']['receipt']['Items'][0]['PackageCode'], '1378885')
+        self.assertEqual(receipt.payload['request']['receipt']['Items'][0]['Units'], 112)
+        replay = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(replay.status_code, status.HTTP_200_OK, replay.data)
+        self.assertTrue(replay.data['results'][0]['replayed'])
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        self.assertEqual(Receipt.objects.filter(order=order, kind=Receipt.Kind.FISCAL).count(), 1)
+        issue_fiscal_receipts.assert_not_called()
 
     def test_browser_cannot_submit_edge_fiscal_result(self):
         fiscal = IntegrationConfig.objects.create(

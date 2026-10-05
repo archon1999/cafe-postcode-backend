@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from apps.integrations.tax_identifiers import fiscal_tax_identifier
+from apps.catalog.utils.fiscal_classification import fiscal_package_code, fiscal_units
 
 from .fiscal_drive_types import FiscalDriveError
 from .fiscal_total_allocation import settled_order_lines
@@ -81,6 +82,8 @@ class FiscalDriveReceiptPayloadMixin:
             units = self._extract_units(item=item)
             if units is not None:
                 item_payload['Units'] = units
+            if package_code := self._extract_package_code(item=item):
+                item_payload['PackageCode'] = package_code
             labels = self._extract_labels(item=item)
             if labels:
                 item_payload['Labels'] = labels
@@ -127,34 +130,18 @@ class FiscalDriveReceiptPayloadMixin:
         )
 
     def _extract_units(self, *, item) -> int | None:
-        for payload in [
+        units = fiscal_units(*self._classification_payloads(item))
+        return units if units is not None else self._default_unit_code()
+
+    @staticmethod
+    def _classification_payloads(item):
+        return [
             getattr(getattr(item, 'catalog_item', None), 'mxik_payload', None),
             getattr(getattr(getattr(item, 'catalog_item', None), 'category', None), 'mxik_payload', None),
-        ]:
-            value = self._find_first(
-                payload,
-                {
-                    'unit_code',
-                    'unitCode',
-                    'common_unit_code',
-                    'commonUnitCode',
-                    'units',
-                    'Units',
-                    'unit',
-                    'Unit',
-                    'package_code',
-                    'packageCode',
-                    'package_code_id',
-                    'packageCodeId',
-                },
-            )
-            if value in (None, ''):
-                continue
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                continue
-        return self._default_unit_code()
+        ]
+
+    def _extract_package_code(self, *, item) -> str:
+        return fiscal_package_code(*self._classification_payloads(item))
 
     def _default_unit_code(self) -> int | None:
         value = self.settings.get('default_unit_code') or self.settings.get('defaultUnitCode') or 796

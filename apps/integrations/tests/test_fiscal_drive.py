@@ -351,6 +351,40 @@ class FiscalDriveIntegrationTests(PosTestCase):
         self.assertEqual(item['Units'], 715)
         self.assertEqual(item['Barcode'], '6297000747705')
 
+    def test_issue_receipt_sends_tasnif_package_code_for_item_and_category(self):
+        payload = {
+            'unitCode': None,
+            'commonUnitCode': 112,
+            'packages': [
+                {'code': 1860960, 'unitName': 'dona', 'parentCode': 1378885, 'isUnitPackage': '2'},
+                {'code': 1378885, 'unitName': 'litr', 'parentCode': None, 'isUnitPackage': '1'},
+            ],
+        }
+        for source in ('item', 'category'):
+            with self.subTest(source=source):
+                self.catalog_item.mxik_payload = payload if source == 'item' else {}
+                self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+                self.category.mxik_payload = payload if source == 'category' else {}
+                self.category.save(update_fields=['mxik_payload', 'updated_at'])
+                assertions = {}
+
+                def client_factory(*args, **kwargs):
+                    return httpx.Client(transport=self._build_transport(assertions), base_url=kwargs['base_url'])
+
+                service = FiscalDriveIntegrationService(self.config, client_factory=client_factory)
+                service.issue_receipt(order=self.order, payment=self.payment)
+                item = assertions['request_payload']['Items'][0]
+                self.assertEqual(item['PackageCode'], '1378885')
+                self.assertEqual(item['Units'], 112)
+
+    def test_package_code_does_not_replace_units(self):
+        self.catalog_item.mxik_payload = {'packageCode': '1378885'}
+        self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+        service = FiscalDriveIntegrationService(self.config)
+        item = service._build_sale_items(order=self.order)[0]
+        self.assertEqual(item['Units'], 796)
+        self.assertEqual(item['PackageCode'], '1378885')
+
     def test_issue_receipt_accepts_txid_object_response(self):
         assertions = {}
 
