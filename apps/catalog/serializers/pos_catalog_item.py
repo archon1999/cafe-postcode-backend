@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.catalog.models import CatalogItem
 from apps.catalog.utils.cash_sale import is_catalog_item_cash_sale_forbidden
-from apps.catalog.utils.fiscal_classification import fiscal_package_code, fiscal_units
+from apps.catalog.utils.pos_fiscal_payload import pos_fiscal_payload
 from apps.catalog.utils.marking import item_marking_gtin, item_requires_marking
 from apps.catalog.utils.prep_station import resolve_order_item_prep_station
 from apps.catalog.serializers.modifier import PosModifierGroupSerializer
@@ -56,17 +56,7 @@ class PosCatalogItemSerializer(OfflineTranslationsMixin, serializers.ModelSerial
     @staticmethod
     def get_mxik_payload(obj):
         category_payload = getattr(obj.category, 'mxik_payload', {}) or {}
-        payload = dict(obj.mxik_payload or category_payload)
-        # Project the same item/category fallback used by online fiscal receipts.
-        # The Local Agent receives this payload without the category model.
-        if package_code := fiscal_package_code(obj.mxik_payload, category_payload):
-            # Older Agents mistakenly treat packageCode as a Units alias.
-            # 2.4.1 also understands primaryPackage, which older Agents ignore.
-            payload['primaryPackage'] = {'code': package_code}
-        units = fiscal_units(obj.mxik_payload, category_payload)
-        if units is not None:
-            payload['unitCode'] = units
-        return payload
+        return pos_fiscal_payload(obj.mxik_payload, category_payload)
 
     @staticmethod
     def get_cash_payment_forbidden(obj):
