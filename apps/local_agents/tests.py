@@ -904,7 +904,8 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         items = [item for category in response.data['menu'] for item in category['items']]
         item = next(item for item in items if str(item['id']) == str(self.catalog_item.id))
-        self.assertEqual(item['mxik_payload']['packageCode'], '1378885')
+        self.assertEqual(item['mxik_payload']['primaryPackage']['code'], '1378885')
+        self.assertNotIn('packageCode', item['mxik_payload'])
         self.assertEqual(item['mxik_payload']['unitCode'], 112)
 
     def test_split_snapshots_partition_configuration_from_live_state_without_data_gaps(self):

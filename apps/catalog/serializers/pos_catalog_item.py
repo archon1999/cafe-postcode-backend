@@ -60,7 +60,9 @@ class PosCatalogItemSerializer(OfflineTranslationsMixin, serializers.ModelSerial
         # Project the same item/category fallback used by online fiscal receipts.
         # The Local Agent receives this payload without the category model.
         if package_code := fiscal_package_code(obj.mxik_payload, category_payload):
-            payload['packageCode'] = package_code
+            # Older Agents mistakenly treat packageCode as a Units alias.
+            # 2.4.1 also understands primaryPackage, which older Agents ignore.
+            payload['primaryPackage'] = {'code': package_code}
         units = fiscal_units(obj.mxik_payload, category_payload)
         if units is not None:
             payload['unitCode'] = units
