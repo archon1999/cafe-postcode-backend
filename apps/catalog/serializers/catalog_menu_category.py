@@ -49,12 +49,12 @@ class CatalogMenuCategorySerializer(OfflineTranslationsMixin, serializers.ModelS
                 context=self.context,
             ).data
 
-        item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related(
-            'category__prep_station',
-            'prep_station',
-        )
+        item_queryset = obj.items.filter(is_active=True, is_stoplisted=False).select_related('prep_station')
+        items = list(item_queryset)
+        for item in items:
+            item.category = obj
         return PosCatalogItemSerializer(
-            item_queryset,
+            items,
             many=True,
             context=self.context,
         ).data

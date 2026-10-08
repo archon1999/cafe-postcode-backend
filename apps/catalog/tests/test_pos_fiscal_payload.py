@@ -2,6 +2,7 @@ import copy
 import json
 from types import SimpleNamespace
 from unittest import TestCase
+from unittest.mock import patch
 
 from django.test import TestCase as DatabaseTestCase
 from rest_framework.test import APIRequestFactory, force_authenticate
@@ -19,6 +20,24 @@ from apps.users.models import User
 
 
 class PosFiscalPayloadTests(TestCase):
+    def test_shared_category_is_projected_once_and_output_dicts_are_independent(self):
+        raw = {'packages': [{'code': 1378885}], 'commonUnitCode': 112, 'barcode': '00123'}
+        cache = {}
+        with patch('apps.catalog.utils.pos_fiscal_payload.fiscal_package_code', wraps=fiscal_package_code) as extract:
+            outputs = [pos_fiscal_payload(None, raw, cache=cache) for _ in range(50)]
+        self.assertEqual(extract.call_count, 2)  # None and the shared category.
+        self.assertEqual(outputs[0], pos_fiscal_payload(None, raw))
+        outputs[0]['primaryPackage']['code'] = 'changed'
+        self.assertEqual(outputs[1]['primaryPackage']['code'], '1378885')
+
+    def test_a_new_request_recomputes_changed_classification(self):
+        raw = {'packages': [{'code': '001234'}]}
+        first = pos_fiscal_payload({}, raw, cache={})
+        raw['packages'][0]['code'] = '009999'
+        second = pos_fiscal_payload({}, raw, cache={})
+        self.assertEqual(first['primaryPackage']['code'], '001234')
+        self.assertEqual(second['primaryPackage']['code'], '009999')
+
     def test_large_raw_tasnif_becomes_bounded_classification_without_mutation(self):
         source = {'commonUnitCode': 112, 'barcode': '001234', 'createdBy': 'unused',
                   'packages': [{'code': 1000 + i, 'name': 'x' * 1000, 'isUnitPackage': '1' if i == 4 else '2'}
@@ -55,12 +74,23 @@ class PosFiscalPayloadTests(TestCase):
     def test_serializer_keeps_saved_classification_unchanged(self):
         item = SimpleNamespace(mxik_payload={'unitCode': None, 'barcode': '001234'},
                                category=SimpleNamespace(mxik_payload={'commonUnitCode': 112, 'packages': [{'code': 1378885}]}))
-        self.assertEqual(PosCatalogItemSerializer.get_mxik_payload(item),
+        self.assertEqual(PosCatalogItemSerializer().get_mxik_payload(item),
                          {'primaryPackage': {'code': '1378885'}, 'unitCode': 112, 'barcode': '001234'})
         self.assertEqual(item.mxik_payload, {'unitCode': None, 'barcode': '001234'})
 
 
 class CompactMenuSnapshotTests(DatabaseTestCase):
+    def test_reverse_menu_prefetch_shares_the_parent_category(self):
+        from django.db.models import Prefetch
+        restaurant = Restaurant.objects.create(name='Shared menu graph')
+        category = CatalogCategory.objects.create(restaurant=restaurant, name='Category', mxik_payload={'packages': [{'code': 1378885}]})
+        for index in range(3):
+            CatalogItem.objects.create(restaurant=restaurant, category=category, name=f'Item {index}', price=1000)
+        items = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related('prep_station')
+        loaded = CatalogCategory.objects.prefetch_related(Prefetch('items', queryset=items, to_attr='active_menu_items')).get(pk=category.pk)
+        with self.assertNumQueries(0):
+            self.assertTrue(all(item.category is loaded for item in loaded.active_menu_items))
+
     def test_online_and_offline_menu_keep_products_translations_groups_and_restrictions(self):
         restaurant = Restaurant.objects.create(name='Compact menu fixture')
         user = User.objects.create_superuser(username='compact-menu-admin', password='test-secret', restaurant=restaurant)

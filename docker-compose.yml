@@ -1,6 +1,8 @@
 services:
   web:
     image: ${BACKEND_IMAGE:-postcode/backend:local}
+    mem_limit: ${WEB_MEMORY_LIMIT:-3g}
+    mem_reservation: ${WEB_MEMORY_RESERVATION:-1g}
     build:
       context: .
     environment:
@@ -84,6 +86,8 @@ services:
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
       GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
+      GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-500}
+      GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-100}
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
     command:
       - sh
@@ -98,6 +102,8 @@ services:
         --workers $${GUNICORN_WORKERS:-3}
         --threads $${GUNICORN_THREADS:-2}
         --timeout $${GUNICORN_TIMEOUT:-60}
+        --max-requests $${GUNICORN_MAX_REQUESTS:-500}
+        --max-requests-jitter $${GUNICORN_MAX_REQUESTS_JITTER:-100}
     depends_on:
       postgres:
         condition: service_healthy

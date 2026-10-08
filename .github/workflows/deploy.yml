@@ -63,6 +63,7 @@ jobs:
           catalog-assistant-ci python manage.py test
           apps.catalog_assistant.tests apps.catalog.tests apps.local_agents.tests.LocalAgentBootstrapTests
           apps.integrations.tests.test_fiscal_classification apps.integrations.tests.test_fiscal_drive
+          apps.sales.tests.test_pos_order_queryset apps.local_agents.test_fiscal_recovery_snapshot
           apps.local_agents.tests.LocalAgentMutationPushTests.test_trusted_edge_fiscal_result_is_persisted_without_remote_fiscal_call --noinput
       - name: Test service fee migrations and offline replay contracts with PostgreSQL
         run: >-

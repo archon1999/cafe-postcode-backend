@@ -46,7 +46,7 @@ class FiscalClassificationTests(TestCase):
     def test_pos_snapshot_keeps_category_fallback_for_partial_item_payload(self):
         category = SimpleNamespace(mxik_payload={'commonUnitCode': 112, 'packages': [{'code': 1378885}]})
         catalog_item = SimpleNamespace(mxik_payload={'unitCode': None, 'barcode': '001234'}, category=category)
-        payload = PosCatalogItemSerializer.get_mxik_payload(catalog_item)
+        payload = PosCatalogItemSerializer().get_mxik_payload(catalog_item)
         self.assertEqual(payload['primaryPackage']['code'], '1378885')
         self.assertNotIn('packageCode', payload)
         self.assertEqual(fiscal_package_code(payload), '1378885')

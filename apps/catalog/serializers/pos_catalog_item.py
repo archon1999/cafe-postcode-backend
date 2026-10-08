@@ -53,10 +53,10 @@ class PosCatalogItemSerializer(OfflineTranslationsMixin, serializers.ModelSerial
     def get_mxik_code(obj):
         return str(obj.mxik_code or getattr(obj.category, 'mxik_code', '') or '').strip()
 
-    @staticmethod
-    def get_mxik_payload(obj):
+    def get_mxik_payload(self, obj):
         category_payload = getattr(obj.category, 'mxik_payload', {}) or {}
-        return pos_fiscal_payload(obj.mxik_payload, category_payload)
+        cache = self.context.setdefault('pos_fiscal_payload_cache', {})
+        return pos_fiscal_payload(obj.mxik_payload, category_payload, cache=cache)
 
     @staticmethod
     def get_cash_payment_forbidden(obj):
