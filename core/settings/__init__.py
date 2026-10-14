@@ -294,6 +294,26 @@ class CoreSettings(Settings):
         )
     )
     ADMIN_REFRESH_COOKIE_NAME = '__Host-cafe_admin_refresh'
+    STAFF_AUTH_ALLOWED_ORIGINS = list(dict.fromkeys([
+        *env_list(
+            'STAFF_AUTH_ALLOWED_ORIGINS',
+            ['https://staff.cafe-postcode.uz'] if PRODUCTION_MODE else [
+                'http://localhost:4600', 'http://127.0.0.1:4600',
+                'http://localhost:4601', 'http://127.0.0.1:4601',
+            ],
+        ),
+        'https://staff.cafe-postcode.uz',
+    ]))
+    STAFF_PWA_PUBLIC_ORIGIN = os.getenv(
+        'STAFF_PWA_PUBLIC_ORIGIN',
+        'https://staff.cafe-postcode.uz' if PRODUCTION_MODE else 'http://127.0.0.1:4600',
+    ).rstrip('/')
+    STAFF_REFRESH_COOKIE_NAME = '__Host-cafe_staff_refresh' if PRODUCTION_MODE else 'cafe_staff_refresh'
+    STAFF_REFRESH_COOKIE_SECURE = PRODUCTION_MODE
+    STAFF_REFRESH_ABSOLUTE_TTL_SECONDS = env_int('STAFF_REFRESH_ABSOLUTE_TTL_SECONDS', 30 * 24 * 60 * 60)
+    STAFF_INVITE_TTL_SECONDS = env_int('STAFF_INVITE_TTL_SECONDS', 24 * 60 * 60)
+    STAFF_LOGIN_LOCKOUT_SECONDS = env_int('STAFF_LOGIN_LOCKOUT_SECONDS', 15 * 60)
+    STAFF_LOGIN_MAX_FAILURES = env_int('STAFF_LOGIN_MAX_FAILURES', 5)
     ADMIN_REFRESH_COOKIE_SECURE = True
     ADMIN_REFRESH_COOKIE_SAMESITE = 'Strict'
     ADMIN_REFRESH_COOKIE_PATH = '/'

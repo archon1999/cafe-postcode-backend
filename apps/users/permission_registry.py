@@ -1042,6 +1042,11 @@ PERMISSION_DEFINITIONS.extend(
             ('GET', 'api/v1/admin/employees/'),
             ('GET', 'api/v1/admin/employees/roles/'),
         ),
+        update_endpoints=endpoint_specs(
+            ('PUT', 'api/v1/admin/employees/<uuid:pk>/'),
+            ('PATCH', 'api/v1/admin/employees/<uuid:pk>/'),
+            ('POST', 'api/v1/admin/employees/<uuid:pk>/staff-invite/'),
+        ),
         include_delete=False,
     )
 )
@@ -1571,6 +1576,44 @@ PERMISSION_DEFINITIONS.extend([
         ui_visible=True, group_key='inventory', name='Ombor AI tahlilidan foydalanish',
         default_roles=RESTAURANT_ADMIN_UI_ROLES,
         endpoints=endpoint_specs(('POST', 'api/v1/admin/inventory/insights/analyze/')),
+    ),
+])
+
+PERMISSION_DEFINITIONS.extend([
+    permission_definition(
+        'workforce.view', surface='staff', resource='workforce', action='view',
+        ui_visible=True, group_key='workforce', name='Jamoa grafigi va davomatini ko‘rish',
+        default_roles=('restaurant_admin', 'fast_food_admin', 'manager', 'fast_food_manager'),
+    ),
+    permission_definition(
+        'workforce.schedule', surface='staff', resource='workforce', action='schedule',
+        ui_visible=True, group_key='workforce', name='Smena grafigini boshqarish',
+        default_roles=('restaurant_admin', 'fast_food_admin', 'manager', 'fast_food_manager'),
+    ),
+    permission_definition(
+        'workforce.approve', surface='staff', resource='workforce', action='approve',
+        ui_visible=True, group_key='workforce', name='Davomat va tabelni tasdiqlash',
+        default_roles=('restaurant_admin', 'fast_food_admin', 'manager', 'fast_food_manager'),
+    ),
+    permission_definition(
+        'workforce.config', surface='staff', resource='workforce', action='config',
+        ui_visible=True, group_key='workforce', name='Davomat joylashuvi va filialni sozlash',
+        default_roles=('restaurant_admin', 'fast_food_admin'),
+    ),
+    permission_definition(
+        'staff.payroll.view', surface='staff', resource='payroll', action='view',
+        ui_visible=True, group_key='payroll', name='Jamoa maoshlarini ko‘rish',
+        default_roles=('restaurant_admin', 'fast_food_admin'),
+    ),
+    permission_definition(
+        'staff.payroll.manage', surface='staff', resource='payroll', action='manage',
+        ui_visible=True, group_key='payroll', name='Maosh hisobini tayyorlash va tasdiqlash',
+        default_roles=('restaurant_admin', 'fast_food_admin'),
+    ),
+    permission_definition(
+        'staff.payroll.payout', surface='staff', resource='payroll', action='payout',
+        ui_visible=True, group_key='payroll', name='Qo‘lda berilgan maoshni qayd etish',
+        default_roles=('restaurant_admin', 'fast_food_admin'),
     ),
 ])
 

@@ -33,8 +33,8 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(EmployeeProfile)
 class EmployeeProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'employment_status', 'salary_type')
-    list_filter = ('employment_status', 'salary_type')
+    list_display = ('user', 'employment_status')
+    list_filter = ('employment_status',)
     search_fields = ('user__username', 'user__full_name')
 
 

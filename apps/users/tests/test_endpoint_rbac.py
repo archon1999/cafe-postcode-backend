@@ -433,6 +433,10 @@ class EndpointRBACPermissionTests(TestCase):
             permission_classes = getattr(view_cls, "permission_classes", [])
             if any(issubclass(permission_class, permissions.AllowAny) for permission_class in permission_classes):
                 continue
+            # Staff and other dedicated surfaces enforce their own scoped
+            # permissions. Endpoint registrations govern only EndpointRBAC.
+            if not any(issubclass(permission_class, EndpointRBACPermission) for permission_class in permission_classes):
+                continue
 
             for method in self._view_methods(view_cls):
                 normalized_method = "GET" if method == "HEAD" else method

@@ -72,3 +72,6 @@ def seed_default_roles_signal(sender, **kwargs):
 
     grant_default_inventory_access()
     grant_default_modifier_access()
+    from apps.platform.services.staff_access import grant_default_staff_access
+
+    grant_default_staff_access()

@@ -63,6 +63,7 @@ AUTH_SESSION_TTL_SECONDS = {
     # Admin access credentials are deliberately short-lived; the browser uses
     # the rotating HttpOnly refresh family for continuity.
     'admin': int(os.getenv('ADMIN_AUTH_SESSION_TTL_SECONDS', str(15 * 60))),
+    'staff': int(os.getenv('STAFF_AUTH_SESSION_TTL_SECONDS', str(15 * 60))),
     'pos': int(os.getenv('POS_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
     'dashboard': int(os.getenv('DASHBOARD_AUTH_SESSION_TTL_SECONDS', str(24 * 60 * 60))),
 }

@@ -37,11 +37,16 @@ CORS_ALLOWED_ORIGINS = [
     'https://control.cafe-postcode.uz',
     'https://pos.cafe-postcode.uz',
     'https://dashboard.cafe-postcode.uz',
+    'https://staff.cafe-postcode.uz',
 ]
 if os.getenv('DJANGO_PRODUCTION', '').strip().lower() not in {'1', 'true', 'yes', 'on'}:
     CORS_ALLOWED_ORIGINS.extend([
         'http://localhost:4500',
         'http://127.0.0.1:4500',
+        'http://localhost:4600',
+        'http://127.0.0.1:4600',
+        'http://localhost:4601',
+        'http://127.0.0.1:4601',
     ])
 CORS_ALLOWED_ORIGINS.extend(parse_csv_env('CORS_ALLOWED_ORIGINS'))
 

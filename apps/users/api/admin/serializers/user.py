@@ -58,22 +58,6 @@ class UserSerializer(
         required=False,
         write_only=True,
     )
-    salary_type = serializers.ChoiceField(
-        choices=EmployeeProfile.SalaryType.choices,
-        required=False,
-        allow_blank=True,
-        write_only=True,
-    )
-    base_amount = serializers.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        required=False,
-        allow_null=True,
-        write_only=True,
-    )
-    kpi_percent = serializers.IntegerField(
-        required=False, allow_null=True, write_only=True
-    )
 
     class Meta:
         model = User
@@ -95,9 +79,6 @@ class UserSerializer(
             "pnfl",
             "birth_date",
             "employment_status",
-            "salary_type",
-            "base_amount",
-            "kpi_percent",
             "permission_codes",
         )
         read_only_fields = ("restaurant_id", "restaurant_name", "business_partner_id")

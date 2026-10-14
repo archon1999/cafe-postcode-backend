@@ -11,6 +11,7 @@ class AuthSession(BaseModel):
         ADMIN = 'admin', 'Admin'
         POS = 'pos', 'POS'
         DASHBOARD = 'dashboard', 'Dashboard'
+        STAFF = 'staff', 'Staff'
 
     class Status(models.TextChoices):
         ACTIVE = 'active', 'Active'
@@ -42,6 +43,13 @@ class AuthSession(BaseModel):
     locked_at = models.DateTimeField(null=True, blank=True)
     refresh_family = models.ForeignKey(
         'users.AdminRefreshFamily',
+        on_delete=models.CASCADE,
+        related_name='access_sessions',
+        null=True,
+        blank=True,
+    )
+    staff_refresh_family = models.ForeignKey(
+        'users.StaffRefreshFamily',
         on_delete=models.CASCADE,
         related_name='access_sessions',
         null=True,

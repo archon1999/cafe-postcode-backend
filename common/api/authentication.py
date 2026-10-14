@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import exceptions
 from rest_framework.authentication import BaseAuthentication, get_authorization_header
 
-from apps.users.models import AdminRefreshFamily, AuthSession
+from apps.users.models import AdminRefreshFamily, AuthSession, StaffRefreshFamily
 from apps.devices.models import SecurityEvent
 from apps.devices.security import record_security_event
 from apps.devices.authentication import DeviceAuthenticationFailed, authenticate_device_request
@@ -44,6 +44,7 @@ class ExpiringSessionTokenAuthentication(BaseAuthentication):
             'device__restaurant',
             'restaurant',
             'refresh_family',
+            'staff_refresh_family',
         ).filter(
             token_key_hash=AuthSession.build_token_key_hash(key),
             status=AuthSession.Status.ACTIVE,
@@ -61,6 +62,8 @@ class ExpiringSessionTokenAuthentication(BaseAuthentication):
 
         if session.surface == AuthSession.Surface.ADMIN:
             self._authenticate_admin_family(request=request, session=session, now=now)
+        if session.surface == AuthSession.Surface.STAFF:
+            self._authenticate_staff_family(session=session, now=now)
 
         if (
             session.surface == AuthSession.Surface.POS
@@ -200,7 +203,32 @@ class ExpiringSessionTokenAuthentication(BaseAuthentication):
         return self.keyword
 
     @staticmethod
+    def _authenticate_staff_family(*, session: AuthSession, now):
+        family = session.staff_refresh_family
+        if (
+            family is None
+            or family.status != StaffRefreshFamily.Status.ACTIVE
+            or family.absolute_expires_at <= now
+            or family.user_id != session.user_id
+            or family.restaurant_id != session.restaurant_id
+            or session.user.get_restaurant_scope() is None
+            or session.user.get_restaurant_scope().pk != session.restaurant_id
+            or not session.user.restaurant_access_active
+        ):
+            AuthSession.objects.filter(pk=session.pk).update(
+                status=AuthSession.Status.REVOKED,
+                revoked_at=now,
+                updated_at=now,
+            )
+            raise exceptions.AuthenticationFailed('Staff session is expired or revoked.')
+        profile = getattr(session.user, 'employee_profile', None)
+        if profile and profile.employment_status != profile.EmploymentStatus.ACTIVE:
+            raise exceptions.AuthenticationFailed('Employee is inactive.')
+
+    @staticmethod
     def _surface_for_path(path: str) -> str | None:
+        if path.startswith('/api/v1/staff/'):
+            return AuthSession.Surface.STAFF
         if path.startswith('/api/v1/pos/'):
             return AuthSession.Surface.POS
         if path.startswith('/api/v1/dashboard/'):

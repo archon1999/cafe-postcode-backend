@@ -217,87 +217,24 @@ class AdminUsersApiTests(APITestCase):
             {self.primary_hall.id, self.secondary_hall.id},
         )
 
-    def test_employee_create_accepts_monthly_salary_with_optional_kpi(self):
+    def test_employee_create_has_no_legacy_payroll_fields(self):
         response = self.client.post(
             '/api/v1/admin/employees/',
             {
-                'full_name': 'Monthly Waiter',
+                'full_name': 'Waiter without legacy pay fields',
                 'phone': '+998901112266',
                 'is_active': True,
                 'role_id': str(self.waiter_role.id),
                 'employment_status': 'active',
-                'salary_type': 'monthly',
-                'base_amount': '0',
                 'pin': '2233',
             },
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        employee = User.objects.get(pk=response.data['id'])
-        self.assertEqual(employee.employee_profile.salary_type, 'monthly')
-        self.assertEqual(float(employee.employee_profile.base_amount), 0.0)
-        self.assertIsNone(employee.employee_profile.kpi_percent)
-
-    def test_employee_create_accepts_independent_kpi_percent(self):
-        response = self.client.post(
-            '/api/v1/admin/employees/',
-            {
-                'full_name': 'KPI Waiter',
-                'phone': '+998901112277',
-                'is_active': True,
-                'role_id': str(self.waiter_role.id),
-                'employment_status': 'active',
-                'salary_type': 'daily',
-                'base_amount': '120000',
-                'kpi_percent': 15,
-                'pin': '3344',
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        employee = User.objects.get(pk=response.data['id'])
-        self.assertEqual(employee.employee_profile.kpi_percent, 15)
-
-    def test_employee_create_rejects_negative_kpi_percent(self):
-        response = self.client.post(
-            '/api/v1/admin/employees/',
-            {
-                'full_name': 'Negative KPI Waiter',
-                'phone': '+998901112288',
-                'is_active': True,
-                'role_id': str(self.waiter_role.id),
-                'employment_status': 'active',
-                'salary_type': 'daily',
-                'base_amount': '120000',
-                'kpi_percent': -1,
-                'pin': '4455',
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('kpiPercent', response.data)
-
-    def test_employee_create_rejects_negative_base_amount(self):
-        response = self.client.post(
-            '/api/v1/admin/employees/',
-            {
-                'full_name': 'Negative Salary Waiter',
-                'phone': '+998901112299',
-                'is_active': True,
-                'role_id': str(self.waiter_role.id),
-                'employment_status': 'active',
-                'salary_type': 'hourly',
-                'base_amount': '-1000',
-                'pin': '5566',
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn('baseAmount', response.data)
+        self.assertNotIn('salary_type', response.data)
+        self.assertNotIn('base_amount', response.data)
+        self.assertNotIn('kpi_percent', response.data)
 
     def test_employee_detail_does_not_reveal_another_restaurant_employee(self):
         other_restaurant = Restaurant.objects.create(name='Other employee tenant')

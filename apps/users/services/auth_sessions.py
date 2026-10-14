@@ -23,6 +23,7 @@ class AuthSessionService:
         device=None,
         restaurant=None,
         refresh_family=None,
+        staff_refresh_family=None,
         mfa_verified_at=None,
     ):
         token_key = token_urlsafe(48)
@@ -34,6 +35,7 @@ class AuthSessionService:
             device=device,
             restaurant=restaurant,
             refresh_family=refresh_family,
+            staff_refresh_family=staff_refresh_family,
             mfa_verified_at=mfa_verified_at,
         )
         logger.info(
@@ -75,6 +77,7 @@ class AuthSessionService:
         device=None,
         restaurant=None,
         refresh_family=None,
+        staff_refresh_family=None,
         mfa_verified_at=None,
     ):
         auth_session_model = get_auth_session_model()
@@ -85,6 +88,7 @@ class AuthSessionService:
             device=device,
             restaurant=restaurant,
             refresh_family=refresh_family,
+            staff_refresh_family=staff_refresh_family,
             mfa_verified_at=mfa_verified_at,
             surface=surface,
             expires_at=now + timedelta(seconds=settings.AUTH_SESSION_TTL_SECONDS[surface]),

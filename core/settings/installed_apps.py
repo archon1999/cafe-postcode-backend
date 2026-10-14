@@ -28,6 +28,8 @@ LOCAL_APPS = [
     'apps.local_agents',
     'apps.printing',
     'apps.inventory',
+    'apps.workforce',
+    'apps.payroll',
 ]
 
 THIRD_PARTY_APPS = [

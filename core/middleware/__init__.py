@@ -4,6 +4,7 @@ from .local_agent_invalidation import LocalAgentOperationalInvalidationMiddlewar
 from .params_snake_case import ParamsSnakeCaseMiddleware
 from .request_language import RequestLanguageMiddleware
 from .system_time import SystemTimeAdderMiddleware
+from .staff_no_store import StaffNoStoreMiddleware
 
 __all__ = [
     'ActivateTimezoneMiddleware',
@@ -12,4 +13,5 @@ __all__ = [
     'ParamsSnakeCaseMiddleware',
     'RequestLanguageMiddleware',
     'SystemTimeAdderMiddleware',
+    'StaffNoStoreMiddleware',
 ]
