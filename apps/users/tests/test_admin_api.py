@@ -666,6 +666,7 @@ class AdminApiTests(APITestCase):
             {
                 'category': str(category_response.data['id']),
                 'name': 'Iced Tea',
+                'price': '10000.00',
                 'name_uz': 'Muzli choy',
                 'name_uz_crl': 'Музли чой',
                 'name_ru': 'Холодный чай',
@@ -704,6 +705,7 @@ class AdminApiTests(APITestCase):
             {
                 'category': str(category_response.data['id']),
                 'name': 'Croissant',
+                'price': '10000.00',
                 'description': '',
                 'is_active': True,
                 'is_stoplisted': False,
@@ -717,6 +719,7 @@ class AdminApiTests(APITestCase):
             {
                 'category': str(category_response.data['id']),
                 'name': 'Old Pie',
+                'price': '10000.00',
                 'description': '',
                 'is_active': False,
                 'is_stoplisted': False,
