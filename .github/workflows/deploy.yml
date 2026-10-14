@@ -28,7 +28,7 @@ concurrency:
 jobs:
   catalog-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16-alpine
@@ -75,6 +75,13 @@ jobs:
           apps.sales.tests.test_formula_service_fees
           apps.printing.tests.test_template_migrations
           apps.printing.tests.test_print_documents --noinput
+      - name: Test agent sync, fiscal classification and Staff isolation with PostgreSQL
+        run: >-
+          docker run --rm --network host
+          -e DEBUG -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e REDIS_URL
+          catalog-assistant-ci python manage.py test
+          apps.local_agents apps.users.tests apps.workforce.tests
+          apps.payroll.tests apps.integrations.tests --noinput
   deploy:
     needs: catalog-tests
     runs-on: ubuntu-latest

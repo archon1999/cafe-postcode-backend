@@ -9,7 +9,7 @@ from apps.local_agents.sync import (
     LocalAgentOperationalStateView,
     LocalAgentPOSDeviceStateView,
 )
-from apps.local_agents.mutations import LocalAgentMutationPushView
+from apps.local_agents.mutations import LocalAgentMutationPushView, LocalAgentMutationReceiveView
 from apps.local_agents.mutation_resolution import LocalAgentMutationResolveView
 from apps.local_agents.order_header_recovery import LocalAgentOrderHeaderRecoveryView
 from apps.local_agents.views import (
@@ -32,6 +32,7 @@ urlpatterns = [
     path('sync/operational/', LocalAgentOperationalStateView.as_view()),
     path('sync/pos-device-state/', LocalAgentPOSDeviceStateView.as_view()),
     path('sync/mutations/', LocalAgentMutationPushView.as_view()),
+    path('sync/mutations/receive/', LocalAgentMutationReceiveView.as_view()),
     path('sync/mutations/resolve/', LocalAgentMutationResolveView.as_view()),
     path('sync/mutations/recover-order-header/', LocalAgentOrderHeaderRecoveryView.as_view()),
     path('security-events/batch/', LocalAgentSecurityEventBatchView.as_view()),

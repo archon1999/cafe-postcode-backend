@@ -44,3 +44,7 @@ dist/
 .ruff_cache/
 .pdm.toml
 __pypackages__/
+
+# Local verification artifacts and disposable review checkouts
+/.codex-security-retries/
+/output/

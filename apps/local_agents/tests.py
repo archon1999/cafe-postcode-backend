@@ -892,6 +892,22 @@ class LocalAgentBootstrapTests(PosAPITestCase):
         self.assertEqual(response.data['cashShifts'][0]['totalSaleAmount'], 40000)
         self.assertEqual(response.data['posDevices'], [])
 
+    def test_bootstrap_keeps_tasnif_category_package_for_partial_item_payload(self):
+        self.category.mxik_payload = {'commonUnitCode': 112, 'packages': [{'code': 1378885}]}
+        self.category.save(update_fields=['mxik_payload', 'updated_at'])
+        self.catalog_item.mxik_payload = {'unitCode': None, 'barcode': '001234'}
+        self.catalog_item.save(update_fields=['mxik_payload', 'updated_at'])
+        response = self.client.get(
+            '/api/v1/local-agent/sync/bootstrap/',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        items = [item for category in response.data['menu'] for item in category['items']]
+        item = next(item for item in items if str(item['id']) == str(self.catalog_item.id))
+        self.assertEqual(item['mxik_payload']['primaryPackage']['code'], '1378885')
+        self.assertNotIn('packageCode', item['mxik_payload'])
+        self.assertEqual(item['mxik_payload']['unitCode'], 112)
+
     def test_split_snapshots_partition_configuration_from_live_state_without_data_gaps(self):
         shift = self.create_cash_shift()
         order = Order.objects.create(
@@ -2285,7 +2301,7 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertTrue(second.data['results'][0]['replayed'])
         self.assertEqual(CashShift.objects.filter(cash_desk=self.cash_desk, status=CashShift.Status.OPEN).count(), 1)
 
-    def test_offline_shift_open_preserves_invalid_cashier_for_review(self):
+    def test_offline_shift_open_recovers_legacy_implicit_manager_cashier(self):
         operation = {
             'operationId': 'edge-shift-open-implicit-manager-1',
             'userId': str(self.user.id),
@@ -2332,10 +2348,12 @@ class LocalAgentMutationPushTests(PosAPITestCase):
 
         first_result = first.data['results'][0]
         for result in [first_result, second.data['results'][0]]:
-            self.assertEqual(result['status'], status.HTTP_400_BAD_REQUEST)
-            self.assertFalse(result['applied'])
-            self.assertEqual(result['inboxState'], 'needs_review')
-        self.assertFalse(CashShift.objects.filter(cash_desk=self.cash_desk).exists())
+            self.assertEqual(result['status'], status.HTTP_201_CREATED)
+            self.assertTrue(result['applied'])
+        shift = CashShift.objects.get(cash_desk=self.cash_desk)
+        self.assertIsNone(shift.cashier_id)
+        self.assertEqual(shift.opened_by_id, self.user.pk)
+        self.assertTrue(second.data['results'][0]['replayed'])
 
     @patch('apps.billing.services.order_payment.charge_payment')
     def test_trusted_edge_card_result_is_replayed_without_second_terminal_charge(self, charge_payment):
@@ -2414,7 +2432,10 @@ class LocalAgentMutationPushTests(PosAPITestCase):
                     'fiscal_sign': '123',
                     'qr_code_url': 'https://ofd.uz/71',
                     'response': {'TerminalID': 'TERM-1', 'ReceiptSeq': 71},
-                    'request': {'receipt': {'ReceivedCash': order.total * 100, 'ReceivedCard': 0}},
+                    'request': {'receipt': {
+                        'ReceivedCash': order.total * 100, 'ReceivedCard': 0,
+                        'Items': [{'SPIC': '02202002006000000', 'Units': 112, 'PackageCode': '1378885'}],
+                    }},
                 }]),
             },
         }
@@ -2434,6 +2455,19 @@ class LocalAgentMutationPushTests(PosAPITestCase):
         self.assertEqual(receipt.payload['receipt_number'], '71')
         self.assertEqual(receipt.payload['response']['TerminalID'], 'TERM-1')
         self.assertEqual(receipt.payload['request']['receipt']['ReceivedCash'], order.total * 100)
+        self.assertEqual(receipt.payload['request']['receipt']['Items'][0]['PackageCode'], '1378885')
+        self.assertEqual(receipt.payload['request']['receipt']['Items'][0]['Units'], 112)
+        replay = self.client.post(
+            '/api/v1/local-agent/sync/mutations/',
+            {'operations': [operation]},
+            format='json',
+            HTTP_AUTHORIZATION=f'Bearer {self.token}',
+        )
+        self.assertEqual(replay.status_code, status.HTTP_200_OK, replay.data)
+        self.assertTrue(replay.data['results'][0]['replayed'])
+        self.assertEqual(Payment.objects.filter(order=order).count(), 1)
+        self.assertEqual(Receipt.objects.filter(order=order, kind=Receipt.Kind.FISCAL).count(), 1)
+        issue_fiscal_receipts.assert_not_called()
 
     def test_browser_cannot_submit_edge_fiscal_result(self):
         fiscal = IntegrationConfig.objects.create(

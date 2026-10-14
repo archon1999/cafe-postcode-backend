@@ -13,3 +13,5 @@ media
 staticfiles
 var
 loadtests/reports
+.codex-security-retries
+output

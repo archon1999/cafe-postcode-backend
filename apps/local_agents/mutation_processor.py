@@ -28,12 +28,15 @@ class LocalAgentMutationProcessor(
     def __init__(self, request_factory_class=APIRequestFactory):
         self.request_factory_class = request_factory_class
 
-    def process(self, *, agent, operation):
+    def process(self, *, agent, operation, receive_only=False):
         if (agent is not None and isinstance(operation, dict)
                 and 0 < len(str(operation.get('operationId') or operation.get('operation_id') or '').strip()) <= 128
                 and allowed_mutation(str(operation.get('method') or '').upper(), str(operation.get('path') or ''))):
             return receive_and_apply(agent=agent, operation=operation,
+                                     receive_only=receive_only,
                                      apply=lambda original: self._apply_operation(agent=agent, operation=original))
+        if receive_only:
+            return mutation_error_result(response_status=400, error="Invalid evidence envelope.", code="INVALID_MUTATION_OBJECT")
         return self._apply_operation(agent=agent, operation=operation)
 
     def _apply_operation(self, *, agent, operation):

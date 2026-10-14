@@ -137,7 +137,11 @@ class FinancialEventHttpTests(PosAPITestCase):
         self.assertEqual(row.depends_on, [opening['operationId']])
         self.assertEqual(FiscalShiftSession.objects.get().edge_session_id, 'http-fiscal-session')
         self.assertTrue(CashShift.objects.filter(pk=shift_id).exists())
-        self.assertEqual(CashShift.objects.get(pk=shift_id).cashier_id, self.user.pk)
+        shift = CashShift.objects.get(pk=shift_id)
+        # This actor has a custom POS role, not a cashier role. The shared
+        # shift must remain accessible to the actual cashier after replay.
+        self.assertIsNone(shift.cashier_id)
+        self.assertEqual(shift.opened_by_id, self.user.pk)
         replay = self.push({**opening, 'attempts': 5})
         self.assertTrue(replay['applied'], replay)
         self.assertTrue(replay['replayed'])

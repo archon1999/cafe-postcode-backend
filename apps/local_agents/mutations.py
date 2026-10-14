@@ -21,6 +21,7 @@ class LocalAgentMutationPushView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [LocalAgentRateThrottle]
     request_factory_class = APIRequestFactory
+    receive_only = False
 
     def post(self, request):
         agent = authenticate_local_agent(request)
@@ -47,8 +48,14 @@ class LocalAgentMutationPushView(APIView):
         return Response(
             {
                 "results": [
-                    processor.process(agent=agent, operation=operation)
+                    processor.process(agent=agent, operation=operation, receive_only=self.receive_only)
                     for operation in operations
                 ]
             }
         )
+
+
+class LocalAgentMutationReceiveView(LocalAgentMutationPushView):
+    """Durable intake without projecting a sale or touching a fiscal device."""
+
+    receive_only = True

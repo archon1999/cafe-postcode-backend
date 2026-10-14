@@ -59,7 +59,7 @@ def _metadata(inbox, result):
     }
 
 
-def receive_and_apply(*, agent, operation, apply):
+def receive_and_apply(*, agent, operation, apply, receive_only=False):
     """Reserve in autocommit, then lock/apply/ack atomically; no external I/O here.
 
     The raw original envelope survives any later validation/projection rollback.
@@ -185,6 +185,13 @@ def receive_and_apply(*, agent, operation, apply):
             }
         if inbox.state in {LocalAgentMutationInbox.State.APPLIED, LocalAgentMutationInbox.State.RESOLVED}:
             return _metadata(inbox, {**inbox.last_result, "replayed": True})
+        if receive_only:
+            # Store the immutable evidence even when its own order cannot yet
+            # be projected. This endpoint never calls business/fiscal services.
+            return _metadata(inbox, {
+                "operationId": operation_id, "ok": True, "status": 202,
+                "code": "EVIDENCE_RECEIVED_ONLY",
+            })
         from apps.local_agents.mutation_dependencies import unresolved_dependencies
 
         missing, dependency_decisions = unresolved_dependencies(inbox, dependencies)
@@ -228,6 +235,14 @@ def receive_and_apply(*, agent, operation, apply):
             # The original depends_on, envelope and hash stay immutable. Each
             # attempt records the evidence used for this projection decision.
             result["dependencyReconciliation"] = dependency_decisions
+        # This certificate is derived here, never accepted from the caller.
+        # Applied unrelated payments may leave predecessors unresolved; retain
+        # that frontier for later same-order payments and cash-close barriers.
+        result["dependencyPolicy"] = "order_isolation_v1"
+        result["deferredOrderDependencies"] = sorted({
+            decision["operationId"] for decision in dependency_decisions
+            if decision["rule"] == "independent_order_payment_v1"
+        })
         inbox.state = (
             "applied"
             if result.get("ok")

@@ -15,6 +15,10 @@ def order_fleet_by_recent_minute(queryset):
     # Rank only distinct versions, then let the database sort the entire fleet
     # before pagination. Numeric versions must put 2.10.0 ahead of 2.9.0.
     versions = list(queryset.order_by().values_list('version', flat=True).distinct())
+    if not versions:
+        # An empty CASE becomes a bare integer in PostgreSQL ORDER BY, where
+        # it is interpreted as a select-list position instead of a constant.
+        return queryset.none()
     keys = sorted({version_sort_key(version) for version in versions})
     ranks = {key: rank for rank, key in enumerate(keys)}
     version_rank = Case(
