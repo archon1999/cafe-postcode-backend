@@ -93,6 +93,8 @@ class FiscalDriveIntegrationTests(PosTestCase):
                 return httpx.Response(200, text='OK')
             if path == '/FiscalDrive/Receipt/GetTXID/FACTORY-1':
                 assertions['request_payload'] = json.loads(request.content.decode())
+                if assertions['request_payload'].get('PaymentType') not in {1, 2, 3, 4}:
+                    return httpx.Response(400, json="Key: 'Receipt.PaymentType' Error:Field validation for 'PaymentType' failed on the 'gte' tag")
                 return httpx.Response(200, json=41)
             if path == '/FiscalDrive/Receipt/RegisterTXID/FACTORY-1':
                 form = dict(httpx.QueryParams(request.content.decode()))
@@ -113,6 +115,22 @@ class FiscalDriveIntegrationTests(PosTestCase):
 
         return httpx.MockTransport(handler)
 
+    def test_payment_type_matches_final_tender(self):
+        service = FiscalDriveIntegrationService(self.config)
+        for method, cash, card, expected in (
+            ('cash', 30000, 0, 1), ('card', 0, 30000, 2),
+            ('qr', 0, 30000, 3), ('mixed', 10000, 20000, 4),
+            ('cash', 0, 30000, 2),
+        ):
+            with self.subTest(method=method, cash=cash, card=card):
+                self.payment.method = method
+                self.payment.fiscal_cash_amount = cash
+                self.payment.fiscal_card_amount = card
+                payload = service._build_sale_receipt(order=self.order, payment=self.payment, memory_info=None)
+                self.assertEqual(payload['PaymentType'], expected)
+                self.assertEqual(payload['ReceivedCash'], cash * 100)
+                self.assertEqual(payload['ReceivedCard'], card * 100)
+
     def test_issue_receipt_uses_live_fiscal_service_and_adds_service_fee_item(self):
         assertions = {}
 
@@ -123,6 +141,7 @@ class FiscalDriveIntegrationTests(PosTestCase):
         result = service.issue_receipt(order=self.order, payment=self.payment)
 
         self.assertTrue(result['ok'])
+        self.assertEqual(assertions['request_payload']['PaymentType'], 1)
         self.assertEqual(result['provider'], 'fiscal-drive-service')
         self.assertEqual(result['terminal_id'], 'TERM-1')
         self.assertEqual(result['cashbox_id'], 'CASHBOX-1')

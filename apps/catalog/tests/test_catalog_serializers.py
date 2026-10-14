@@ -141,6 +141,33 @@ class CatalogCategorySerializerTests(SimpleTestCase):
 
 
 class CatalogItemSerializerTests(SimpleTestCase):
+    def test_product_requires_positive_price_on_create(self):
+        for price in (0, '0', None):
+            serializer = CatalogItemSerializer(data={'name': 'Steyk', 'price': price})
+            self.assertFalse(serializer.is_valid())
+            self.assertIn('price', serializer.errors)
+        serializer = CatalogItemSerializer(data={'name': 'Steyk'})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('price', serializer.errors)
+
+    def test_product_requires_positive_price_on_partial_edit(self):
+        for price in (0, 5000):
+            item = CatalogItem(name='Steyk', price=price)
+            serializer = CatalogItemSerializer(instance=item, data={'price': 0}, partial=True)
+            self.assertFalse(serializer.is_valid())
+            self.assertIn('price', serializer.errors)
+        serializer = CatalogItemSerializer(instance=CatalogItem(name='Steyk', price=0), data={'name': 'Steyk'}, partial=True)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('price', serializer.errors)
+
+    def test_positive_product_price_and_service_conversion_remain_valid(self):
+        item = CatalogItem(name='Steyk', price=0)
+        serializer = CatalogItemSerializer(instance=item, data={'price': 1}, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer = CatalogItemSerializer(instance=item, data={'item_type': 'service'}, partial=True)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data['price'], 0)
+
     def test_portion_unit_is_accepted(self):
         serializer = CatalogItemSerializer(data={'name': 'Soup', 'price': 10000, 'sale_unit': 'pors'})
         self.assertTrue(serializer.is_valid(), serializer.errors)

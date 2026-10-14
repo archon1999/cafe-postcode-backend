@@ -1,6 +1,8 @@
 services:
   web:
     image: ${BACKEND_IMAGE:-postcode/backend:local}
+    mem_limit: ${WEB_MEMORY_LIMIT:-3g}
+    mem_reservation: ${WEB_MEMORY_RESERVATION:-1g}
     build:
       context: .
     environment:
@@ -82,8 +84,14 @@ services:
       DEVICE_LEGACY_MIGRATION_STARTED_AT: ${DEVICE_LEGACY_MIGRATION_STARTED_AT:-}
       DEVICE_LEGACY_MIGRATION_DEADLINE: ${DEVICE_LEGACY_MIGRATION_DEADLINE:-}
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-3}
-      GUNICORN_THREADS: ${GUNICORN_THREADS:-2}
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-1}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
+      GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-100}
+      GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-20}
+      GUNICORN_GC_RSS_MB: ${GUNICORN_GC_RSS_MB:-384}
+      GUNICORN_GC_INTERVAL_SECONDS: ${GUNICORN_GC_INTERVAL_SECONDS:-1}
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
     command:
       - sh
@@ -93,11 +101,14 @@ services:
         rm -rf /tmp/prometheus-multiproc &&
         mkdir -p /tmp/prometheus-multiproc &&
         exec gunicorn core.wsgi:application
+        --config core/gunicorn.conf.py
         --bind 0.0.0.0:8000
         --no-control-socket
         --workers $${GUNICORN_WORKERS:-3}
-        --threads $${GUNICORN_THREADS:-2}
+        --threads $${GUNICORN_THREADS:-1}
         --timeout $${GUNICORN_TIMEOUT:-60}
+        --max-requests $${GUNICORN_MAX_REQUESTS:-100}
+        --max-requests-jitter $${GUNICORN_MAX_REQUESTS_JITTER:-20}
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,6 +117,7 @@ services:
     volumes:
       - staticfiles:/app/staticfiles
       - media:/app/media
+    stop_grace_period: 70s
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

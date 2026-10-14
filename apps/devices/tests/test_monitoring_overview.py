@@ -260,6 +260,7 @@ class MonitoringOverviewApiTests(APITestCase):
             response.data["insights"],
             {
                 "securityActivity": expected_security_activity,
+                    "repeatedRevokedAttempts": 0,
                 "agentVersions": [
                     {"version": "1.0.4", "total": 1, "online": 0, "offline": 1},
                     {"version": "1.1.0", "total": 1, "online": 1, "offline": 0},
@@ -284,6 +285,7 @@ class MonitoringOverviewApiTests(APITestCase):
                 "revoked": 1,
                 "activeLocalAgent": 1,
                 "activePOS": 1,
+                "onlinePOS": 1,
                 "activeTV": 1,
                 "activeControl": 0,
                 "telegramSubscriptions": 2,
@@ -389,6 +391,32 @@ class MonitoringOverviewApiTests(APITestCase):
             ],
         )
 
+    def test_revoked_retries_are_grouped_by_device_and_day_without_erasing_audit(self):
+        now = timezone.now()
+        restaurant = Restaurant.objects.create(name='Repeated revoked device')
+        for index in (601, 602):
+            device = self.create_device(restaurant=restaurant, index=index,
+                device_type=Device.Type.LOCAL_AGENT, device_status=Device.Status.REVOKED)
+            for day_offset in (0, 1):
+                for path in ('/renew/', '/configuration/', '/operational/'):
+                    event = SecurityEvent.objects.create(
+                        restaurant=restaurant, device=device, event_type='DEVICE_PROOF_FAILED',
+                        severity='HIGH', metadata={'reason': 'revoked', 'path': path},
+                        acknowledged_at=now,
+                    )
+                    SecurityEvent.objects.filter(pk=event.pk).update(created_at=now-timedelta(days=day_offset))
+        # Unknown devices and other reasons remain separate security events.
+        for reason in ('revoked', 'signature_invalid', 'signature_invalid'):
+            SecurityEvent.objects.create(restaurant=restaurant, event_type='DEVICE_PROOF_FAILED',
+                severity='HIGH', metadata={'reason': reason})
+        self.client.force_authenticate(self.superuser)
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, 200, response.data)
+        insights = response.data['insights']
+        self.assertEqual(insights['repeatedRevokedAttempts'], 8)
+        self.assertEqual(sum(row['high'] for row in insights['securityActivity']), 7)
+        self.assertEqual(SecurityEvent.objects.filter(restaurant=restaurant).count(), 15)
+
     def test_branch_health_risk_counts_only_include_the_last_24_hours(self):
         now = timezone.now()
         restaurant = Restaurant.objects.create(name="Current risk window branch")
@@ -441,6 +469,25 @@ class MonitoringOverviewApiTests(APITestCase):
             device_type=Device.Type.TV_MONITOR,
             last_seen_at=now - timedelta(minutes=5, seconds=1),
         )
+        self.create_device(
+            restaurant=restaurant,
+            index=203,
+            device_type=Device.Type.POS_TERMINAL,
+            last_seen_at=now - timedelta(minutes=5, seconds=1),
+        )
+        self.create_device(
+            restaurant=restaurant,
+            index=204,
+            device_type=Device.Type.POS_TERMINAL,
+            device_status=Device.Status.REVOKED,
+            last_seen_at=now,
+        )
+        self.create_device(
+            restaurant=restaurant,
+            index=205,
+            device_type=Device.Type.TV_MONITOR,
+            last_seen_at=now,
+        )
 
         self.client.force_authenticate(self.superuser)
         with patch("apps.devices.monitoring_views.timezone.now", return_value=now):
@@ -448,8 +495,9 @@ class MonitoringOverviewApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         branch = response.data["branches"][0]
-        self.assertEqual(branch["devices"]["active"], 2)
-        self.assertEqual(branch["devices"]["online"], 1)
+        self.assertEqual(branch["devices"]["active"], 4)
+        self.assertEqual(branch["devices"]["online"], 2)
+        self.assertEqual(branch["devices"]["onlinePOS"], 1)
 
     def test_overview_exposes_rolling_seven_day_order_count(self):
         now = timezone.now()

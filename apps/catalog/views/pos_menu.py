@@ -38,22 +38,15 @@ class PosMenuView(generics.ListAPIView):
             'sort_order', 'name'
         ).select_related(
             'restaurant',
-            'category__prep_station',
             'prep_station',
         ).prefetch_related(active_modifier_assignments_prefetch())
         group_member_queryset = CatalogItemGroupMember.objects.filter(
             catalog_item__is_active=True,
             catalog_item__is_stoplisted=False,
-        ).select_related(
-            'catalog_item__restaurant',
-            'catalog_item__category__prep_station',
-            'catalog_item__prep_station',
         ).prefetch_related(
-            Prefetch(
-                'catalog_item__modifier_assignments',
-                queryset=active_modifier_assignments_prefetch().queryset,
-                to_attr='active_modifier_assignments',
-            )
+            Prefetch('catalog_item', queryset=item_queryset.prefetch_related(
+                Prefetch('category', queryset=CatalogCategory.objects.select_related('prep_station')),
+            )),
         ).order_by('sort_order', 'catalog_item__sort_order', 'catalog_item__name')
         group_queryset = CatalogItemGroup.objects.filter(is_active=True).prefetch_related(
             Prefetch('members', queryset=group_member_queryset)

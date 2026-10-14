@@ -9,7 +9,7 @@ class CatalogBarcodeTests(SimpleTestCase):
     def test_optional_barcode_and_leading_zeroes(self):
         for barcode in ('', '00123456', '001234567890', '0012345678901', '00123456789012'):
             with self.subTest(barcode=barcode):
-                serializer = CatalogItemSerializer(data={'name': 'Product', 'barcode': barcode})
+                serializer = CatalogItemSerializer(data={'name': 'Product', 'price': 1000, 'barcode': barcode})
                 self.assertTrue(serializer.is_valid(), serializer.errors)
                 self.assertEqual(serializer.validated_data['barcode'], barcode)
                 self.assertFalse(serializer.validated_data['requires_marking'])
@@ -17,12 +17,12 @@ class CatalogBarcodeTests(SimpleTestCase):
     def test_invalid_barcode_is_rejected(self):
         for barcode in ('123', '123456789', '12345678901', '123456789012345', 'abcdefgh', '1234567\n'):
             with self.subTest(barcode=barcode):
-                serializer = CatalogItemSerializer(data={'name': 'Product', 'barcode': barcode})
+                serializer = CatalogItemSerializer(data={'name': 'Product', 'price': 1000, 'barcode': barcode})
                 self.assertFalse(serializer.is_valid())
                 self.assertIn('barcode', serializer.errors)
 
     def test_partial_update_can_preserve_or_clear_barcode(self):
-        item = CatalogItem(name='Product', barcode='00123456')
+        item = CatalogItem(name='Product', price=1000, barcode='00123456')
         preserve = CatalogItemSerializer(item, data={'name': 'Renamed'}, partial=True)
         self.assertTrue(preserve.is_valid(), preserve.errors)
         self.assertNotIn('barcode', preserve.validated_data)
@@ -34,7 +34,7 @@ class CatalogBarcodeTests(SimpleTestCase):
 class CatalogBarcodePersistenceTests(TestCase):
     def test_create_read_update_and_clear_preserve_barcode_as_text(self):
         restaurant = Restaurant.objects.create(name='Barcode test')
-        create = CatalogItemSerializer(data={'name': 'Product', 'barcode': '0012345678901'})
+        create = CatalogItemSerializer(data={'name': 'Product', 'price': 1000, 'barcode': '0012345678901'})
         self.assertTrue(create.is_valid(), create.errors)
         item = create.save(restaurant=restaurant)
         item.refresh_from_db()

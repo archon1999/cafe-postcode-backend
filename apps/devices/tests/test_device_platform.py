@@ -503,6 +503,22 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         revoke_command = LocalAgentCommand.objects.get(command_type='edge.terminal.revoke')
         self.assertEqual(revoke_command.payload, {'backendDeviceId': str(device.id)})
 
+    def test_revoked_agent_renewal_returns_terminal_gone_without_reactivating(self):
+        key, _pairing, device = self.pair_device(device_type=Device.Type.LOCAL_AGENT)
+        Device.objects.filter(pk=device.pk).update(status=Device.Status.REVOKED, revoked_at=timezone.now())
+        response, _ = self.signed_request(
+            'POST', '/api/v1/devices/lease/renew/', key=key, device=device, payload={}
+        )
+        self.assertEqual(response.status_code, 410, response.data)
+        self.assertEqual(response.json()['code'], 'device_revoked')
+        device.refresh_from_db()
+        self.assertFalse(device.is_active)
+        self.assertTrue(SecurityEvent.objects.filter(
+            device=device, event_type='DEVICE_PROOF_FAILED', metadata__reason='revoked'
+        ).exists())
+        ordinary, _ = self.signed_request('GET', '/api/v1/devices/me/', key=key, device=device)
+        self.assertEqual(ordinary.status_code, 401)
+
     def test_active_lease_renews_and_expired_active_device_recovers_with_same_key(self):
         key, _pairing, device = self.pair_device()
         renewed, proof = self.signed_request(

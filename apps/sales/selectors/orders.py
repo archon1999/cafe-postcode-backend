@@ -10,6 +10,7 @@ from apps.sales.helpers import (
     get_order_model,
 )
 from apps.sales.models import OrderItemModifier
+from apps.catalog.models import CatalogItem
 from apps.inventory.models import OrderConsumption
 from common.api.query_params import (
     apply_ordering,
@@ -80,11 +81,11 @@ def pos_order_queryset(queryset: QuerySet | None = None) -> QuerySet:
         OrderItem.objects.annotate(
             inventory_consumed_snapshot=Exists(OrderConsumption.objects.filter(order_item_id=OuterRef('pk'))),
         ).select_related(
-            "catalog_item",
             "prep_station",
             "kitchen_ticket_line__ticket",
         )
         .prefetch_related(
+            Prefetch("catalog_item", queryset=CatalogItem.objects.all()),
             "markings",
             Prefetch(
                 "modifiers",

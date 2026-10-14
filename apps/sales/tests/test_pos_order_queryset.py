@@ -98,15 +98,25 @@ class PosOrderQuerysetTests(PosTestCase):
             Order.objects.filter(pk__in=[first_order.pk, second_order.pk])
         ).order_by("order_number")
 
-        with self.assertNumQueries(7):
+        with self.assertNumQueries(8):
             data = OrderSerializer(queryset, many=True).data
 
         self.assertEqual([order["order_number"] for order in data], [101, 102])
 
+    def test_repeated_order_items_share_catalog_json_objects(self):
+        first_order = self.create_order_graph(104)
+        second_order = self.create_order_graph(105)
+        orders = list(pos_order_queryset(Order.objects.filter(pk__in=[first_order.pk, second_order.pk])).order_by('order_number'))
+        with self.assertNumQueries(0):
+            first_item = orders[0].items.all()[0]
+            second_item = orders[1].items.all()[0]
+            self.assertIs(first_item.catalog_item, second_item.catalog_item)
+            self.assertIs(first_item.catalog_item.mxik_payload, second_item.catalog_item.mxik_payload)
+
     def test_serializer_output_keeps_nested_order_data(self):
         order = self.create_order_graph(103)
 
-        with self.assertNumQueries(7):
+        with self.assertNumQueries(8):
             data = OrderSerializer(
                 pos_order_queryset(Order.objects.filter(pk=order.pk)).get()
             ).data

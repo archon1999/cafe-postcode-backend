@@ -26,7 +26,16 @@ class DeviceLeaseRecoveryAuthentication(BaseAuthentication):
     """Authenticate one signed device proof while allowing lease recovery."""
 
     def authenticate(self, request):
-        device = authenticate_device_request(request, allow_expired_lease=True)
+        try:
+            device = authenticate_device_request(request, allow_expired_lease=True)
+        except DeviceAuthenticationFailed as error:
+            # Installed Agents persist terminal revocation on HTTP 410. Keep
+            # ordinary auth failures and browser device contracts unchanged.
+            if str(error.detail.get('code')) == 'device_revoked':
+                device_id = request.headers.get('X-Device-Id')
+                if Device.objects.filter(pk=device_id, type=Device.Type.LOCAL_AGENT).exists():
+                    error.status_code = 410
+            raise
         return AnonymousUser(), device
 
     def authenticate_header(self, request):

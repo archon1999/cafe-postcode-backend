@@ -10,7 +10,9 @@ from common.api.throttling import LocalAgentRateThrottle
 
 from apps.catalog.models import CatalogCategory, CatalogItem
 from apps.catalog.serializers import CatalogMenuCategorySerializer
+from apps.catalog.serializers.pos_catalog_item import PosCatalogItemSerializer
 from apps.catalog.selectors import active_modifier_assignments_prefetch
+from apps.catalog.utils.prep_station import resolve_single_active_prep_station
 from apps.billing.models import CashExpense, CashShift, ExpenseCategory, Payment, Receipt
 from apps.billing.serializers import CashExpenseSerializer, CashShiftSerializer
 from apps.billing.services import CashExpenseService
@@ -39,7 +41,6 @@ OFFLINE_RBAC_GRACE = timedelta(hours=24)
 
 def _menu_snapshot(restaurant):
     items = CatalogItem.objects.filter(is_active=True, is_stoplisted=False).select_related(
-        'category__prep_station',
         'prep_station',
     ).prefetch_related(active_modifier_assignments_prefetch())
     categories = (
@@ -48,7 +49,12 @@ def _menu_snapshot(restaurant):
         .prefetch_related(Prefetch('items', queryset=items, to_attr='active_menu_items'))
         .order_by('sort_order', 'name')
     )
-    return CatalogMenuCategorySerializer(categories, many=True, context={"offline_translations": True}).data
+    context = {
+        "offline_translations": True,
+        PosCatalogItemSerializer.menu_restaurant_context_key: restaurant,
+        PosCatalogItemSerializer.menu_default_prep_station_context_key: resolve_single_active_prep_station(restaurant=restaurant),
+    }
+    return CatalogMenuCategorySerializer(categories, many=True, context=context).data
 
 
 def _hall_snapshot(restaurant):

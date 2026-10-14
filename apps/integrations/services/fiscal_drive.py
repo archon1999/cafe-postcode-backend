@@ -76,6 +76,11 @@ class FiscalDriveIntegrationService(FiscalDriveTransportMixin, FiscalDriveReceip
         refund_receipt_payload = {
             **original_receipt_payload,
             'Operation': 1,
+            'PaymentType': self._payment_type(
+                int(original_receipt_payload.get('ReceivedCash') or 0),
+                int(original_receipt_payload.get('ReceivedCard') or 0),
+                payment.method,
+            ),
             'RefundInfo': refund_info,
             'Time': self._format_operation_time(self._next_operation_datetime(None)),
         }
