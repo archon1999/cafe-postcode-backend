@@ -402,6 +402,36 @@ class ReportsApiTests(PosAPITestCase):
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['data'][0]['kind'], Receipt.Kind.PLAIN)
 
+    def test_receipts_report_includes_order_display_name_and_fiscal_qr_without_payload(self):
+        self.closed_order.display_name = '84'
+        self.closed_order.save(update_fields=['display_name'])
+        qr_url = 'https://ofd.soliq.uz/check?t=TEST&r=84'
+        Receipt.objects.filter(order=self.closed_order).update(payload={
+            'response': {'QRCodeURL': qr_url},
+            'internal_data': 'not-for-reporting',
+        })
+
+        response = self.client.get('/api/v1/admin/reporting/receipts/', self.current_range_params())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data['data']
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            self.assertEqual(row['order_display_name'], '84')
+            self.assertEqual(row['order_number'], self.closed_order.order_number)
+            self.assertNotIn('payload', row)
+            self.assertEqual(row['qr_code_url'], qr_url if row['kind'] == Receipt.Kind.FISCAL else None)
+
+    def test_receipts_report_omits_missing_or_unsafe_qr_links(self):
+        fiscal = Receipt.objects.get(order=self.closed_order, kind=Receipt.Kind.FISCAL)
+        for payload in ({}, {'qr_code_url': 'javascript:alert(1)'}, {'qr_code_url': 'https://'}):
+            with self.subTest(payload=payload):
+                fiscal.payload = payload
+                fiscal.save(update_fields=['payload'])
+                response = self.client.get('/api/v1/admin/reporting/receipts/', self.current_range_params())
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertTrue(all(row['qr_code_url'] is None for row in response.data['data']))
+
     def test_receipts_report_export_is_localized(self):
         response = self.client.get('/api/v1/admin/reporting/receipts/export/', self.current_range_params())
 

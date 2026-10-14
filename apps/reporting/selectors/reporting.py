@@ -422,7 +422,9 @@ def get_receipts_report_queryset(restaurant, period: ReportPeriod) -> QuerySet:
         'status',
         'created_at',
         'payment_id',
+        'payload',
         order_number=F('order__order_number'),
+        order_display_name=F('order__display_name'),
         amount=Coalesce(F('payment__amount'), F('order__total'), Value(0)),
         payment_method=F('payment__method'),
         cashier_name=Coalesce(

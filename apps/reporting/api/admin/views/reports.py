@@ -1,5 +1,6 @@
 from rest_framework.response import Response
 
+from apps.reporting.api.admin.serializers.receipts import serialize_receipt_report_row
 from apps.reporting.helpers import (
     OpenChecksReportFilters,
     PaymentBreakdownReportFilters,
@@ -70,7 +71,7 @@ class ReceiptsReportView(AdminPaginatedReportView):
         queryset = filters.apply(get_receipts_report_queryset(self.get_restaurant(), filters.period))
         totals = get_report_totals(queryset, 'amount')
         page = self.paginate_queryset(queryset)
-        return self.get_paginated_response(list(page), totals=totals)
+        return self.get_paginated_response([serialize_receipt_report_row(row) for row in page], totals=totals)
 
 
 class TopItemsReportView(AdminPaginatedReportView):
