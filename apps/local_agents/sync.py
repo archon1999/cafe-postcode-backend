@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from django.db.models import Prefetch, Q
+from django.db.models import Case, IntegerField, Prefetch, Q, Value, When
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -268,7 +268,20 @@ def _user_snapshots(restaurant, now):
 def _device_bindings(restaurant):
     cash_desks = CashDesk.objects.filter(restaurant=restaurant, is_active=True).order_by('name')
     prep_stations = PrepStation.objects.filter(restaurant=restaurant, is_active=True).order_by('name')
-    integrations = IntegrationConfig.objects.filter(restaurant=restaurant, is_enabled=True).order_by('kind', 'provider')
+    # Agents probe printers in binding order under a shared deadline. Check
+    # active cash desks first so slow kitchen targets cannot consume their
+    # budget and incorrectly report a working cashier printer as offline.
+    integrations = (
+        IntegrationConfig.objects.filter(restaurant=restaurant, is_enabled=True)
+        .annotate(
+            cash_desk_priority=Case(
+                When(pk__in=cash_desks.values('printer_integration_id'), then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by('kind', 'cash_desk_priority', 'provider', 'created_at', 'pk')
+    )
     return {
         'cashDesks': [
             {
