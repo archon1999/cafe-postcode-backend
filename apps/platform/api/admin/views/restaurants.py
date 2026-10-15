@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import generics
 from rest_framework import serializers, status
@@ -40,9 +41,10 @@ User = get_user_model()
 
 
 class RestaurantActivateView(NonRestaurantPermissionRequiredMixin, APIView):
+    @transaction.atomic
     def post(self, request, pk):
         restaurant = generics.get_object_or_404(
-            get_restaurants_queryset_for_request(request), pk=pk
+            get_restaurants_queryset_for_request(request).select_for_update(of=('self',)), pk=pk
         )
         serializer = RestaurantActivationSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)

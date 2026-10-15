@@ -84,7 +84,8 @@ jobs:
           -e DEBUG -e DB_ENGINE -e DB_NAME -e DB_USER -e DB_PASSWORD -e DB_HOST -e DB_PORT -e REDIS_URL
           catalog-assistant-ci python manage.py test
           apps.local_agents apps.users.tests apps.workforce.tests
-          apps.payroll.tests apps.integrations.tests apps.reporting.tests --noinput
+          apps.payroll.tests apps.integrations.tests apps.reporting.tests
+          apps.platform.tests.test_platform_tariff_activation_api --noinput
   deploy:
     needs: catalog-tests
     runs-on: ubuntu-latest

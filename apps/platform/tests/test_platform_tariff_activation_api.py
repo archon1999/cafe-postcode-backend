@@ -1,7 +1,10 @@
+from unittest.mock import patch
+
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.platform.models import BusinessPartner, Tariff
+from apps.platform.models import BusinessPartner, RestaurantEntitlement, Tariff
 from apps.restaurants.models import Restaurant
 from apps.users.models import Permission, Role, User
 
@@ -159,6 +162,33 @@ class PlatformTariffActivationApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+
+    def test_failed_admin_profile_creation_rolls_back_entitlement_and_user(self):
+        entitlement = RestaurantEntitlement.objects.create(
+            restaurant=self.restaurant, tariff=self.restaurant_tariff, is_active=False,
+        )
+        entitlement.allowed_roles.set([self.waiter_role])
+        user_ids = set(User.objects.values_list('id', flat=True))
+        self.client.force_authenticate(self.business_partner_user)
+
+        with patch(
+            'apps.users.signals.profiles.EmployeeProfile.objects.get_or_create',
+            side_effect=IntegrityError('employee profile insert failed'),
+        ):
+            response = self.client.post(
+                f'/api/v1/admin/platform/restaurants/{self.restaurant.id}/activate/',
+                {'tariff_id': str(self.fast_food_tariff.id)}, format='json',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.restaurant.refresh_from_db()
+        entitlement.refresh_from_db()
+        self.assertFalse(self.restaurant.is_active)
+        self.assertIsNone(self.restaurant.activated_at)
+        self.assertFalse(entitlement.is_active)
+        self.assertEqual(entitlement.tariff_id, self.restaurant_tariff.id)
+        self.assertEqual(list(entitlement.allowed_roles.all()), [self.waiter_role])
+        self.assertEqual(set(User.objects.values_list('id', flat=True)), user_ids)
 
     def test_reactivation_removes_accidental_django_staff_from_non_superuser(self):
         admin_user = User.objects.create_user(
