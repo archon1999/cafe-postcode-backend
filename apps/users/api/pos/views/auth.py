@@ -170,6 +170,20 @@ class PosTransportDiscoveryView(APIView):
         )
 
 
+class PosDeviceTransportDiscoveryView(APIView):
+    # Discovery must work before PIN login and with an Agent-issued session
+    # that the backend cannot authenticate. Authority comes from device proof.
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        device = authenticate_device_request(request, expected_types=[Device.Type.POS_TERMINAL])
+        return Response({
+            'restaurantId': str(device.restaurant_id),
+            'coordinator': _issue_coordinator(restaurant=device.restaurant, device=device),
+        })
+
+
 class PosPinLoginView(APIView):
     permission_classes = [permissions.AllowAny]
     throttle_classes = [PinLoginRateThrottle, PinDeviceRateThrottle]

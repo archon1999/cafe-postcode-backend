@@ -270,6 +270,60 @@ class DevicePlatformApiTests(PosTestDataMixin, APITestCase):
         device = self.approve_pairing(pairing, restaurant=restaurant)
         return key, pairing, device
 
+    def _discovery_device(self):
+        key = TestKey()
+        device = Device.objects.create(
+            restaurant=self.restaurant, type=Device.Type.POS_TERMINAL, name='Roaming POS',
+            public_key_algorithm=key.algorithm, public_key=key.public_key,
+            public_key_fingerprint=key.fingerprint, paired_at=timezone.now(),
+            lease_expires_at=timezone.now() + timedelta(days=1),
+        )
+        return key, device
+
+    @patch('apps.users.api.pos.views.auth._issue_coordinator')
+    def test_device_transport_discovery_before_pin_is_scoped_to_signed_device(self, issue):
+        key, device = self._discovery_device()
+        issue.return_value = {'coordinatorUrls': ['http://192.168.1.4:18181']}
+        response, _ = self.signed_request(
+            'POST', '/api/v1/pos/auth/device-transport/', key=key, device=device,
+            payload={'restaurantId': '00000000-0000-4000-8000-000000000001'},
+            token='agent-session-unknown-to-backend',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['restaurantId'], str(device.restaurant_id))
+        self.assertEqual(response.data['coordinator']['coordinatorUrls'], ['http://192.168.1.4:18181'])
+        issue.assert_called_once_with(restaurant=device.restaurant, device=device)
+        self.assertNotIn('token', response.data)
+
+    @patch('apps.users.api.pos.views.auth._issue_coordinator')
+    def test_device_transport_discovery_requires_valid_signature(self, issue):
+        key, device = self._discovery_device()
+        response = self.client.post('/api/v1/pos/auth/device-transport/', {}, format='json')
+        self.assertIn(response.status_code, (401, 403))
+        response, _ = self.signed_request(
+            'POST', '/api/v1/pos/auth/device-transport/', key=TestKey(), device=device, payload={},
+        )
+        self.assertIn(response.status_code, (401, 403))
+        issue.assert_not_called()
+
+    @patch('apps.users.api.pos.views.auth._issue_coordinator')
+    def test_device_transport_discovery_rejects_revoked_expired_and_non_pos_devices(self, issue):
+        for invalid in ('revoked', 'expired', 'wrong_type'):
+            with self.subTest(invalid=invalid):
+                key, device = self._discovery_device()
+                if invalid == 'revoked':
+                    device.status = Device.Status.REVOKED
+                elif invalid == 'expired':
+                    device.lease_expires_at = timezone.now() - timedelta(seconds=1)
+                else:
+                    device.type = Device.Type.TV_MONITOR
+                device.save()
+                response, _ = self.signed_request(
+                    'POST', '/api/v1/pos/auth/device-transport/', key=key, device=device, payload={},
+                )
+                self.assertIn(response.status_code, (401, 403))
+        issue.assert_not_called()
+
     def test_pairing_proves_key_possession_hides_raw_secrets_and_is_single_decision(self):
         key, pairing = self.create_pairing()
         stored = DevicePairing.objects.get(pk=pairing['id'])
