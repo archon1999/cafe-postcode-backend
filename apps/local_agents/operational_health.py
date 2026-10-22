@@ -49,8 +49,11 @@ def assess_operational_health(
     fiscal_attempted_recently=True,
     cashier_fiscal_ids=None,
     cashier_printer_ids=None,
+    hardware_advisory_only=False,
 ):
     result = {'status': 'unknown', 'reasons': [], 'checkedAt': None, 'freshnessMinutes': int(FRESHNESS.total_seconds() // 60)}
+    if hardware_advisory_only:
+        result['hardwareAdvisoryOnly'] = True
     if not isinstance(value, dict) or value.get('schemaVersion') != 1:
         return result
     checked = _timestamp(value.get('checkedAt'))
@@ -83,6 +86,8 @@ def assess_operational_health(
             # healthy result until it is reconciled.
             if resource == 'unresolved_financial_operations':
                 return True
+            if hardware_advisory_only:
+                return False
             if cashier_fiscal_ids is not None:
                 if resource == 'diagnostics':
                     if not cashier_fiscal_ids:
@@ -93,6 +98,8 @@ def assess_operational_health(
                         return False
             if not fiscal_attempted_recently:
                 return False
+        if component == 'printer' and hardware_advisory_only:
+            return False
         if component == 'printer' and cashier_printer_ids is not None:
             if resource == 'diagnostics':
                 return bool(cashier_printer_ids)

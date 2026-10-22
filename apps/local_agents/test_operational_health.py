@@ -152,3 +152,34 @@ class OperationalHealthTests(SimpleTestCase):
     def test_unknown_runtime_is_not_healthy_and_invalid_reports_are_ignored(self):
         self.assertEqual(assess_operational_health(self.report([{'component': 'storage', 'state': 'ok'}, {'component': 'runtime', 'state': 'unknown'}]), self.now)['status'], 'unknown')
         self.assertIsNone(normalize_health({'schemaVersion': 1, 'checkedAt': 'invalid', 'checks': []}, self.now))
+
+    def test_test_branch_keeps_hardware_evidence_but_not_hardware_alert_status(self):
+        checks = [
+            {'component': 'storage', 'state': 'ok'},
+            {'component': 'fiscal', 'resource': 'probe/fiscal', 'state': 'error', 'consecutiveFailures': 3},
+            {'component': 'printer', 'resource': 'probe/printer', 'state': 'error', 'consecutiveFailures': 3},
+        ]
+        report = self.report(checks)
+        self.assertEqual(assess_operational_health(report, self.now)['status'], 'attention')
+        result = assess_operational_health(report, self.now, hardware_advisory_only=True)
+        self.assertEqual(result['status'], 'healthy')
+        self.assertTrue(result['hardwareAdvisoryOnly'])
+        self.assertEqual(len(result['reasons']), 2)
+        self.assertEqual(report['checks'][1]['state'], 'error')
+
+    def test_test_branch_still_reports_financial_sync_and_critical_failures(self):
+        for component, resource, expected in (
+            ('fiscal', 'unresolved_financial_operations', 'attention'),
+            ('sync', 'outbox', 'attention'),
+            ('payment', 'payment', 'attention'),
+            ('storage', 'database', 'critical'),
+            ('runtime', 'runtime', 'critical'),
+        ):
+            with self.subTest(component=component):
+                report = self.report([
+                    {'component': 'storage', 'state': 'ok'},
+                    {'component': component, 'resource': resource, 'state': 'error', 'consecutiveFailures': 3},
+                ])
+                result = assess_operational_health(report, self.now, hardware_advisory_only=True)
+                self.assertEqual(result['status'], expected)
+        self.assertEqual(assess_operational_health({}, self.now, hardware_advisory_only=True)['status'], 'unknown')

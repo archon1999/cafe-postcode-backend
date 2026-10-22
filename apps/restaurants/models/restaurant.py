@@ -84,6 +84,10 @@ class Restaurant(BaseModel):
         upload_to=restaurant_auth_background_upload_to,
     )
     last_order_number = models.PositiveIntegerField(default=0)
+    is_test = models.BooleanField(
+        default=False,
+        help_text='Test branch: printer and fiscal hardware checks are advisory in monitoring.',
+    )
     is_active = models.BooleanField(default=True)
     activated_at = models.DateTimeField(null=True, blank=True)
     deactivated_at = models.DateTimeField(null=True, blank=True)

@@ -437,6 +437,7 @@ class MonitoringOverviewView(APIView):
                 {
                     "restaurantId": str(restaurant.id),
                     "restaurantName": restaurant.name,
+                    "isTest": restaurant.is_test,
                     "ordersLast7Days": order_activity.get(restaurant.id, {}).get(
                         "orders_last_7_days", 0
                     ),
@@ -449,6 +450,7 @@ class MonitoringOverviewView(APIView):
                         ),
                         cashier_fiscal_ids=cashier_fiscal_ids[restaurant.id],
                         cashier_printer_ids=cashier_printer_ids[restaurant.id],
+                        hardware_advisory_only=restaurant.is_test,
                     ),
                     "devices": {
                         "active": device_counts.get("active", 0),

@@ -609,6 +609,46 @@ class MonitoringOverviewApiTests(APITestCase):
         self.assertEqual(health['status'], 'healthy')
         self.assertEqual(health['reasons'][0]['component'], 'fiscal')
 
+    def test_only_explicit_test_branch_treats_cashier_hardware_as_advisory(self):
+        now = timezone.now()
+        restaurant = Restaurant.objects.create(name='Test branch')
+        printer = IntegrationConfig.objects.create(
+            restaurant=restaurant, name='Printer', kind=IntegrationConfig.Kind.PRINTER,
+            provider='windows-raw',
+        )
+        CashDesk.objects.create(restaurant=restaurant, name='Main', printer_integration=printer)
+        agent, _ = LocalAgent.issue_for_restaurant(restaurant=restaurant)
+        report = {
+            'schemaVersion': 1, 'checkedAt': now.isoformat(),
+            'checks': [
+                {'component': 'storage', 'state': 'ok'},
+                {'component': 'printer', 'resource': f'probe/{printer.id}', 'state': 'error', 'consecutiveFailures': 3},
+            ],
+        }
+        agent.operational_health = report
+        agent.save(update_fields=['operational_health'])
+        self.client.force_authenticate(user=self.superuser)
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'attention')
+        self.assertFalse(response.data['branches'][0]['isTest'])
+
+        restaurant.is_test = True
+        restaurant.save(update_fields=['is_test'])
+        response = self.client.get(self.endpoint)
+        branch = response.data['branches'][0]
+        self.assertEqual(branch['operationalHealth']['status'], 'healthy')
+        self.assertTrue(branch['isTest'])
+        self.assertTrue(branch['operationalHealth']['hardwareAdvisoryOnly'])
+        self.assertEqual(branch['operationalHealth']['reasons'][0]['component'], 'printer')
+        agent.refresh_from_db()
+        self.assertEqual(agent.operational_health, report)
+
+        restaurant.is_test = False
+        restaurant.save(update_fields=['is_test'])
+        response = self.client.get(self.endpoint)
+        self.assertEqual(response.data['branches'][0]['operationalHealth']['status'], 'attention')
+
     def test_non_cashier_printer_failure_stays_visible_without_lowering_health(self):
         now = timezone.now()
         restaurant = Restaurant.objects.create(name='Kitchen printer branch')

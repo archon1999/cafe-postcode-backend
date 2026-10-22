@@ -65,6 +65,7 @@ jobs:
           apps.integrations.tests.test_fiscal_classification apps.integrations.tests.test_fiscal_drive
           apps.sales.tests.test_pos_order_queryset apps.local_agents.test_fiscal_recovery_snapshot
           apps.billing.tests.test_open_check_list_api
+          apps.devices.tests.test_monitoring_overview
           apps.local_agents.tests.LocalAgentMutationPushTests.test_trusted_edge_fiscal_result_is_persisted_without_remote_fiscal_call --noinput
       - name: Test service fee migrations and offline replay contracts with PostgreSQL
         run: >-
