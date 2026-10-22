@@ -162,7 +162,7 @@ class OpenCheckListApiTests(APITestCase):
         single_zone_order = next(
             item for item in self.unwrap_response_items(single_zone_response) if item['id'] == str(first_order.id)
         )
-        self.assertEqual(single_zone_order['table_number'], 23)
+        self.assertEqual(single_zone_order['table_number'], '23')
         self.assertEqual(single_zone_order['zone_name'], 'Asosiy zona')
         self.assertFalse(single_zone_order['show_zone_name'])
 
@@ -180,7 +180,7 @@ class OpenCheckListApiTests(APITestCase):
         self.assertTrue(orders[str(first_order.id)]['show_zone_name'])
         self.assertTrue(orders[str(second_order.id)]['show_zone_name'])
         self.assertEqual(orders[str(second_order.id)]['zone_name'], 'VIP kabina')
-        self.assertEqual(orders[str(second_order.id)]['table_number'], 23)
+        self.assertEqual(orders[str(second_order.id)]['table_number'], '23')
 
     def test_open_status_respects_limit(self):
         self.create_order(status=Order.Status.SUBMITTED)
