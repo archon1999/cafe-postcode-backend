@@ -111,6 +111,13 @@ class CashShiftOpenView(APIView):
 
         cashier = None
         cashier_id = serializer.validated_data.get("cashier_id") or (request.data.get('edge_cashier_id') if trusted_edge_replay else None)
+        if (cashier_id is None and trusted_edge_replay and edge_cash_shift_id
+                and len(available_cash_desks) > 1):
+            # The agent assigns an omitted cashier to the opening user. Rebuild
+            # that same identified shift instead of applying live UI selection
+            # rules to evidence that has already been accepted locally. Keep
+            # the existing shared-shift behavior for single-register branches.
+            cashier_id = request.user.pk
         if cashier_id is not None:
             cashier = (
                 User.objects.filter(

@@ -216,6 +216,11 @@ class LocalAgentMutationProcessor(
 
     @staticmethod
     def _drop_implicit_invalid_cashier(body, user):
+        # Identified edge shifts already exist locally with this responsible
+        # user. Preserve their assignment even when a manager opened the shift;
+        # the legacy fallback below is only for requests without shift evidence.
+        if body.get("edgeCashShiftId") or body.get("edge_cash_shift_id"):
+            return
         requested_cashier_id = str(
             body.get("cashierId") or body.get("cashier_id") or ""
         ).strip()
