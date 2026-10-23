@@ -81,7 +81,8 @@ class KitchenStatusService:
     def update_item_status(self, *, item: OrderItem, status: str, user=None, inventory_disposition='waste'):
         from apps.kitchen.services import sync_order_tickets
 
-        item = OrderItem.objects.select_for_update().select_related('order', 'prep_station').get(pk=item.pk)
+        # Lock the item and its order, not the nullable preparation-station join.
+        item = OrderItem.objects.select_for_update(of=('self', 'order')).select_related('order', 'prep_station').get(pk=item.pk)
 
         self.feature_gate_service_class().ensure_kitchen_access(
             restaurant=item.order.restaurant,
