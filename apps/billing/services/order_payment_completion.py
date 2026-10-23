@@ -36,7 +36,8 @@ class OrderPaymentCompletionMixin:
                 card_amount=int(totals.get("card_amount") or 0),
             )
             self.state_service_class().close_order_after_payment(
-                order=order, received_by=received_by
+                order=order, received_by=received_by,
+                closed_at=payment.occurred_at,
             )
         elif payment.register_fiscal:
             payment.register_fiscal = False

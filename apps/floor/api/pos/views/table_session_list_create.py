@@ -42,6 +42,8 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
 
     @transaction.atomic
     def perform_create(self, serializer):
+        from common.edge_replay import historical_session
+        historical = historical_session(serializer.validated_data.get('id'))
         restaurant = get_request_restaurant(self.request)
         self.feature_gate_service_class().ensure_hall_access(restaurant=restaurant)
         submitted_table = serializer.validated_data['table']
@@ -52,9 +54,9 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
         )
         serializer.validated_data['table'] = table
         guest_count = serializer.validated_data.get('guest_count', 1)
-        if table.status == DiningTable.Status.BLOCKED:
+        if not historical and table.status == DiningTable.Status.BLOCKED:
             raise serializers.ValidationError({'table': _('This table is blocked.')})
-        if TableSessionTable.objects.select_for_update(of=('self',)).filter(
+        if not historical and TableSessionTable.objects.select_for_update(of=('self',)).filter(
             table=table,
             released_at__isnull=True,
             session__status__in=(TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT),
@@ -62,13 +64,13 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
             raise serializers.ValidationError(
                 {'table': _('This table is already part of an active table group.')}
             )
-        if guest_count > available_seat_count(table):
+        if not historical and guest_count > available_seat_count(table):
             raise serializers.ValidationError(
                 {'guest_count': _('Guest count exceeds the seats currently available at this table.')}
             )
         required_permission = (
             POS_TABLE_RESERVATIONS_MANAGE_PERMISSION
-            if table.status == DiningTable.Status.RESERVED
+            if table.status == DiningTable.Status.RESERVED and not historical
             else POS_TABLES_MANAGE_PERMISSION
         )
         require_any_permission_code(self.request.user, required_permission)
@@ -78,6 +80,7 @@ class TableSessionListCreateView(generics.ListCreateAPIView):
             opened_by=self.request.user,
             assigned_waiter=self.request.user,
         )
-        table.status = DiningTable.Status.OCCUPIED
-        table.save(update_fields=['status', 'updated_at'])
+        if not historical:
+            table.status = DiningTable.Status.OCCUPIED
+            table.save(update_fields=['status', 'updated_at'])
         sync_table_status(table)

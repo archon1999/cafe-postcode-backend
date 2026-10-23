@@ -4,6 +4,7 @@ import re
 from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
+from common.edge_replay import event_time
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import ValidationError
 
@@ -51,6 +52,9 @@ class OrderStateService:
         user=None,
         requested_display_name: str = '',
     ) -> str:
+        from common.edge_replay import historical_floor_scope
+        if historical_floor_scope() is not None:
+            return str(requested_display_name or '').strip()
         queryset = CashShift.objects.select_for_update().filter(
             cash_desk__restaurant=restaurant,
             status=CashShift.Status.OPEN,
@@ -348,13 +352,13 @@ class OrderStateService:
                 status__in=self.MUTABLE_ORDER_STATUSES,
             ).exists():
                 table_session.status = TableSession.Status.CLOSED
-                table_session.closed_at = timezone.now()
+                table_session.closed_at = event_time()
                 table_session.save(update_fields=['status', 'closed_at', 'updated_at'])
                 sync_table_status(table_session.table)
             return True
 
         order.status = Order.Status.CANCELLED
-        order.closed_at = timezone.now()
+        order.closed_at = event_time()
         order.save(update_fields=['status', 'closed_at', 'updated_at'])
         if order.table_session_id:
             session = order.table_session
@@ -369,7 +373,7 @@ class OrderStateService:
         from apps.kitchen.services import sync_order_tickets
 
         self.ensure_order_mutable(order=order, allow_paid_fulfillment=True)
-        now = timezone.now()
+        now = event_time()
         served_count = order.items.filter(status='done').update(status='served', updated_at=now)
         if not served_count:
             raise ValidationError({'detail': _('There are no ready items to serve.')})
@@ -385,14 +389,14 @@ class OrderStateService:
         return order
 
     @transaction.atomic
-    def close_order_after_payment(self, *, order: Order, received_by):
+    def close_order_after_payment(self, *, order: Order, received_by, closed_at=None):
         from apps.inventory.services import consume_order_items
 
         consume_order_items(
             order, list(order.items.exclude(status='cancelled').prefetch_related('modifiers')),
             actor=received_by, trigger='sale',
         )
-        now = timezone.now()
+        now = closed_at or timezone.now()
         order.status = Order.Status.CLOSED
         order.cashier = received_by
         order.closed_at = now

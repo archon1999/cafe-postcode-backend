@@ -47,6 +47,7 @@ class LocalAgentMutationPushView(APIView):
         processor = LocalAgentMutationProcessor(self.request_factory_class)
         return Response(
             {
+                'capabilities': ['historical_floor_projection_v1'] if self.receive_only else [],
                 "results": [
                     processor.process(agent=agent, operation=operation, receive_only=self.receive_only)
                     for operation in operations

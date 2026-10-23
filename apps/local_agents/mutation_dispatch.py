@@ -134,8 +134,9 @@ class LocalAgentMutationDispatchMixin:
         internal_request.resolver_match = match
         force_authenticate(internal_request, user=user)
         from apps.inventory.services import inventory_replay_context
+        from common.edge_replay import edge_event_time
 
-        with inventory_replay_context(
+        with edge_event_time(occurred_at), inventory_replay_context(
             agent.restaurant,
             body.get('edgeInventorySnapshots', body.get('edge_inventory_snapshots', {})),
             occurred_at,

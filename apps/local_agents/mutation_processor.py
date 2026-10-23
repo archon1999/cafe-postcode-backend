@@ -179,6 +179,13 @@ class LocalAgentMutationProcessor(
             if reconciled is not None:
                 return reconciled
 
+        from apps.local_agents.mutation_structural_dependencies import structural_dependency_result
+        dependency = structural_dependency_result(
+            agent=agent, operation_id=operation_id, path=path, body=body,
+        )
+        if dependency is not None:
+            return dependency
+
         dispatch_path, preparation_error = self._prepare_dispatch(
             agent=agent,
             operation_id=operation_id,

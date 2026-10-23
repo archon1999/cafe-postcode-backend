@@ -10,6 +10,7 @@ from rest_framework.exceptions import APIException, NotFound
 from apps.floor.models import DiningTable, TableSession, TableSessionTable
 from apps.kitchen.models import KitchenTicket
 from apps.sales.models import Order
+from common.edge_replay import event_time, historical_floor_scope
 
 from .occupancy import (
     ACTIVE_SESSION_STATUSES,
@@ -138,7 +139,7 @@ class TableOperationService:
             canonical_order.table_session = canonical_session
             canonical_order.save(update_fields=['table_session', 'updated_at'])
 
-        now = timezone.now()
+        now = event_time()
         for source_order in active_orders:
             if source_order.pk == canonical_order.pk:
                 continue
@@ -167,7 +168,7 @@ class TableOperationService:
         return canonical_order
 
     def _release_secondary_tables(self, session, *, now=None):
-        now = now or timezone.now()
+        now = now or event_time()
         links = list(
             TableSessionTable.objects.select_for_update(of=('self',))
             .select_related('table')
@@ -206,7 +207,7 @@ class TableOperationService:
         target.save(update_fields=['guest_count', 'note', 'updated_at'])
         self._consolidate_orders(sessions=[target, source], canonical_session=target)
 
-        now = timezone.now()
+        now = event_time()
         self._release_secondary_tables(source, now=now)
         source.status = TableSession.Status.MERGED
         source.merged_into = target
@@ -239,9 +240,9 @@ class TableOperationService:
             restaurant=restaurant,
         )
         target_table = tables[str(target_table_id)]
-        if target_table.status == DiningTable.Status.BLOCKED:
+        if historical_floor_scope() is None and target_table.status == DiningTable.Status.BLOCKED:
             self._error('TARGET_TABLE_BLOCKED', _('The target table is blocked.'))
-        if target_table.status == DiningTable.Status.RESERVED:
+        if historical_floor_scope() is None and target_table.status == DiningTable.Status.RESERVED:
             self._error('TARGET_TABLE_RESERVED', _('A reserved table cannot receive a transfer.'))
         if any(table.pk == target_table.pk for table in source_tables):
             self._error('SOURCE_AND_TARGET_MATCH', _('The source and target tables must be different.'))
@@ -388,7 +389,7 @@ class TableOperationService:
         if table_ids:
             queryset = queryset.filter(table_id__in=table_ids)
         links = list(queryset)
-        now = timezone.now()
+        now = event_time()
         if links:
             TableSessionTable.objects.filter(pk__in=[link.pk for link in links]).update(
                 released_at=now,

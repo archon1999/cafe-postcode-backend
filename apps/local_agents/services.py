@@ -87,6 +87,9 @@ class LocalAgentCommandService:
     poll_interval_seconds = 0.2
 
     def _enqueue_command(self, *, restaurant, command_type: str, payload: dict, timeout_seconds: int):
+        from common.edge_replay import historical_floor_scope
+        if historical_floor_scope() is not None:
+            raise LocalAgentCommandError('Historical projection cannot dispatch device commands.')
         try:
             if command_type == 'local_http.request':
                 authorized = authorize_local_http_request(

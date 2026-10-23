@@ -8,9 +8,11 @@ from apps.local_agents.admin_views import (
     LocalAgentFleetLogsView,
     LocalAgentFleetOutboxActionView,
     LocalAgentFleetUpdateView,
+    LocalAgentLatestStableReleaseView,
 )
 
 urlpatterns = [
+    path('latest-release/', LocalAgentLatestStableReleaseView.as_view()),
     path('commands/catalog/', SupportCommandCatalogView.as_view()),
     path('<uuid:pk>/commands/', SupportCommandView.as_view()),
     path('<uuid:pk>/commands/<uuid:request_id>/', SupportCommandView.as_view()),

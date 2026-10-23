@@ -8,7 +8,9 @@ PREFETCHED_ACTIVE_TABLE_LINKS_ATTR = 'serialized_active_table_links'
 
 
 def active_table_sessions(table):
-    return TableSession.objects.filter(
+    from common.edge_replay import historical_floor_scope
+    scope = historical_floor_scope()
+    queryset = TableSession.objects.filter(
         Q(table_id=table.pk)
         | Q(
             attached_table_links__table_id=table.pk,
@@ -16,6 +18,9 @@ def active_table_sessions(table):
         ),
         status__in=ACTIVE_SESSION_STATUSES,
     ).distinct()
+    if scope is not None:
+        queryset = queryset.filter(pk__in=scope.session_ids, restaurant_id=scope.restaurant_id)
+    return queryset
 
 
 def session_physical_tables(session):
@@ -47,6 +52,12 @@ def available_seat_count(table, *, exclude_session=None) -> int:
 
 
 def sync_table_status(table):
+    from common.edge_replay import historical_floor_scope
+    scope = historical_floor_scope()
+    if scope is not None:
+        if str(table.pk) not in scope.table_ids:
+            raise ValueError('Historical projection attempted to change an unplanned table.')
+        return table
     table = DiningTable.objects.get(pk=table.pk)
     if table.status == DiningTable.Status.BLOCKED:
         return table

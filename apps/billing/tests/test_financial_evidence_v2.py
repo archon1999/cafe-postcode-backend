@@ -110,6 +110,10 @@ class FinancialEvidenceTests(PosTestCase):
         self.assertNotEqual(payment.cash_shift_id, successor.pk)
         self.assertEqual(payment.paid_at, occurred)
         self.assertEqual(payment.occurred_at, occurred)
+        result["order"].refresh_from_db()
+        self.assertEqual(result["order"].closed_at, occurred)
+        if result["order"].table_session_id:
+            self.assertEqual(result["order"].table_session.closed_at, occurred)
         self.assertEqual(result["receipt"].original_paid_at, occurred)
         self.assertEqual(payment.financial_snapshot["orderTotal"], 30000)
         self.shift.refresh_from_db()

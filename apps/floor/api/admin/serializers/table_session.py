@@ -180,7 +180,9 @@ class TableSessionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(detail) from None
 
     def validate(self, attrs):
+        from common.edge_replay import historical_session
         trusted_edge_replay = self._is_trusted_edge_replay()
+        historical = trusted_edge_replay and historical_session(attrs.get('id'))
         if self.instance is None:
             if "id" in attrs and not trusted_edge_replay:
                 raise serializers.ValidationError(
@@ -239,10 +241,10 @@ class TableSessionSerializer(serializers.ModelSerializer):
                     }
                 )
 
-        if table.status == DiningTable.Status.BLOCKED:
+        if not historical and table.status == DiningTable.Status.BLOCKED:
             raise serializers.ValidationError({"table": _("This table is blocked.")})
 
-        if self.instance is None and TableSessionTable.objects.filter(
+        if not historical and self.instance is None and TableSessionTable.objects.filter(
             table=table,
             released_at__isnull=True,
             session__status__in=(TableSession.Status.OPEN, TableSession.Status.PENDING_PAYMENT),
@@ -260,7 +262,7 @@ class TableSessionSerializer(serializers.ModelSerializer):
                     % {"limit": int(table.seat_count or 0)}
                 }
             )
-        if guest_count is not None and guest_count > available_seat_count(
+        if not historical and guest_count is not None and guest_count > available_seat_count(
             table, exclude_session=self.instance
         ):
             raise serializers.ValidationError(

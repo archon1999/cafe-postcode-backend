@@ -1,0 +1,725 @@
+{
+  "orders": {
+    "model": "sales.order",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order_number",
+        "kind": "number"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "open",
+          "submitted",
+          "ready",
+          "closed",
+          "cancelled"
+        ]
+      },
+      "channel": {
+        "lookup": "channel",
+        "kind": "option",
+        "options": [
+          "hall",
+          "takeaway",
+          "online",
+          "delivery"
+        ]
+      },
+      "hallName": {
+        "lookup": "table_session__hall__name",
+        "kind": "text"
+      },
+      "tableName": {
+        "lookup": "table_session__table__name",
+        "kind": "text"
+      },
+      "openedByName": {
+        "lookup": "opened_by__full_name",
+        "kind": "text"
+      },
+      "cashierName": {
+        "lookup": "cashier__full_name",
+        "kind": "text"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "closedAt": {
+        "lookup": "closed_at",
+        "kind": "date"
+      },
+      "itemsAndTotal": {
+        "lookup": "total",
+        "kind": "number"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "orderItems": {
+    "model": "sales.orderitem",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order__order_number",
+        "kind": "number"
+      },
+      "catalogItemName": {
+        "lookup": "catalog_item__name",
+        "kind": "text"
+      },
+      "prepStationName": {
+        "lookup": "prep_station__name",
+        "kind": "text"
+      },
+      "createdByName": {
+        "lookup": "created_by__full_name",
+        "kind": "text"
+      },
+      "tableName": {
+        "lookup": "order__table_session__table__name",
+        "kind": "text"
+      },
+      "hallName": {
+        "lookup": "order__table_session__hall__name",
+        "kind": "text"
+      },
+      "quantity": {
+        "lookup": "quantity",
+        "kind": "number"
+      },
+      "unitPrice": {
+        "lookup": "unit_price",
+        "kind": "number"
+      },
+      "lineTotal": {
+        "lookup": "line_total",
+        "kind": "number"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "new",
+          "cooking",
+          "done",
+          "served",
+          "cancelled"
+        ]
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "updatedAt": {
+        "lookup": "updated_at",
+        "kind": "date"
+      }
+    }
+  },
+  "orderItemNotes": {
+    "model": "sales.orderitemnote",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order_item__order__order_number",
+        "kind": "number"
+      },
+      "catalogItemName": {
+        "lookup": "order_item__catalog_item__name",
+        "kind": "text"
+      },
+      "tableName": {
+        "lookup": "order_item__order__table_session__table__name",
+        "kind": "text"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "updatedAt": {
+        "lookup": "updated_at",
+        "kind": "date"
+      },
+      "body": {
+        "lookup": "body",
+        "kind": "text"
+      }
+    }
+  },
+  "payments": {
+    "model": "billing.payment",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order__order_number",
+        "kind": "number"
+      },
+      "cashDeskName": {
+        "lookup": "cash_desk__name",
+        "kind": "text"
+      },
+      "receivedByName": {
+        "lookup": "received_by__full_name",
+        "kind": "text"
+      },
+      "method": {
+        "lookup": "method",
+        "kind": "option",
+        "options": [
+          "cash",
+          "card",
+          "qr",
+          "mixed"
+        ]
+      },
+      "amount": {
+        "lookup": "amount",
+        "kind": "number"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "pending",
+          "succeeded",
+          "failed"
+        ]
+      },
+      "paidAt": {
+        "lookup": "paid_at",
+        "kind": "date"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "updatedAt": {
+        "lookup": "updated_at",
+        "kind": "date"
+      }
+    }
+  },
+  "receipts": {
+    "model": "billing.receipt",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order__order_number",
+        "kind": "number"
+      },
+      "kind": {
+        "lookup": "kind",
+        "kind": "option",
+        "options": [
+          "plain",
+          "fiscal",
+          "refund"
+        ]
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "created",
+          "sent",
+          "failed",
+          "unknown"
+        ]
+      },
+      "provider": {
+        "lookup": "provider",
+        "kind": "text"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "updatedAt": {
+        "lookup": "updated_at",
+        "kind": "date"
+      }
+    }
+  },
+  "users": {
+    "model": "users.user",
+    "fields": {
+      "username": {
+        "lookup": "username",
+        "kind": "text"
+      },
+      "fullName": {
+        "lookup": "full_name",
+        "kind": "text"
+      },
+      "phone": {
+        "lookup": "phone",
+        "kind": "text"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "role": {
+        "lookup": "role__name",
+        "kind": "text"
+      }
+    }
+  },
+  "roles": {
+    "model": "users.role",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "isSystem": {
+        "lookup": "is_system",
+        "kind": "boolean"
+      }
+    }
+  },
+  "permissions": {
+    "model": "users.permission",
+    "fields": {
+      "label": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "code": {
+        "lookup": "code",
+        "kind": "text"
+      },
+      "scope": {
+        "lookup": "surface",
+        "kind": "option",
+        "options": [
+          "admin",
+          "pos",
+          "dashboard"
+        ]
+      },
+      "action": {
+        "lookup": "action",
+        "kind": "text"
+      },
+      "description": {
+        "lookup": "description",
+        "kind": "text"
+      }
+    }
+  },
+  "halls": {
+    "model": "floor.hall",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "description": {
+        "lookup": "description",
+        "kind": "text"
+      },
+      "zoneOrCabinName": {
+        "lookup": "zone_or_cabin__name",
+        "kind": "text"
+      },
+      "sortOrder": {
+        "lookup": "sort_order",
+        "kind": "number"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      }
+    }
+  },
+  "zones": {
+    "model": "floor.zoneorcabin",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "sortOrder": {
+        "lookup": "sort_order",
+        "kind": "number"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "tableSessions": {
+    "model": "floor.tablesession",
+    "fields": {
+      "tableName": {
+        "lookup": "table__name",
+        "kind": "text"
+      },
+      "hallName": {
+        "lookup": "hall__name",
+        "kind": "text"
+      },
+      "openedByName": {
+        "lookup": "opened_by__full_name",
+        "kind": "text"
+      },
+      "assignedWaiterName": {
+        "lookup": "assigned_waiter__full_name",
+        "kind": "text"
+      },
+      "guestCount": {
+        "lookup": "guest_count",
+        "kind": "number"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "open",
+          "pending_payment",
+          "closed",
+          "merged"
+        ]
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "businessPartners": {
+    "model": "platform.businesspartner",
+    "fields": {
+      "companyName": {
+        "lookup": "company_name",
+        "kind": "text"
+      },
+      "inn": {
+        "lookup": "inn",
+        "kind": "text"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "draft",
+          "active",
+          "inactive"
+        ]
+      },
+      "activatedAt": {
+        "lookup": "activated_at",
+        "kind": "date"
+      }
+    }
+  },
+  "tariffs": {
+    "model": "platform.tariff",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      }
+    }
+  },
+  "restaurants": {
+    "model": "restaurants.restaurant",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "legalName": {
+        "lookup": "legal_name",
+        "kind": "text"
+      },
+      "phone": {
+        "lookup": "phone",
+        "kind": "text"
+      },
+      "currency": {
+        "lookup": "currency",
+        "kind": "text"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "activatedAt": {
+        "lookup": "activated_at",
+        "kind": "date"
+      },
+      "deactivatedAt": {
+        "lookup": "deactivated_at",
+        "kind": "date"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "updatedAt": {
+        "lookup": "updated_at",
+        "kind": "date"
+      },
+      "parentName": {
+        "lookup": "parent_restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "cashDesks": {
+    "model": "restaurants.cashdesk",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "location": {
+        "lookup": "location",
+        "kind": "text"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "prepStations": {
+    "model": "restaurants.prepstation",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "kind": {
+        "lookup": "kind",
+        "kind": "option",
+        "options": [
+          "kitchen",
+          "bar",
+          "other"
+        ]
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "categories": {
+    "model": "catalog.catalogcategory",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "mxikCode": {
+        "lookup": "mxik_code",
+        "kind": "text"
+      },
+      "mxikName": {
+        "lookup": "mxik_name",
+        "kind": "text"
+      },
+      "sortOrder": {
+        "lookup": "sort_order",
+        "kind": "number"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "products": {
+    "model": "catalog.catalogitem",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "mxikCode": {
+        "lookup": "mxik_code",
+        "kind": "text"
+      },
+      "mxikName": {
+        "lookup": "mxik_name",
+        "kind": "text"
+      },
+      "categoryName": {
+        "lookup": "category__name",
+        "kind": "text"
+      },
+      "prepStationName": {
+        "lookup": "prep_station__name",
+        "kind": "text"
+      },
+      "price": {
+        "lookup": "price",
+        "kind": "number"
+      },
+      "sortOrder": {
+        "lookup": "sort_order",
+        "kind": "number"
+      },
+      "isActive": {
+        "lookup": "is_active",
+        "kind": "boolean"
+      },
+      "isStoplisted": {
+        "lookup": "is_stoplisted",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "kitchenTickets": {
+    "model": "kitchen.kitchenticket",
+    "fields": {
+      "orderNumber": {
+        "lookup": "order__order_number",
+        "kind": "number"
+      },
+      "prepStationName": {
+        "lookup": "prep_station__name",
+        "kind": "text"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "new",
+          "cooking",
+          "done"
+        ]
+      },
+      "routedVia": {
+        "lookup": "routed_via",
+        "kind": "option",
+        "options": [
+          "display",
+          "printer",
+          "both"
+        ]
+      },
+      "isPrinted": {
+        "lookup": "is_printed",
+        "kind": "boolean"
+      },
+      "hallName": {
+        "lookup": "order__table_session__hall__name",
+        "kind": "text"
+      },
+      "tableName": {
+        "lookup": "order__table_session__table__name",
+        "kind": "text"
+      },
+      "waiterName": {
+        "lookup": "order__opened_by__full_name",
+        "kind": "text"
+      },
+      "completedAt": {
+        "lookup": "completed_at",
+        "kind": "date"
+      },
+      "createdAt": {
+        "lookup": "created_at",
+        "kind": "date"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  },
+  "localAgents": {
+    "model": "local_agents.localagent",
+    "fields": {
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      },
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "status": {
+        "lookup": "status",
+        "kind": "option",
+        "options": [
+          "offline",
+          "online"
+        ]
+      },
+      "version": {
+        "lookup": "version",
+        "kind": "text"
+      },
+      "lastSeenAt": {
+        "lookup": "last_seen_at",
+        "kind": "date"
+      }
+    }
+  },
+  "integrations": {
+    "model": "integrations.integrationconfig",
+    "fields": {
+      "name": {
+        "lookup": "name",
+        "kind": "text"
+      },
+      "kind": {
+        "lookup": "kind",
+        "kind": "option",
+        "options": [
+          "fiscal",
+          "payment",
+          "printer"
+        ]
+      },
+      "provider": {
+        "lookup": "provider",
+        "kind": "text"
+      },
+      "isEnabled": {
+        "lookup": "is_enabled",
+        "kind": "boolean"
+      },
+      "restaurantName": {
+        "lookup": "restaurant__name",
+        "kind": "text"
+      }
+    }
+  }
+}

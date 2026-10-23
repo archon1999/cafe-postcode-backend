@@ -49,6 +49,9 @@ class OrderTicketSyncService:
         create_sale_print_documents: bool = True,
     ) -> list[KitchenTicket]:
         """Create one immutable kitchen batch for every unsent item in the order."""
+        from common.edge_replay import historical_floor_scope
+        if historical_floor_scope() is not None:
+            create_sale_print_documents = False
         locked_order = (
             Order.objects.select_for_update()
             .select_related('restaurant')

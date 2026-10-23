@@ -1,11 +1,13 @@
 import base64
 import json
 import re
+from hashlib import sha256
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 from urllib.parse import urlsplit
 
 from django.conf import settings
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -85,6 +87,24 @@ def fetch_release_manifest(agent=None):
     if len(content) > MAX_MANIFEST_BYTES:
         raise ValueError('Release manifest is too large.')
     return _validated_release_manifest(json.loads(content.decode('utf-8')))
+
+
+def latest_stable_release_summary():
+    """Read the published stable version without contacting an agent or updating it."""
+    manifest_url = release_manifest_url()
+    if not manifest_url:
+        return {'status': 'disabled', 'version': None}
+    cache_key = 'local-agent:stable-release:' + sha256(manifest_url.encode()).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        manifest = fetch_release_manifest()
+        result = {'status': 'available', 'version': manifest['version']} if manifest else {'status': 'disabled', 'version': None}
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        result = {'status': 'unavailable', 'version': None}
+    cache.set(cache_key, result, timeout=300 if result['status'] == 'available' else 30)
+    return result
 
 
 def compare_release_versions(left, right):
