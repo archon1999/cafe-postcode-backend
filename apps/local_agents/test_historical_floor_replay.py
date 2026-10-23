@@ -62,7 +62,7 @@ class HistoricalFloorReplayTests(PosAPITestCase):
         self.assertEqual(failed['status'], 400)
         self.intake()
         before = list(DiningTable.objects.values()), list(TableSession.objects.filter(pk=self.live.pk).values())
-        evidence = list(LocalAgentMutationInbox.objects.values_list('operation', 'payload_hash'))
+        evidence = list(LocalAgentMutationInbox.objects.order_by('operation_id').values_list('operation_id', 'operation', 'payload_hash'))
         with patch('apps.local_agents.services.LocalAgentCommandService.execute') as command:
             result = self.project()
         self.assertTrue(result['applied'], result)
@@ -77,7 +77,7 @@ class HistoricalFloorReplayTests(PosAPITestCase):
         self.assertEqual(session.opened_at, self.start)
         self.assertEqual(order.display_name, '1082')
         self.assertEqual(before, (list(DiningTable.objects.values()), list(TableSession.objects.filter(pk=self.live.pk).values())))
-        self.assertEqual(evidence, list(LocalAgentMutationInbox.objects.values_list('operation', 'payload_hash')))
+        self.assertEqual(evidence, list(LocalAgentMutationInbox.objects.order_by('operation_id').values_list('operation_id', 'operation', 'payload_hash')))
         self.assertTrue(self.project()['replayed'])
         self.assertEqual(len(self.project()['operationIds']), len(self.operations))
         self.assertEqual(Payment.objects.count(), 1)
