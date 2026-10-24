@@ -106,13 +106,14 @@ for service in ('web', 'ws', 'qcluster', 'nginx'):
         coverage.append({'service': service, 'containerCreatedAt': info['created'],
             'logDriver': info['logging'].get('Type'),
             'rotation': {key: value for key, value in info['logging'].get('Config', {}).items() if key in ('max-size', 'max-file', 'mode')}})
-        result = subprocess.run(['docker', 'logs', '--timestamps', '--tail', '250000', cid],
-            cwd=ROOT, capture_output=True, text=True, timeout=180)
-        inspect_lines((result.stdout + '\n' + result.stderr).splitlines(), 'docker:' + service)
+        with subprocess.Popen(['docker', 'logs', '--timestamps', cid], cwd=ROOT,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as process:
+            inspect_lines(process.stdout, 'docker:' + service)
+            process.wait(timeout=180)
     except (subprocess.SubprocessError, ValueError, KeyError) as error:
         coverage.append({'service': service, 'errorType': type(error).__name__})
 
-for path in sorted(Path('/var/log/nginx').glob('*access*.log*')):
+for path in sorted(Path('/var/log/nginx').glob('*postcode*access*.log*')):
     if not path.is_file():
         continue
     try:
@@ -129,9 +130,23 @@ folder.mkdir(parents=True, exist_ok=True, mode=0o700)
 destination = folder / 'inspection-v1.json'
 destination.write_text(json.dumps(report, ensure_ascii=False, indent=2))
 destination.chmod(0o600)
-print(json.dumps({'cutoff': database['cutoff'], 'existingUsage': database['usage'],
+
+
+def log_safe(value):
+    # GitHub masks short numeric secrets even inside larger numbers. Strings
+    # keep the operational report valid JSON after that masking.
+    if isinstance(value, dict):
+        return {key: log_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [log_safe(item) for item in value]
+    return str(value) if isinstance(value, (int, float)) else value
+
+
+print(json.dumps(log_safe({'cutoff': database['cutoff'], 'existingUsage': database['usage'],
     'historicalCatalogDraftCount': len(database['catalogDrafts']),
-    'historicalCatalogDraftSample': database['catalogDrafts'][:30],
+    'historicalCatalogDraftFirst': database['catalogDrafts'][0]['createdAt'] if database['catalogDrafts'] else None,
+    'historicalCatalogDraftLast': database['catalogDrafts'][-1]['createdAt'] if database['catalogDrafts'] else None,
+    'historicalCatalogBranchCount': len({row['restaurantId'] for row in database['catalogDrafts']}),
     'telegramUpdates': database['telegramUpdates'], 'coverage': coverage,
     'eventCounts': [{'kind': key[0], 'path': key[1], 'status': key[2], 'count': value} for key, value in sorted(counts.items())],
-    'eventSample': events[:30], 'privateEvidenceFile': str(destination)}, default=str, ensure_ascii=False))
+    'eventSample': events[:30], 'privateEvidenceFile': str(destination)}), default=str, ensure_ascii=False))
