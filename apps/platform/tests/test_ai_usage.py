@@ -12,11 +12,11 @@ from rest_framework.test import APITestCase
 from apps.catalog_assistant.ai import CatalogAIUnavailable, extract_menu
 from apps.inventory.ai import InventoryAIUnavailable, analyze_inventory
 from apps.inventory.ai_documents import _read_model
-from apps.platform.models import AIUsageLog, BusinessPartner
+from apps.platform.models import AIUsageLog, BusinessPartner, RestaurantEntitlement
 from apps.platform.services.ai_usage import audit_ai_usage, estimated_cost, token_usage
 from apps.restaurants.models import Restaurant
 from apps.restaurants.services.service_fee_ai import generate_formula_draft
-from apps.users.models import Role, User
+from apps.users.models import Permission, Role, User
 
 PRICES = {'test-model': {'input': '2', 'cached_input': '0.5', 'output': '4'}}
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache', 'LOCATION': 'ai-usage-tests'}}
@@ -224,6 +224,26 @@ class AIUsageApiTests(APITestCase):
                 self.client.force_authenticate(user)
                 self.assertIn(self.get().status_code, (401, 403))
                 self.assertIn(self.get('requests').status_code, (401, 403))
+
+    def test_explicit_usage_permission_cannot_bypass_superadmin_guard(self):
+        permission = Permission.objects.get(code='platform.ai_usage.view')
+        self.partner1.status = BusinessPartner.Status.ACTIVE
+        self.partner1.save(update_fields=['status'])
+        self.branch1.is_active = True
+        self.branch1.save(update_fields=['is_active'])
+        entitlement = RestaurantEntitlement.objects.create(restaurant=self.branch1, is_active=True)
+        entitlement.permissions.add(permission)
+        for user, role_code in ((self.staff, 'product_owner'), (self.partner_user, 'business_partner'),
+                                (self.tenant, 'restaurant_admin')):
+            with self.subTest(role=role_code):
+                role = Role.objects.get(code=role_code)
+                role.permissions.add(permission)
+                user.role = role
+                user.save(update_fields=['role'])
+                self.assertIn(permission.code, user.permission_codes)
+                self.client.force_authenticate(user)
+                self.assertEqual(self.get().status_code, 403)
+                self.assertEqual(self.get('requests').status_code, 403)
 
     def test_summary_known_subtotals_status_missing_usage_and_tashkent_trend(self):
         response = self.get()

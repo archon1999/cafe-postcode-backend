@@ -362,6 +362,21 @@ PERMISSION_DEFINITIONS = [
         ),
         default_roles=PRODUCT_OWNER_ROLES,
     ),
+    permission_definition(
+        'platform.ai_usage.view',
+        surface='admin',
+        resource='platform.ai_usage',
+        action='view',
+        ui_visible=False,
+        group_key='platform',
+        name='AI sarfi va so‘rovlar tarixini ko‘rish',
+        description='Faqat superadmin uchun AI sarfi va so‘rovlar metama’lumotlarini ko‘rish',
+        endpoints=endpoint_specs(
+            ('GET', 'api/v1/admin/ai-usage/summary/'),
+            ('GET', 'api/v1/admin/ai-usage/requests/'),
+        ),
+        default_roles=(),
+    ),
     action_permission(
         'control.branches.view',
         surface='admin',

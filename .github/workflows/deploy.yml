@@ -69,6 +69,7 @@ jobs:
           apps.devices.tests.test_admin_control_api apps.devices.tests.test_control_api
           apps.platform.tests.test_ai_usage apps.platform.tests.test_ai_pricing
           apps.inventory.tests.test_ai apps.inventory.tests.test_ai_documents
+          apps.users.tests.test_endpoint_rbac.EndpointRBACPermissionTests.test_every_protected_route_is_registered_in_permission_endpoints
           apps.local_agents.tests.LocalAgentMutationPushTests.test_trusted_edge_fiscal_result_is_persisted_without_remote_fiscal_call --noinput
       - name: Test service fee migrations and offline replay contracts with PostgreSQL
         run: >-

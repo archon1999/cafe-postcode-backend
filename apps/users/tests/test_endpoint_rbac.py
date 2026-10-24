@@ -366,6 +366,26 @@ class EndpointRBACPermissionTests(TestCase):
             },
         )
 
+    def test_ai_usage_routes_have_dedicated_permission_without_default_role_grants(self):
+        seed_default_roles_signal(sender=django_apps.get_app_config("users"))
+        permission = Permission.objects.get(code="platform.ai_usage.view")
+        self.assertEqual(permission.surface, "admin")
+        self.assertEqual(permission.resource, "platform.ai_usage")
+        self.assertEqual(permission.group_key, "platform")
+        self.assertFalse(permission.ui_visible)
+        self.assertFalse(permission.roles.exists())
+        self.assertFalse(any(permission.code in role["permissions"] for role in DEFAULT_ROLE_MAP.values()))
+        expected = {
+            ("GET", "api/v1/admin/ai-usage/summary/"),
+            ("GET", "api/v1/admin/ai-usage/requests/"),
+        }
+        self.assertSetEqual(set(permission.endpoints.values_list("method", "url")), expected)
+        for method, url in expected:
+            self.assertSetEqual(
+                set(PermissionEndpoint.objects.filter(method=method, url=url).values_list("permission__code", flat=True)),
+                {permission.code},
+            )
+
     def test_custom_tariff_permission_is_seeded_without_default_role(self):
         seed_default_roles_signal(sender=django_apps.get_app_config("users"))
 
