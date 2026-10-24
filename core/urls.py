@@ -29,6 +29,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/permissions/', include('apps.users.api.admin.urls.permissions')),
     path(f'{API_V1_PREFIX}admin/employees/', include('apps.users.api.admin.urls.employees')),
     path(f'{API_V1_PREFIX}admin/platform/', include('apps.platform.api.admin.urls')),
+    path(f'{API_V1_PREFIX}admin/ai-usage/', include('apps.platform.api.admin.ai_usage_urls')),
     path(f'{API_V1_PREFIX}admin/restaurants/', include('apps.restaurants.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/catalog/', include('apps.catalog.api.admin.urls')),
     path(f'{API_V1_PREFIX}admin/inventory/', include('apps.inventory.urls')),
@@ -44,6 +45,7 @@ urlpatterns = [
     path(f'{API_V1_PREFIX}admin/devices/', include('apps.devices.admin_urls')),
     path(f'{API_V1_PREFIX}admin/monitoring/', include('apps.devices.monitoring_urls')),
     path(f'{API_V1_PREFIX}admin/control/', include('apps.devices.control_urls')),
+    path(f'{API_V1_PREFIX}admin/device-control/', include('apps.devices.admin_control_urls')),
     path(
         f'{API_V1_PREFIX}admin/security-events/',
         include('apps.devices.security_urls'),

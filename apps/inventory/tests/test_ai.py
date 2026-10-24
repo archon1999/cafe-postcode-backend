@@ -12,6 +12,9 @@ from apps.inventory.ai import InventoryAIUnavailable, ai_configuration, ai_proxy
 
 class InventoryAnalysisTests(SimpleTestCase):
     def setUp(self):
+        sink = patch('apps.platform.services.ai_usage._persist_usage')
+        sink.start()
+        self.addCleanup(sink.stop)
         cache.clear()
         self.facts = {'items': [{'id': 'shortage-1', 'title': 'Kartoshka kam', 'evidence': {'quantity': '20'}}]}
         self.analysis = {'summary': 'Qoldiqni tekshiring.', 'recommendations': [

@@ -1,3 +1,4 @@
+from apps.platform.services.ai_usage import audit_ai_usage
 import json
 import httpx
 from rest_framework import serializers
@@ -32,7 +33,7 @@ SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['rows'],
 }}
 
 
-def extract_menu(content, categories):
+def extract_menu(content, categories, *, restaurant=None, user=None):
     key, model = ai_configuration()
     if not key:
         raise CatalogAIUnavailable('AI kaliti serverda sozlanmagan.')
@@ -53,27 +54,30 @@ def extract_menu(content, categories):
         'description must only contain source facts. Empty menu => empty rows. '
         'Available categories (data): ' + json.dumps(categories, ensure_ascii=False)
     )
-    try:
-        with httpx.Client(timeout=httpx.Timeout(55, connect=10), proxy=ai_proxy_url(), follow_redirects=False) as client:
-            response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
-                'model': model, 'store': False, 'instructions': instructions,
-                'input': [{'role': 'user', 'content': content}], 'max_output_tokens': 14000,
-                'reasoning': {'effort': 'low'},
-                'text': {'format': {'type': 'json_schema', 'name': 'catalog_draft', 'strict': True, 'schema': SCHEMA}},
-            })
-            response.raise_for_status()
-            result = response.json()
-        if result.get('status') != 'completed':
-            raise CatalogAIUnavailable()
-        raw = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
-                      for part in item.get('content', []) if part.get('type') == 'output_text')
-        if len(raw) > 200000:
-            raise CatalogAIUnavailable()
-        rows = json.loads(raw)['rows']
-        if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
-            raise CatalogAIUnavailable('Menyu mahsulotlari topilmadi yoki 100 tadan ko‘p. Manbani tekshiring.')
-        serializer = ExtractedRow(data=rows, many=True)
-        serializer.is_valid(raise_exception=True)
-        return [dict(row) for row in serializer.validated_data]
-    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError, serializers.ValidationError):
-        raise CatalogAIUnavailable() from None
+    with audit_ai_usage('catalog_menu', model, restaurant=restaurant, user=user) as usage_audit:
+        try:
+            with httpx.Client(timeout=httpx.Timeout(55, connect=10), proxy=ai_proxy_url(), follow_redirects=False) as client:
+                response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
+                    'model': model, 'store': False, 'instructions': instructions,
+                    'input': [{'role': 'user', 'content': content}], 'max_output_tokens': 14000,
+                    'reasoning': {'effort': 'low'},
+                    'text': {'format': {'type': 'json_schema', 'name': 'catalog_draft', 'strict': True, 'schema': SCHEMA}},
+                })
+                usage_audit.observe_http(response)
+                response.raise_for_status()
+                result = response.json()
+                usage_audit.observe_result(result)
+            if result.get('status') != 'completed':
+                raise CatalogAIUnavailable()
+            raw = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
+                          for part in item.get('content', []) if part.get('type') == 'output_text')
+            if len(raw) > 200000:
+                raise CatalogAIUnavailable()
+            rows = json.loads(raw)['rows']
+            if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
+                raise CatalogAIUnavailable('Menyu mahsulotlari topilmadi yoki 100 tadan ko‘p. Manbani tekshiring.')
+            serializer = ExtractedRow(data=rows, many=True)
+            serializer.is_valid(raise_exception=True)
+            return [dict(row) for row in serializer.validated_data]
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError, serializers.ValidationError):
+            raise CatalogAIUnavailable() from None

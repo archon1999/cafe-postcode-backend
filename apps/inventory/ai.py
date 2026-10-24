@@ -9,6 +9,8 @@ import json
 import os
 
 import httpx
+
+from apps.platform.services.ai_usage import audit_ai_usage
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.core.cache import cache
@@ -79,7 +81,7 @@ def validate_analysis(payload, evidence_ids):
     return payload
 
 
-def analyze_inventory(restaurant, warehouse=None, language='uz'):
+def analyze_inventory(restaurant, warehouse=None, language='uz', *, user=None):
     from .reports import insights
 
     key, model = ai_configuration()
@@ -121,38 +123,41 @@ def analyze_inventory(restaurant, warehouse=None, language='uz'):
         'Do not prescribe accounting/tax/legal treatment. Never claim you changed any records. '
         'Keep summary under 1000 characters, titles under 160, and each detail under 1200.'
     )
-    try:
-        with httpx.Client(timeout=httpx.Timeout(40, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
-            response = client.post(
-                'https://api.openai.com/v1/responses',
-                headers={'Authorization': f'Bearer {key}'},
-                json={
-                    'model': model, 'store': False, 'instructions': instructions,
-                    'input': facts_json, 'max_output_tokens': 3000,
-                    'reasoning': {'effort': 'low'},
-                    'text': {'format': {'type': 'json_schema', 'name': 'inventory_advice',
-                                        'strict': True, 'schema': ANALYSIS_SCHEMA}},
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
-        if result.get('status') != 'completed':
-            raise InventoryAIUnavailable()
-        chunks = [
-            part.get('text', '')
-            for item in result.get('output', []) if item.get('type') == 'message'
-            for part in item.get('content', []) if part.get('type') == 'output_text'
-        ]
-        raw = ''.join(chunks)
-        if len(raw) > 25000:
-            raise InventoryAIUnavailable()
-        analysis = validate_analysis(json.loads(raw), evidence_ids)
-    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
-        # Never expose upstream response bodies or API credentials to browsers.
-        raise InventoryAIUnavailable() from None
-    payload = {
-        'mode': 'ai', 'generatedAt': timezone.now().isoformat(),
-        'summary': analysis['summary'], 'recommendations': analysis['recommendations'],
-    }
-    cache.set(cache_key, payload, timeout=300)
-    return payload
+    with audit_ai_usage('inventory_analysis', model, restaurant=restaurant, user=user) as usage_audit:
+        try:
+            with httpx.Client(timeout=httpx.Timeout(40, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
+                response = client.post(
+                    'https://api.openai.com/v1/responses',
+                    headers={'Authorization': f'Bearer {key}'},
+                    json={
+                        'model': model, 'store': False, 'instructions': instructions,
+                        'input': facts_json, 'max_output_tokens': 3000,
+                        'reasoning': {'effort': 'low'},
+                        'text': {'format': {'type': 'json_schema', 'name': 'inventory_advice',
+                                            'strict': True, 'schema': ANALYSIS_SCHEMA}},
+                    },
+                )
+                usage_audit.observe_http(response)
+                response.raise_for_status()
+                result = response.json()
+                usage_audit.observe_result(result)
+            if result.get('status') != 'completed':
+                raise InventoryAIUnavailable()
+            chunks = [
+                part.get('text', '')
+                for item in result.get('output', []) if item.get('type') == 'message'
+                for part in item.get('content', []) if part.get('type') == 'output_text'
+            ]
+            raw = ''.join(chunks)
+            if len(raw) > 25000:
+                raise InventoryAIUnavailable()
+            analysis = validate_analysis(json.loads(raw), evidence_ids)
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError):
+            # Never expose upstream response bodies or API credentials to browsers.
+            raise InventoryAIUnavailable() from None
+        payload = {
+            'mode': 'ai', 'generatedAt': timezone.now().isoformat(),
+            'summary': analysis['summary'], 'recommendations': analysis['recommendations'],
+        }
+        cache.set(cache_key, payload, timeout=300)
+        return payload

@@ -31,7 +31,7 @@ class InventoryAnalysisView(APIView):
         if request.data.get('warehouse'):
             warehouse = scoped(Warehouse, restaurant, request.data['warehouse'], 'warehouse')
         language = str(request.headers.get('Accept-Language', 'uz')).split(',')[0].strip()
-        return Response(analyze_inventory(restaurant, warehouse, language))
+        return Response(analyze_inventory(restaurant, warehouse, language, user=request.user))
 
 
 class DocumentPreviewInput(serializers.Serializer):
@@ -63,4 +63,4 @@ class InventoryDocumentPreviewView(APIView):
             raise serializers.ValidationError({'files': _('Fayllarning jami hajmi 20 MB dan oshmasin.')})
         content = normalize_input(data['text'], files)
         language = str(request.headers.get('Accept-Language', 'uz')).split(',')[0].strip()
-        return Response(preview_inventory_document(restaurant, content, kind=data['kind'], warehouse=warehouse, language=language))
+        return Response(preview_inventory_document(restaurant, content, kind=data['kind'], warehouse=warehouse, language=language, user=request.user))

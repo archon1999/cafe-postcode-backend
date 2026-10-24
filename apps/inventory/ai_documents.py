@@ -10,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
 
 import httpx
+
+from apps.platform.services.ai_usage import audit_ai_usage
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import APIException, ValidationError
 
@@ -198,7 +200,7 @@ def _validate_payload(payload):
     return payload
 
 
-def _read_model(content, catalog, requested_kind, language):
+def _read_model(content, catalog, requested_kind, language, *, restaurant=None, user=None):
     key, model = ai_configuration()
     if not key or not model:
         raise InventoryDocumentAIUnavailable(_('AI uchun serverda API kaliti va model sozlanishi kerak.'))
@@ -219,28 +221,31 @@ def _read_model(content, catalog, requested_kind, language):
         'No stock product lines => empty rows. Never claim records were created, saved or posted.'
     )
     catalog_content = {'requestedKind': requested_kind, 'catalog': [_choice(item) for item in catalog]}
-    try:
-        with httpx.Client(timeout=httpx.Timeout(55, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
-            response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
-                'model': model, 'store': False, 'instructions': instructions,
-                'input': [{'role': 'user', 'content': [{'type': 'input_text', 'text': json.dumps(catalog_content, ensure_ascii=False)}, *content]}],
-                'max_output_tokens': 16000, 'reasoning': {'effort': 'low'},
-                'text': {'format': {'type': 'json_schema', 'name': 'inventory_document_preview', 'strict': True, 'schema': PREVIEW_SCHEMA}},
-            })
-            response.raise_for_status()
-            result = response.json()
-        if result.get('status') != 'completed':
-            raise InventoryDocumentAIUnavailable()
-        raw = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
-                      for part in item.get('content', []) if part.get('type') == 'output_text')
-        if len(raw.encode('utf-8')) > MAX_OUTPUT_BYTES:
-            raise InventoryDocumentAIUnavailable()
-        return _validate_payload(json.loads(raw))
-    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
-        raise InventoryDocumentAIUnavailable() from None
+    with audit_ai_usage('inventory_document', model, restaurant=restaurant, user=user) as usage_audit:
+        try:
+            with httpx.Client(timeout=httpx.Timeout(55, connect=10), follow_redirects=False, proxy=ai_proxy_url()) as client:
+                response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
+                    'model': model, 'store': False, 'instructions': instructions,
+                    'input': [{'role': 'user', 'content': [{'type': 'input_text', 'text': json.dumps(catalog_content, ensure_ascii=False)}, *content]}],
+                    'max_output_tokens': 16000, 'reasoning': {'effort': 'low'},
+                    'text': {'format': {'type': 'json_schema', 'name': 'inventory_document_preview', 'strict': True, 'schema': PREVIEW_SCHEMA}},
+                })
+                usage_audit.observe_http(response)
+                response.raise_for_status()
+                result = response.json()
+                usage_audit.observe_result(result)
+            if result.get('status') != 'completed':
+                raise InventoryDocumentAIUnavailable()
+            raw = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
+                          for part in item.get('content', []) if part.get('type') == 'output_text')
+            if len(raw.encode('utf-8')) > MAX_OUTPUT_BYTES:
+                raise InventoryDocumentAIUnavailable()
+            return _validate_payload(json.loads(raw))
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
+            raise InventoryDocumentAIUnavailable() from None
 
 
-def preview_inventory_document(restaurant, content, *, kind='auto', warehouse=None, language='uz'):
+def preview_inventory_document(restaurant, content, *, kind='auto', warehouse=None, language='uz', user=None):
     if len(json.dumps(content).encode()) > MAX_CONTENT_BYTES:
         raise ValidationError(_('Manba hajmi katta; fayllarni kichikroq qismlarga ajrating.'))
     catalog = list(InventoryItem.objects.filter(restaurant=restaurant, is_active=True).order_by('name')[:MAX_ITEMS + 1])
@@ -248,7 +253,7 @@ def preview_inventory_document(restaurant, content, *, kind='auto', warehouse=No
         raise ValidationError(_('AI preview uchun faol mahsulotlar soni 1000 tadan oshmasin; hujjatni oddiy forma orqali kiriting.'))
     if not catalog:
         raise ValidationError(_('Avval shu shahobchaning ombor mahsulotlarini kiriting. AI yangi mahsulot yaratmaydi.'))
-    extracted = _read_model(content, catalog, kind, language)
+    extracted = _read_model(content, catalog, kind, language, restaurant=restaurant, user=user)
     source_text = '\n'.join(part.get('text', '') for part in content if part.get('type') == 'input_text')
     has_images = any(part.get('type') == 'input_image' for part in content)
     warnings = list(extracted['warnings'])

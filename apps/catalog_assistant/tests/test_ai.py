@@ -5,6 +5,11 @@ from apps.catalog_assistant.ai import extract_menu, CatalogAIUnavailable
 
 
 class AITests(SimpleTestCase):
+    def setUp(self):
+        sink = patch('apps.platform.services.ai_usage._persist_usage')
+        sink.start()
+        self.addCleanup(sink.stop)
+
     def response(self, rows, status='completed'):
         return {'status': status, 'output': [{'type': 'message', 'content': [
             {'type': 'output_text', 'text': json.dumps({'rows': rows})}]}]}

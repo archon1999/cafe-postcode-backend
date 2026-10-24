@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
+
+from apps.platform.services.ai_usage import audit_ai_usage
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
 
@@ -105,37 +107,40 @@ def validate_draft_examples(definition):
                 ) from None
 
 
-def generate_formula_draft(text, timezone_name='Asia/Tashkent'):
+def generate_formula_draft(text, timezone_name='Asia/Tashkent', *, restaurant=None, user=None):
     key, model = ai_configuration()
     if not key or not model:
         raise FormulaAIUnavailable('AI serverda sozlanmagan. Formula yoki shablondan foydalaning.')
-    try:
-        with httpx.Client(timeout=httpx.Timeout(55, connect=10), proxy=ai_proxy_url(), follow_redirects=False) as client:
-            response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
-                'model': model, 'store': False, 'instructions': INSTRUCTIONS,
-                'input': json.dumps({'requirement': text, 'timezone': timezone_name}, ensure_ascii=False),
-                'max_output_tokens': 4500,
-                'text': {'format': {'type': 'json_schema', 'name': 'service_fee_formula_draft', 'strict': True, 'schema': SCHEMA}},
-            })
-            response.raise_for_status()
-            result = response.json()
-        if result.get('status') != 'completed':
-            raise FormulaAIUnavailable()
-        output = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
-                         for part in item.get('content', []) if part.get('type') == 'output_text')
-        if len(output) > 25000:
-            raise FormulaAIUnavailable()
-        serializer = FormulaDraftSerializer(data=json.loads(output))
-        serializer.is_valid(raise_exception=True)
-        draft = serializer.validated_data
-        definition = None
-        if not draft['questions']:
-            parameters = {row['name']: row['value'] for row in draft['parameters']}
-            if len(parameters) != len(draft['parameters']):
+    with audit_ai_usage('service_fee_formula', model, restaurant=restaurant, user=user) as usage_audit:
+        try:
+            with httpx.Client(timeout=httpx.Timeout(55, connect=10), proxy=ai_proxy_url(), follow_redirects=False) as client:
+                response = client.post('https://api.openai.com/v1/responses', headers={'Authorization': f'Bearer {key}'}, json={
+                    'model': model, 'store': False, 'instructions': INSTRUCTIONS,
+                    'input': json.dumps({'requirement': text, 'timezone': timezone_name}, ensure_ascii=False),
+                    'max_output_tokens': 4500,
+                    'text': {'format': {'type': 'json_schema', 'name': 'service_fee_formula_draft', 'strict': True, 'schema': SCHEMA}},
+                })
+                usage_audit.observe_http(response)
+                response.raise_for_status()
+                result = response.json()
+                usage_audit.observe_result(result)
+            if result.get('status') != 'completed':
                 raise FormulaAIUnavailable()
-            definition = normalize_definition({'name': draft['name'], 'source': draft['source'],
-                                               'parameters': parameters, 'timezone': timezone_name})
-            validate_draft_examples(definition)
-        return {'definition': definition, 'explanation': draft['explanation'], 'questions': draft['questions']}
-    except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, serializers.ValidationError, FormulaError):
-        raise FormulaAIUnavailable() from None
+            output = ''.join(part.get('text', '') for item in result.get('output', []) if item.get('type') == 'message'
+                             for part in item.get('content', []) if part.get('type') == 'output_text')
+            if len(output) > 25000:
+                raise FormulaAIUnavailable()
+            serializer = FormulaDraftSerializer(data=json.loads(output))
+            serializer.is_valid(raise_exception=True)
+            draft = serializer.validated_data
+            definition = None
+            if not draft['questions']:
+                parameters = {row['name']: row['value'] for row in draft['parameters']}
+                if len(parameters) != len(draft['parameters']):
+                    raise FormulaAIUnavailable()
+                definition = normalize_definition({'name': draft['name'], 'source': draft['source'],
+                                                   'parameters': parameters, 'timezone': timezone_name})
+                validate_draft_examples(definition)
+            return {'definition': definition, 'explanation': draft['explanation'], 'questions': draft['questions']}
+        except (httpx.HTTPError, ValueError, TypeError, KeyError, AttributeError, serializers.ValidationError, FormulaError):
+            raise FormulaAIUnavailable() from None

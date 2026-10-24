@@ -35,7 +35,7 @@ def create_draft(user, restaurant_id, content, category_id=None):
     default = next((cat for cat in categories if str(cat.pk) == str(category_id)), None)
     if category_id and default is None:
         raise ValidationError('Kategoriya bu shahobchaga tegishli emas.')
-    rows = extract_menu(content, [cat.name for cat in categories])
+    rows = extract_menu(content, [cat.name for cat in categories], restaurant=restaurant, user=user)
     existing = set(CatalogItem.objects.filter(restaurant=restaurant, archived_at__isnull=True).values_list('name', flat=True))
     existing = {name.casefold() for name in existing}
     for row in rows:

@@ -370,6 +370,8 @@ PERMISSION_DEFINITIONS = [
         endpoints=endpoint_specs(
             ('GET', 'api/v1/admin/control/branches/'),
             ('GET', 'api/v1/admin/control/branches/<uuid:restaurant_id>/devices/'),
+            ('GET', 'api/v1/admin/device-control/branches/'),
+            ('GET', 'api/v1/admin/device-control/branches/<uuid:restaurant_id>/devices/'),
         ),
         default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
     ),
@@ -380,6 +382,15 @@ PERMISSION_DEFINITIONS = [
         name='Control ilovasida qurilmalarni ulash',
         endpoints=endpoint_specs(
             ('POST', 'api/v1/admin/control/pairings/resolve/'),
+            ('POST', 'api/v1/admin/device-control/pairings/resolve/'),
+            (
+                'POST',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/approve/',
+            ),
+            (
+                'POST',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/reject/',
+            ),
             (
                 'POST',
                 'api/v1/admin/control/branches/<uuid:restaurant_id>/pairings/<uuid:pairing_id>/approve/',
@@ -401,6 +412,10 @@ PERMISSION_DEFINITIONS = [
                 'POST',
                 'api/v1/admin/control/branches/<uuid:restaurant_id>/devices/<uuid:device_id>/revoke/',
             ),
+            (
+                'POST',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/devices/<uuid:device_id>/revoke/',
+            ),
         ),
         default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),
     ),
@@ -421,6 +436,18 @@ PERMISSION_DEFINITIONS = [
             (
                 'POST',
                 'api/v1/admin/control/branches/<uuid:restaurant_id>/telegram-subscriptions/<uuid:subscription_id>/revoke/',
+            ),
+            (
+                'GET',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/telegram-subscriptions/',
+            ),
+            (
+                'POST',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/telegram-link/',
+            ),
+            (
+                'POST',
+                'api/v1/admin/device-control/branches/<uuid:restaurant_id>/telegram-subscriptions/<uuid:subscription_id>/revoke/',
             ),
         ),
         default_roles=merge_role_sets(PRODUCT_OWNER_ROLES, BUSINESS_PARTNER_ROLES),

@@ -10,7 +10,7 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from common.api.admin_permissions import AdminPermissionRequiredMixin
-from common.api.scopes import get_request_restaurant
+from common.api.scopes import get_optional_request_restaurant, get_request_restaurant
 from common.service_fee_formulas import FormulaError, evaluate_formula
 from common.service_fee_formulas.catalog import TEMPLATES, normalize_definition
 from common.service_fee_formulas.language import SYSTEM_TYPES, VERSION
@@ -106,7 +106,7 @@ class FormulaAIDraftView(FormulaAuthoringView):
             normalize_definition({'source': '0', 'timezone': data['timezone']})
         except FormulaError as error:
             raise serializers.ValidationError({'timezone': str(error)}) from None
-        return Response(generate_formula_draft(data['text'], data['timezone']))
+        return Response(generate_formula_draft(data['text'], data['timezone'], restaurant=get_optional_request_restaurant(request), user=request.user))
 
 
 class ServiceFeePolicySerializer(serializers.ModelSerializer):

@@ -22,6 +22,11 @@ GUARDED_FIRST_HOUR = EAGER_FIRST_HOUR.replace(
 
 
 class ServiceFeeAITests(SimpleTestCase):
+    def setUp(self):
+        sink = patch('apps.platform.services.ai_usage._persist_usage')
+        sink.start()
+        self.addCleanup(sink.stop)
+
     def generate(self, source='subtotal * percent / 100', parameters=None, questions=None):
         draft = {'name': 'Foizli tarif', 'source': source,
                  'parameters': parameters if parameters is not None else [{'name': 'percent', 'value': '10'}],
