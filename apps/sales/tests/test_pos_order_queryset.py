@@ -4,7 +4,7 @@ from apps.kitchen.models import KitchenTicket, KitchenTicketLine
 from apps.sales.models import Order, OrderItem, OrderItemMarking, OrderItemModifier
 from apps.sales.selectors.orders import pos_order_queryset
 from apps.sales.serializers import OrderSerializer
-from apps.sales.tests.support.pos_api import PosTestCase
+from apps.sales.tests.support.pos_api import PosAPITestCase, PosTestCase
 
 
 class PosOrderQuerysetTests(PosTestCase):
@@ -132,3 +132,64 @@ class PosOrderQuerysetTests(PosTestCase):
         self.assertEqual(modifier["group_id"], str(self.modifier_group.id))
         self.assertEqual(refund["refunded_by_name"], self.user.full_name)
         self.assertEqual(len(data["receipts"]), 1)
+
+
+class PosActiveOrderReadTests(PosAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.session = self.create_table_session()
+        self.existing = Order.objects.create(
+            restaurant=self.restaurant, table_session=self.session, opened_by=self.user,
+            order_number=1, status=Order.Status.SUBMITTED,
+        )
+        for number in range(2, 25):
+            Order.objects.create(
+                restaurant=self.restaurant, opened_by=self.user, order_number=number,
+                status=Order.Status.READY if number <= 14 else Order.Status.CLOSED,
+            )
+
+    def test_active_read_finds_old_submitted_order_without_a_page_limit(self):
+        response = self.client.get('/api/v1/pos/sales/orders/', {'active': 'true'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsInstance(response.data, list)
+        self.assertEqual(len(response.data), 14)
+        self.assertIn(str(self.existing.pk), [row['id'] for row in response.data])
+        self.assertNotIn(Order.Status.CLOSED, [row['status'] for row in response.data])
+
+    def test_session_read_returns_existing_account_and_item_add_reuses_it(self):
+        response = self.client.get('/api/v1/pos/sales/orders/', {
+            'active': 'true', 'table_session': str(self.session.pk),
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([row['id'] for row in response.data], [str(self.existing.pk)])
+        self.add_item_via_api(response.data[0]['id'])
+        self.assertEqual(Order.objects.filter(table_session=self.session).count(), 1)
+        self.assertEqual(self.existing.items.count(), 1)
+
+    def test_legacy_history_read_keeps_pagination(self):
+        response = self.client.get('/api/v1/pos/sales/orders/')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['data']), 10)
+        self.assertNotIn(str(self.existing.pk), [row['id'] for row in response.data['data']])
+
+    def test_active_session_filter_never_leaks_another_restaurant(self):
+        from apps.floor.models import DiningTable, Hall, TableSession, ZoneOrCabin
+        from apps.restaurants.models import Restaurant
+
+        other = Restaurant.objects.create(name='Other restaurant')
+        zone = ZoneOrCabin.objects.create(restaurant=other, name='Other zone')
+        hall = Hall.objects.create(zone_or_cabin=zone, name='Other hall')
+        table = DiningTable.objects.create(hall=hall, name='Other table', table_number='1')
+        foreign_session = TableSession.objects.create(restaurant=other, hall=hall, table=table, opened_by=self.user)
+        Order.objects.create(restaurant=other, table_session=foreign_session, order_number=1)
+        response = self.client.get('/api/v1/pos/sales/orders/', {
+            'active': 'true', 'table_session': str(foreign_session.pk),
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data, [])
+
+    def test_invalid_session_id_is_rejected_instead_of_widening_the_read(self):
+        response = self.client.get('/api/v1/pos/sales/orders/', {
+            'active': 'true', 'table_session': 'not-a-session-id',
+        })
+        self.assertEqual(response.status_code, 400, response.data)

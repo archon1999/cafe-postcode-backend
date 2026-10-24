@@ -1,6 +1,8 @@
+from functools import cached_property
+
 from django.db import transaction
 from django.utils.translation import gettext as _
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,14 +22,36 @@ from common.api.scopes import get_request_restaurant
 Order = get_order_model()
 
 
+class PosOrderReadQuerySerializer(serializers.Serializer):
+    active = serializers.BooleanField(default=False)
+    table_session = serializers.UUIDField(required=False)
+
+
 class PosOrderListCreateView(generics.ListCreateAPIView):
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated, EndpointRBACPermission]
     state_service_class = OrderStateService
 
+    @cached_property
+    def read_filters(self):
+        query = PosOrderReadQuerySerializer(data=self.request.query_params)
+        query.is_valid(raise_exception=True)
+        return query.validated_data
+
+    def paginate_queryset(self, queryset):
+        # POS must be able to find every live account, even behind newer history.
+        # Explicit history reads retain their existing pagination contract.
+        if self.read_filters['active']:
+            return None
+        return super().paginate_queryset(queryset)
+
     def get_queryset(self):
         restaurant = get_request_restaurant(self.request)
         queryset = pos_order_queryset(Order.objects.filter(restaurant=restaurant))
+        if self.read_filters['active']:
+            queryset = queryset.filter(status__in=[Order.Status.OPEN, Order.Status.SUBMITTED, Order.Status.READY])
+        if session_id := self.read_filters.get('table_session'):
+            queryset = queryset.filter(table_session_id=session_id)
         status_value = self.request.query_params.get('status')
         if status_value:
             queryset = queryset.filter(status=status_value)
