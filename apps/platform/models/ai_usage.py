@@ -44,6 +44,7 @@ class AIUsageLog(BaseModel):
     recovery_key = models.CharField(max_length=200, null=True, blank=True, unique=True, editable=False)
     recovered_at = models.DateTimeField(null=True, blank=True, editable=False)
     evidence = models.JSONField(default=dict, db_default={}, blank=True, editable=False)
+    usage_is_estimated = models.BooleanField(default=False, db_default=False, editable=False)
 
     class Meta:
         ordering = ('-created_at', '-id')

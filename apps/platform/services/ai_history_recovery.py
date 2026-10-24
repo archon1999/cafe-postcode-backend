@@ -1,7 +1,8 @@
 """Recover only provider usage proven by durable application evidence.
 
 CatalogDraft is created only after a validated AI response. It does not retain
-provider token counts or the actual model; those values must stay unknown.
+provider token counts or the actual model; the initial import leaves them unknown.
+Separately authorized owner-confirmed estimates use ai_history_estimation.
 HTTP requests alone are not imported: validation and cache hits are not paid calls.
 """
 from contextlib import nullcontext

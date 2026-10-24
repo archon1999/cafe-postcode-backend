@@ -31,6 +31,8 @@ AGGREGATES = {
     'missing': Count('id', filter=Q(input_tokens__isnull=True) | Q(output_tokens__isnull=True) | Q(total_tokens__isnull=True)),
     'average_duration': Avg('duration_ms'),
     'recovered': Count('id', filter=~Q(source=AIUsageLog.Source.LIVE)),
+    'estimated_usage': Count('id', filter=Q(usage_is_estimated=True)),
+    'estimated_tokens': Sum('total_tokens', filter=Q(usage_is_estimated=True)),
 }
 
 
@@ -71,6 +73,8 @@ def _metrics(row):
         'pricedRequestCount': priced, 'unpricedRequestCount': count - priced,
         'missingUsageCount': row.get('missing', 0),
         'recoveredRequestCount': row.get('recovered', 0),
+        'estimatedUsageCount': row.get('estimated_usage', 0),
+        'estimatedTokenCount': int(row.get('estimated_tokens') or 0),
         'averageDurationMs': round(float(row['average_duration']), 2) if row.get('average_duration') is not None else None,
     }
 
@@ -177,6 +181,10 @@ class AIUsageRequestsView(AIUsageView):
                 'durationMs': row.duration_ms, 'requestId': row.request_id or None,
                 'source': row.source, 'recoveredAt': row.recovered_at.isoformat() if row.recovered_at else None,
                 'evidence': row.evidence,
+                'usageIsEstimated': row.usage_is_estimated,
+                'usageEstimation': ({key: row.evidence.get('usageEstimate', {}).get(key) for key in (
+                    'method', 'estimatedAt', 'modelBasis', 'basis', 'cachedInputAssumed', 'unavailableComponents',
+                )} if row.usage_is_estimated else None),
                 'providerStatus': row.provider_status or None, 'errorCode': row.error_code or None,
                 'errorSummary': row.error_summary or None,
             } for row in rows],

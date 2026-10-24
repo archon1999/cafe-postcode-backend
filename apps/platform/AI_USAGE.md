@@ -34,7 +34,36 @@ metadata without exporting prompts, uploaded content or credentials. Its private
 report stays mode 0600 on the host. Matching Nginx requests are corroboration only and
 are not imported as additional rows alongside their drafts. `recoveredRequestCount`
 is included in summary metrics; each history row exposes `source`, `recoveredAt` and
-safe `evidence`. Unknown amounts never become zero or guessed estimates.
+safe `evidence`. The initial recovery leaves unknown amounts NULL.
+
+### Owner-confirmed historical estimates
+
+After the owner confirmed that all recovered menu calls used `gpt-5.6-luna` and
+explicitly requested approximate usage, `estimate_ai_usage_history --model=gpt-5.6-luna`
+provides a read-only preview. Apply requires `--apply --expected-count=<reviewed count>`.
+Only recovered `catalog_draft` rows with no existing usage measurements are enriched.
+Live measurements are never changed. Repeated runs freeze already estimated rows,
+even if drafts, prompts or pricing configuration change afterwards.
+
+Method `catalog_draft_text_v1` projects saved rows onto the original AI output fields,
+excluding review flags, category UUIDs and MXIK bookkeeping. It uses compact UTF-8 JSON
+for output, deduplicated saved source excerpts, saved category names, and the current
+menu instructions/schema as a proxy for historical input. Each side is approximated
+as `ceil(UTF-8 bytes / 4)`, with 16 framing tokens on input. Saved rows may have been
+edited after extraction. This is a rough text-based estimate, not a bound on billing:
+original images/files, full category context and hidden reasoning were not retained.
+
+`model` is operator-confirmed. `usage_is_estimated=true` marks the populated token/cost
+fields. Cached tokens and duration remain NULL; pricing assumes no cache discount and
+records this assumption. Version, byte sizes, timestamp and missing components are
+retained as metadata; no source content is copied to usage logs or operation output.
+Each estimate includes a frozen verified/overridden Standard rate snapshot.
+
+All summary dimensions include estimates and expose `estimatedUsageCount` and
+`estimatedTokenCount`, so clients mark mixed/estimated token and USD totals with `≈`.
+Request rows expose `usageIsEstimated` and a safe `usageEstimation` explanation.
+Deployment operation `estimate_ai_history` verifies the exact source/image, takes
+private before/after snapshots, and checks live rows, provenance, count, sums and cost.
 
 ## Pricing
 

@@ -170,7 +170,7 @@ class AIHistoryRecoveryApiTests(RecoveryFixture, APITestCase):
 class HistoricalCutoffTests(TestCase):
     def test_database_defaults_allow_the_previous_audit_writer_to_omit_new_fields(self):
         row = AIUsageLog(feature='catalog_menu', model='legacy-audit-writer', status='success')
-        new_fields = {'source', 'recovery_key', 'recovered_at', 'evidence'}
+        new_fields = {'source', 'recovery_key', 'recovered_at', 'evidence', 'usage_is_estimated'}
         fields = [field for field in AIUsageLog._meta.concrete_fields if field.name not in new_fields]
         values = [field.get_db_prep_save(field.pre_save(row, add=True), connection) for field in fields]
         quote = connection.ops.quote_name
@@ -183,6 +183,7 @@ class HistoricalCutoffTests(TestCase):
         self.assertEqual(row.source, AIUsageLog.Source.LIVE)
         self.assertEqual(row.evidence, {})
         self.assertIsNone(row.recovered_at)
+        self.assertFalse(row.usage_is_estimated)
 
     @patch('apps.platform.services.ai_history_recovery.MigrationRecorder.Migration.objects.filter')
     def test_missing_original_tracking_boundary_is_not_guessed(self, migrations):
