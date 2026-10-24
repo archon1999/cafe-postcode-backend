@@ -11,7 +11,6 @@ from unittest.mock import patch
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import DatabaseError
-from django.conf import settings
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APITestCase
 
@@ -218,7 +217,7 @@ class HistoryEstimateVerifierTests(SimpleTestCase):
             second.write_text(json.dumps(after))
             output = io.StringIO()
             with patch.object(sys, 'argv', ['verify', str(first), str(second), '1']), patch('sys.stdout', output):
-                runpy.run_path(str(settings.BASE_DIR / 'ops' / 'verify-ai-history-estimates.py'))
+                runpy.run_path(str(Path(__file__).resolve().parents[3] / 'ops' / 'verify-ai-history-estimates.py'))
             result = json.loads(output.getvalue())
             self.assertEqual(result['concurrentLiveRows'], '1')
             self.assertEqual(result['liveRowsUnchanged'], '1')
