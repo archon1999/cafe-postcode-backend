@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
 from django.test import TestCase
 from rest_framework.test import APITestCase
 
@@ -168,6 +168,22 @@ class AIHistoryRecoveryApiTests(RecoveryFixture, APITestCase):
 
 
 class HistoricalCutoffTests(TestCase):
+    def test_database_defaults_allow_the_previous_audit_writer_to_omit_new_fields(self):
+        row = AIUsageLog(feature='catalog_menu', model='legacy-audit-writer', status='success')
+        new_fields = {'source', 'recovery_key', 'recovered_at', 'evidence'}
+        fields = [field for field in AIUsageLog._meta.concrete_fields if field.name not in new_fields]
+        values = [field.get_db_prep_save(field.pre_save(row, add=True), connection) for field in fields]
+        quote = connection.ops.quote_name
+        columns = ', '.join(quote(field.column) for field in fields)
+        placeholders = ', '.join(['%s'] * len(fields))
+        table = quote(AIUsageLog._meta.db_table)
+        with connection.cursor() as cursor:
+            cursor.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders})', values)
+        row.refresh_from_db()
+        self.assertEqual(row.source, AIUsageLog.Source.LIVE)
+        self.assertEqual(row.evidence, {})
+        self.assertIsNone(row.recovered_at)
+
     @patch('apps.platform.services.ai_history_recovery.MigrationRecorder.Migration.objects.filter')
     def test_missing_original_tracking_boundary_is_not_guessed(self, migrations):
         migrations.return_value.first.return_value = None

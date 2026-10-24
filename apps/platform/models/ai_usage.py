@@ -40,10 +40,10 @@ class AIUsageLog(BaseModel):
     provider_status = models.CharField(max_length=20, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
     error_summary = models.CharField(max_length=255, blank=True)
-    source = models.CharField(max_length=24, choices=Source.choices, default=Source.LIVE, db_index=True)
+    source = models.CharField(max_length=24, choices=Source.choices, default=Source.LIVE, db_default=Source.LIVE, db_index=True)
     recovery_key = models.CharField(max_length=200, null=True, blank=True, unique=True, editable=False)
     recovered_at = models.DateTimeField(null=True, blank=True, editable=False)
-    evidence = models.JSONField(default=dict, blank=True, editable=False)
+    evidence = models.JSONField(default=dict, db_default={}, blank=True, editable=False)
 
     class Meta:
         ordering = ('-created_at', '-id')
