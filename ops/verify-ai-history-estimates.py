@@ -1,7 +1,7 @@
 """Verify private before/after accounting snapshots; print only aggregate metadata."""
 import json
 import sys
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 before = {row['pk']: row['fields'] for row in json.loads(Path(sys.argv[1]).read_text())}
@@ -32,7 +32,7 @@ for pk, old in before.items():
     assert row['evidence']['usageEstimate']['modelBasis'] == 'operator_confirmed'
     cost = (Decimal(row['input_tokens']) * Decimal(row['pricing']['input'])
             + Decimal(row['output_tokens']) * Decimal(row['pricing']['output'])) / 1000000
-    assert Decimal(row['estimated_cost_usd']) == cost.quantize(Decimal('0.000000000001'))
+    assert Decimal(row['estimated_cost_usd']) == cost.quantize(Decimal('0.000000000001'), rounding=ROUND_HALF_UP)
     recovered.append(row)
 assert len(recovered) == expected, 'Estimated history count differs from reviewed batch'
 print(json.dumps({

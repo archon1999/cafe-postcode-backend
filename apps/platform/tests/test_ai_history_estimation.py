@@ -1,13 +1,18 @@
 import io
 import json
+import runpy
+import sys
+import tempfile
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import DatabaseError
-from django.test import TestCase, override_settings
+from django.conf import settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APITestCase
 
 from apps.catalog_assistant.ai import PROPERTIES
@@ -192,3 +197,29 @@ class AIHistoryEstimationApiTests(RecoveryFixture, APITestCase):
         self.assertEqual(estimated_row['usageEstimation']['basis'], 'saved_catalog_draft')
         self.assertIsNone(estimated_row['cachedInputTokens'])
         self.assertIsNone(next(row for row in results if not row['usageIsEstimated'])['usageEstimation'])
+
+
+class HistoryEstimateVerifierTests(SimpleTestCase):
+    def test_private_verification_allows_concurrent_live_writes_and_uses_matching_price_rounding(self):
+        old = {'source': 'catalog_draft', 'usage_is_estimated': False, 'model': 'unknown',
+               'input_tokens': None, 'cached_input_tokens': None, 'output_tokens': None,
+               'total_tokens': None, 'estimated_cost_usd': None, 'duration_ms': None}
+        estimated = {**old, 'model': CONFIRMED_MODEL, 'usage_is_estimated': True,
+                     'input_tokens': 1, 'output_tokens': 0, 'total_tokens': 1,
+                     'estimated_cost_usd': '0.000000000001',
+                     'pricing': {'input': '0.0000005', 'output': '0'},
+                     'evidence': {'usageEstimate': {'method': ESTIMATION_METHOD, 'modelBasis': 'operator_confirmed'}}}
+        before = [{'pk': 'historical', 'fields': old}, {'pk': 'live', 'fields': {'source': 'live', 'usage_is_estimated': False}}]
+        after = [{'pk': 'historical', 'fields': estimated}, before[1],
+                 {'pk': 'new-live', 'fields': {'source': 'live', 'usage_is_estimated': False}}]
+        with tempfile.TemporaryDirectory() as directory:
+            first, second = Path(directory) / 'before.json', Path(directory) / 'after.json'
+            first.write_text(json.dumps(before))
+            second.write_text(json.dumps(after))
+            output = io.StringIO()
+            with patch.object(sys, 'argv', ['verify', str(first), str(second), '1']), patch('sys.stdout', output):
+                runpy.run_path(str(settings.BASE_DIR / 'ops' / 'verify-ai-history-estimates.py'))
+            result = json.loads(output.getvalue())
+            self.assertEqual(result['concurrentLiveRows'], '1')
+            self.assertEqual(result['liveRowsUnchanged'], '1')
+            self.assertEqual(result['estimatedTotalCostUsd'], '1E-12')
