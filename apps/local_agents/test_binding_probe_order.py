@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.integrations.models import IntegrationConfig
 from apps.local_agents.sync import _device_bindings
@@ -8,9 +11,10 @@ from apps.restaurants.models import CashDesk, Restaurant
 class DeviceBindingsProbeOrderTests(TestCase):
     def setUp(self):
         self.restaurant = Restaurant.objects.create(name='Printer probe order')
+        self.printer_created_at = timezone.now()
 
     def printer(self, name, *, enabled=True, restaurant=None):
-        return IntegrationConfig.objects.create(
+        printer = IntegrationConfig.objects.create(
             restaurant=restaurant or self.restaurant,
             name=name,
             kind=IntegrationConfig.Kind.PRINTER,
@@ -18,6 +22,11 @@ class DeviceBindingsProbeOrderTests(TestCase):
             is_enabled=enabled,
             settings={'connection_type': 'system_printer', 'printer_name': name},
         )
+        # Coarse platform clocks can give consecutive inserts the same timestamp;
+        # this test needs distinct ages, rather than a random UUID tie-breaker.
+        self.printer_created_at += timedelta(seconds=1)
+        IntegrationConfig.objects.filter(pk=printer.pk).update(created_at=self.printer_created_at)
+        return printer
 
     def test_cashier_printer_precedes_older_kitchen_targets_without_dropping_them(self):
         kitchen = self.printer('Kitchen')

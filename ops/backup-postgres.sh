@@ -29,7 +29,13 @@ if [[ ! "${database_bytes}" =~ ^[0-9]+$ ]] || [[ ! "${available_bytes}" =~ ^[0-9
     exit 1
 fi
 minimum_reserve_bytes=$((5 * 1024 * 1024 * 1024))
-required_bytes=$((database_bytes * 3 + minimum_reserve_bytes))
+archive_bytes="$(docker compose --project-directory "${repo_dir}" --env-file "${env_file}" run --rm --no-deps -T --entrypoint python web \
+    -c 'from pathlib import Path; print(sum(p.stat().st_size for p in Path("/app/agent-evidence").rglob("*") if p.is_file()))' | tr -d '[:space:]')"
+if [[ ! "${archive_bytes}" =~ ^[0-9]+$ ]]; then
+    echo "Unable to determine private Agent archive size." >&2
+    exit 1
+fi
+required_bytes=$((database_bytes * 3 + archive_bytes * 2 + minimum_reserve_bytes))
 if (( available_bytes < required_bytes )); then
     echo "Insufficient backup capacity: ${available_bytes} bytes available, ${required_bytes} required." >&2
     exit 1
@@ -39,9 +45,11 @@ timestamp="$(date -u +'%Y%m%dT%H%M%SZ')"
 final_path="${backup_dir}/cafe_postcode_${timestamp}.dump"
 temporary_path="$(mktemp --tmpdir="${backup_dir}" '.postgres-backup.XXXXXX')"
 checksum_path="${final_path}.sha256"
+archive_path="${final_path%.dump}.evidence.tar.gz"
+archive_temporary_path="$(mktemp --tmpdir="${backup_dir}" '.evidence-backup.XXXXXX')"
 
 cleanup() {
-    rm -f -- "${temporary_path}"
+    rm -f -- "${temporary_path}" "${archive_temporary_path}"
 }
 trap cleanup EXIT
 
@@ -57,13 +65,26 @@ fi
 docker compose --project-directory "${repo_dir}" --env-file "${env_file}" exec -T postgres \
     sh -ceu 'pg_restore --list >/dev/null' < "${temporary_path}"
 
+# Copy after the DB snapshot: upload precedes every reference commit, and archive
+# objects are immutable/never deleted. Thus all file references in this dump exist
+# in the accompanying private volume snapshot, even while retention is running.
+docker compose --project-directory "${repo_dir}" --env-file "${env_file}" run --rm --no-deps -T --entrypoint tar web \
+    -C /app/agent-evidence -czf - . > "${archive_temporary_path}"
+tar -tzf "${archive_temporary_path}" >/dev/null
+chmod 0600 -- "${archive_temporary_path}"
+mv -- "${archive_temporary_path}" "${archive_path}"
+sha256sum -- "${archive_path}" > "${archive_path}.sha256"
+chmod 0600 -- "${archive_path}.sha256"
+
 chmod 0600 -- "${temporary_path}"
 mv -- "${temporary_path}" "${final_path}"
 sha256sum -- "${final_path}" > "${checksum_path}"
 chmod 0600 -- "${checksum_path}"
 
 find "${backup_dir}" -maxdepth 1 -type f \
-    \( -name 'cafe_postcode_*.dump' -o -name 'cafe_postcode_*.dump.sha256' \) \
+    \( -name 'cafe_postcode_*.dump' -o -name 'cafe_postcode_*.dump.sha256' \
+       -o -name 'cafe_postcode_*.evidence.tar.gz' -o -name 'cafe_postcode_*.evidence.tar.gz.sha256' \) \
     -mtime "+${retention_days}" -delete
 
 echo "Verified PostgreSQL backup created: ${final_path}"
+echo "Verified private Agent archive backup created: ${archive_path}"

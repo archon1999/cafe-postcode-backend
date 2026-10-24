@@ -13,6 +13,7 @@ from apps.billing.serializers import CashierContextSerializer
 from apps.billing.services import CashShiftService
 from apps.kitchen.models import KitchenTicket
 from apps.local_agents.models import LocalAgentMutationReceipt
+from apps.local_agents.evidence_store import store_body
 from apps.local_agents.mutation_reconciliation import (
     decode_response,
     reconciled_fully_paid_order,
@@ -183,7 +184,10 @@ class LocalAgentMutationDispatchMixin:
                 path=path,
                 request_hash=digest,
                 response_status=response_status,
-                response_body=response_body if response_body is not None else {},
+                response_body=(store_body(
+                    restaurant_id=agent.restaurant_id, operation_id=operation_id,
+                    body=response_body if response_body is not None else {},
+                ) if 200 <= response_status < 300 else response_body if response_body is not None else {}),
             ))
         result = {
             "operationId": operation_id,
@@ -253,7 +257,7 @@ class LocalAgentMutationDispatchMixin:
             path=path,
             request_hash=digest,
             response_status=response_status,
-            response_body=response_body,
+            response_body=store_body(restaurant_id=agent.restaurant_id, operation_id=operation_id, body=response_body),
         ))
         result = {
             "operationId": operation_id,

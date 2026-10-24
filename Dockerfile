@@ -35,7 +35,8 @@ RUN python ops/compile_translations.py
 
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
-    && mkdir -p /app/staticfiles /app/media \
+    && mkdir -p /app/staticfiles /app/media /app/agent-evidence \
+    && chmod 700 /app/agent-evidence \
     && chown -R app:app /app
 
 USER app

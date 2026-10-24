@@ -434,6 +434,12 @@ class CoreSettings(Settings):
         'CacheControl': 'max-age=31536000',
     }
 
+    # Deliberately separate from public media. The DB allowlist is off by default.
+    AGENT_EVIDENCE_ARCHIVE_BACKEND = os.getenv('AGENT_EVIDENCE_ARCHIVE_BACKEND', '').strip()
+    AGENT_EVIDENCE_ARCHIVE_ROOT = os.getenv('AGENT_EVIDENCE_ARCHIVE_ROOT', '').strip()
+    AGENT_EVIDENCE_S3_BUCKET = os.getenv('AGENT_EVIDENCE_S3_BUCKET', '').strip()
+    AGENT_EVIDENCE_S3_REGION = os.getenv('AGENT_EVIDENCE_S3_REGION', 'us-east-1').strip()
+
     STATIC_URL = '/static/'
     STATIC_ROOT = (BASE_DIR / 'staticfiles').as_posix()
     MEDIA_URL = '/media/'

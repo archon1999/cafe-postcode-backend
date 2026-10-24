@@ -8,6 +8,7 @@ from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 
 from apps.local_agents.authentication import authenticate_local_agent
+from apps.local_agents.evidence_store import evidence_cache
 from apps.local_agents.mutation_processor import LocalAgentMutationProcessor
 from apps.local_agents.mutation_reconciliation import (
     allowed_mutation as _allowed_mutation,
@@ -45,15 +46,16 @@ class LocalAgentMutationPushView(APIView):
             )
 
         processor = LocalAgentMutationProcessor(self.request_factory_class)
-        return Response(
-            {
-                'capabilities': ['historical_floor_projection_v1'] if self.receive_only else [],
-                "results": [
-                    processor.process(agent=agent, operation=operation, receive_only=self.receive_only)
-                    for operation in operations
-                ]
-            }
-        )
+        with evidence_cache():
+            return Response(
+                {
+                    'capabilities': ['historical_floor_projection_v1'] if self.receive_only else [],
+                    "results": [
+                        processor.process(agent=agent, operation=operation, receive_only=self.receive_only)
+                        for operation in operations
+                    ]
+                }
+            )
 
 
 class LocalAgentMutationReceiveView(LocalAgentMutationPushView):

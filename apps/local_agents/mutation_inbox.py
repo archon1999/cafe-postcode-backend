@@ -7,7 +7,11 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from apps.local_agents.models import LocalAgentMutationAttempt, LocalAgentMutationInbox
+from apps.local_agents.models import LocalAgentMutationAttempt, LocalAgentMutationInbox, LocalAgentMutationReceipt
+from apps.local_agents.evidence_store import (
+    EvidenceUnavailable, evidence_cache, is_reference, resolve_body, resolve_result,
+    store_result, unavailable_result,
+)
 from apps.local_agents.mutation_results import mutation_error_result
 
 logger = logging.getLogger(__name__)
@@ -60,6 +64,57 @@ def _metadata(inbox, result):
 
 
 def receive_and_apply(*, agent, operation, apply, receive_only=False):
+    """Prefetch legacy cold receipts, then project atomically and hydrate after unlock."""
+    from apps.local_agents.mutation_reconciliation import request_hash
+
+    operation_id = str(operation.get('operationId') or operation.get('operation_id') or '').strip()
+    with evidence_cache():
+        # A Receipt-only legacy replay is checked inside the projection transaction.
+        # Warm its immutable body before taking any Inbox lock. A compaction race
+        # can cause a cache miss, which fails closed and succeeds on the next retry.
+        prior_inbox = LocalAgentMutationInbox.objects.filter(operation_id=operation_id).only(
+            'restaurant_id', 'payload_hash', 'state',
+        ).first()
+        needs_receipt = prior_inbox is None
+        if prior_inbox is not None and prior_inbox.state not in {'applied', 'resolved'}:
+            try:
+                needs_receipt = prior_inbox.restaurant_id == agent.restaurant_id and prior_inbox.payload_hash == _hash(operation)
+            except (TypeError, ValueError):
+                needs_receipt = False
+        receipt = LocalAgentMutationReceipt.objects.filter(
+            operation_id=operation_id,
+            response_status__gte=200, response_status__lt=300,
+        ).first() if needs_receipt else None
+        digest = request_hash(
+            user_id=str(operation.get('userId') or operation.get('user_id') or '').strip(),
+            method=str(operation.get('method') or '').strip().upper(),
+            path=str(operation.get('path') or '').strip(),
+            body=operation.get('body') if isinstance(operation.get('body'), dict) else {},
+        )
+        if receipt is not None and (receipt.restaurant_id != agent.restaurant_id or receipt.request_hash != digest):
+            # Do not reserve a new Inbox with a conflicting envelope in front of
+            # a successful legacy Receipt-only identity guard.
+            return mutation_error_result(
+                operation_id=operation_id, response_status=409,
+                error='Operation ID belongs to different immutable evidence.',
+                code='OPERATION_ID_CONFLICT', classification='quarantined',
+            )
+        if receipt is not None and is_reference(receipt.response_body):
+            try:
+                resolve_body(restaurant_id=agent.restaurant_id, operation_id=operation_id, body=receipt.response_body)
+            except EvidenceUnavailable:
+                return unavailable_result(operation_id)
+        result = _receive_and_apply(agent=agent, operation=operation, apply=apply, receive_only=receive_only)
+        try:
+            return resolve_result(restaurant_id=agent.restaurant_id, operation_id=operation_id, result=result)
+        except EvidenceUnavailable:
+            return {
+                **unavailable_result(operation_id),
+                **{key: result[key] for key in ('durablyReceived', 'inboxState', 'payloadHash') if key in result},
+            }
+
+
+def _receive_and_apply(*, agent, operation, apply, receive_only=False):
     """Reserve in autocommit, then lock/apply/ack atomically; no external I/O here.
 
     The raw original envelope survives any later validation/projection rollback.
@@ -220,6 +275,8 @@ def receive_and_apply(*, agent, operation, apply, receive_only=False):
                     # Keep received evidence, but never commit a partial DB projection.
                     if not result.get("ok"):
                         transaction.set_rollback(True)
+            except EvidenceUnavailable:
+                result = unavailable_result(operation_id)
             except Exception:
                 logger.exception(
                     "Mutation projection failed", extra={"operation_id": operation_id}
@@ -249,9 +306,9 @@ def receive_and_apply(*, agent, operation, apply, receive_only=False):
             else ("received" if result.get("retryable") else "needs_review")
         )
         inbox.applied_at = timezone.now() if result.get("ok") else None
-        inbox.last_result = result
+        inbox.last_result = store_result(restaurant_id=inbox.restaurant_id, operation_id=operation_id, result=result)
         inbox.save(update_fields=["state", "applied_at", "last_result", "updated_at"])
         LocalAgentMutationAttempt.objects.create(
-            inbox=inbox, payload_hash=digest, result=result
+            inbox=inbox, payload_hash=digest, result=inbox.last_result
         )
         return _metadata(inbox, result)

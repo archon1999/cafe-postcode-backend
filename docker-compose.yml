@@ -69,6 +69,10 @@ services:
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
+      AGENT_EVIDENCE_ARCHIVE_BACKEND: ${AGENT_EVIDENCE_ARCHIVE_BACKEND:-}
+      AGENT_EVIDENCE_ARCHIVE_ROOT: /app/agent-evidence
+      AGENT_EVIDENCE_S3_BUCKET: ${AGENT_EVIDENCE_S3_BUCKET:-}
+      AGENT_EVIDENCE_S3_REGION: ${AGENT_EVIDENCE_S3_REGION:-us-east-1}
       LOCAL_AGENT_RELEASE_MANIFEST_URL: ${LOCAL_AGENT_RELEASE_MANIFEST_URL:-https://admin.cafe-postcode.uz/downloads/local-agent-release.json}
       LOCAL_AGENT_CANARY_RELEASE_MANIFEST_URL: ${LOCAL_AGENT_CANARY_RELEASE_MANIFEST_URL:-}
       LOCAL_AGENT_CANARY_RESTAURANT_IDS: ${LOCAL_AGENT_CANARY_RESTAURANT_IDS:-}
@@ -117,6 +121,7 @@ services:
     volumes:
       - staticfiles:/app/staticfiles
       - media:/app/media
+      - agent_evidence:/app/agent-evidence
     stop_grace_period: 70s
     restart: unless-stopped
     security_opt:
@@ -192,6 +197,10 @@ services:
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
+      AGENT_EVIDENCE_ARCHIVE_BACKEND: ${AGENT_EVIDENCE_ARCHIVE_BACKEND:-}
+      AGENT_EVIDENCE_ARCHIVE_ROOT: /app/agent-evidence
+      AGENT_EVIDENCE_S3_BUCKET: ${AGENT_EVIDENCE_S3_BUCKET:-}
+      AGENT_EVIDENCE_S3_REGION: ${AGENT_EVIDENCE_S3_REGION:-us-east-1}
       DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED: ${DEVICE_LEGACY_LOCAL_AGENT_AUTH_ENABLED:-0}
       DEVICE_LEGACY_LOCAL_AGENT_RECOVERY_BINDINGS: ${DEVICE_LEGACY_LOCAL_AGENT_RECOVERY_BINDINGS:-}
       DEVICE_LEGACY_MIGRATION_STARTED_AT: ${DEVICE_LEGACY_MIGRATION_STARTED_AT:-}
@@ -210,6 +219,7 @@ services:
     volumes:
       - staticfiles:/app/staticfiles
       - media:/app/media
+      - agent_evidence:/app/agent-evidence
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -260,8 +270,14 @@ services:
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-cpython}
       AWS_S3_MEDIA_PREFIX: ${AWS_S3_MEDIA_PREFIX:-media/cafe-postcode}
       AWS_S3_CUSTOM_DOMAIN: ${AWS_S3_CUSTOM_DOMAIN:-}
+      AGENT_EVIDENCE_ARCHIVE_BACKEND: ${AGENT_EVIDENCE_ARCHIVE_BACKEND:-}
+      AGENT_EVIDENCE_ARCHIVE_ROOT: /app/agent-evidence
+      AGENT_EVIDENCE_S3_BUCKET: ${AGENT_EVIDENCE_S3_BUCKET:-}
+      AGENT_EVIDENCE_S3_REGION: ${AGENT_EVIDENCE_S3_REGION:-us-east-1}
       Q_CLUSTER_WORKERS: ${Q_CLUSTER_WORKERS:-1}
     command: ["sh", "-c", "python manage.py check_database_role && exec python manage.py qcluster"]
+    volumes:
+      - agent_evidence:/app/agent-evidence
     depends_on:
       web:
         condition: service_healthy
@@ -467,6 +483,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  agent_evidence:
   postgres_data:
   redis_data:
   staticfiles:

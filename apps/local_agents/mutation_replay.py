@@ -17,6 +17,7 @@ from apps.local_agents.mutation_results import (
     mutation_error_result,
     mutation_result_metadata,
 )
+from apps.local_agents.evidence_store import resolve_body
 
 
 class LocalAgentMutationReplayMixin:
@@ -40,18 +41,21 @@ class LocalAgentMutationReplayMixin:
             # Received evidence/attempts are durable in the inbox. Re-evaluate
             # dependencies and validation; never delete the original evidence.
             return None
+        original_body = resolve_body(
+            restaurant_id=agent.restaurant_id, operation_id=operation_id, body=existing.response_body,
+        )
         result = {
             "operationId": operation_id,
             "ok": 200 <= existing.response_status < 300,
             "status": existing.response_status,
-            "body": existing.response_body,
+            "body": original_body,
             "replayed": True,
             "retryable": False,
         }
         result.update(
             mutation_result_metadata(
                 response_status=existing.response_status,
-                response_body=existing.response_body,
+                response_body=original_body,
             )
         )
         return result

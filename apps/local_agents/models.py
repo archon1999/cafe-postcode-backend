@@ -197,3 +197,53 @@ class LocalAgentMutationAttempt(BaseModel):
     payload_hash = models.CharField(max_length=64)
     operation = models.JSONField(default=dict)
     result = models.JSONField(default=dict)
+
+
+class AgentEvidencePolicy(BaseModel):
+    """Explicit restaurant allowlist. No writer or maintenance job is enabled by default."""
+
+    restaurant = models.OneToOneField('restaurants.Restaurant', on_delete=models.PROTECT)
+    writes_enabled = models.BooleanField(default=False)
+    compaction_enabled = models.BooleanField(default=False)
+    archive_enabled = models.BooleanField(default=False)
+    schedule_enabled = models.BooleanField(default=False)
+    lease_token = models.UUIDField(null=True, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_report = models.JSONField(default=dict)
+
+
+class AgentEvidenceArchive(BaseModel):
+    """Immutable, verified private bundle. Objects are never deleted by retention."""
+
+    restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
+    backend = models.CharField(max_length=16)
+    object_key = models.CharField(max_length=500, unique=True)
+    checksum = models.CharField(max_length=64)
+    byte_length = models.PositiveIntegerField()
+    record_count = models.PositiveIntegerField()
+    format_version = models.PositiveSmallIntegerField(default=1)
+    verified_at = models.DateTimeField()
+
+
+class AgentEvidencePayload(BaseModel):
+    """One exact response per operation/content hash, shared by all three journals."""
+
+    restaurant = models.ForeignKey('restaurants.Restaurant', on_delete=models.PROTECT)
+    operation_id = models.CharField(max_length=128)
+    checksum = models.CharField(max_length=64)
+    byte_length = models.PositiveIntegerField()
+    # An envelope preserves JSON null separately from an archived (SQL NULL) body.
+    content = models.JSONField(null=True)
+    archive = models.ForeignKey(AgentEvidenceArchive, on_delete=models.PROTECT, null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=['restaurant', 'operation_id', 'checksum'], name='agent_evidence_content_uniq',
+        )]
+        indexes = [
+            models.Index(fields=['restaurant', 'archived_at'], name='agent_evidence_rest_cold_idx'),
+            models.Index(fields=['restaurant', 'created_at', 'id'], name='agent_evidence_hot_scan_idx',
+                         condition=models.Q(archived_at__isnull=True)),
+        ]

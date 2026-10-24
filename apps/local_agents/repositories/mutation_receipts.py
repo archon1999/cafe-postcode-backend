@@ -2,6 +2,7 @@ from typing import Any
 from uuid import UUID
 
 from apps.local_agents.models import LocalAgentMutationReceipt
+from apps.local_agents.evidence_store import store_body
 from apps.restaurants.models import Restaurant
 
 
@@ -29,7 +30,8 @@ class MutationReceiptRepository:
             path=path,
             request_hash=request_hash,
             response_status=response_status,
-            response_body=response_body,
+            response_body=(store_body(restaurant_id=restaurant.pk, operation_id=operation_id, body=response_body)
+                           if 200 <= response_status < 300 else response_body),
         )
 
     def update_response(
@@ -40,7 +42,8 @@ class MutationReceiptRepository:
         response_body: dict[str, Any],
     ) -> None:
         receipt.response_status = response_status
-        receipt.response_body = response_body
+        receipt.response_body = (store_body(restaurant_id=receipt.restaurant_id, operation_id=receipt.operation_id, body=response_body)
+                                 if 200 <= response_status < 300 else response_body)
         receipt.save(update_fields=['response_status', 'response_body', 'updated_at'])
 
     def delete(self, *, receipt: LocalAgentMutationReceipt) -> None:
