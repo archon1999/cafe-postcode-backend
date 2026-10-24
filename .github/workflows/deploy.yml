@@ -6,6 +6,7 @@ on:
       - production
     paths-ignore:
       - '.github/workflows/deploy.yml'
+      - 'ops/inspect-ai-history.py'
   workflow_dispatch:
     inputs:
       operation:
@@ -17,6 +18,7 @@ on:
           - deploy
           - inspect_agent_status
           - inspect_inventory_ai
+          - inspect_ai_history
 
 permissions:
   contents: read
@@ -27,6 +29,7 @@ concurrency:
 
 jobs:
   catalog-tests:
+    if: inputs.operation != 'inspect_ai_history'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -95,6 +98,7 @@ jobs:
           apps.payroll.tests apps.integrations.tests apps.reporting.tests
           apps.platform.tests.test_platform_tariff_activation_api --noinput
   deploy:
+    if: inputs.operation != 'inspect_ai_history'
     needs: catalog-tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -308,3 +312,24 @@ jobs:
 
             docker compose --env-file .env.production exec -T web python manage.py configure_management_bot --webhook-url https://cafe-postcode.uz/api/v1/management-bot/webhook/
             docker compose --env-file .env.production exec -T web python manage.py check_catalog_assistant --live-ai --webhook-url https://cafe-postcode.uz/api/v1/management-bot/webhook/
+
+  inspect-ai-history:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'inspect_ai_history'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Inspect retained AI evidence without changing application data
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.HOST_FINGERPRINT }}
+          port: ${{ secrets.PORT }}
+          timeout: 60s
+          command_timeout: 12m
+          script: |
+            set -Eeuo pipefail
+            cd /home/postcode/backend
+            git fetch --prune origin production
+            git show '${{ github.sha }}:ops/inspect-ai-history.py' | python3
