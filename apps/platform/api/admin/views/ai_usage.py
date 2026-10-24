@@ -30,6 +30,7 @@ AGGREGATES = {
     'priced': Count('id', filter=Q(estimated_cost_usd__isnull=False)),
     'missing': Count('id', filter=Q(input_tokens__isnull=True) | Q(output_tokens__isnull=True) | Q(total_tokens__isnull=True)),
     'average_duration': Avg('duration_ms'),
+    'recovered': Count('id', filter=~Q(source=AIUsageLog.Source.LIVE)),
 }
 
 
@@ -69,6 +70,7 @@ def _metrics(row):
         'estimatedCostUsd': str(cost) if cost is not None else ('0' if count == 0 else None),
         'pricedRequestCount': priced, 'unpricedRequestCount': count - priced,
         'missingUsageCount': row.get('missing', 0),
+        'recoveredRequestCount': row.get('recovered', 0),
         'averageDurationMs': round(float(row['average_duration']), 2) if row.get('average_duration') is not None else None,
     }
 
@@ -129,7 +131,7 @@ class AIUsageSummaryView(AIUsageView):
         while day <= last:
             trend.append({'date': day.isoformat(), **_metrics(daily.get(day, {}))})
             day += timedelta(days=1)
-        started = AIUsageLog.objects.aggregate(first=Min('created_at'))['first']
+        started = AIUsageLog.objects.filter(source=AIUsageLog.Source.LIVE).aggregate(first=Min('created_at'))['first']
         return Response({
             'from': filters['from_date'].isoformat(), 'to': filters['to_date'].isoformat(),
             'trackingStartedAt': started.isoformat() if started else None,
@@ -173,6 +175,8 @@ class AIUsageRequestsView(AIUsageView):
                 'outputTokens': row.output_tokens, 'totalTokens': row.total_tokens,
                 'estimatedCostUsd': str(row.estimated_cost_usd) if row.estimated_cost_usd is not None else None,
                 'durationMs': row.duration_ms, 'requestId': row.request_id or None,
+                'source': row.source, 'recoveredAt': row.recovered_at.isoformat() if row.recovered_at else None,
+                'evidence': row.evidence,
                 'providerStatus': row.provider_status or None, 'errorCode': row.error_code or None,
                 'errorSummary': row.error_summary or None,
             } for row in rows],

@@ -19,6 +19,11 @@ on:
           - inspect_agent_status
           - inspect_inventory_ai
           - inspect_ai_history
+          - recover_ai_history
+      expected_history_count:
+        description: Proven historical draft count from the reviewed inspection
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -29,7 +34,7 @@ concurrency:
 
 jobs:
   catalog-tests:
-    if: inputs.operation != 'inspect_ai_history'
+    if: inputs.operation != 'inspect_ai_history' && inputs.operation != 'recover_ai_history'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -71,6 +76,7 @@ jobs:
           apps.devices.tests.test_monitoring_overview
           apps.devices.tests.test_admin_control_api apps.devices.tests.test_control_api
           apps.platform.tests.test_ai_usage apps.platform.tests.test_ai_pricing
+          apps.platform.tests.test_ai_history_recovery
           apps.inventory.tests.test_ai apps.inventory.tests.test_ai_documents
           apps.users.tests.test_endpoint_rbac.EndpointRBACPermissionTests.test_every_protected_route_is_registered_in_permission_endpoints
           apps.local_agents.tests.LocalAgentMutationPushTests.test_trusted_edge_fiscal_result_is_persisted_without_remote_fiscal_call --noinput
@@ -98,7 +104,7 @@ jobs:
           apps.payroll.tests apps.integrations.tests apps.reporting.tests
           apps.platform.tests.test_platform_tariff_activation_api --noinput
   deploy:
-    if: inputs.operation != 'inspect_ai_history'
+    if: inputs.operation != 'inspect_ai_history' && inputs.operation != 'recover_ai_history'
     needs: catalog-tests
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -333,3 +339,58 @@ jobs:
             cd /home/postcode/backend
             git fetch --prune origin production
             git show '${{ github.sha }}:ops/inspect-ai-history.py' | python3
+
+  recover-ai-history:
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'recover_ai_history'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Import reviewed historical AI evidence with a private before/after snapshot
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17
+        env:
+          EXPECTED_HISTORY_COUNT: ${{ inputs.expected_history_count }}
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          fingerprint: ${{ secrets.HOST_FINGERPRINT }}
+          port: ${{ secrets.PORT }}
+          timeout: 60s
+          command_timeout: 12m
+          envs: EXPECTED_HISTORY_COUNT
+          script: |
+            set -Eeuo pipefail
+            case "${EXPECTED_HISTORY_COUNT}" in ''|*[!0-9]*) exit 1;; esac
+            exec 9>/home/postcode/.cafe-postcode-deploy.lock
+            flock --wait 300 9
+            cd /home/postcode/backend
+            test "$(git rev-parse HEAD)" = '${{ github.sha }}'
+            export BACKEND_IMAGE='postcode/backend:${{ github.sha }}'
+            container_id="$(docker compose --env-file .env.production ps -q web)"
+            test "$(docker inspect --format '{{.Config.Image}}' "${container_id}")" = "${BACKEND_IMAGE}"
+            umask 077
+            mkdir -p var/ai-history-recovery
+            backup="var/ai-history-recovery/ai-usage-before-$(date -u +%Y%m%dT%H%M%SZ).json"
+            after="${backup%.json}-after.json"
+            docker compose --env-file .env.production exec -T web python manage.py dumpdata platform.AIUsageLog --format=json > "${backup}"
+            docker compose --env-file .env.production exec -T web python manage.py recover_ai_usage_history --expected-count="${EXPECTED_HISTORY_COUNT}"
+            docker compose --env-file .env.production exec -T web python manage.py recover_ai_usage_history --apply --expected-count="${EXPECTED_HISTORY_COUNT}"
+            docker compose --env-file .env.production exec -T web python manage.py recover_ai_usage_history --expected-count="${EXPECTED_HISTORY_COUNT}"
+            docker compose --env-file .env.production exec -T web python manage.py dumpdata platform.AIUsageLog --format=json > "${after}"
+            python3 - "${backup}" "${after}" "${EXPECTED_HISTORY_COUNT}" <<'PY'
+            import json, pathlib, sys
+            before = json.loads(pathlib.Path(sys.argv[1]).read_text())
+            after = json.loads(pathlib.Path(sys.argv[2]).read_text())
+            current = {row['pk']: row for row in after}
+            assert all(current.get(row['pk']) == row for row in before), 'Pre-existing usage changed'
+            recovered = [row['fields'] for row in after if row['fields']['source'] == 'catalog_draft']
+            assert len(recovered) == int(sys.argv[3]), 'Recovered count differs from reviewed evidence'
+            assert all(row['model'] == 'unknown' and all(row[key] is None for key in (
+                'input_tokens', 'cached_input_tokens', 'output_tokens', 'total_tokens', 'estimated_cost_usd', 'duration_ms')) for row in recovered)
+            assert len({row['recovery_key'] for row in recovered}) == len(recovered)
+            print(json.dumps({'verifiedRecoveredCount': str(len(recovered)),
+                'historicalBranches': str(len({row['restaurant'] for row in recovered})),
+                'totalUsageRows': str(len(after)), 'preExistingRowsUnchanged': True,
+                'privateBackup': sys.argv[1], 'firstRecoveredAt': min(row['created_at'] for row in recovered) if recovered else None,
+                'lastRecoveredAt': max(row['created_at'] for row in recovered) if recovered else None}))
+            PY

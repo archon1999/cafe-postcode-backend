@@ -10,7 +10,31 @@ The record contains the provider model, success/error, request/response identifi
 duration, safe fixed error classification and optional USD estimate. It never contains a prompt,
 provider output, uploaded document, API credential or upstream error message. Incomplete/invalid output
 can still contain chargeable provider usage and therefore keeps its token counts.
-No unrecorded historical calls are inferred. `trackingStartedAt` is the first recorded call.
+Unrecorded calls are never invented. `trackingStartedAt` is the first live provider audit;
+historical recovery never moves that date backwards.
+
+## Historical recovery
+
+`recover_ai_usage_history` is a read-only dry run unless `--apply` is supplied.
+Applying requires `--expected-count` from a reviewed production dry run. It imports only
+nonempty `CatalogDraft` rows created before the original usage migration (and before
+the first live audit, if earlier). Creating these drafts required a successful, validated
+provider response. HTTP access entries alone are not sufficient: input validation and
+inventory cache hits do not prove provider attempts.
+
+Recovered rows have source `catalog_draft`, a unique stable recovery key, deterministic
+UUID, import time and a metadata-only source UUID/date basis. Their report date is the
+original draft creation time; model is `unknown`, and token counts, cost and duration
+remain NULL. Source rows, products, stock and existing usage are unchanged. Repeating
+the command does not add duplicates; expected-count/evidence conflicts fail before
+writes, and the batch runs atomically with a PostgreSQL advisory lock.
+
+`ops/inspect-ai-history.py` inventories retained Postcode container/access logs and draft
+metadata without exporting prompts, uploaded content or credentials. Its private JSON
+report stays mode 0600 on the host. Matching Nginx requests are corroboration only and
+are not imported as additional rows alongside their drafts. `recoveredRequestCount`
+is included in summary metrics; each history row exposes `source`, `recoveredAt` and
+safe `evidence`. Unknown amounts never become zero or guessed estimates.
 
 ## Pricing
 

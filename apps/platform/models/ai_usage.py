@@ -15,6 +15,10 @@ class AIUsageLog(BaseModel):
         SUCCESS = 'success', 'Success'
         ERROR = 'error', 'Error'
 
+    class Source(models.TextChoices):
+        LIVE = 'live', 'Live provider audit'
+        CATALOG_DRAFT = 'catalog_draft', 'Recovered catalog draft'
+
     restaurant = models.ForeignKey('restaurants.Restaurant', null=True, blank=True, on_delete=models.SET_NULL, related_name='ai_usage_logs')
     business_partner = models.ForeignKey('platform.BusinessPartner', null=True, blank=True, on_delete=models.SET_NULL, related_name='ai_usage_logs')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='ai_usage_logs')
@@ -31,11 +35,15 @@ class AIUsageLog(BaseModel):
     total_tokens = models.PositiveBigIntegerField(null=True, blank=True)
     estimated_cost_usd = models.DecimalField(max_digits=24, decimal_places=12, null=True, blank=True)
     pricing = models.JSONField(default=dict, blank=True)
-    duration_ms = models.PositiveIntegerField(default=0)
+    duration_ms = models.PositiveIntegerField(default=0, null=True, blank=True)
     request_id = models.CharField(max_length=128, blank=True)
     provider_status = models.CharField(max_length=20, blank=True)
     error_code = models.CharField(max_length=64, blank=True)
     error_summary = models.CharField(max_length=255, blank=True)
+    source = models.CharField(max_length=24, choices=Source.choices, default=Source.LIVE, db_index=True)
+    recovery_key = models.CharField(max_length=200, null=True, blank=True, unique=True, editable=False)
+    recovered_at = models.DateTimeField(null=True, blank=True, editable=False)
+    evidence = models.JSONField(default=dict, blank=True, editable=False)
 
     class Meta:
         ordering = ('-created_at', '-id')
