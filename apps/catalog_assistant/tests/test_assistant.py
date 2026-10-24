@@ -86,6 +86,20 @@ class DraftTests(APITestCase):
         commit_draft(self.user, self.draft().pk, rows, 1)
         self.assertEqual(CatalogItem.objects.count(), 1)
 
+    def test_review_saves_product_mxik_without_changing_category(self):
+        row = {**self.row, 'mxik_code': '00709001906000001'}
+        commit_draft(self.user, self.draft().pk, [row], 1)
+        item = CatalogItem.objects.get()
+        self.assertEqual(item.mxik_code, row['mxik_code'])
+        self.category.refresh_from_db()
+        self.assertEqual(self.category.mxik_code, '00709001906000000')
+
+    def test_invalid_product_mxik_rolls_back_the_whole_review(self):
+        rows = [self.row, {**self.row, 'name': 'Choy', 'mxik_code': '123'}]
+        with self.assertRaises(ValidationError):
+            commit_draft(self.user, self.draft().pk, rows, 1)
+        self.assertFalse(CatalogItem.objects.exists())
+
     def test_expired_draft_rejected(self):
         draft = self.draft()
         draft.expires_at = timezone.now() - timedelta(seconds=1)
@@ -102,10 +116,12 @@ class DraftTests(APITestCase):
         self.assertEqual(response.status_code, 201, response.data)
         payload = response.json()
         self.assertIn('categoryId', payload['rows'][0])
+        payload['rows'][0]['mxikCode'] = '00709001906000001'
         result = self.client.post(f'/api/v1/admin/catalog-assistant/drafts/{payload["id"]}/commit/', {
             'rows': payload['rows'], 'revision': payload['revision'],
         }, format='json')
         self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(CatalogItem.objects.get().mxik_code, '00709001906000001')
 
     def test_one_use_link_rotation_and_disabled_user(self):
         first = issue_link(self.user)['url'].split('start=')[1]

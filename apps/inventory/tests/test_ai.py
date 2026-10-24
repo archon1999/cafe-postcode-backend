@@ -75,6 +75,24 @@ class InventoryAnalysisTests(SimpleTestCase):
             analyze_inventory(SimpleNamespace(pk='restaurant-a'))
         self.assertNotIn('secret-value', str(caught.exception))
 
+    @override_settings(INVENTORY_AI_API_KEY='test-not-a-real-key', INVENTORY_AI_MODEL='configured-test-model')
+    @patch('apps.inventory.reports.insights')
+    @patch('apps.inventory.ai.httpx.Client')
+    def test_critical_evidence_is_not_displaced_by_alphabetic_report_limit(self, client_type, insights):
+        insights.return_value = {'items': [
+            *[{'id': f'info-{index}', 'severity': 'info'} for index in range(65)],
+            {'id': 'critical-stock', 'severity': 'critical'},
+        ]}
+        analysis = {'summary': 'Tekshiring.', 'recommendations': [{'title': 'Muhim tekshiruv', 'detail': 'Asl qoldiqni qayta sanang.', 'evidenceIds': ['critical-stock']}]}
+        response = MagicMock()
+        response.json.return_value = {'status': 'completed', 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': json.dumps(analysis)}]}]}
+        client = client_type.return_value.__enter__.return_value
+        client.post.return_value = response
+        analyze_inventory(SimpleNamespace(pk='priority-restaurant'))
+        supplied = json.loads(client.post.call_args.kwargs['json']['input'])
+        self.assertEqual(supplied['evidence'][0]['id'], 'critical-stock')
+        self.assertEqual(supplied['coverage'], {'included': 60, 'total': 66, 'truncated': True})
+
     @override_settings(INVENTORY_AI_API_KEY='private-key')
     @patch('apps.inventory.reports.insights')
     @patch('apps.inventory.ai.httpx.Client')

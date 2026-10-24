@@ -86,14 +86,20 @@ def analyze_inventory(restaurant, warehouse=None, language='uz'):
     if not key or not model:
         raise InventoryAIUnavailable(_('AI uchun serverda API kaliti va model sozlanishi kerak.'))
     facts = insights(restaurant, warehouse=warehouse)
-    evidence = facts.get('items', [])[:60]
+    # Do not lose a real critical shortage merely because its product sorts
+    # after the first sixty alphabetic rows in a large restaurant's report.
+    all_evidence = facts.get('items', [])
+    severity_order = {'critical': 0, 'warning': 1, 'info': 2}
+    evidence = sorted(all_evidence, key=lambda item: severity_order.get(item.get('severity'), 2))[:60]
     if not evidence:
         raise ValidationError({'detail': _('AI tahlili uchun hali yetarli ombor dalillari yo‘q.')})
     # Only selected-restaurant operational facts: no staff names, credentials,
     # supplier bank details or attached document contents are sent.
     evidence_ids = {str(item['id']) for item in evidence}
     language = {'ru': 'Russian', 'uz-crl': 'Uzbek Cyrillic', 'uz-Cyrl': 'Uzbek Cyrillic'}.get(language, 'Uzbek Latin')
-    facts_json = json.dumps({'evidence': evidence}, cls=DjangoJSONEncoder, ensure_ascii=False)
+    facts_json = json.dumps({'evidence': evidence, 'coverage': {
+        'included': len(evidence), 'total': len(all_evidence), 'truncated': len(evidence) < len(all_evidence),
+    }}, cls=DjangoJSONEncoder, ensure_ascii=False)
     digest = hashlib.sha256(f'{model}|{language}|{facts_json}'.encode()).hexdigest()
     cache_key = f'inventory-ai:{restaurant.pk}:{getattr(warehouse, "pk", warehouse)}:{digest}'
     cached = cache.get(cache_key)
@@ -106,6 +112,11 @@ def analyze_inventory(restaurant, warehouse=None, language='uz'):
         'Distinguish theoretical recipe use from measured stock-count variance. Without a physical count never claim actual missing stock. '
         'Do not accuse employees of theft or present a cause as proven. Distinguish operational alert thresholds from legal loss norms. '
         'Mention missing data and uncertainty. Describe concrete checks and purchase actions for the owner. '
+        'Prioritize confirmed critical operational facts before routine replenishment. '
+        'For each recommendation describe the problem, the exact supplied evidence, and the next practical check or draft action. '
+        'Use source base units consistently; never treat grams as kilograms or millilitres as litres without explicit conversion. '
+        'The coverage object describes sampling only; do not claim that unlisted products were checked. '
+        'Avoid duplicate recommendations about the same issue and avoid repeating the summary in every detail. '
         'Return up to 8 recommendations; each must cite at least one exact evidence id in evidenceIds. '
         'Do not prescribe accounting/tax/legal treatment. Never claim you changed any records. '
         'Keep summary under 1000 characters, titles under 160, and each detail under 1200.'

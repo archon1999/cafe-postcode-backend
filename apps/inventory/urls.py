@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .ai_views import InventoryAnalysisView
+from .ai_views import InventoryAnalysisView, InventoryDocumentPreviewView
 
 urlpatterns = [
     path('warehouses/', views.WarehousesListView.as_view()),
@@ -13,6 +13,7 @@ urlpatterns = [
     path('recipes/', views.RecipesListView.as_view()),
     path('recipes/<uuid:pk>/', views.RecipesDetailView.as_view()),
     path('documents/', views.DocumentsListView.as_view()),
+    path('documents/ai-preview/', InventoryDocumentPreviewView.as_view()),
     path('documents/<uuid:pk>/', views.DocumentsDetailView.as_view()),
     path('documents/<uuid:pk>/post/', views.PostDocumentView.as_view()),
     path('documents/<uuid:pk>/reverse/', views.ReverseDocumentView.as_view()),

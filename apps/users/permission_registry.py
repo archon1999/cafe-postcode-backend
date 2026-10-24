@@ -1575,7 +1575,10 @@ PERMISSION_DEFINITIONS.extend([
         'admin.inventory.analyze', surface='admin', resource='inventory', action='analyze',
         ui_visible=True, group_key='inventory', name='Ombor AI tahlilidan foydalanish',
         default_roles=RESTAURANT_ADMIN_UI_ROLES,
-        endpoints=endpoint_specs(('POST', 'api/v1/admin/inventory/insights/analyze/')),
+        endpoints=endpoint_specs(
+            ('POST', 'api/v1/admin/inventory/insights/analyze/'),
+            ('POST', 'api/v1/admin/inventory/documents/ai-preview/'),
+        ),
     ),
 ])
 

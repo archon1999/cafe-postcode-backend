@@ -21,6 +21,7 @@ class ReviewRow(serializers.Serializer):
     category_id = serializers.UUIDField(allow_null=True, default=None)
     category_name = serializers.CharField(max_length=255, allow_blank=True, default='')
     category_mxik = serializers.RegexField(r'^\d{17}$', allow_blank=True, default='')
+    mxik_code = serializers.RegexField(r'^\d{17}$', allow_blank=True, default='')
     price = serializers.IntegerField(min_value=0, max_value=2147483647, allow_null=True)
     sale_unit = serializers.ChoiceField(choices=list(SALE_UNITS))
     description = serializers.CharField(max_length=2000, allow_blank=True, default='')
@@ -61,7 +62,7 @@ def commit_draft(user, draft_id, rows, revision):
     if draft.committed_at:
         return draft  # A lost response/retry must not create duplicate products.
     if draft.expires_at <= timezone.now() or revision != draft.revision:
-        raise ValidationError('Draft eskirgan. Uni qayta oching yoki yangi draft tayyorlang.')
+        raise ValidationError('Tayyorlangan ro‘yxat eskirgan. Menyuni qayta tayyorlang.')
     if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
         raise ValidationError('1–100 ta qator yuboring.')
     selected_rows = [row for row in rows if isinstance(row, dict) and row.get('selected', True)]
@@ -93,6 +94,7 @@ def commit_draft(user, draft_id, rows, revision):
             'name': row['name'], 'name_uz': row['name'], 'name_uz_crl': uzbek_latin_to_cyrillic(row['name']),
             'name_ru': row['name_ru'], 'price': row['price'], 'sale_unit': row['sale_unit'],
             'description': row['description'], 'category': str(category.pk), 'is_active': True,
+            'mxik_code': row['mxik_code'],
         })
         serializer.is_valid(raise_exception=True)
         item = serializer.save(restaurant=restaurant)
